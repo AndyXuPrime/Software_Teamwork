@@ -1,12 +1,33 @@
 # Backend Development Guidelines
 
-> Best practices for backend development in this project.
+> Engineering rules for Go backend services in the power-industry knowledge management system.
 
 ---
 
 ## Overview
 
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
+Backend code is organized as independent Go microservices under `services/`.
+Each service owns its own `go.mod`, HTTP API, configuration, tests, Docker
+build, and CI job. Services communicate through HTTP/REST in the initial
+architecture.
+
+Backend services:
+
+| Service | Path | Responsibility |
+|---------|------|----------------|
+| Gateway | `services/gateway/` | Public backend entrypoint, routing, request coordination |
+| Auth | `services/auth/` | Authentication, authorization, identities, sessions/tokens |
+| File | `services/file/` | Uploads, file metadata, MinIO object orchestration |
+| QA | `services/qa/` | AI question answering over retrieved knowledge |
+| Knowledge | `services/knowledge/` | Knowledge ingestion, indexing, retrieval coordination |
+| Document | `services/document/` | Report and document generation workflows |
+
+Infrastructure dependencies:
+
+- PostgreSQL for relational application data.
+- Redis for cache, sessions, lightweight queues, or short-lived coordination.
+- Qdrant for vector search.
+- MinIO for object storage.
 
 ---
 
@@ -14,25 +35,36 @@ This directory contains guidelines for backend development. Fill in each file wi
 
 | Guide | Description | Status |
 |-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
+| [Directory Structure](./directory-structure.md) | Service layout and module boundaries | Active |
+| [Database Guidelines](./database-guidelines.md) | PostgreSQL, migrations, transactions, Qdrant, Redis, MinIO | Active |
+| [Error Handling](./error-handling.md) | Go error propagation and HTTP error responses | Active |
+| [Quality Guidelines](./quality-guidelines.md) | Build, test, lint, review expectations | Active |
+| [Logging Guidelines](./logging-guidelines.md) | Structured logging and sensitive-data rules | Active |
 
 ---
 
-## How to Fill These Guidelines
+## Pre-Development Checklist
 
-For each guideline file:
+Before changing backend code:
 
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
+- [ ] Identify the affected service under `services/<service>/`.
+- [ ] Read [Directory Structure](./directory-structure.md) for service layout rules.
+- [ ] Read [Database Guidelines](./database-guidelines.md) if data, cache, vector search, or object storage is touched.
+- [ ] Read [Error Handling](./error-handling.md) if handlers, service calls, or client responses are touched.
+- [ ] Read [Logging Guidelines](./logging-guidelines.md) before adding logs or changing error logging.
+- [ ] Read [Quality Guidelines](./quality-guidelines.md) before declaring implementation complete.
+- [ ] Run service-local checks from the service directory, at minimum `go test ./...`.
 
 ---
 
-**Language**: All documentation should be written in **English**.
+## Cross-Service Principles
+
+- Keep each service independently buildable and testable.
+- Prefer explicit HTTP contracts between services over importing another service's internal Go packages.
+- Do not create shared Go libraries casually. Introduce shared packages only when a repeated pattern appears across at least three services and the ownership boundary is clear.
+- Keep service-specific configuration in that service; keep deployment wiring in `deploy/`.
+- Validate incoming requests at service boundaries and return stable JSON error responses.
+
+---
+
+**Language**: Backend spec documents are written in English.

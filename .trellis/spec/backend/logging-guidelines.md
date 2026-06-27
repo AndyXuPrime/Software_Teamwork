@@ -1,51 +1,131 @@
 # Logging Guidelines
 
-> How logging is done in this project.
+> Structured logging rules for Go backend services.
 
 ---
 
 ## Overview
 
-<!--
-Document your project's logging conventions here.
+Backend services should use structured logs. The exact logging library is not
+fixed yet; standard-library `slog` is the default recommendation for new Go
+services unless a service has a documented reason to use another library.
 
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
+Logs must help operators answer:
 
-(To be filled by the team)
+- Which service handled the request?
+- Which request or job failed?
+- Which dependency was involved?
+- What action should be investigated?
+
+Logs must not leak secrets or sensitive business data.
 
 ---
 
 ## Log Levels
 
-<!-- When to use each level: debug, info, warn, error -->
+| Level | Use For |
+|-------|---------|
+| `debug` | Local troubleshooting, branch decisions, non-production detail |
+| `info` | Service startup/shutdown, successful important workflows |
+| `warn` | Recoverable problems, retries, degraded dependency behavior |
+| `error` | Failed requests, failed jobs, unrecoverable dependency failures |
 
-(To be filled by the team)
+Rules:
 
----
-
-## Structured Logging
-
-<!-- Log format, required fields -->
-
-(To be filled by the team)
-
----
-
-## What to Log
-
-<!-- Important events to log -->
-
-(To be filled by the team)
+- Do not use `error` for expected validation failures unless they indicate abuse or system issues.
+- Do not log every successful request at high detail unless access logging is intentionally enabled.
+- Do not use `debug` logs as a substitute for tests.
 
 ---
 
-## What NOT to Log
+## Required Fields
 
-<!-- Sensitive data, PII, secrets -->
+Include these fields when available:
 
-(To be filled by the team)
+| Field | Meaning |
+|-------|---------|
+| `service` | Service name, for example `gateway` |
+| `request_id` | Request correlation ID |
+| `user_id` | Authenticated user ID, when safe and relevant |
+| `operation` | High-level operation name |
+| `dependency` | Downstream service or infrastructure dependency |
+| `status` | Outcome such as `success`, `failed`, `retrying` |
+| `duration_ms` | Operation duration in milliseconds |
+
+Example:
+
+```go
+logger.InfoContext(ctx, "file uploaded",
+    "service", "file",
+    "request_id", requestID,
+    "operation", "upload_file",
+    "file_id", fileID,
+    "duration_ms", duration.Milliseconds(),
+)
+```
+
+---
+
+## Request Logging
+
+HTTP middleware should attach or generate a request ID. Boundary logs should
+include:
+
+- method,
+- path template, not raw unbounded URL when it contains sensitive query data,
+- status code,
+- duration,
+- request ID,
+- authenticated user ID when available.
+
+Do not log request bodies by default.
+
+---
+
+## Dependency Logging
+
+Log dependency failures with enough detail to identify the failing dependency:
+
+- downstream service name,
+- HTTP status code when applicable,
+- infrastructure component name such as `postgres`, `redis`, `qdrant`, or `minio`,
+- retry count when retrying,
+- request ID or job ID.
+
+Do not log database DSNs, access keys, object storage credentials, tokens, or full SQL statements with parameter values.
+
+---
+
+## What To Log
+
+- Service startup and validated runtime mode.
+- Graceful shutdown start and completion.
+- Failed background jobs.
+- Cross-service dependency failures.
+- File ingestion and document generation state transitions.
+- Security-relevant events such as repeated authentication failures, without logging credentials.
+
+---
+
+## What Not To Log
+
+Never log:
+
+- passwords,
+- tokens,
+- API keys,
+- MinIO access keys or secret keys,
+- database URLs with credentials,
+- raw uploaded document contents,
+- full generated documents,
+- personally sensitive data unless explicitly approved,
+- vector payloads when they contain source document text.
+
+---
+
+## Common Mistakes
+
+- Logging the same error in repository, service, and handler layers.
+- Logging raw request or response bodies for convenience.
+- Emitting unstructured strings that cannot be searched by `service`, `request_id`, or `operation`.
+- Including internal object keys in user-facing logs without checking sensitivity.
