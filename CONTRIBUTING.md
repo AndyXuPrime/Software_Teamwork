@@ -17,18 +17,26 @@ Pull Request 合入主仓库的 `develop` 分支。
 小组 label 是可选分类标签，不作为 PR 合并的强制条件。当前仓库使用以下小组
 label：
 
-| Label | 小组 |
+| Label | 用途 |
 |-------|------|
 | `L1nggTeam` | 第一组 |
 | `PrimeTeam` | 第二组 |
 | `JerryTeam` | 第六组 |
+| `frontend` | 前端相关 PR |
+| `backend` | 后端相关 PR |
 
-`Frontend` 是领域 label，可作为补充标签使用。
+小组 label 和领域 label 都是可选分类标签。
 
 维护者新增小组时，需要同时更新：
 
 - GitHub 仓库 label
 - 本文档的小组 label 表
+- 如需自动打标，更新 [.github/labeler.json](.github/labeler.json)
+
+PR 会根据提交账号和修改文件路径自动添加匹配 label。账号规则会匹配 PR
+发起人以及 PR commit 的 GitHub author/committer login 或数字 ID。配置见
+[.github/labeler.json](.github/labeler.json)。如果匹配到的 label 在仓库中不存在，
+Auto Label workflow 会跳过该 label 并在日志中提示。
 
 ## 分支规则
 

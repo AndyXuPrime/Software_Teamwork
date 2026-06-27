@@ -1,0 +1,22 @@
+{
+  "accountLabels": [
+    {
+      "accounts": ["Sakayori-Iroha-168", "266454825"],
+      "labels": ["documentation"]
+    }
+  ],
+  "pathLabels": [
+    {
+      "paths": ["frontend/**"],
+      "labels": ["frontend"]
+    },
+    {
+      "paths": ["services/**", "shared/**"],
+      "labels": ["backend"]
+    },
+    {
+      "paths": ["docs/**", "*.md", ".github/**", ".trellis/spec/**"],
+      "labels": ["documentation"]
+    }
+  ]
+}

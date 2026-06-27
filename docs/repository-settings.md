@@ -13,6 +13,8 @@ label：
 L1nggTeam
 PrimeTeam
 JerryTeam
+frontend
+backend
 ```
 
 检查现有 label：
@@ -38,6 +40,11 @@ gh label create JerryTeam \
   --repo Sakayori-Iroha-168/Software_Teamwork \
   --description "第六组" \
   --color fd390a
+
+gh label create backend \
+  --repo Sakayori-Iroha-168/Software_Teamwork \
+  --description "后端开发相关PR" \
+  --color 5319e7
 ```
 
 ## develop 分支保护
@@ -62,6 +69,9 @@ gh label create JerryTeam \
 如果使用 `gh api` 配置，需要先确保对应 checks 至少运行过一次，再按实际
 check 名称补入 `contexts`。
 
+`Auto Label` 负责根据提交账号和修改路径给 PR 自动添加 label。它不是合并
+门禁，不建议加入 required checks。
+
 ## main 分支保护
 
 `main` 不是日常开发 PR 目标。普通开发和文档修改只能 PR 到 `develop`。
@@ -83,6 +93,37 @@ check 名称补入 `contexts`。
 - PR base 必须是 `develop`
 - PR head 必须来自个人 fork
 - PR 分支必须包含当前最新 `develop`
+
+## Auto Label 规则
+
+[.github/workflows/auto-label.yml](../.github/workflows/auto-label.yml) 会读取
+[.github/labeler.json](../.github/labeler.json)，并按两类规则给 PR 添加 label：
+
+- `accountLabels`: GitHub 账号 login 或数字 ID 到 label 的映射，匹配 PR
+  发起人以及 PR commit 的 GitHub author/committer
+- `pathLabels`: 文件路径 glob 到 label 的映射
+
+示例：
+
+```json
+{
+  "accountLabels": [
+    {
+      "accounts": ["username", "12345678"],
+      "labels": ["L1nggTeam"]
+    }
+  ],
+  "pathLabels": [
+    {
+      "paths": ["frontend/**"],
+      "labels": ["frontend"]
+    }
+  ]
+}
+```
+
+workflow 只添加仓库中已经存在的 label。新增小组或领域 label 后，需要先在
+GitHub 仓库创建 label，再更新 `.github/labeler.json`。
 
 ## Commitlint 规则
 

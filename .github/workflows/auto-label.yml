@@ -1,0 +1,158 @@
+name: Auto Label
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply configured labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const configPath = '.github/labeler.json';
+            const pr = context.payload.pull_request;
+            const labelsToAdd = new Set();
+
+            const asArray = (value) => Array.isArray(value) ? value : [];
+
+            const addConfiguredLabels = (labels) => {
+              for (const label of asArray(labels)) {
+                if (typeof label === 'string' && label.trim()) {
+                  labelsToAdd.add(label.trim());
+                }
+              }
+            };
+
+            const escapeRegex = (value) => value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+
+            const globToRegExp = (pattern) => {
+              let source = '^';
+              for (let i = 0; i < pattern.length; i += 1) {
+                const char = pattern[i];
+                const next = pattern[i + 1];
+
+                if (char === '*' && next === '*') {
+                  source += '.*';
+                  i += 1;
+                } else if (char === '*') {
+                  source += '[^/]*';
+                } else if (char === '?') {
+                  source += '[^/]';
+                } else {
+                  source += escapeRegex(char);
+                }
+              }
+              return new RegExp(`${source}$`);
+            };
+
+            let configFile;
+            try {
+              const response = await github.rest.repos.getContent({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path: configPath,
+                ref: pr.base.sha,
+              });
+              configFile = response.data;
+            } catch (error) {
+              if (error.status === 404) {
+                core.warning(`${configPath} does not exist on the base branch yet; skipping labels.`);
+                return;
+              }
+              throw error;
+            }
+
+            const configText = Buffer.from(configFile.content, configFile.encoding).toString('utf8');
+            const config = JSON.parse(configText);
+
+            const accountIds = new Set();
+            const collectAccountIds = (user) => {
+              if (!user) {
+                return;
+              }
+              if (user.login) {
+                accountIds.add(user.login);
+              }
+              if (user.id) {
+                accountIds.add(String(user.id));
+              }
+            };
+
+            collectAccountIds(pr.user);
+
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            for (const commit of commits) {
+              collectAccountIds(commit.author);
+              collectAccountIds(commit.committer);
+            }
+
+            for (const rule of asArray(config.accountLabels)) {
+              const accounts = asArray(rule.accounts).map((account) => String(account));
+              if (accounts.some((account) => accountIds.has(account))) {
+                addConfiguredLabels(rule.labels);
+              }
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            for (const file of files) {
+              for (const rule of asArray(config.pathLabels)) {
+                for (const pattern of asArray(rule.paths)) {
+                  if (globToRegExp(pattern).test(file.filename)) {
+                    addConfiguredLabels(rule.labels);
+                    break;
+                  }
+                }
+              }
+            }
+
+            if (labelsToAdd.size === 0) {
+              core.info('No labels matched this PR.');
+              return;
+            }
+
+            const existingLabels = await github.paginate(github.rest.issues.listLabelsForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const existingLabelNames = new Set(existingLabels.map((label) => label.name));
+            const validLabels = [...labelsToAdd].filter((label) => existingLabelNames.has(label));
+            const missingLabels = [...labelsToAdd].filter((label) => !existingLabelNames.has(label));
+
+            if (missingLabels.length > 0) {
+              core.warning(`Skipping labels that do not exist: ${missingLabels.join(', ')}`);
+            }
+
+            if (validLabels.length === 0) {
+              core.info('Matched labels are not present in the repository; nothing to add.');
+              return;
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              labels: validLabels,
+            });
+
+            core.info(`Added labels: ${validLabels.join(', ')}`);

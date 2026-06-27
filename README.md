@@ -21,6 +21,8 @@ GitHub CLI workflow: [docs/git-workflow.md](docs/git-workflow.md)
 
 Repository guard settings: [docs/repository-settings.md](docs/repository-settings.md)
 
+Auto label configuration: [.github/labeler.json](.github/labeler.json)
+
 ### Commit Messages
 
 All commits follow [Conventional Commits](https://www.conventionalcommits.org/). Quick reference:
