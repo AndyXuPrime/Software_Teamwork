@@ -62,6 +62,13 @@ postgres + redis + qdrant + minio
 | Qdrant | 向量索引和相似度检索。 |
 | MinIO | 原始文件、生成文档和其他对象数据。 |
 
+Gateway 基础契约文档：
+
+- Gateway 服务规划：[docs/gateway.md](docs/gateway.md)
+- Gateway OpenAPI 契约：[docs/api/gateway.openapi.yaml](docs/api/gateway.openapi.yaml)
+- 服务边界矩阵：[docs/service-boundaries.md](docs/service-boundaries.md)
+- 前后端集成契约：[docs/frontend-backend-contract.md](docs/frontend-backend-contract.md)
+
 ## 目标目录结构
 
 ```text

@@ -37,6 +37,7 @@ Infrastructure dependencies:
 |-------|-------------|--------|
 | [Directory Structure](./directory-structure.md) | Service layout and module boundaries | Active |
 | [Database Guidelines](./database-guidelines.md) | PostgreSQL, migrations, transactions, Qdrant, Redis, MinIO | Active |
+| [API Contracts](./api-contracts.md) | Gateway OpenAPI, response envelopes, route ownership, context headers | Active |
 | [Error Handling](./error-handling.md) | Go error propagation and HTTP error responses | Active |
 | [Quality Guidelines](./quality-guidelines.md) | Build, test, lint, review expectations | Active |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging and sensitive-data rules | Active |
@@ -50,6 +51,7 @@ Before changing backend code:
 - [ ] Identify the affected service under `services/<service>/`.
 - [ ] Read [Directory Structure](./directory-structure.md) for service layout rules.
 - [ ] Read [Database Guidelines](./database-guidelines.md) if data, cache, vector search, or object storage is touched.
+- [ ] Read [API Contracts](./api-contracts.md) if gateway routes, frontend-facing DTOs, or cross-service HTTP contracts are touched.
 - [ ] Read [Error Handling](./error-handling.md) if handlers, service calls, or client responses are touched.
 - [ ] Read [Logging Guidelines](./logging-guidelines.md) before adding logs or changing error logging.
 - [ ] Read [Quality Guidelines](./quality-guidelines.md) before declaring implementation complete.
