@@ -74,3 +74,36 @@ Established the README monorepo folder skeleton, expanded Auto Label path rules,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Gateway contract-first docs
+
+**Date**: 2026-06-28
+**Task**: Gateway contract-first docs
+**Branch**: `chore/agent-commit-hook`
+
+### Summary
+
+Added gateway contract-first documentation, OpenAPI skeleton, service boundary matrix, frontend-backend contract, and API contract specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `37fb71e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
