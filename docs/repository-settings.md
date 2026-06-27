@@ -4,9 +4,10 @@
 workflow 只能拦截 PR 行为；分支保护和 label 仍需要维护者在 GitHub 仓库中
 配置。
 
-## 必需 Label
+## 可选 Label
 
-PR Guard 会要求 PR 至少包含一个小组 label：
+仓库可保留小组 label 用于筛选和统计，但 PR Guard 不强制要求 PR 带小组
+label：
 
 ```text
 L1nggTeam
@@ -80,8 +81,8 @@ check 名称补入 `contexts`。
 [.github/workflows/pr-guard.yml](../.github/workflows/pr-guard.yml) 会检查：
 
 - PR base 必须是 `develop`
-- PR head 必须来自个人 fork
-- PR 必须包含一个小组 label
+- 普通成员 PR head 必须来自个人 fork
+- 有且只有仓库主 `Sakayori-Iroha-168` 可以使用主仓库内的独立分支发 PR
 - PR 分支必须包含当前最新 `develop`
 
 ## Commitlint 规则
@@ -107,5 +108,5 @@ gh pr checks <PR_NUMBER> --repo Sakayori-Iroha-168/Software_Teamwork
 gh pr view <PR_NUMBER> --repo Sakayori-Iroha-168/Software_Teamwork --json baseRefName,headRepositoryOwner,headRefName,labels
 ```
 
-发现 PR 目标分支、来源仓库、label 或 commit 不符合规范时，不要合并。要求
-contributor 修正后再 review。
+发现 PR 目标分支、来源仓库、PR 发起人或 commit 不符合规范时，不要合并。
+要求 contributor 修正后再 review。

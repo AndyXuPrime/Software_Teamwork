@@ -16,14 +16,14 @@ jobs:
         uses: actions/github-script@v7
         env:
           REQUIRED_BASE_BRANCH: develop
-          REQUIRED_GROUP_LABELS: L1nggTeam,PrimeTeam,JerryTeam
+          OWNER_DIRECT_BRANCH_USERS: Sakayori-Iroha-168
         with:
           script: |
             const pr = context.payload.pull_request;
             const requiredBase = process.env.REQUIRED_BASE_BRANCH;
-            const requiredLabels = process.env.REQUIRED_GROUP_LABELS
+            const ownerDirectBranchUsers = process.env.OWNER_DIRECT_BRANCH_USERS
               .split(',')
-              .map((label) => label.trim())
+              .map((login) => login.trim())
               .filter(Boolean);
             const failures = [];
 
@@ -33,14 +33,18 @@ jobs:
 
             if (!pr.head.repo) {
               failures.push('PR head repository is unavailable.');
-            } else if (!pr.head.repo.fork) {
-              failures.push('PR must come from a personal fork, not a branch in the main repository.');
-            }
+            } else {
+              const isForkPr = pr.head.repo.fork;
+              const isSameRepoPr = pr.head.repo.full_name === pr.base.repo.full_name;
+              const isOwnerDirectBranchPr =
+                isSameRepoPr && ownerDirectBranchUsers.includes(pr.user.login);
 
-            const labels = pr.labels.map((label) => label.name);
-            const hasGroupLabel = labels.some((label) => requiredLabels.includes(label));
-            if (!hasGroupLabel) {
-              failures.push(`PR must include one group label: ${requiredLabels.join(', ')}.`);
+              if (!isForkPr && !isOwnerDirectBranchPr) {
+                failures.push(
+                  'PR must come from a personal fork. ' +
+                  `Only repository owner(s) may open same-repository branch PRs: ${ownerDirectBranchUsers.join(', ')}.`
+                );
+              }
             }
 
             if (pr.head.repo) {
