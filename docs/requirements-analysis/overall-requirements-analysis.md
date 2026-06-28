@@ -63,7 +63,7 @@
 权限原则：
 
 - 所有 API 请求必须经过身份认证。
-- 首期认证方式统一为 Bearer Token/JWT，由 `gateway` 或对应服务校验 `Authorization: Bearer <accessToken>`。
+- 首期认证方式统一为 opaque Bearer token，由 `gateway` 或对应服务校验 `Authorization: Bearer <accessToken>`；access token 不采用 JWT，前端不得解析 token 内容。
 - 管理功能仅限管理员和超级管理员访问。
 - 用户只能检索和下载自己有权限访问的知识库、文档、引用原文和报告文件。
 - Agent 工具选择需要结合权限判断。例如用户没有报告生成权限时，即使模型尝试调用报告生成工具，也不能执行该工具。
@@ -117,7 +117,7 @@
 
 基础设施决策：
 
-- 首期异步任务采用 Redis 队列 + PostgreSQL 持久化状态。
+- 首期异步任务采用 `asynq` over Redis + PostgreSQL 持久化状态。
 - OCR 和文档解析首期使用外部 HTTP 解析服务跑通 pipeline；解析服务通过 `parser.baseUrl`、`apiKey`、`timeoutSeconds`、`maxConcurrency` 配置，任务失败最多自动重试 3 次。
 - LLM、Embedding、Rerank 等模型调用统一经 `ai-gateway`，各业务服务首期只需按 OpenAI-compatible API 调用单一可用供应商。
 - MinIO bucket 首期按 `source-files`、`templates`、`generated-reports` 三类拆分；具体 bucket 名可由部署环境变量配置。
@@ -129,7 +129,7 @@
 - `User`：用户账号、显示名、状态、创建时间。
 - `Role`：标准用户、管理员、超级管理员。
 - `Permission`：知识管理、知识问答、报告生成、系统配置等角色权限；数据分析权限仅作为后续扩展预留。
-- `AccessToken`：Bearer Token/JWT 登录凭证，由 `auth` 签发并经 `gateway` 校验。
+- `AccessToken`：opaque Bearer 登录凭证，由 `auth` 签发并经 `gateway` 校验。
 
 ### 7.2 知识管理
 
@@ -286,8 +286,8 @@
 本任务同步产出三份 API 契约：
 
 - 知识管理：[api-contract.md](../services/knowledge/docs/api-contract.md)，OpenAPI 草稿：[public.openapi.yaml](../services/knowledge/api/public.openapi.yaml)
-- 智能问答：[api-contract.md](../services/qa/docs/api-contract.md)，OpenAPI 草稿：[openapi.yaml](../services/qa/api/openapi.yaml)
-- 报告生成：[api-contract.md](../services/document/docs/api-contract.md)，OpenAPI 草稿：[openapi.yaml](../services/document/api/openapi.yaml)
+- 智能问答：[README.md](../services/qa/README.md)，公开契约：[gateway openapi.yaml](../services/gateway/api/openapi.yaml)
+- 报告生成：[Document 服务接口文档](../services/document/README.md)，OpenAPI 草稿：[openapi.yaml](../services/document/api/openapi.yaml)
 
 拆分原则：
 
@@ -369,9 +369,9 @@
 
 | 编号 | 结论 | 影响 |
 | --- | --- | --- |
-| Q1 | 认证统一为 Bearer Token/JWT。 | 影响前后端鉴权、SSE、下载接口、网关转发 |
+| Q1 | 认证统一为 opaque Bearer token。 | 影响前后端鉴权、SSE、下载接口、网关转发 |
 | Q2 | API 统一前缀为 `/api/v1`。 | 影响所有契约和前端请求封装 |
-| Q3 | 异步任务采用 Redis 队列 + PostgreSQL 持久化状态；任务最多自动重试 3 次，失败后进入 `failed` 并保留最近 10 次尝试摘要。 | 影响文档处理、报告生成、失败重试 |
+| Q3 | 异步任务采用 `asynq` over Redis + PostgreSQL 持久化状态；任务最多自动重试 3 次，失败后进入 `failed` 并保留最近 10 次尝试摘要。 | 影响文档处理、报告生成、失败重试 |
 | Q4 | OCR 和文档解析首期使用外部 HTTP 解析服务；通过 `parser.baseUrl`、`apiKey`、`timeoutSeconds`、`maxConcurrency` 配置。 | 影响文件处理链路和部署依赖 |
 | Q5 | LLM、Embedding、Rerank 统一通过 `ai-gateway` 以 OpenAI-compatible API 调用。 | 影响配置字段、密钥管理、模型能力边界 |
 | Q6 | 会话历史保存到服务端 PostgreSQL，前端只缓存 `sessionId` 等恢复信息。 | 影响 QA 会话/消息 API 和刷新恢复 |

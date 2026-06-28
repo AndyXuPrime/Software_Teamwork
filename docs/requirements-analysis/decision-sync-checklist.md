@@ -17,16 +17,16 @@
 
 - [整体需求分析](./overall-requirements-analysis.md)
 - [知识管理 API 契约](../services/knowledge/docs/api-contract.md)
-- [智能问答 API 契约](../services/qa/docs/api-contract.md)
-- [报告生成 API 契约](../services/document/docs/api-contract.md)
+- [QA 服务接口文档](../services/qa/README.md)
+- [Document 服务接口文档](../services/document/README.md)
 
 ## 2. 已确认的核心决策
 
 | 编号 | 决策项 | 确认结果 | 文档影响 |
 | --- | --- | --- | --- |
-| D1 | 认证方式 | 首期统一使用 Bearer Token/JWT。普通 JSON 接口、SSE 流式接口和下载授权接口都使用同一套 Bearer 鉴权，不另设其他会话通道。 | 三份 API 契约的“认证与权限”部分；OpenAPI `securitySchemes`；前端请求封装 |
+| D1 | 认证方式 | 首期统一使用 opaque Bearer token。普通 JSON 接口、SSE 流式接口和下载授权接口都使用同一套 `Authorization: Bearer <accessToken>` 鉴权，不另设其他会话通道；access token 不采用 JWT，不允许前端解析 token 内容。 | 三份 API 契约的“认证与权限”部分；OpenAPI `securitySchemes`；前端请求封装 |
 | D2 | API 网关前缀 | 外部 API 统一使用 `/api/v1/...`。 | 所有 endpoint、OpenAPI servers、Swagger UI 聚合路径 |
-| D3 | 异步任务机制 | 首期采用 Redis 队列 + PostgreSQL 持久化状态。Redis 用于队列、短期任务状态和连接辅助；PostgreSQL 保存可追溯业务状态。 | 文档处理、向量化、报告生成任务；任务状态查询 API；基础设施职责 |
+| D3 | 异步任务机制 | 首期采用 `asynq` over Redis + PostgreSQL 持久化状态。Redis/asynq 用于队列、调度和执行；PostgreSQL 保存可追溯业务状态、最终状态和失败摘要。 | 文档处理、向量化、报告生成任务；任务状态查询 API；基础设施职责 |
 | D4 | 会话历史持久化 | 智能问答会话、消息、Agent Run、工具调用摘要、引用和处理过程摘要以服务端 PostgreSQL 为权威数据源。前端只缓存 `sessionId` 等恢复信息。 | QA 会话/消息 API；刷新恢复说明；前端缓存边界 |
 | D5 | 报告支撑材料归属 | 报告支撑材料是独立业务资源，复用 `file` service 处理上传、下载和 MinIO 相关能力；需要检索时复用 `knowledge` 能力。 | 知识管理支撑材料 API；报告生成材料引用；file service 边界 |
 | D6 | OCR 与文档解析后端 | 分期建设。首期使用外部 HTTP 解析服务确保文档处理 pipeline 跑通；通过 `parser.baseUrl`、`apiKey`、`timeoutSeconds`、`maxConcurrency` 配置，失败最多自动重试 3 次。 | 文档解析配置；失败重试；后续本地化演进 |
@@ -45,7 +45,7 @@
 | K2 | embedding 维度变化后如何处理 Qdrant collection？ | 采用版本化 collection；embedding 维度或模型族变化时创建新 collection，后台重建索引，旧 collection 保留到切换完成后清理。 |
 | K3 | 文档处理失败后保留几次错误历史？ | PostgreSQL job 保存最近 10 次尝试摘要，包含阶段、错误码、错误信息、开始/结束时间和耗时。 |
 | K4 | 文档标签是自由键值对还是预定义字典？ | 首期自由键值对；键和值都按字符串保存，管理端可后续增加字典约束。 |
-| K5 | Redis 队列失败重试如何处理？ | Redis 只负责队列投递和短期协调；PostgreSQL job 是权威状态。任务最多自动重试 3 次，超过后进入 `failed`，由手动 retry API 重新排队。 |
+| K5 | 队列失败重试如何处理？ | `asynq` over Redis 负责队列投递、调度和执行；PostgreSQL job 是权威状态。任务最多自动重试 3 次，超过后进入 `failed`，由手动 retry API 重新排队。 |
 | K6 | 原始文件和生成文件放在哪些 bucket？ | 首期拆为 `source-files`、`templates`、`generated-reports` 三类 bucket，实际 bucket 名通过部署环境变量配置。 |
 
 ### 3.2 智能问答
@@ -78,6 +78,6 @@
 
 - AI gateway 首期只要求 OpenAI-compatible provider `baseUrl`、`apiKey`、模型名、超时配置；业务服务侧只保存 `profileId`、模型名和业务默认参数。健康检查可通过后续运维接口增强。
 - OCR/文档解析首期接外部 HTTP 服务；本地化解析、额度监控和复杂版面识别作为后续演进。
-- Redis 队列首期配合 PostgreSQL job、3 次自动重试和手动 retry；死信队列和可视化运维台作为后续演进。
+- `asynq` over Redis 首期配合 PostgreSQL job、3 次自动重试和手动 retry；死信队列和可视化运维台作为后续演进。
 - Qdrant 首期使用版本化 collection；跨版本迁移和旧索引清理由后台任务处理。
 - 审计日志首期不做独立服务；需要合规查询时再补独立审计服务和管理端页面。
