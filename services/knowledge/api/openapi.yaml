@@ -1,0 +1,140 @@
+openapi: 3.0.3
+info:
+  title: Knowledge Service Internal API
+  version: 0.3.0
+  description: >
+    Service-local API contract for the Go-based Knowledge service. Public
+    frontend contracts remain owned by the gateway OpenAPI. This service
+    currently exposes only operational readiness endpoints while the Python
+    prototype is migrated into Go vertical slices.
+servers:
+  - url: http://localhost:8000
+tags:
+  - name: operations
+paths:
+  /healthz:
+    get:
+      tags: [operations]
+      summary: Liveness check
+      operationId: getKnowledgeHealth
+      responses:
+        '200':
+          description: Service is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /readyz:
+    get:
+      tags: [operations]
+      summary: Readiness and local configuration check
+      operationId: getKnowledgeReadiness
+      responses:
+        '200':
+          description: Service is ready with validated local configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+components:
+  responses:
+    Error:
+      description: Standard error envelope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    HealthResponse:
+      type: object
+      required: [data, requestId]
+      properties:
+        data:
+          type: object
+          required: [service, status]
+          properties:
+            service:
+              type: string
+              example: knowledge
+            status:
+              type: string
+              example: ok
+        requestId:
+          type: string
+          example: req_123
+    ReadyResponse:
+      type: object
+      required: [data, requestId]
+      properties:
+        data:
+          type: object
+          required:
+            - service
+            - status
+            - version
+            - environment
+            - storageBackend
+            - embeddingProvider
+            - embeddingModel
+            - embeddingDimension
+            - qdrantCollection
+          properties:
+            service:
+              type: string
+              example: knowledge
+            status:
+              type: string
+              example: ready
+            version:
+              type: string
+              example: 0.3.0
+            environment:
+              type: string
+              example: local
+            storageBackend:
+              type: string
+              example: memory
+            embeddingProvider:
+              type: string
+              example: local_hashing
+            embeddingModel:
+              type: string
+              example: local_hashing
+            embeddingDimension:
+              type: integer
+              example: 384
+            qdrantCollection:
+              type: string
+              example: knowledge_chunks
+        requestId:
+          type: string
+          example: req_123
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code:
+              type: string
+              enum:
+                - validation_error
+                - unauthorized
+                - forbidden
+                - not_found
+                - conflict
+                - rate_limited
+                - dependency_error
+                - internal_error
+            message:
+              type: string
+            requestId:
+              type: string
+            fields:
+              type: object
+              additionalProperties:
+                type: string
