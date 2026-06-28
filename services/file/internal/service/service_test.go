@@ -1,0 +1,150 @@
+package service_test
+
+import (
+	"context"
+	"errors"
+	"io"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/file/internal/platform/storage"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/file/internal/repository"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/file/internal/service"
+)
+
+func TestUploadDocumentStoresMetadataAndContent(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	store := storage.NewMemoryStore()
+	now := time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC)
+	documents := service.New(repo, store,
+		service.WithClock(func() time.Time { return now }),
+		service.WithIDGenerator(func(prefix string) (string, error) { return prefix + "_test", nil }),
+	)
+
+	doc, err := documents.UploadDocument(context.Background(), actorContext(), service.UploadDocumentInput{
+		KnowledgeBaseID: "kb_123",
+		FileName:        "policy.pdf",
+		ContentType:     "application/pdf",
+		SizeBytes:       int64(len("content")),
+		Tags:            []string{" policy ", "inspection", "policy"},
+		Content:         strings.NewReader("content"),
+	})
+	if err != nil {
+		t.Fatalf("UploadDocument() error = %v", err)
+	}
+	if doc.ID != "doc_test" {
+		t.Fatalf("document id = %q", doc.ID)
+	}
+	if doc.Status != service.DocumentStatusUploaded {
+		t.Fatalf("status = %q", doc.Status)
+	}
+	if got, want := strings.Join(doc.Tags, ","), "policy,inspection"; got != want {
+		t.Fatalf("tags = %q, want %q", got, want)
+	}
+	if !doc.CreatedAt.Equal(now) {
+		t.Fatalf("createdAt = %s", doc.CreatedAt)
+	}
+
+	content, err := documents.GetDocumentContent(context.Background(), actorContext(), doc.ID)
+	if err != nil {
+		t.Fatalf("GetDocumentContent() error = %v", err)
+	}
+	defer content.Body.Close()
+	body, err := io.ReadAll(content.Body)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	if string(body) != "content" {
+		t.Fatalf("content = %q", string(body))
+	}
+}
+
+func TestUpdateDocumentReplacesTags(t *testing.T) {
+	documents := newTestService(t)
+	doc := uploadTestDocument(t, documents)
+
+	updated, err := documents.UpdateDocument(context.Background(), actorContext(), service.UpdateDocumentInput{
+		DocumentID: doc.ID,
+		Tags:       []string{"new", "new", "reviewed"},
+	})
+	if err != nil {
+		t.Fatalf("UpdateDocument() error = %v", err)
+	}
+	if got, want := strings.Join(updated.Tags, ","), "new,reviewed"; got != want {
+		t.Fatalf("tags = %q, want %q", got, want)
+	}
+}
+
+func TestDeleteDocumentHidesMetadataAndContent(t *testing.T) {
+	documents := newTestService(t)
+	doc := uploadTestDocument(t, documents)
+
+	if err := documents.DeleteDocument(context.Background(), actorContext(), doc.ID); err != nil {
+		t.Fatalf("DeleteDocument() error = %v", err)
+	}
+	if _, err := documents.GetDocument(context.Background(), actorContext(), doc.ID); !hasCode(err, service.CodeNotFound) {
+		t.Fatalf("GetDocument() error = %v, want not_found", err)
+	}
+	if _, err := documents.GetDocumentContent(context.Background(), actorContext(), doc.ID); !hasCode(err, service.CodeNotFound) {
+		t.Fatalf("GetDocumentContent() error = %v, want not_found", err)
+	}
+}
+
+func TestUploadDocumentRequiresActor(t *testing.T) {
+	documents := newTestService(t)
+	_, err := documents.UploadDocument(context.Background(), service.RequestContext{}, service.UploadDocumentInput{
+		KnowledgeBaseID: "kb_123",
+		FileName:        "policy.pdf",
+		ContentType:     "application/pdf",
+		SizeBytes:       1,
+		Content:         strings.NewReader("x"),
+	})
+	if !hasCode(err, service.CodeUnauthorized) {
+		t.Fatalf("UploadDocument() error = %v, want unauthorized", err)
+	}
+}
+
+func TestNormalizeTagsRejectsControlCharacters(t *testing.T) {
+	_, err := service.NormalizeTags([]string{"ok", "bad\n"})
+	if err == nil {
+		t.Fatal("NormalizeTags() error = nil, want error")
+	}
+}
+
+func newTestService(t *testing.T) *service.Service {
+	t.Helper()
+	repo := repository.NewMemoryRepository()
+	store := storage.NewMemoryStore()
+	counter := 0
+	return service.New(repo, store, service.WithIDGenerator(func(prefix string) (string, error) {
+		counter++
+		return prefix + "_" + strconv.Itoa(counter), nil
+	}))
+}
+
+func uploadTestDocument(t *testing.T, documents *service.Service) service.Document {
+	t.Helper()
+	doc, err := documents.UploadDocument(context.Background(), actorContext(), service.UploadDocumentInput{
+		KnowledgeBaseID: "kb_123",
+		FileName:        "policy.pdf",
+		ContentType:     "application/pdf",
+		SizeBytes:       int64(len("content")),
+		Tags:            []string{"initial"},
+		Content:         strings.NewReader("content"),
+	})
+	if err != nil {
+		t.Fatalf("UploadDocument() error = %v", err)
+	}
+	return doc
+}
+
+func actorContext() service.RequestContext {
+	return service.RequestContext{RequestID: "req_test", UserID: "usr_123"}
+}
+
+func hasCode(err error, code service.Code) bool {
+	var appErr *service.AppError
+	return errors.As(err, &appErr) && appErr.Code == code
+}

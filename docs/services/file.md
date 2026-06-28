@@ -1,6 +1,6 @@
 # File 服务接口文档
 
-本文档定义 `file` 服务在项目初期的职责边界和接口契约。当前仓库尚未落地 `services/file/` 代码，因此本文档以现有 gateway OpenAPI、服务边界矩阵和前后端集成契约为准，用于指导后续 file 服务实现与联调。
+本文档定义 `file` 服务在项目初期的职责边界和接口契约。当前仓库已落地 `services/file/` MVP；公开契约仍以现有 gateway OpenAPI、服务边界矩阵和前后端集成契约为准，内部服务契约见 `services/file/api/openapi.yaml`。
 
 详细的前端公开路径以 [`docs/api/gateway.openapi.yaml`](../api/gateway.openapi.yaml) 为准。前端不得直接调用 file 服务内部地址，只能通过 gateway 暴露的 `/api/v1/**` 入口访问文件能力。公开和内部 HTTP API 都必须使用 RESTful 资源路径，原始文件流使用 `documents/{documentId}/content` 子资源表示。
 
@@ -105,7 +105,7 @@ JSON 成功响应遵循 gateway 统一 envelope：
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `file` | `binary` | 是 | 原始文件内容。 |
-| `tags` | `string[]` | 否 | 文件标签。当前 OpenAPI 已声明为数组，具体 multipart 编码方式需在实现时统一。 |
+| `tags` | `string[]` | 否 | 文件标签。当前 file MVP 使用重复 multipart 字段 `tags` 编码。 |
 
 示例：
 
@@ -199,7 +199,7 @@ Multipart fields:
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `file` | `binary` | 是 | 待上传文件。 |
-| `tags` | `string[]` | 否 | 标签列表。 |
+| `tags` | `string[]` | 否 | 标签列表，使用重复 multipart 字段 `tags` 编码。 |
 
 **Success**
 
@@ -368,13 +368,14 @@ Authorization: Bearer <accessToken>
 | Method | File Service Path | 说明 |
 | --- | --- | --- |
 | `GET` | `/healthz` | file 进程存活检查。 |
-| `GET` | `/readyz` | file 就绪检查，应覆盖 PostgreSQL 和 MinIO 等关键依赖。 |
+| `GET` | `/readyz` | file 就绪检查。当前 MVP 仅检查进程和已装配的内存端口；生产 PostgreSQL/MinIO 适配器落地后需覆盖关键依赖。 |
 | `POST` | `/internal/v1/knowledge-bases/{knowledgeBaseId}/documents` | 接收 gateway 转发的 multipart 上传请求；knowledge handoff 暂缺。 |
+| `GET` | `/internal/v1/documents/{documentId}` | 返回 file-owned 文档元数据，供 gateway 和后续内部服务对接；不等同于 knowledge-owned 公开文档详情。 |
 | `PATCH` | `/internal/v1/documents/{documentId}` | 更新 file-owned 元数据。 |
 | `DELETE` | `/internal/v1/documents/{documentId}` | 删除文件记录和原始对象，或标记删除并触发清理。 |
 | `GET` | `/internal/v1/documents/{documentId}/content` | 返回原始文件流给 gateway。 |
 
-内部接口也应使用稳定 JSON error shape，并保留 `X-Request-Id`。除文件内容成功响应外，不要返回裸数据结构。
+内部接口也应使用稳定 JSON error shape，并保留 `X-Request-Id`。除文件内容成功响应外，不要返回裸数据结构。当前内部契约以 `services/file/api/openapi.yaml` 为准；内部元数据响应可包含 `contentType`、`sizeBytes` 等 file-owned 对接字段，但不得包含 bucket、object key、内部对象 URL 或存储凭据。
 
 ## 权限与上下文要求
 
@@ -423,7 +424,7 @@ File 相关接口使用项目统一错误码：
 
 ## 后续实现建议
 
-后续落地 `services/file/` 时，建议服务本地维护：
+当前 `services/file/` 已按以下结构落地，后续扩展应继续保持服务本地边界：
 
 ```text
 services/file/
@@ -446,7 +447,7 @@ services/file/
 实现前需要补齐或确认：
 
 - 最大上传大小、允许文件类型、空文件和重复文件策略。
-- `tags` 在 multipart 中的编码方式，例如重复字段、JSON 字符串或逗号分隔字符串。
+- 如需改变 `tags` 的 multipart 编码方式，必须同步更新 gateway OpenAPI、`services/file/api/openapi.yaml`、前后端集成契约和本文档。
 - 文件元数据表结构、索引、软删除和物理清理策略。
 - MinIO bucket 命名、object key 生成规则和本地开发配置。
 - Upload workflow 的最终 owner，以及 file 与 knowledge 的 ingestion handoff 契约。

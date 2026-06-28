@@ -89,6 +89,7 @@ debug/
 release/
 
 # Tool caches
+.gocache/
 .eslintcache
 .prettier-cache
 .turbo/
@@ -114,3 +115,4 @@ reports/rendered_pages/
 *.bak
 *.tmp
 *.orig
+

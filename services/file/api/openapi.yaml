@@ -1,0 +1,249 @@
+openapi: 3.0.3
+info:
+  title: File Service Internal API
+  version: 0.1.0
+  description: Internal file-service API used by gateway and future backend integration. Public frontend contracts remain in docs/api/gateway.openapi.yaml.
+servers:
+  - url: http://localhost:8082
+tags:
+  - name: health
+  - name: documents
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      summary: Liveness check
+      operationId: getHealth
+      responses:
+        '200':
+          description: File service is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /readyz:
+    get:
+      tags: [health]
+      summary: Readiness check
+      operationId: getReady
+      responses:
+        '200':
+          description: File service is ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /internal/v1/knowledge-bases/{knowledgeBaseId}/documents:
+    post:
+      tags: [documents]
+      summary: Upload a document into a knowledge-base context
+      operationId: uploadKnowledgeBaseDocument
+      parameters:
+        - $ref: '#/components/parameters/KnowledgeBaseId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                tags:
+                  type: array
+                  items:
+                    type: string
+              description: Tags are encoded as repeated multipart fields named tags.
+      responses:
+        '201':
+          description: Document uploaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+  /internal/v1/documents/{documentId}:
+    get:
+      tags: [documents]
+      summary: Get file-owned document metadata
+      operationId: getDocument
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Document metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [documents]
+      summary: Replace file-owned document tags
+      operationId: updateDocument
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDocumentRequest'
+      responses:
+        '200':
+          description: Document updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [documents]
+      summary: Delete a document
+      operationId: deleteDocument
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '204':
+          description: Document deleted.
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /internal/v1/documents/{documentId}/content:
+    get:
+      tags: [documents]
+      summary: Get original document content
+      operationId: getDocumentContent
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Original file stream.
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+            Content-Disposition:
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+components:
+  parameters:
+    KnowledgeBaseId:
+      name: knowledgeBaseId
+      in: path
+      required: true
+      schema:
+        type: string
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Error:
+      description: Standard service error envelope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    HealthResponse:
+      type: object
+      required: [data, requestId]
+      properties:
+        data:
+          type: object
+          required: [service, status]
+          properties:
+            service:
+              type: string
+              example: file
+            status:
+              type: string
+              example: ready
+        requestId:
+          type: string
+    UpdateDocumentRequest:
+      type: object
+      properties:
+        tags:
+          type: array
+          items:
+            type: string
+    DocumentStatus:
+      type: string
+      enum: [uploaded]
+    DocumentSummary:
+      type: object
+      required: [id, knowledgeBaseId, name, status, createdAt, contentType, sizeBytes]
+      properties:
+        id:
+          type: string
+        knowledgeBaseId:
+          type: string
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/DocumentStatus'
+        tags:
+          type: array
+          items:
+            type: string
+        errorMessage:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    DocumentResponse:
+      type: object
+      required: [data, requestId]
+      properties:
+        data:
+          $ref: '#/components/schemas/DocumentSummary'
+        requestId:
+          type: string
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code:
+              type: string
+              enum: [validation_error, unauthorized, forbidden, not_found, conflict, rate_limited, dependency_error, internal_error]
+            message:
+              type: string
+            requestId:
+              type: string
+            fields:
+              type: object
+              additionalProperties:
+                type: string
+
