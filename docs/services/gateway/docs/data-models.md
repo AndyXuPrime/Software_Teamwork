@@ -82,7 +82,7 @@ GatewayRequestContext
 
 ### 5.1 GatewaySessionCacheEntry
 
-存储位置：Redis  
+存储位置：Redis
 键：`gateway:session:<accessTokenHash>`
 
 Gateway 在 `POST /api/v1/users` 或 `POST /api/v1/sessions` 成功后写入该缓存。Auth 仍是用户、角色、权限和会话撤销状态的权威来源。
