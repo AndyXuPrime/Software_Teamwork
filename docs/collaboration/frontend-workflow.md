@@ -2,7 +2,7 @@
 
 本文档定义本仓库的前端开发补充规则，面向团队成员阅读。
 
-仓库级分支、PR、提交和合并策略以 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 为唯一权威来源。本文只补充前端目录、包管理器、检查命令和前端 CI 建议；如果本文和 `CONTRIBUTING.md` 冲突，以 `CONTRIBUTING.md` 为准。
+仓库级分支、PR、提交和合并策略以 [`CONTRIBUTING.md`](../../CONTRIBUTING.md) 为唯一权威来源。本文只补充前端目录、包管理器、检查命令和前端 CI 建议；如果本文和 `CONTRIBUTING.md` 冲突，以 `CONTRIBUTING.md` 为准。
 
 ## 远端仓库
 

@@ -1,6 +1,6 @@
 # 前后端集成契约
 
-本文档定义 frontend 与 gateway 的基础集成约定。详细 endpoint 以 [`docs/api/gateway.openapi.yaml`](api/gateway.openapi.yaml) 为准。
+本文档定义 frontend 与 gateway 的基础集成约定。详细 endpoint 以 [`docs/api/gateway.openapi.yaml`](../api/gateway.openapi.yaml) 为准。
 
 ## API 入口
 

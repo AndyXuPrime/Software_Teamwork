@@ -71,7 +71,7 @@ check 名称补入 `contexts`。
 
 ## PR Guard 规则
 
-[.github/workflows/pr-guard.yml](../.github/workflows/pr-guard.yml) 会检查：
+[.github/workflows/pr-guard.yml](../../.github/workflows/pr-guard.yml) 会检查：
 
 - PR base 必须是 `develop`
 - PR head 必须来自个人 fork
@@ -79,8 +79,8 @@ check 名称补入 `contexts`。
 
 ## Auto Label 规则
 
-[.github/workflows/auto-label.yml](../.github/workflows/auto-label.yml) 会读取
-[.github/labeler.json](../.github/labeler.json)，并按两类规则给 PR 添加 label：
+[.github/workflows/auto-label.yml](../../.github/workflows/auto-label.yml) 会读取
+[.github/labeler.json](../../.github/labeler.json)，并按两类规则给 PR 添加 label：
 
 - `accountLabels`: GitHub 账号 login 或数字 ID 到 label 的映射，匹配 PR
   发起人以及 PR commit 的 GitHub author/committer
@@ -110,7 +110,7 @@ GitHub 仓库创建 label，再更新 `.github/labeler.json`。
 
 ## Commitlint 规则
 
-[.github/workflows/commitlint.yml](../.github/workflows/commitlint.yml) 会检查每个
+[.github/workflows/commitlint.yml](../../.github/workflows/commitlint.yml) 会检查每个
 PR commit 的第一行是否符合 Conventional Commits：
 
 ```text

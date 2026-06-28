@@ -10,7 +10,7 @@ Use this project-local skill before frontend implementation, review, branch/PR g
 ## Read First
 
 1. `CONTRIBUTING.md` — authoritative repository branch, PR, commit, and merge policy.
-2. `docs/frontend-workflow.md` — frontend-specific workflow supplement.
+2. `docs/collaboration/frontend-workflow.md` — frontend-specific workflow supplement.
 3. `.trellis/spec/frontend/index.md` — agent-facing frontend implementation standards.
 4. `.trellis/spec/frontend/quality-guidelines.md` — required checks, Bun command form, and review checklist.
 5. `.trellis/spec/frontend/directory-structure.md` — `apps/web/src/` layout and module boundaries.

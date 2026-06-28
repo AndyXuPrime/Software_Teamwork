@@ -138,7 +138,7 @@ Gateway 调用下游服务时应传递：
 
 ## Gateway User / Session 接口
 
-Gateway 对前端暴露 auth 相关公开接口，具体 schema 以 [`docs/api/gateway.openapi.yaml`](api/gateway.openapi.yaml) 为准。
+Gateway 对前端暴露 auth 相关公开接口，具体 schema 以 [`docs/api/gateway.openapi.yaml`](../api/gateway.openapi.yaml) 为准。
 
 | Method | Path | Auth | Gateway 行为 | Auth service 行为 |
 | --- | --- | --- | --- | --- |
@@ -231,8 +231,8 @@ Gateway 必须只把 `data.session.accessToken` 返回给前端，不得把 Redi
 后续补齐任一缺失接口时，需要同步更新：
 
 - `docs/api/gateway.openapi.yaml`
-- `docs/frontend-backend-contract.md`
-- `docs/service-boundaries.md`
+- `docs/architecture/frontend-backend-contract.md`
+- `docs/architecture/service-boundaries.md`
 - 对应服务接口文档
 
 ## 健康检查

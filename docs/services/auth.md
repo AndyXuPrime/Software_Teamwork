@@ -2,7 +2,7 @@
 
 本文档定义 `auth` 服务在项目初期的职责边界和接口契约。当前仓库尚未落地 `services/auth/` 代码，因此本文档以现有 gateway OpenAPI、服务边界矩阵和前后端集成契约为准，用于指导后续 auth 服务实现与联调。
 
-详细的前端公开路径以 [`docs/api/gateway.openapi.yaml`](api/gateway.openapi.yaml) 为准。前端不得直接调用 auth 服务内部地址，只能通过 gateway 暴露的 `/api/v1/**` 入口访问认证能力。公开和内部 HTTP API 都必须使用 RESTful 资源路径，用户创建使用 `users` 资源，会话创建、查询和删除使用 `sessions` 资源。
+详细的前端公开路径以 [`docs/api/gateway.openapi.yaml`](../api/gateway.openapi.yaml) 为准。前端不得直接调用 auth 服务内部地址，只能通过 gateway 暴露的 `/api/v1/**` 入口访问认证能力。公开和内部 HTTP API 都必须使用 RESTful 资源路径，用户创建使用 `users` 资源，会话创建、查询和删除使用 `sessions` 资源。
 
 ## 职责边界
 
@@ -484,7 +484,7 @@ services/auth/
 
 如果上述决策影响公开字段、错误码或状态码，必须同步更新：
 
-- [`docs/api/gateway.openapi.yaml`](api/gateway.openapi.yaml)
-- [`docs/frontend-backend-contract.md`](frontend-backend-contract.md)
-- [`docs/service-boundaries.md`](service-boundaries.md)
+- [`docs/api/gateway.openapi.yaml`](../api/gateway.openapi.yaml)
+- [`docs/architecture/frontend-backend-contract.md`](../architecture/frontend-backend-contract.md)
+- [`docs/architecture/service-boundaries.md`](../architecture/service-boundaries.md)
 - 本文档

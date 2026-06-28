@@ -62,18 +62,22 @@ postgres + redis + qdrant + minio
 | Qdrant | 向量索引和相似度检索。 |
 | MinIO | 原始文件、生成文档和其他对象数据。 |
 
+项目文档入口：
+
+- 文档索引：[docs/README.md](docs/README.md)
+
 Gateway 基础契约文档：
 
 当前已确定的前后端公开契约只覆盖 gateway 健康检查、auth 和 file-owned 接口。`knowledge`、`qa`、`document` 和管理后台聚合接口仍在设计中，暂在 OpenAPI 中标记为缺失占位。
 
 所有前端到 gateway、gateway 到下游服务、服务到服务的 HTTP API 都必须使用 RESTful 资源路径，由 HTTP method 表达动作。除 `/healthz`、`/readyz` 外，不在稳定 path 中使用 `login`、`logout`、`register`、`download`、`search`、`generate`、`export`、`retry`、`revoke` 等动作词。
 
-- Gateway 服务规划：[docs/gateway.md](docs/gateway.md)
-- Auth 服务接口文档：[docs/auth.md](docs/auth.md)
-- File 服务接口文档：[docs/file.md](docs/file.md)
+- Gateway 服务规划：[docs/services/gateway.md](docs/services/gateway.md)
+- Auth 服务接口文档：[docs/services/auth.md](docs/services/auth.md)
+- File 服务接口文档：[docs/services/file.md](docs/services/file.md)
 - Gateway OpenAPI 契约：[docs/api/gateway.openapi.yaml](docs/api/gateway.openapi.yaml)
-- 服务边界矩阵：[docs/service-boundaries.md](docs/service-boundaries.md)
-- 前后端集成契约：[docs/frontend-backend-contract.md](docs/frontend-backend-contract.md)
+- 服务边界矩阵：[docs/architecture/service-boundaries.md](docs/architecture/service-boundaries.md)
+- 前后端集成契约：[docs/architecture/frontend-backend-contract.md](docs/architecture/frontend-backend-contract.md)
 
 ## 目标目录结构
 
