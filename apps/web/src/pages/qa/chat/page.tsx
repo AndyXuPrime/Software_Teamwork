@@ -258,6 +258,7 @@ export function ChatPage() {
         role: 'assistant',
         content: '',
         timestamp: new Date().toISOString(),
+        status: 'streaming',
         thinking: [],
         citations: [],
       }
@@ -292,6 +293,7 @@ export function ChatPage() {
         content?: string
         thinking?: ThinkingStep[]
         citations?: Citation[]
+        status?: Message['status']
       }) => {
         useChatStore.setState((state) => ({
           sessions: state.sessions.map((s) => {
@@ -306,11 +308,28 @@ export function ChatPage() {
         }))
       }
 
+      // Seq verification helper
+      let lastSeq = -1
+      const verifySeq = (seq: number): boolean => {
+        if (seq <= lastSeq) {
+          console.warn(
+            `[SSE] Out-of-order event: received seq=${seq}, last=${lastSeq}`,
+          )
+          return false
+        }
+        lastSeq = seq
+        return true
+      }
+
+      // Track whether we've received the first token
+      let firstToken = false
+
       // ③ Initiate SSE stream
       const { abort } = streamChat(
         { conversation_id: uid, message: trimmed },
         {
           onIntentStatus(data) {
+            if (!verifySeq(data.seq)) return
             const ex = steps.find((s) => s.type === 'intent')
             if (data.status === 'started' && !ex) {
               steps.push({
@@ -325,6 +344,7 @@ export function ChatPage() {
             patchAssistant({ thinking: [...steps] })
           },
           onThinkingStep(data) {
+            if (!verifySeq(data.seq)) return
             const idx = steps.findIndex((s) => s.type === data.step.type)
             if (idx >= 0) {
               steps[idx] = data.step
@@ -334,10 +354,16 @@ export function ChatPage() {
             patchAssistant({ thinking: [...steps] })
           },
           onToken(data) {
+            if (!verifySeq(data.seq)) return
+            if (!firstToken) {
+              firstToken = true
+              patchAssistant({ status: 'streaming' })
+            }
             content += data.text
             patchAssistant({ content })
           },
           onCitation(data) {
+            if (!verifySeq(data.seq)) return
             cites.push(data.citation)
             patchAssistant({ citations: [...cites] })
           },
@@ -348,9 +374,11 @@ export function ChatPage() {
               content,
               thinking: [...steps],
               citations: [...cites],
+              status: 'completed',
             })
           },
           onError(sseErr) {
+            if (!verifySeq(sseErr.seq)) return
             if (sseErr.fatal) {
               setStreaming(false)
               abortRef.current = null
@@ -360,9 +388,20 @@ export function ChatPage() {
                 content,
                 thinking: [...steps],
                 citations: [...cites],
+                status: 'failed',
               })
               abort()
             }
+          },
+          onAbort() {
+            setStreaming(false)
+            abortRef.current = null
+            patchAssistant({
+              content,
+              thinking: [...steps],
+              citations: [...cites],
+              status: 'stopped',
+            })
           },
         },
       )
