@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
-- **Last Active**: 2026-06-27
+- **Total Sessions**: 5
+- **Last Active**: 2026-06-28
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~137 | Active |
+| `journal-1.md` | ~170 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-06-28 | Integrate frontend scaffold onto develop | `c80987b` | `develop` |
 | 4 | 2026-06-27 | Frontend workflow setup and onboarding | `304f327`, `0bae5cf`, `bde8998`, `531108a`, `43303db` | `frontend-dev` |
 | 3 | 2026-06-27 | Scaffold frontend application shell | - | `frontend-dev` |
 | 2 | 2026-06-27 | Document frontend collaboration workflow | - | `main` |

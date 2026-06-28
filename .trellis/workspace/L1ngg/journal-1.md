@@ -135,3 +135,36 @@ Documented frontend technology stack and collaboration workflow, scaffolded apps
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Integrate frontend scaffold onto develop
+
+**Date**: 2026-06-28
+**Task**: Integrate frontend scaffold onto develop
+**Branch**: `develop`
+
+### Summary
+
+Merged L1ngg frontend scaffold, Bun/Vite web app setup, frontend workflow docs, project skills, and frontend spec updates onto develop; pushed develop to origin.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c80987b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
