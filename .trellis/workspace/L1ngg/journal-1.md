@@ -236,3 +236,103 @@ Replaced remaining apps/frontend and frontend-dev references with apps/web and d
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Expand knowledge QA requirements analysis
+
+**Date**: 2026-06-28
+**Task**: Expand knowledge QA requirements analysis
+**Branch**: `develop`
+
+### Summary
+
+Supplemented the knowledge management and smart QA requirements analysis with source document cross-references, material management, non-streaming QA, intent access control, citation interactions, report generation integration, data objects, workflows, and risk updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e763d20` | (see git log) |
+| `6387d86` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 9: 整体需求与 OpenAPI 契约分析
+
+**Date**: 2026-06-28
+**Task**: 整体需求与 OpenAPI 契约分析
+**Branch**: `develop`
+
+### Summary
+
+完成智能知识管理、智能问答、报告生成三模块整体需求分析，补充 RESTful/OpenAPI/Swagger UI 接口契约，并归档对应 Trellis 任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3ab21af` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 10: Sync API contract decisions
+
+**Date**: 2026-06-28
+**Task**: Sync API contract decisions
+**Branch**: `develop`
+
+### Summary
+
+Reviewed requirements and API contract docs, restored the decision sync checklist, aligned OpenAPI drafts with Markdown contracts, validated OpenAPI descriptions, then archived the Trellis task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `738c0ec` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
