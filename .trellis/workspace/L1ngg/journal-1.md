@@ -270,3 +270,36 @@ Supplemented the knowledge management and smart QA requirements analysis with so
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 整体需求与 OpenAPI 契约分析
+
+**Date**: 2026-06-28
+**Task**: 整体需求与 OpenAPI 契约分析
+**Branch**: `develop`
+
+### Summary
+
+完成智能知识管理、智能问答、报告生成三模块整体需求分析，补充 RESTful/OpenAPI/Swagger UI 接口契约，并归档对应 Trellis 任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3ab21af` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
