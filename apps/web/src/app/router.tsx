@@ -1,10 +1,176 @@
-import { AppLayout } from '@/layouts/app-layout'
-import { DashboardPage } from '@/pages/dashboard/page'
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  redirect,
+} from '@tanstack/react-router'
 
-export function AppRouter() {
-  return (
+import { AppLayout } from '@/layouts/app-layout'
+import { FileManagement } from '@/pages/admin/file-management'
+import { KnowledgeConfig } from '@/pages/admin/knowledge-config'
+import { KnowledgeExperience } from '@/pages/admin/knowledge-experience'
+import { KnowledgeManagement } from '@/pages/admin/knowledge-management'
+import { MaterialManagement } from '@/pages/admin/material-management'
+import { AdminPage } from '@/pages/admin/page'
+import { PromptManagement } from '@/pages/admin/prompt-management'
+import { ReportCategory } from '@/pages/admin/report-category'
+import { RoleManagement } from '@/pages/admin/role-management'
+import { StatsOverviewPage } from '@/pages/admin/stats-overview'
+import { StyleManagement } from '@/pages/admin/style-management'
+import { SystemSettings } from '@/pages/admin/system-settings'
+import { TemplateManagement } from '@/pages/admin/template-management'
+import { UserManagement } from '@/pages/admin/user-management'
+import { ChatPage } from '@/pages/qa/chat/page'
+
+// ── Root route ──────────────────────────────────────────────
+const rootRoute = createRootRoute({
+  component: () => (
     <AppLayout>
-      <DashboardPage />
+      <Outlet />
     </AppLayout>
-  )
+  ),
+})
+
+// ── Child routes ────────────────────────────────────────────
+
+// Index: redirect to /chat
+const indexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/chat' })
+  },
+})
+
+// Chat
+const chatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'chat',
+  component: ChatPage,
+})
+
+// ── Admin layout route ──────────────────────────────────────
+const adminRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'admin',
+  component: AdminPage,
+})
+
+// Admin index → stats overview
+const adminIndexRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: '/',
+  component: StatsOverviewPage,
+})
+
+// Admin child routes
+const adminUsersRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'users',
+  component: UserManagement,
+})
+
+const adminRolesRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'roles',
+  component: RoleManagement,
+})
+
+const adminStylesRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'styles',
+  component: StyleManagement,
+})
+
+const adminReportCategoriesRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'report-categories',
+  component: ReportCategory,
+})
+
+const adminFilesRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'files',
+  component: FileManagement,
+})
+
+const adminTemplatesRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'templates',
+  component: TemplateManagement,
+})
+
+const adminMaterialsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'materials',
+  component: MaterialManagement,
+})
+
+const adminPromptsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'prompts',
+  component: PromptManagement,
+})
+
+const adminKnowledgeRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'knowledge',
+  component: KnowledgeManagement,
+})
+
+const adminKnowledgeExperienceRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'knowledge-experience',
+  component: KnowledgeExperience,
+})
+
+const adminKnowledgeConfigRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'knowledge-config',
+  component: KnowledgeConfig,
+})
+
+const adminSettingsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'settings',
+  component: SystemSettings,
+})
+
+const adminStatsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'stats',
+  component: StatsOverviewPage,
+})
+
+// ── Route tree ──────────────────────────────────────────────
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  chatRoute,
+  adminRoute.addChildren([
+    adminIndexRoute,
+    adminUsersRoute,
+    adminRolesRoute,
+    adminStylesRoute,
+    adminReportCategoriesRoute,
+    adminFilesRoute,
+    adminTemplatesRoute,
+    adminMaterialsRoute,
+    adminPromptsRoute,
+    adminKnowledgeRoute,
+    adminKnowledgeExperienceRoute,
+    adminKnowledgeConfigRoute,
+    adminSettingsRoute,
+    adminStatsRoute,
+  ]),
+])
+
+// ── Router instance ─────────────────────────────────────────
+export const router = createRouter({ routeTree })
+
+// ── Type registration ───────────────────────────────────────
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: typeof router
+  }
 }
