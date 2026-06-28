@@ -52,6 +52,22 @@ Read these files before frontend implementation:
 | [Quality Guidelines](./quality-guidelines.md) | Required checks, forbidden patterns, and review expectations. | Active |
 | [Type Safety](./type-safety.md) | TypeScript, OpenAPI, Zod, and runtime validation rules. | Active |
 
+## Merge Adaptation Notes
+
+The frontend spec was merged from two sources:
+
+- `upstream/develop` already had a frontend spec structure and repository collaboration rules. Those files established that frontend guidance belongs under `.trellis/spec/frontend/` and that repository-level branch/PR policy belongs in `CONTRIBUTING.md`.
+- L1ngg's previous frontend work filled the placeholders with concrete implementation decisions for `apps/web`: Vite, React, TypeScript, TanStack Router/Query, Zustand, Tailwind, shadcn/Radix, Bun commands, and the AI management product modules.
+
+The merged result keeps the `develop` ownership model: `CONTRIBUTING.md` remains the source of truth for branch, PR, commit, and merge policy. The frontend spec only defines how to implement and verify frontend code under `apps/web/`.
+
+When the two versions overlapped, prefer this rule:
+
+1. Keep `develop` repository policy and Trellis structure.
+2. Keep L1ngg's concrete frontend stack, directory layout, and quality commands when they refine placeholder or generic guidance.
+3. Do not put branch targets such as `frontend-dev` in frontend specs unless `CONTRIBUTING.md` first adopts them.
+4. Preserve backend-facing constraints from `develop` by describing frontend integration through backend contracts instead of coupling browser code to backend internals.
+
 ## Product Module Priorities
 
 Build the first usable frontend around these flows:
