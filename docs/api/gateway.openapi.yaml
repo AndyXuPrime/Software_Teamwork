@@ -1,0 +1,501 @@
+openapi: 3.0.3
+info:
+  title: Power Knowledge Platform Gateway API
+  version: 0.1.0
+  license:
+    name: Unspecified
+    url: https://github.com/Sakayori-Iroha-168/Software_Teamwork
+  description: |
+    Frontend-facing API contract for the gateway service.
+    All stable public and service-to-service HTTP APIs must use RESTful resource-oriented paths.
+    This revision only treats gateway health checks, user/session, and file-owned routes
+    as active contracts. Downstream knowledge, QA, document/report, and admin
+    aggregation interfaces are intentionally marked under x-missing-contracts
+    until their frontend/backend contracts are finalized.
+x-api-style:
+  required: RESTful resource-oriented HTTP APIs
+  appliesTo:
+  - public gateway APIs
+  - service-to-service HTTP APIs
+  rules:
+  - Model stable routes as resources or resource collections.
+  - Use HTTP methods for actions: GET reads, POST creates, PATCH updates, DELETE removes.
+  - Do not put action verbs such as login, logout, register, download, search, generate, export, retry, or revoke in stable paths.
+  - Model long-running work as resources such as jobs, files, sessions, messages, events, or queries.
+  exceptions:
+  - GET /healthz
+  - GET /readyz
+servers:
+- url: /
+  description: Gateway root
+security:
+- bearerAuth: []
+tags:
+- name: health
+  description: Gateway process and readiness checks.
+- name: auth
+  description: User and session APIs owned by auth service.
+- name: documents
+  description: File-owned document upload, metadata, deletion, and content APIs.
+paths:
+  /healthz:
+    get:
+      tags:
+      - health
+      summary: Liveness check
+      operationId: getHealthz
+      security: []
+      responses:
+        '200':
+          description: Gateway process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '429':
+          $ref: '#/components/responses/Error'
+  /readyz:
+    get:
+      tags:
+      - health
+      summary: Readiness check
+      operationId: getReadyz
+      security: []
+      responses:
+        '200':
+          description: Gateway is ready to serve traffic.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '429':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+  /api/v1/users:
+    post:
+      tags:
+      - auth
+      summary: Create user
+      operationId: createUser
+      security: []
+      x-owner-service: auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User and session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+  /api/v1/sessions:
+    post:
+      tags:
+      - auth
+      summary: Create session
+      operationId: createSession
+      security: []
+      x-owner-service: auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+      responses:
+        '200':
+          description: Session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v1/sessions/current:
+    delete:
+      tags:
+      - auth
+      summary: Delete current session
+      operationId: deleteCurrentSession
+      x-owner-service: auth
+      responses:
+        '204':
+          description: Current session deleted.
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v1/users/me:
+    get:
+      tags:
+      - auth
+      summary: Get current user
+      operationId: getCurrentUser
+      x-owner-service: auth
+      responses:
+        '200':
+          description: Current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v1/knowledge-bases/{knowledgeBaseId}/documents:
+    parameters:
+    - $ref: '#/components/parameters/KnowledgeBaseId'
+    post:
+      tags:
+      - documents
+      summary: Upload a document to a knowledge base
+      operationId: uploadKnowledgeBaseDocument
+      x-owner-service: file
+      description: Gateway exposes the file upload workflow. File service owns raw upload and file metadata. Knowledge ingestion/indexing handoff is intentionally missing until the knowledge service contract is finalized.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                tags:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: Document accepted for processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+  /api/v1/documents/{documentId}:
+    parameters:
+    - $ref: '#/components/parameters/DocumentId'
+    patch:
+      tags:
+      - documents
+      summary: Update document tags
+      operationId: updateDocument
+      x-owner-service: file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDocumentRequest'
+      responses:
+        '200':
+          description: Document updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '404':
+          $ref: '#/components/responses/Error'
+      description: Update file-owned document metadata only. Knowledge-owned document processing fields are missing until finalized.
+    delete:
+      tags:
+      - documents
+      summary: Delete document
+      operationId: deleteDocument
+      x-owner-service: file
+      responses:
+        '204':
+          description: Document deleted.
+        '404':
+          $ref: '#/components/responses/Error'
+      description: Delete the file-owned document record and original object. Knowledge index cleanup contract is missing until finalized.
+  /api/v1/documents/{documentId}/content:
+    get:
+      tags:
+      - documents
+      summary: Get original document content
+      operationId: getDocumentContent
+      x-owner-service: file
+      parameters:
+      - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Original file stream.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/Error'
+      description: Return the original file content from the file service through gateway.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    KnowledgeBaseId:
+      name: knowledgeBaseId
+      in: path
+      required: true
+      schema:
+        type: string
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+      - data
+      - requestId
+      properties:
+        data:
+          type: object
+          required:
+          - status
+          properties:
+            status:
+              type: string
+              example: ok
+        requestId:
+          type: string
+    ErrorResponse:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+    ErrorDetail:
+      type: object
+      required:
+      - code
+      - message
+      - requestId
+      properties:
+        code:
+          type: string
+          enum:
+          - validation_error
+          - unauthorized
+          - forbidden
+          - not_found
+          - conflict
+          - rate_limited
+          - dependency_error
+          - internal_error
+        message:
+          type: string
+        requestId:
+          type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+    CreateUserRequest:
+      type: object
+      required:
+      - username
+      - password
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+    CreateSessionRequest:
+      type: object
+      required:
+      - username
+      - password
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+    UserSummary:
+      type: object
+      required:
+      - id
+      - username
+      - roles
+      - permissions
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+    SessionSummary:
+      type: object
+      required:
+      - sessionId
+      - accessToken
+      - tokenType
+      - expiresAt
+      properties:
+        sessionId:
+          type: string
+        accessToken:
+          type: string
+          description: Bearer credential sent by the frontend on later requests.
+        tokenType:
+          type: string
+          enum:
+          - Bearer
+          default: Bearer
+        expiresAt:
+          type: string
+          format: date-time
+    SessionResponse:
+      type: object
+      required:
+      - data
+      - requestId
+      properties:
+        data:
+          type: object
+          required:
+          - user
+          - session
+          properties:
+            user:
+              $ref: '#/components/schemas/UserSummary'
+            session:
+              $ref: '#/components/schemas/SessionSummary'
+        requestId:
+          type: string
+    UserResponse:
+      type: object
+      required:
+      - data
+      - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/UserSummary'
+        requestId:
+          type: string
+    DocumentStatus:
+      type: string
+      enum:
+      - uploaded
+      - parsing
+      - chunking
+      - embedding
+      - ready
+      - failed
+    DocumentSummary:
+      type: object
+      required:
+      - id
+      - knowledgeBaseId
+      - name
+      - status
+      - createdAt
+      properties:
+        id:
+          type: string
+        knowledgeBaseId:
+          type: string
+          description: Target knowledge base context for this uploaded file. Knowledge-base APIs are missing until finalized.
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/DocumentStatus'
+        tags:
+          type: array
+          items:
+            type: string
+        errorMessage:
+          type: string
+          description: File-level processing or handoff error message. Knowledge-owned processing details are missing until finalized.
+        createdAt:
+          type: string
+          format: date-time
+    UpdateDocumentRequest:
+      type: object
+      properties:
+        tags:
+          type: array
+          items:
+            type: string
+    DocumentResponse:
+      type: object
+      required:
+      - data
+      - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/DocumentSummary'
+        requestId:
+          type: string
+x-missing-contracts:
+- service: knowledge
+  status: missing
+  reason: Frontend/backend contract is not finalized yet.
+  placeholderOperations:
+  - GET /api/v1/knowledge-bases
+  - POST /api/v1/knowledge-bases
+  - GET/PATCH/DELETE /api/v1/knowledge-bases/{knowledgeBaseId}
+  - GET /api/v1/knowledge-bases/{knowledgeBaseId}/documents
+  - GET /api/v1/documents/{documentId}
+  - GET /api/v1/documents/{documentId}/chunks
+  - POST /api/v1/knowledge-queries
+- service: qa
+  status: missing
+  reason: Frontend/backend chat and RAG contract is not finalized yet.
+  placeholderOperations:
+  - GET/POST /api/v1/qa-sessions
+  - GET/DELETE /api/v1/qa-sessions/{sessionId}
+  - GET/POST /api/v1/qa-sessions/{sessionId}/messages
+  - GET /api/v1/qa-sessions/{sessionId}/events
+- service: document
+  status: missing
+  reason: Frontend/backend report-generation contract is not finalized yet.
+  placeholderOperations:
+  - GET/POST /api/v1/reports
+  - GET/PATCH/DELETE /api/v1/reports/{reportId}
+  - GET/POST /api/v1/reports/{reportId}/outlines
+  - GET/POST /api/v1/reports/{reportId}/sections
+  - GET /api/v1/reports/{reportId}/events
+  - POST /api/v1/report-files
+  - GET /api/v1/report-files/{reportFileId}
+  - GET /api/v1/report-files/{reportFileId}/content
+- service: admin
+  status: missing
+  reason: Administration aggregation contract is not finalized yet.
+  placeholderOperations:
+  - GET /api/v1/admin-overview
+  - GET /api/v1/admin-metrics
