@@ -51,7 +51,12 @@ const SUGGESTED_PROMPTS = [
 
 export function ChatPage() {
   // ── React Query: sessions list ──
-  const { data: sessionsData, isLoading: sessionsLoading } = useSessions()
+  const {
+    data: sessionsData,
+    isLoading: sessionsLoading,
+    isError: sessionsError,
+    refetch: refetchSessions,
+  } = useSessions()
 
   // ── Zustand store ──
   const sessions = useChatStore((s) => s.sessions)
@@ -70,7 +75,9 @@ export function ChatPage() {
   const updateSessionMessages = useChatStore((s) => s.updateSessionMessages)
 
   // ── React Query: active session detail ──
-  const { data: sessionDetail } = useSession(activeId ?? '')
+  const { data: sessionDetail, isError: sessionDetailError } = useSession(
+    activeId ?? '',
+  )
 
   // ── Local input text ──
   const [inputText, setInputText] = useState('')
@@ -123,6 +130,21 @@ export function ChatPage() {
       }
     }
   }, [sessionDetail, activeId, updateSessionMessages])
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Surface session detail fetch error when local messages are empty
+  // ══════════════════════════════════════════════════════════════════════════
+
+  useEffect(() => {
+    if (sessionDetailError && activeId) {
+      const local = useChatStore
+        .getState()
+        .sessions.find((s) => s.id === activeId)
+      if (!local || local.messages.length === 0) {
+        setError('加载会话消息失败，请检查网络连接')
+      }
+    }
+  }, [sessionDetailError, activeId, setError])
 
   // ══════════════════════════════════════════════════════════════════════════
   // Cleanup SSE on unmount
@@ -403,6 +425,12 @@ export function ChatPage() {
         sessions={sidebarItems}
         activeId={activeId ?? ''}
         isLoading={sessionsLoading}
+        fetchError={
+          sessionsError
+            ? '加载会话列表失败，请检查网络连接'
+            : null
+        }
+        onRetryFetch={() => refetchSessions()}
         onSelect={setActiveId}
         onCreate={handleCreate}
         onDelete={handleDelete}

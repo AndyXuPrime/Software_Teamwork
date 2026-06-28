@@ -270,7 +270,7 @@ function ErrorBanner({
 // Main component
 // ══════════════════════════════════════════════════════════════════════════════
 
-interface ChatMessagesProps {
+type ChatMessagesProps = {
   messages: Message[]
   streaming: boolean
   error: string | null

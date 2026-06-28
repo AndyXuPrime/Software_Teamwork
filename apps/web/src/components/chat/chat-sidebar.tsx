@@ -1,9 +1,11 @@
 import {
+  AlertTriangle,
   Check,
   Edit3,
   Loader2,
   MessageSquare,
   Plus,
+  RefreshCw,
   Trash2,
   X,
 } from 'lucide-react'
@@ -14,10 +16,12 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import type { ConversationListItem } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-interface ChatSidebarProps {
+type ChatSidebarProps = {
   sessions: ConversationListItem[]
   activeId: string
   isLoading: boolean
+  fetchError: string | null
+  onRetryFetch: () => void
   onSelect: (id: string) => void
   onCreate: () => void
   onDelete: (id: string) => void
@@ -28,6 +32,8 @@ export default function ChatSidebar({
   sessions,
   activeId,
   isLoading,
+  fetchError,
+  onRetryFetch,
   onSelect,
   onCreate,
   onDelete,
@@ -105,8 +111,26 @@ export default function ChatSidebar({
       {/* ── Session list ── */}
       <ScrollArea className="flex-1">
         <div className="flex flex-col gap-1 p-2">
+          {/* Fetch error state */}
+          {fetchError && !isLoading && (
+            <div className="flex flex-col items-center gap-2 py-8 px-4">
+              <AlertTriangle className="size-5 text-red-500" aria-hidden="true" />
+              <p className="text-center text-xs text-red-600 dark:text-red-400">
+                {fetchError}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onRetryFetch}
+              >
+                <RefreshCw className="size-3" />
+                重新加载
+              </Button>
+            </div>
+          )}
+
           {/* Loading state */}
-          {isLoading && sessions.length === 0 && (
+          {!fetchError && isLoading && sessions.length === 0 && (
             <div className="flex flex-col items-center gap-2 py-8">
               <Loader2
                 className="size-5 animate-spin text-muted-foreground"
@@ -117,7 +141,7 @@ export default function ChatSidebar({
           )}
 
           {/* Empty state (after loading) */}
-          {!isLoading && sessions.length === 0 && (
+          {!fetchError && !isLoading && sessions.length === 0 && (
             <p className="px-4 py-8 text-center text-sm text-muted-foreground">
               暂无对话记录
             </p>
