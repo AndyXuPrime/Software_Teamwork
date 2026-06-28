@@ -48,13 +48,14 @@ Rule posture:
 
 ## Git Workflow
 
-- The frontend integration branch is `upstream/frontend-dev`.
-- Create feature branches from `upstream/frontend-dev`.
+- Branch, PR, commit, and merge policy comes from `CONTRIBUTING.md`.
+- Current frontend work follows the repository fork + PR flow into `upstream/develop`.
+- Create frontend feature branches from the latest `upstream/develop`.
 - Push feature branches to the developer fork (`origin`).
-- Open PRs from the fork feature branch into `upstream/frontend-dev`.
+- Open PRs from the fork feature branch into `Sakayori-Iroha-168/Software_Teamwork:develop`.
 - Do not use `frontdev` in commands, docs, CI, or PR targets.
+- Do not target `frontend-dev` unless `CONTRIBUTING.md` is updated to enable that branch.
 - Use Conventional Commits for frontend commits.
-- Prefer PR merge or squash merge into `frontend-dev`; do not commit directly to protected team branches.
 
 ## Testing Expectations
 
@@ -104,7 +105,7 @@ Streaming UIs should handle:
 ## Review Checklist
 
 - Does this code match the recommended stack and directory boundaries?
-- Does the PR target `frontend-dev`?
+- Does the PR target match `CONTRIBUTING.md`? Current default: `develop`.
 - Were frontend commands run with Bun?
 - Is server state owned by TanStack Query?
 - Are route params/search params typed and validated?

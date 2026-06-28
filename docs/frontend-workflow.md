@@ -1,10 +1,12 @@
 # 前端协作工作流
 
-本文档定义本仓库的前端协作流程，面向团队成员阅读。
+本文档定义本仓库的前端开发补充规则，面向团队成员阅读。
+
+仓库级分支、PR、提交和合并策略以 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 为唯一权威来源。本文只补充前端目录、包管理器、检查命令和前端 CI 建议；如果本文和 `CONTRIBUTING.md` 冲突，以 `CONTRIBUTING.md` 为准。
 
 ## 远端仓库
 
-统一使用以下 remote 名称：
+前端开发沿用 `CONTRIBUTING.md` 中的 remote 约定：
 
 ```txt
 upstream = https://github.com/Sakayori-Iroha-168/Software_Teamwork
@@ -13,45 +15,45 @@ origin   = https://github.com/L-1ngg/Software_Teamwork
 
 `upstream` 是团队主仓库，`origin` 是个人 fork 仓库。
 
-## 分支约定
+## 分支和 PR 约定
 
-前端集成分支统一使用 `frontend-dev`。
+默认按 `CONTRIBUTING.md` 走 fork + PR 流程：
 
 ```txt
-upstream/main          稳定主分支
-upstream/frontend-dev  前端集成分支
-origin/*              个人 fork 分支
+upstream/main     发布分支，不做日常开发 PR
+upstream/develop  主仓库日常集成分支
+origin/*          个人 fork 分支
 ```
 
-不要在文档、CI 或 PR 目标中使用 `frontdev` 这个名字。
+当前不要把 `frontend-dev` 作为默认前端 PR 目标；只有团队在 `CONTRIBUTING.md` 中明确启用前端专用集成分支后，才能切换过去。不要在文档、CI 或 PR 目标中使用 `frontdev` 这个名字。
 
 ## 日常开发流程
 
-从最新的 `upstream/frontend-dev` 创建功能分支：
+从最新的 `upstream/develop` 创建前端功能分支：
 
 ```bash
 git fetch upstream --prune
-git switch -c feat/<short-name> upstream/frontend-dev
+git switch -c L1nggTeam/feat/<short-name> upstream/develop
 ```
 
 个人开发分支推送到自己的 fork：
 
 ```bash
-git push -u origin feat/<short-name>
+git push -u origin L1nggTeam/feat/<short-name>
 ```
 
-PR 方向固定为：
+PR 方向按 `CONTRIBUTING.md` 固定为：
 
 ```txt
-from: L-1ngg/Software_Teamwork:feat/<short-name>
-to:   Sakayori-Iroha-168/Software_Teamwork:frontend-dev
+from: L-1ngg/Software_Teamwork:L1nggTeam/feat/<short-name>
+to:   Sakayori-Iroha-168/Software_Teamwork:develop
 ```
 
-如果开发期间 `frontend-dev` 已经更新：
+如果开发期间主仓库 `develop` 已经更新：
 
 ```bash
 git fetch upstream --prune
-git rebase upstream/frontend-dev
+git rebase upstream/develop
 git push --force-with-lease
 ```
 
@@ -176,9 +178,9 @@ bunx commitlint --edit "$1"
 
 ## PR 要求
 
-前端 PR 合入 `upstream/frontend-dev` 前应满足：
+前端 PR 合入主仓库 `develop` 前应满足：
 
-- PR 目标分支是 `frontend-dev`。
+- PR 目标分支是 `develop`。
 - 代码来自个人 fork 的功能分支。
 - `bun run --cwd apps/web check` 通过。
 - `bun run --cwd apps/web build` 通过。
@@ -190,8 +192,8 @@ bunx commitlint --edit "$1"
 前端 CI 应在以下场景运行：
 
 ```txt
-pull_request -> frontend-dev
-push         -> frontend-dev
+pull_request -> develop
+push         -> develop
 ```
 
 推荐 CI 命令：
