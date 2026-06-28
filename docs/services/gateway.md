@@ -34,7 +34,7 @@
 | 用户、密码、会话、角色权限源数据 | `auth` | 不保存密码，不维护用户表，不实现 RBAC 持久化；只在 Redis 保存运行时会话缓存。 |
 | 文件对象、file-owned 元数据、对象存储协调 | `file` | 不直接操作 MinIO，不生成业务 object key。 |
 | 知识库、文档切片、向量索引、检索策略 | `knowledge` | 不执行切片、嵌入、Qdrant 查询或重排序。 |
-| 问答、意图识别、RAG、LLM 调用 | `qa` | 不拼 prompt，不执行 RAG pipeline，不保存对话业务状态。 |
+| 问答 Agent、MCP 工具编排、LLM 调用 | `qa` | 不拼 prompt，不执行 ReAct loop，不执行 MCP 工具，不保存对话业务状态。 |
 | 报告大纲、章节生成、DOCX 导出 | `document` | 不生成报告内容，不操作报告模板业务规则。 |
 | 模型 provider 配置、API key、chat/embedding/rerank 调用 | `ai-gateway` | 不保存 provider API key，不直连 OpenAI-compatible 或 SiliconFlow-compatible provider，不把内部模型接口暴露给前端。 |
 | 服务数据库迁移 | 各领域服务 | 不拥有其他服务的 migrations。 |

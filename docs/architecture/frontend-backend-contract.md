@@ -24,8 +24,8 @@ AI Gateway 是内部模型服务，只提供 `/internal/v1/**` 给 `qa`、`knowl
 - 后端实现 endpoint 前，应先更新 OpenAPI。
 - 破坏性字段变更必须同步更新 OpenAPI 和本契约文档。
 - 所有前端到 gateway、gateway 到下游服务的 HTTP API 必须使用 RESTful 资源路径，由 HTTP method 表达动作；健康检查是唯一已允许的非 `/api/v1` 例外。
-- 本轮把 gateway 健康检查、auth、file-owned 接口、knowledge-owned 知识库/文档处理/切片/检索接口，以及 `document` 拥有的报告生成接口列为已确定公开契约；`qa` 和管理后台聚合接口暂缺，见 OpenAPI 顶层 `x-missing-contracts`。
-- AI Gateway 的 chat、embedding 和 rerank 契约已经作为内部服务契约补齐，但不改变前端只能调用 gateway 的约束。
+- 本轮把 gateway 健康检查、auth、file-owned 接口、knowledge-owned 知识库/文档处理/切片/检索接口，以及 `document` 拥有的报告生成接口列为已确定公开契约；`qa` Agent Host、MCP tool-call 相关接口和管理后台聚合接口暂缺，见 OpenAPI 顶层 `x-missing-contracts`。
+- AI Gateway 的 chat、Function Calling 透传、embedding 和 rerank 契约已经作为内部服务契约补齐，但不改变前端只能调用 gateway 的约束。
 
 ## 认证约定
 
@@ -143,16 +143,19 @@ AI Gateway 是内部模型服务，只提供 `/internal/v1/**` 给 `qa`、`knowl
 
 ## SSE 与流式 UI
 
-问答和报告生成的公开流式接口暂缺，当前 gateway OpenAPI 不提供稳定 SSE endpoint。AI Gateway 内部 `POST /internal/v1/chat/completions` 支持 OpenAI-compatible streaming chunk，但该能力只供后端领域服务使用，不等同于前端可调用的 gateway SSE contract。报告生成当前可使用 `GET /api/v1/reports/{reportId}/events` 轮询事件列表；后续补齐 SSE 时，前端处理原则如下：
+问答的公开流式接口暂缺，当前 gateway OpenAPI 不提供稳定 QA SSE endpoint。AI Gateway 内部 `POST /internal/v1/chat/completions` 支持 OpenAI-compatible streaming chunk 和 tool-call delta，但该能力只供 `qa`、`document` 等后端领域服务使用，不等同于前端可调用的 gateway SSE contract。报告生成当前可使用 `GET /api/v1/reports/{reportId}/events` 轮询事件列表；后续补齐 QA SSE 时，前端处理原则如下：
 
 - 根据 `Content-Type: text/event-stream` 进入流式读取。
-- `message` 事件用于文本增量。
-- `progress` 事件用于阶段或百分比。
-- `citation` 事件用于问答引用。
-- `done` 事件表示完成。
+- `message.created` 事件用于创建消息和运行占位。
+- `agent.iteration.started` 事件用于展示 Agent 正在进入下一轮模型/工具循环。
+- `reasoning.step` 事件用于展示安全的处理步骤摘要，不展示私有 chain-of-thought。
+- `tool.started`、`tool.completed`、`tool.failed` 事件用于展示脱敏后的工具调用状态。
+- `answer.delta` 事件用于最终回答文本增量。
+- `citation.delta` 事件用于问答引用。
+- `answer.completed` 事件表示回答完成。
 - `error` 事件表示本次流式任务失败。
 
-断线重连、幂等恢复和任务恢复 ID 后续单独细化；在 OpenAPI 补齐前，前端不应实现依赖 gateway SSE 路径的稳定调用。
+QA SSE 不得返回完整工具参数、MCP 原始响应、内部 URL、原始文档全文、prompt、provider 原始错误或存储 object key。断线重连、幂等恢复和任务恢复 ID 后续单独细化；在 OpenAPI 补齐前，前端不应实现依赖 gateway QA SSE 路径的稳定调用。
 
 ## 文件上传与内容读取
 
@@ -176,5 +179,5 @@ AI Gateway 是内部模型服务，只提供 `/internal/v1/**` 给 `qa`、`knowl
 - 前端以 OpenAPI 中已存在的 active paths 为准，不等待所有内部服务完成。
 - OpenAPI `x-missing-contracts` 中列出的范围只能作为待办，不应生成可调用 API client 方法。
 - 各后端服务以 gateway OpenAPI 和服务边界矩阵确认自己需要提供的能力。
-- 领域服务需要模型能力时，以 AI Gateway OpenAPI 和 [AI Gateway API 契约](../接口契约/AI网关-api契约.md) 为准，不把 provider 细节暴露给前端。
+- 领域服务需要模型能力时，以 AI Gateway OpenAPI 和 [AI Gateway API 契约](../接口契约/AI网关-api契约.md) 为准，不把 provider 细节暴露给前端。QA 需要工具能力时，应通过自己的 Agent Host 和 MCP Client 契约暴露安全摘要，而不是把 MCP server、tool schema 或工具原始结果直接暴露给前端。
 - 如果实现发现契约不合理，先更新 OpenAPI 和相关文档，再改代码。

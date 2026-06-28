@@ -372,3 +372,36 @@ Migrated the knowledge management module from the old Python prototype to a Go m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Refactor QA agent API contracts
+
+**Date**: 2026-06-28
+**Task**: Refactor QA agent API contracts
+**Branch**: `L1nggTeam/docs/qa-agent-contracts`
+
+### Summary
+
+Read GitHub Discussion #65 and refactored QA and AI gateway contracts around Agent Host responsibilities, OpenAI-compatible tool calling pass-through, sanitized SSE events, and updated design goals/service boundaries.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `72baf87` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

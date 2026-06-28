@@ -11,7 +11,8 @@ info:
     This revision treats gateway health checks, user/session, file-owned routes,
     knowledge-owned knowledge base, document processing, chunk, and retrieval routes,
     and document-owned report generation routes as active contracts. Downstream
-    QA and admin aggregation interfaces remain under x-missing-contracts until finalized.
+    QA Agent Host, MCP tool-call, and admin aggregation interfaces remain under
+    x-missing-contracts until finalized.
 x-api-style:
   required: RESTful resource-oriented HTTP APIs
   appliesTo:
@@ -3094,12 +3095,16 @@ components:
 x-missing-contracts:
 - service: qa
   status: missing
-  reason: Frontend/backend chat and RAG contract is not finalized yet.
+  reason: QA Agent Host, MCP tool-call, public SSE, and chat contract are not finalized yet.
   placeholderOperations:
   - GET/POST /api/v1/qa-sessions
   - GET/DELETE /api/v1/qa-sessions/{sessionId}
   - GET/POST /api/v1/qa-sessions/{sessionId}/messages
   - GET /api/v1/qa-sessions/{sessionId}/events
+  - GET /api/v1/response-runs/{responseRunId}
+  - GET /api/v1/response-runs/{responseRunId}/tool-calls
+  - GET /api/v1/qa-config-versions/current
+  - POST /api/v1/qa-config-versions
 - service: admin
   status: missing
   reason: Administration aggregation contract is not finalized yet.

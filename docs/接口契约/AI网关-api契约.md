@@ -2,12 +2,12 @@
 
 ## 1. 契约目标
 
-本文定义 `ai-gateway` 的内部 HTTP API 契约，覆盖模型配置、Chat Completion、Embedding 和 Rerank 能力。当前任务只定义接口文档和 OpenAPI 草稿，不创建 `services/ai-gateway/` 代码。
+本文定义 `ai-gateway` 的内部 HTTP API 契约，覆盖模型配置、Chat Completion、Function Calling 透传、Embedding 和 Rerank 能力。当前任务只定义接口文档和 OpenAPI 草稿，不创建 `services/ai-gateway/` 代码。
 
 主责服务：
 
 - `ai-gateway`：统一维护模型 provider 配置、API key 写入状态、模型调用适配、错误归一化和请求追踪。
-- `qa`：问答会话、消息、RAG 编排、引用记录和答案持久化。
+- `qa`：问答会话、消息、Agent/ReAct 循环、MCP 工具调用编排、引用记录和答案持久化。
 - `knowledge`：知识库、文档解析、切片、向量索引、检索和重排序业务流程。
 - `document`：报告模板、报告记录、大纲、章节内容、导出和报告生成任务。
 - `gateway`：外部 API 入口；不直接面向 AI provider，也不暴露 AI Gateway 内部接口给前端。
@@ -18,8 +18,9 @@
 - 前端仍只调用 public `gateway` 的 `/api/v1/**`。
 - `qa`、`knowledge`、`document` 需要模型能力时，通过内部 HTTP API 调用 `ai-gateway`。
 - Chat Completions 和 Embeddings 使用 OpenAI-compatible 请求/响应体。
+- Function Calling 使用 OpenAI-compatible `tools`、`tool_choice`、`assistant.tool_calls`、`role=tool` 和流式 tool-call delta。AI Gateway 只透传和归一化，不执行工具。
 - Rerankings 是 OpenAI-style 扩展；OpenAI 官方没有原生 rerank endpoint。
-- `ai-gateway` 不保存 QA 会话、知识库切片、报告记录、引用格式或业务任务状态。
+- `ai-gateway` 不保存 QA 会话、Agent Run、工具调用记录、知识库切片、报告记录、引用格式或业务任务状态，也不负责 MCP tool discovery 或 MCP tool execution。
 - API key、provider bearer token、完整 prompt、内部 provider URL、原始 provider 错误体和向量 payload 不得出现在响应、普通日志或错误文案中。
 
 ## 2. 通用约定
@@ -48,6 +49,7 @@ GET /readyz
 - Chat：`POST /internal/v1/chat/completions`
 - Embeddings：`POST /internal/v1/embeddings`
 - Streaming Chat：复用 Chat endpoint，`stream: true` 时返回 `text/event-stream`
+- Function Calling：复用 Chat endpoint，调用方可传 `tools`、`tool_choice` 和 `parallel_tool_calls`
 
 这些接口的成功响应不使用项目统一 `data/requestId` envelope，而是返回 OpenAI-compatible response body。调用方从响应头 `X-Request-Id` 获取请求追踪 ID。
 
@@ -208,6 +210,26 @@ local_compatible
   ],
   "temperature": 0.2,
   "stream": false,
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "search_knowledge",
+        "description": "Search approved knowledge bases and return citation-ready chunks.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string"
+            }
+          },
+          "required": ["query"]
+        }
+      }
+    }
+  ],
+  "tool_choice": "auto",
+  "parallel_tool_calls": false,
   "metadata": {
     "conversation_id": "conv_001"
   }
@@ -227,7 +249,8 @@ local_compatible
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "锅炉技术监督通常包括运行参数、受热面、保护装置和检修记录检查。"
+        "content": "锅炉技术监督通常包括运行参数、受热面、保护装置和检修记录检查。",
+        "tool_calls": []
       },
       "finish_reason": "stop"
     }
@@ -240,6 +263,49 @@ local_compatible
 }
 ```
 
+工具调用响应示例：
+
+```json
+{
+  "id": "chatcmpl_124",
+  "object": "chat.completion",
+  "created": 1782631201,
+  "model": "Qwen/Qwen2.5-72B-Instruct",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_001",
+            "type": "function",
+            "function": {
+              "name": "search_knowledge",
+              "arguments": "{\"query\":\"锅炉技术监督检查要求\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ]
+}
+```
+
+调用方执行工具后，应在下一轮请求中追加 `role=tool` 消息：
+
+```json
+{
+  "role": "tool",
+  "tool_call_id": "call_001",
+  "content": "{\"summary\":\"命中 8 个片段\"}"
+}
+```
+
+QA 负责校验工具名、工具参数、用户权限和 MCP server 白名单，并通过 MCP Client 执行 `tools/call`。AI Gateway 不执行工具，也不判断业务权限。
+
 流式响应使用 SSE：
 
 ```text
@@ -248,7 +314,7 @@ data: {"id":"chatcmpl_123","object":"chat.completion.chunk","choices":[{"index":
 data: [DONE]
 ```
 
-AI Gateway 不保存会话历史。`qa` 和 `document` 必须自己管理业务上下文、消息持久化、引用和重试恢复。
+流式 tool-call delta 必须归一化为 OpenAI-compatible `delta.tool_calls`。AI Gateway 不保存会话历史。`qa` 和 `document` 必须自己管理业务上下文、消息持久化、引用、工具调用记录和重试恢复。
 
 ### 4.3 Embeddings
 
@@ -334,7 +400,7 @@ Rerank 接口不负责召回候选集，也不决定 RAG 引用格式。`knowled
 | 调用方 | 调用场景 | AI Gateway 角色 | 调用方仍然负责 |
 | --- | --- | --- | --- |
 | `knowledge` | 文档向量化、检索结果重排序 | 生成 embedding 或 rerank score | 文档解析、chunk、Qdrant 写入、检索策略和知识库权限。 |
-| `qa` | 问答意图处理后的答案生成 | Chat completion 或 streaming chunk | 会话、消息、RAG 编排、引用、回答保存和用户权限。 |
+| `qa` | Agent/ReAct 循环中的模型调用 | Chat completion、streaming chunk 或 function-calling tool call 透传 | 会话、消息、MCP 工具发现/执行、工具权限、引用、回答保存和用户权限。 |
 | `document` | 报告大纲、章节内容、改写和总结 | Chat completion 或 streaming chunk | 报告记录、任务状态、章节版本、导出和模板业务规则。 |
 | `gateway` | 后续管理员模型配置入口 | 仅通过内部 API 提供配置能力 | public API 认证、权限和响应 envelope。 |
 
@@ -346,4 +412,5 @@ Rerank 接口不负责召回候选集，也不决定 RAG 引用格式。`knowled
 - OpenAPI 中所有 `$ref` 均可解析。
 - 除 `/healthz`、`/readyz` 外，AI Gateway 内部业务路径都以 `/internal/v1/**` 开头。
 - 模型调用接口的成功和错误响应为 OpenAI-compatible，不套项目 envelope。
+- Chat Completion 契约包含 `tools`、`tool_choice`、`parallel_tool_calls`、`assistant.tool_calls`、`tool_call_id` 和流式 tool-call delta。
 - README、服务边界、前后端集成契约和 gateway 服务说明均明确前端不得直连 AI Gateway。

@@ -49,7 +49,7 @@ postgres + redis + qdrant + minio
 | `gateway` | 后端统一入口，负责路由、鉴权上下文传递、聚合接口和跨服务请求协调。 |
 | `auth` | 用户身份、登录认证、权限控制、令牌或会话管理。 |
 | `file` | 文件上传、文件元数据、对象存储协调，以及文件处理流程入口。 |
-| `qa` | 智能问答服务，基于知识库检索结果生成回答。 |
+| `qa` | 智能问答服务，作为 Agent Host 管理会话、ReAct 循环、MCP 工具调用、引用和回答持久化。 |
 | `knowledge` | 知识导入、切分、索引、元数据管理和检索协调。 |
 | `document` | 报告、材料、知识摘要等文档生成流程。 |
 
@@ -68,7 +68,7 @@ postgres + redis + qdrant + minio
 
 Gateway 基础契约文档：
 
-当前已确定的前后端公开契约覆盖 gateway 健康检查、auth、file-owned 接口和 knowledge-owned 知识库/文档处理/切片/检索接口。`qa`、`document` 和管理后台聚合接口仍在设计中，暂在 OpenAPI 中标记为缺失占位。
+当前已确定的前后端公开契约覆盖 gateway 健康检查、auth、file-owned 接口、knowledge-owned 知识库/文档处理/切片/检索接口，以及 document-owned 报告生成接口。`qa` Agent Host、MCP tool-call 相关接口和管理后台聚合接口仍在设计中，暂在 OpenAPI 中标记为缺失占位。
 
 所有前端到 gateway、gateway 到下游服务、服务到服务的 HTTP API 都必须使用 RESTful 资源路径，由 HTTP method 表达动作。除 `/healthz`、`/readyz` 外，不在稳定 path 中使用 `login`、`logout`、`register`、`download`、`search`、`generate`、`export`、`retry`、`revoke` 等动作词。
 

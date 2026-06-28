@@ -223,9 +223,17 @@ envelope:
 ```
 
 AI Gateway chat completion and embedding APIs use OpenAI-compatible request,
-success response, streaming chunk, and error body shapes. They must not wrap
-successful model responses in the project `data/requestId` envelope. The
-request id is carried through `X-Request-Id` response headers and logs.
+success response, streaming chunk, function-calling, and error body shapes.
+They must not wrap successful model responses in the project `data/requestId`
+envelope. The request id is carried through `X-Request-Id` response headers and
+logs.
+
+AI Gateway may pass through and normalize OpenAI-compatible function-calling
+fields such as `tools`, `tool_choice`, `parallel_tool_calls`,
+`assistant.tool_calls`, `role=tool`, `tool_call_id`, and streaming
+`delta.tool_calls`. It must not execute MCP tools or decide domain tool
+permissions; the calling domain service, such as `qa`, owns tool policy,
+execution, persistence, and public event projection.
 
 Internal services must accept or propagate these headers when available:
 
@@ -258,8 +266,10 @@ payloads, SQL details, or internal URLs.
 ### 5. Good/Base/Bad Cases
 
 - Good: `qa` calls `ai-gateway` with `POST /internal/v1/chat/completions`,
-  keeps conversation/message/citation state in `qa`, and stores only the
-  normalized assistant response.
+  passes approved function-calling tool definitions, executes any returned MCP
+  tool calls itself, keeps conversation/message/tool-call/citation state in
+  `qa`, and stores only sanitized summaries plus the normalized assistant
+  response.
 - Base: `knowledge` calls `POST /internal/v1/embeddings` and writes the returned
   vectors to its own Qdrant collections without exposing vector payloads to
   gateway responses.
@@ -275,7 +285,7 @@ For documentation-only contract changes:
 - Verify internal business paths use `/internal/v1/**`, except `/healthz` and
   `/readyz`.
 - Verify AI Gateway model invocation operations document OpenAI-compatible
-  success and error shapes.
+  success, streaming, function-calling, and error shapes.
 - Check Markdown links resolve.
 
 When implementation exists:
@@ -302,7 +312,7 @@ gateway stores provider API key and streams raw provider chunks
 frontend -> gateway /api/v1/qa-sessions/{sessionId}/messages
 gateway -> qa service
 qa service -> ai-gateway /internal/v1/chat/completions
-qa owns messages, citations, and public SSE event shape
+qa owns messages, MCP tool calls, citations, and public SSE event shape
 ```
 
 ## Scenario: Missing Downstream API Contracts

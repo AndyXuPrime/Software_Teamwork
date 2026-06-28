@@ -2,24 +2,25 @@
 
 ## 1. 契约目标
 
-本文定义智能问答模块的 HTTP API 契约，覆盖会话管理、多轮对话、SSE 流式回答、非流式回答、意图识别、RAG 检索增强、引用溯源、处理过程展示、问答配置、检索体验测试和统计监控。
+本文定义智能问答模块的 HTTP API 契约，覆盖会话管理、多轮对话、Agent/ReAct 运行、MCP 工具调用摘要、SSE 流式回答、非流式回答、引用溯源、处理过程展示、问答配置、检索体验测试和统计监控。
 
 主责服务：
 
-- `qa`：会话、消息、意图识别、RAG 编排、答案生成、引用记录、问答统计。
+- `qa`：会话、消息、Agent/ReAct 循环、MCP 工具调用编排、答案生成、引用记录、问答统计。
 - `knowledge`：知识检索能力，提供候选切片和引用元数据。
 - `auth`：用户身份、角色权限。
 - `gateway`：外部 API 入口和认证上下文转发。
-- `ai-gateway`：统一提供 OpenAI-compatible LLM 调用入口。
+- `ai-gateway`：统一提供 OpenAI-compatible LLM 调用入口和 Function Calling 透传。
 
 边界原则：
 
 - `qa` 不直接读写 Qdrant，不维护向量集合，不拥有文档切片索引。
-- `qa` 通过 `knowledge` 的检索 API 获取上下文片段。
-- `qa` 可保存回答、消息、引用快照和处理过程摘要，便于历史回放。
+- `qa` 通过 MCP Client 发现并执行 `search_knowledge`、`get_citation_source` 等工具，工具内部再调用 gateway/knowledge 能力获取上下文片段。
+- `qa` 可保存回答、消息、引用快照、Agent Run、模型调用摘要、工具调用摘要和处理过程摘要，便于历史回放。
 - 原文文件下载由知识管理或文件服务校验权限并生成下载 URL。
 - 前端可展示“处理过程摘要”，不建议展示原始模型 chain-of-thought。
 - 会话、消息和引用以服务端 PostgreSQL 为权威数据源；前端本地只缓存当前 `sessionId` 等恢复信息。
+- AI Gateway 只透传 `tools`、`tool_choice`、`assistant.tool_calls`、`role=tool` 和流式 tool-call delta，不执行工具；工具权限、执行和持久化由 QA/MCP Client 负责。
 
 ## 2. 通用约定
 
@@ -28,7 +29,7 @@
 外部 API 统一使用 `/api/v1` 作为网关前缀：
 
 ```text
-/api/v1/qa/...
+/api/v1/qa-sessions
 ```
 
 ### 2.2 RESTful + OpenAPI + Swagger UI 规范
@@ -38,8 +39,9 @@
 RESTful 约定：
 
 - 会话、消息、引用、配置、统计均作为资源或子资源表达。
-- 创建会话使用 `POST /qa/conversations`，查询消息使用 `GET /qa/conversations/{conversationId}/messages`。
-- 生成、取消、识别等动作型能力使用 `POST /resource:action`，例如 `POST /qa/conversations/{conversationId}/messages:stream`。
+- 创建会话使用 `POST /qa-sessions`，查询消息使用 `GET /qa-sessions/{sessionId}/messages`。
+- 启动 Agent Run 仍建模为创建消息或 response run，不使用 `:stream`、`:cancel`、`:detect` 等动作式路径。
+- 取消生成建模为对 response run 状态的部分更新，例如 `PATCH /response-runs/{responseRunId}`。
 - 流式问答仍需在 OpenAPI 中声明为 `text/event-stream` 响应，并列出事件类型。
 - 所有历史列表接口必须分页。
 - 时间字段统一使用 UTC ISO 8601 字符串。
@@ -125,9 +127,10 @@ Connection: keep-alive
 | event | 含义 |
 | --- | --- |
 | `message.created` | 消息记录已创建 |
-| `intent.detected` | 意图识别完成 |
-| `retrieval.started` | 开始检索 |
-| `retrieval.completed` | 检索完成 |
+| `agent.iteration.started` | 新一轮 ReAct 迭代开始 |
+| `tool.started` | MCP 工具调用开始 |
+| `tool.completed` | MCP 工具调用完成 |
+| `tool.failed` | MCP 工具调用失败 |
 | `answer.delta` | 回答增量文本 |
 | `citation.delta` | 引用增量或引用预告 |
 | `reasoning.step` | 处理过程摘要步骤 |
@@ -140,13 +143,16 @@ Connection: keep-alive
 event: answer.delta
 data: {"messageId":"msg_002","delta":"根据技术监督规程，"}
 
+event: tool.completed
+data: {"toolCallId":"call_001","tool":"search_knowledge","summary":"检索2个知识库，命中8个片段"}
+
 event: answer.completed
 data: {"messageId":"msg_002","status":"completed"}
 ```
 
 ## 3. 数据对象
 
-### 3.1 Conversation
+### 3.1 QASession
 
 ```json
 {
@@ -174,7 +180,7 @@ deleted
 ```json
 {
   "id": "msg_001",
-  "conversationId": "conv_001",
+  "sessionId": "conv_001",
   "role": "user",
   "content": "锅炉技术监督有哪些检查要求？",
   "intent": "knowledge_qa",
@@ -213,6 +219,8 @@ unknown
 
 `data_analysis` 仅作为后续扩展意图预留。首期统计指标 API 仍然实现；Excel/表格类数据分析意图本期不实现，命中时返回 `unsupported_intent`，不创建数据分析任务。
 
+意图字段只作为统计标签或首轮提示上下文，不再表示后端固定分支。是否检索知识库、生成报告或查询引用由模型返回的 tool calls、QA 工具白名单和用户权限共同决定。
+
 ### 3.3 Citation
 
 ```json
@@ -238,7 +246,7 @@ unknown
 {
   "id": "step_001",
   "messageId": "msg_002",
-  "type": "retrieval",
+  "type": "tool_call",
   "title": "检索技术监督知识库",
   "summary": "命中 8 个相关片段，最高相关度 0.91",
   "status": "completed",
@@ -248,15 +256,39 @@ unknown
 
 说明：
 
-- 该对象用于展示处理链路摘要，例如“识别意图”“检索知识库”“组织引用”“生成回答”。
+- 该对象用于展示处理链路摘要，例如“Agent 迭代”“调用工具”“组织引用”“生成回答”。
 - 不要求，也不建议，暴露模型内部原始推理链。
+
+### 3.5 AgentToolCall
+
+```json
+{
+  "id": "atc_001",
+  "responseRunId": "run_001",
+  "toolCallId": "call_001",
+  "toolName": "search_knowledge",
+  "argumentsSummary": {
+    "knowledgeBaseCount": 2,
+    "queryPreview": "锅炉技术监督..."
+  },
+  "resultSummary": {
+    "hitCount": 8,
+    "citationCount": 3
+  },
+  "status": "completed",
+  "latencyMs": 420,
+  "createdAt": "2026-06-28T10:00:02Z"
+}
+```
+
+工具调用只暴露脱敏摘要，不返回完整参数、MCP 原始结果、内部 URL、原始文档全文、prompt 或密钥。
 
 ## 4. 会话 API
 
 ### 4.1 创建会话
 
 ```http
-POST /api/v1/qa/conversations
+POST /api/v1/qa-sessions
 ```
 
 请求：
@@ -286,7 +318,7 @@ POST /api/v1/qa/conversations
 ### 4.2 查询会话列表
 
 ```http
-GET /api/v1/qa/conversations?page=1&pageSize=20&q=锅炉
+GET /api/v1/qa-sessions?page=1&pageSize=20&q=锅炉
 ```
 
 响应：
@@ -310,15 +342,15 @@ GET /api/v1/qa/conversations?page=1&pageSize=20&q=锅炉
 ### 4.3 获取会话详情
 
 ```http
-GET /api/v1/qa/conversations/{conversationId}
+GET /api/v1/qa-sessions/{sessionId}
 ```
 
-响应：`Conversation`
+响应：`QASession`
 
 ### 4.4 更新会话标题
 
 ```http
-PATCH /api/v1/qa/conversations/{conversationId}
+PATCH /api/v1/qa-sessions/{sessionId}
 ```
 
 请求：
@@ -332,7 +364,7 @@ PATCH /api/v1/qa/conversations/{conversationId}
 ### 4.5 删除会话
 
 ```http
-DELETE /api/v1/qa/conversations/{conversationId}
+DELETE /api/v1/qa-sessions/{sessionId}
 ```
 
 响应：`204 No Content`
@@ -347,7 +379,7 @@ DELETE /api/v1/qa/conversations/{conversationId}
 ### 5.1 查询会话消息
 
 ```http
-GET /api/v1/qa/conversations/{conversationId}/messages?page=1&pageSize=50
+GET /api/v1/qa-sessions/{sessionId}/messages?page=1&pageSize=50
 ```
 
 响应：
@@ -381,7 +413,7 @@ GET /api/v1/qa/conversations/{conversationId}/messages?page=1&pageSize=50
 ### 5.2 非流式问答
 
 ```http
-POST /api/v1/qa/conversations/{conversationId}/messages
+POST /api/v1/qa-sessions/{sessionId}/messages
 ```
 
 请求：
@@ -399,6 +431,10 @@ POST /api/v1/qa/conversations/{conversationId}/messages
     "tagFilters": {
       "专业": ["锅炉"]
     }
+  },
+  "agent": {
+    "enabledToolNames": ["search_knowledge", "get_citation_source"],
+    "maxIterations": 5
   }
 }
 ```
@@ -439,18 +475,19 @@ POST /api/v1/qa/conversations/{conversationId}/messages
 
 规则：
 
-- `mode` 可选；不传时系统自动识别意图。
+- `mode` 可选；不传时由 Agent 上下文和工具选择决定处理方式。
 - 用户未指定知识库时，系统使用问答配置中的默认术语知识库和技术监督知识库。
 - 对无权限知识库按角色级 RBAC 和知识库可见性过滤；请求显式指定且完全无权限时可返回 `forbidden`。
 - 识别为 `data_analysis` 时返回 `unsupported_intent`，响应中保留用户消息和处理摘要，不调用数据分析执行链路。
+- `agent.enabledToolNames` 只能在当前配置和用户权限允许范围内收窄工具，不能启用未授权工具。
 
 ### 5.3 流式问答
 
 ```http
-POST /api/v1/qa/conversations/{conversationId}/messages:stream
+POST /api/v1/qa-sessions/{sessionId}/messages
 ```
 
-请求同非流式问答。
+请求同非流式问答。客户端通过 `Accept: text/event-stream` 请求流式响应。
 
 响应：SSE。
 
@@ -460,11 +497,11 @@ POST /api/v1/qa/conversations/{conversationId}/messages:stream
 event: message.created
 data: {"userMessageId":"msg_001","assistantMessageId":"msg_002"}
 
-event: intent.detected
-data: {"intent":"knowledge_qa","confidence":0.92}
+event: agent.iteration.started
+data: {"responseRunId":"run_001","iterationNo":1}
 
-event: retrieval.completed
-data: {"resultCount":8,"topScore":0.91}
+event: tool.completed
+data: {"toolCallId":"call_001","tool":"search_knowledge","summary":"检索 2 个知识库，命中 8 个片段"}
 
 event: answer.delta
 data: {"messageId":"msg_002","delta":"根据检索到的规程，"}
@@ -492,7 +529,15 @@ data: {"code":"dependency_error","message":"llm provider unavailable","requestId
 ### 5.4 取消生成
 
 ```http
-POST /api/v1/qa/messages/{messageId}:cancel
+PATCH /api/v1/response-runs/{responseRunId}
+```
+
+请求：
+
+```json
+{
+  "status": "cancelled"
+}
 ```
 
 响应：
@@ -506,15 +551,15 @@ POST /api/v1/qa/messages/{messageId}:cancel
 
 规则：
 
-- 仅 `queued` 或 `generating` 状态可取消。
-- 是否能真正取消下游 LLM 请求取决于模型供应商能力。
+- 仅 `queued`、`running` 或 `streaming` 状态可取消。
+- QA 应同时取消当前 LLM 请求、当前 MCP 工具调用和整个 Agent Run；是否能真正取消下游 LLM/MCP 请求取决于供应商和工具实现能力。
 
 ## 6. 引用 API
 
 ### 6.1 查询消息引用
 
 ```http
-GET /api/v1/qa/messages/{messageId}/citations
+GET /api/v1/messages/{messageId}/citations
 ```
 
 响应：
@@ -540,7 +585,7 @@ GET /api/v1/qa/messages/{messageId}/citations
 ### 6.2 获取引用详情
 
 ```http
-GET /api/v1/qa/citations/{citationId}
+GET /api/v1/citations/{citationId}
 ```
 
 响应：
@@ -557,7 +602,7 @@ GET /api/v1/qa/citations/{citationId}
   "chunkType": "text",
   "source": {
     "available": true,
-    "downloadEndpoint": "/api/v1/knowledge/documents/doc_001:download-url"
+    "contentEndpoint": "/api/v1/documents/doc_001/content"
   }
 }
 ```
@@ -585,7 +630,7 @@ GET /api/v1/qa/citations/{citationId}
 ### 7.1 查询处理过程摘要
 
 ```http
-GET /api/v1/qa/messages/{messageId}/reasoning-steps
+GET /api/v1/messages/{messageId}/reasoning-steps
 ```
 
 响应：
@@ -595,15 +640,15 @@ GET /api/v1/qa/messages/{messageId}/reasoning-steps
   "items": [
     {
       "id": "step_001",
-      "type": "intent",
-      "title": "识别问题类型",
-      "summary": "识别为知识问答",
+      "type": "agent_iteration",
+      "title": "启动 Agent 迭代",
+      "summary": "第 1 轮模型调用",
       "status": "completed"
     },
     {
       "id": "step_002",
-      "type": "retrieval",
-      "title": "检索知识库",
+      "type": "tool_call",
+      "title": "调用 search_knowledge",
       "summary": "检索 2 个知识库，命中 8 个片段",
       "status": "completed"
     }
@@ -617,43 +662,43 @@ GET /api/v1/qa/messages/{messageId}/reasoning-steps
 - 默认在流式完成后折叠。
 - 可区分文本摘要和代码内容，但首期建议只展示文本摘要。
 
-## 8. 意图识别 API
+## 8. Agent 工具调用 API
 
-### 8.1 单独识别意图
-
-管理员或调试接口：
+### 8.1 查询 Agent Run 的工具调用摘要
 
 ```http
-POST /api/v1/qa/intents:detect
-```
-
-请求：
-
-```json
-{
-  "message": "帮我生成迎峰度夏检查报告",
-  "conversationId": "conv_001"
-}
+GET /api/v1/response-runs/{responseRunId}/tool-calls
 ```
 
 响应：
 
 ```json
 {
-  "intent": "report_generation",
-  "confidence": 0.89,
-  "allowed": true,
-  "route": {
-    "module": "document",
-    "suggestedEndpoint": "/api/v1/reports"
-  }
+  "items": [
+    {
+      "id": "atc_001",
+      "toolCallId": "call_001",
+      "toolName": "search_knowledge",
+      "status": "completed",
+      "argumentsSummary": {
+        "knowledgeBaseCount": 2,
+        "queryPreview": "锅炉技术监督..."
+      },
+      "resultSummary": {
+        "hitCount": 8,
+        "citationCount": 3
+      },
+      "latencyMs": 420
+    }
+  ]
 }
 ```
 
 规则：
 
-- `allowed=false` 时必须返回原因，例如用户无报告生成权限。
-- 首期作为管理员调试接口开放；普通用户不直接调用。
+- 只返回脱敏摘要。
+- 不返回完整工具参数、MCP 原始结果、内部 URL、原始文档全文、prompt 或密钥。
+- 普通用户只能查看自己会话关联的 Agent Run；管理员权限后续按 RBAC 细化。
 
 ## 9. 问答配置 API
 
@@ -662,7 +707,7 @@ POST /api/v1/qa/intents:detect
 管理员接口：
 
 ```http
-GET /api/v1/qa/settings
+GET /api/v1/qa-config-versions/current
 ```
 
 响应：
@@ -681,6 +726,13 @@ GET /api/v1/qa/settings
     "profileId": "mp_chat_default",
     "model": "llm-model-name",
     "timeoutSeconds": 60
+  },
+  "agent": {
+    "maxIterations": 5,
+    "toolTimeoutSeconds": 10,
+    "modelTimeoutSeconds": 60,
+    "overallTimeoutSeconds": 120,
+    "enabledToolNames": ["search_knowledge", "get_citation_source"]
   }
 }
 ```
@@ -688,7 +740,7 @@ GET /api/v1/qa/settings
 ### 9.2 更新问答配置
 
 ```http
-PATCH /api/v1/qa/settings
+POST /api/v1/qa-config-versions
 ```
 
 请求：
@@ -707,6 +759,13 @@ PATCH /api/v1/qa/settings
     "profileId": "mp_chat_default",
     "model": "llm-model-name",
     "timeoutSeconds": 60
+  },
+  "agent": {
+    "maxIterations": 5,
+    "toolTimeoutSeconds": 10,
+    "modelTimeoutSeconds": 60,
+    "overallTimeoutSeconds": 120,
+    "enabledToolNames": ["search_knowledge", "get_citation_source"]
   }
 }
 ```
@@ -724,6 +783,7 @@ PATCH /api/v1/qa/settings
 - `profileId` 指向 AI Gateway 中的 chat profile；QA 不保存 provider `baseUrl` 或 `apiKey`，也不实现供应商适配层。
 - 配置变更应记录操作人和时间。
 - 默认知识库必须存在且管理员有配置权限。
+- 工具列表必须来自白名单；实际执行前还要按用户权限裁剪。
 
 ## 10. 检索体验测试 API
 
@@ -732,7 +792,7 @@ PATCH /api/v1/qa/settings
 ### 10.1 创建问答检索测试
 
 ```http
-POST /api/v1/qa/retrieval-tests
+POST /api/v1/retrieval-test-runs
 ```
 
 请求：
@@ -774,7 +834,7 @@ POST /api/v1/qa/retrieval-tests
 ## 11. 统计 API
 
 ```http
-GET /api/v1/qa/stats/overview
+GET /api/v1/qa-metrics/overview
 ```
 
 响应：
