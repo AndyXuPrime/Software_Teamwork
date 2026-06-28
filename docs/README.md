@@ -31,6 +31,7 @@
 | [Knowledge Service 实现说明](services/knowledge-service-design.md) | `services/knowledge/` 本地服务实现、Docker Compose 和入库链路说明。 |
 | [QA 服务接口文档](services/qa.md) | 智能问答、会话、消息、SSE、引用、配置、检索测试和统计接口草案。 |
 | [QA 模块数据库说明](services/qa-database.md) | QA 模块 PostgreSQL 表结构、核心关系、写入流程、索引和迁移规则。 |
+| [报告生成前端 API 设计](reports_generate/report-generation-frontend-api-design.md) | 报告生成模块前端对接 gateway 的页面接口映射、类型约定和旧路径替换说明。 |
 | [前后端集成契约](architecture/frontend-backend-contract.md) | 前端调用 gateway 的入口、认证、请求/响应、错误、分页、SSE 和 mock 约定。 |
 | [Gateway OpenAPI 契约](api/gateway.openapi.yaml) | 当前稳定的 gateway 公开 API 机器可读契约。 |
 
