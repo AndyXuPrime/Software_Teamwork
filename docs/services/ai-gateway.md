@@ -13,13 +13,14 @@
 | Provider 配置 | 维护运行时模型配置，包括用途、provider 类型、base URL、模型名、超时、默认参数和 API key 写入状态。 |
 | Chat completion | 接收 OpenAI-compatible chat completion 请求，转换为 OpenAI-compatible 或 SiliconFlow-compatible provider 请求，并返回 OpenAI-compatible 响应。 |
 | Streaming chat | 为 QA 和报告生成等上游服务提供 OpenAI-compatible chat completion chunk 流。 |
+| Function calling transport | 透传 OpenAI-compatible `tools`、`tool_choice`、`parallel_tool_calls`、`assistant.tool_calls`、`tool_call_id` 和流式 tool-call delta。 |
 | Embeddings | 为知识库解析、检索等场景提供 embedding 向量生成入口。 |
 | Rerankings | 为检索结果重排序提供统一入口。 |
 | 错误归一化 | 将 provider validation、限流、超时、不可用等失败映射为稳定错误码。 |
 | Secret handling | 接收和保存 API key 等敏感配置，但响应、日志和错误中只返回脱敏状态。 |
 | Request correlation | 接收或生成 `X-Request-Id`，并在响应体、响应头和下游 provider 调用日志中贯穿。 |
 
-`ai-gateway` 不负责知识库 CRUD、文档解析、chunk 持久化、向量库写入、RAG 编排、QA 会话/消息、报告记录、报告导出或 public gateway 路由。上述业务流程仍由 `knowledge`、`qa`、`document` 和 public `gateway` 按既有边界负责。
+`ai-gateway` 不负责知识库 CRUD、文档解析、chunk 持久化、向量库写入、RAG 编排、MCP tool discovery、MCP tool execution、QA 会话/消息、Agent Run、工具调用记录、报告记录、报告导出或 public gateway 路由。上述业务流程仍由 `knowledge`、`qa`、`document`、MCP Client 和 public `gateway` 按既有边界负责。
 
 ## 接入模型
 
@@ -214,6 +215,8 @@ chat | embedding | rerank
 
 请求必须包含 `model`，取值可以是 provider 原始模型名，也可以是 AI Gateway 配置的模型别名。请求可额外指定 `profile_id`；若缺省，AI Gateway 使用 `purpose=chat` 的默认启用 profile。
 
+AI Gateway 支持 OpenAI-compatible function calling 字段，但只负责请求/响应归一化和 provider 适配，不执行工具。`qa` 作为 Agent Host 负责把 MCP `tools/list` 转换为 `tools`，校验 `tool_calls`，通过 MCP Client 执行 `tools/call`，并把 `role=tool` 的结果追加回下一轮模型调用。
+
 ### ChatCompletionRequest
 
 ```json
@@ -234,6 +237,26 @@ chat | embedding | rerank
   "top_p": 0.9,
   "max_tokens": 2048,
   "stream": false,
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "search_knowledge",
+        "description": "Search approved knowledge bases and return citation-ready chunks.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string"
+            }
+          },
+          "required": ["query"]
+        }
+      }
+    }
+  ],
+  "tool_choice": "auto",
+  "parallel_tool_calls": false,
   "metadata": {
     "workflow": "qa"
   }
@@ -249,6 +272,9 @@ chat | embedding | rerank
 | `top_p` | `number` | 否 | nucleus sampling 参数。 |
 | `max_tokens` | `integer` | 否 | 最大输出 token 数。 |
 | `stream` | `boolean` | 否 | `true` 时使用 SSE 响应；客户端也应发送 `Accept: text/event-stream`。 |
+| `tools` | `Tool[]` | 否 | OpenAI-compatible function calling 工具定义。AI Gateway 只转发给 provider，不校验领域权限。 |
+| `tool_choice` | `string \| object` | 否 | `auto`、`none`、`required` 或指定 function。 |
+| `parallel_tool_calls` | `boolean` | 否 | 是否允许模型在一轮返回多个并行工具调用。是否实际并行执行由调用方决定。 |
 | `metadata` | `object` | 否 | 调用方自定义审计元数据。不得放入密钥、原文档全文或敏感业务数据。 |
 
 ### ChatCompletionResponse
@@ -264,7 +290,8 @@ chat | embedding | rerank
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "迎峰度夏检查应重点关注设备负荷、隐患治理和应急预案。"
+        "content": "迎峰度夏检查应重点关注设备负荷、隐患治理和应急预案。",
+        "tool_calls": []
       },
       "finish_reason": "stop"
     }
@@ -276,6 +303,49 @@ chat | embedding | rerank
   }
 }
 ```
+
+工具调用响应示例：
+
+```json
+{
+  "id": "chatcmpl_124",
+  "object": "chat.completion",
+  "created": 1782631201,
+  "model": "Qwen/Qwen2.5-72B-Instruct",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_001",
+            "type": "function",
+            "function": {
+              "name": "search_knowledge",
+              "arguments": "{\"query\":\"迎峰度夏检查重点\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ]
+}
+```
+
+调用方执行工具后，应在下一轮请求中追加 `role=tool` 消息：
+
+```json
+{
+  "role": "tool",
+  "tool_call_id": "call_001",
+  "content": "{\"summary\":\"命中 8 个片段\"}"
+}
+```
+
+`role=tool` 的 `content` 必须由调用方脱敏和裁剪。AI Gateway 不保存、审计或改写完整工具结果。
 
 ## Streaming Chat
 
@@ -300,6 +370,7 @@ data: [DONE]
 - 上游请求取消时，AI Gateway 必须取消 provider 请求。
 - 不得等待 provider 完整响应后再一次性发送给调用方。
 - Provider 原始事件字段不得直接泄露给调用方；对外只暴露 OpenAI-compatible chunk 字段。
+- 如果 provider 返回 tool-call delta，AI Gateway 应归一化为 OpenAI-compatible `delta.tool_calls`，并保持 `index`、`id`、`type`、`function.name` 和 `function.arguments` 增量语义。
 - 流式错误不得包含原始 provider body、API key、prompt 全文或堆栈。
 
 ## Embeddings

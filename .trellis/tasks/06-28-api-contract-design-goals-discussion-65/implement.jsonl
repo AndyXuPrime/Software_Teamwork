@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/api-contracts.md", "reason": "Contract-first gateway and internal API rules for documentation changes"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Sensitive-data logging rules for prompt/tool contracts"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Stable error envelope and dependency error rules"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer API/frontend/service boundary thinking"}
+{"file": ".trellis/tasks/06-28-api-contract-design-goals-discussion-65/research/discussion-65.md", "reason": "Discussion 65 summarized requirements and contract implications"}

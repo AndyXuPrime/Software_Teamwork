@@ -11,8 +11,9 @@ info:
     public gateway API. Domain services such as qa, knowledge, and document use
     this contract for model profile configuration and OpenAI-compatible model
     invocation APIs. Chat completions and embeddings follow OpenAI-compatible
-    request/response bodies. Rerankings are an OpenAI-style extension because
-    OpenAI does not define a native rerank endpoint.
+    request/response bodies, including function-calling transport fields used by
+    QA Agent Host. Rerankings are an OpenAI-style extension because OpenAI does
+    not define a native rerank endpoint.
 x-api-scope: internal-service
 x-api-style:
   required: RESTful resource-oriented HTTP APIs
@@ -226,9 +227,12 @@ paths:
       x-owner-service: ai-gateway
       description: |
         Creates a non-streaming or streaming chat completion using an
-        OpenAI-compatible request and response body. When request.stream is true
-        and the client sends Accept: text/event-stream, a successful response
-        uses OpenAI-compatible chat completion chunk events.
+        OpenAI-compatible request and response body. Function-calling fields are
+        passed through and normalized, but AI Gateway does not execute tools.
+        When request.stream is true and the client sends Accept:
+        text/event-stream, a successful response uses OpenAI-compatible chat
+        completion chunk events, including tool-call deltas when returned by the
+        provider.
       requestBody:
         required: true
         content:
@@ -675,15 +679,85 @@ components:
       type: object
       required:
       - role
-      - content
       properties:
         role:
           $ref: '#/components/schemas/ChatRole'
         content:
           type: string
+          nullable: true
         name:
           type: string
           description: Optional participant or tool name.
+        tool_call_id:
+          type: string
+          description: Required for role=tool messages. References assistant.tool_calls[].id.
+        tool_calls:
+          type: array
+          description: Assistant tool calls returned by the model.
+          items:
+            $ref: '#/components/schemas/ChatToolCall'
+    ChatToolFunction:
+      type: object
+      required:
+      - name
+      - parameters
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        parameters:
+          type: object
+          additionalProperties: true
+          description: JSON Schema object accepted by the function.
+    ChatTool:
+      type: object
+      required:
+      - type
+      - function
+      properties:
+        type:
+          type: string
+          enum:
+          - function
+        function:
+          $ref: '#/components/schemas/ChatToolFunction'
+    ChatToolCallFunction:
+      type: object
+      required:
+      - name
+      - arguments
+      properties:
+        name:
+          type: string
+        arguments:
+          type: string
+          description: JSON-encoded function arguments returned by the model.
+    ChatToolCall:
+      type: object
+      required:
+      - id
+      - type
+      - function
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum:
+          - function
+        function:
+          $ref: '#/components/schemas/ChatToolCallFunction'
+    ChatToolChoice:
+      description: OpenAI-compatible tool choice. May be auto, none, required, or a function selector object.
+      oneOf:
+      - type: string
+        enum:
+        - auto
+        - none
+        - required
+      - type: object
+        additionalProperties: true
     ChatCompletionRequest:
       type: object
       required:
@@ -713,6 +787,16 @@ components:
           type: integer
           minimum: 1
         stream:
+          type: boolean
+          default: false
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatTool'
+          description: OpenAI-compatible function-calling tool definitions. AI Gateway passes them through and does not execute tools.
+        tool_choice:
+          $ref: '#/components/schemas/ChatToolChoice'
+        parallel_tool_calls:
           type: boolean
           default: false
         metadata:
@@ -746,6 +830,12 @@ components:
           $ref: '#/components/schemas/ChatRole'
         content:
           type: string
+          nullable: true
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatToolCall'
+          description: Incremental tool-call deltas when provider returns function calling chunks.
     OpenAIChatCompletionChunkChoice:
       type: object
       required:

@@ -16,7 +16,7 @@
 | --- | --- |
 | [技术监督辅助平台需求说明书](requirements/system.md) | 系统整体需求，覆盖知识管理、知识问答、报告生成、用户权限和非功能性要求。 |
 | [知识管理系统需求说明书](requirements/knowledge_management_system.md) | 知识库、文档管理、解析处理、配置和统计需求。 |
-| [智能问答系统需求说明书](requirements/smart_quote_system.md) | 智能对话、意图识别、RAG 检索、引用溯源和问答管理需求。 |
+| [智能问答系统需求说明书](requirements/smart_quote_system.md) | 原始智能问答需求来源，包含智能对话、意图识别、RAG 检索、引用溯源和问答管理需求；当前接口设计以 Agent Host 重构后的服务契约为准。 |
 | [报告生成系统需求说明书](report_generation/report_generation.md) | 报告大纲、内容生成、导出、记录和模板管理需求。 |
 
 ## 架构与接口契约
@@ -29,9 +29,9 @@
 | [File 服务接口文档](services/file.md) | 文件上传、元数据、原文件内容读取和 file 内部服务接口草案。 |
 | [Knowledge 服务接口文档](services/knowledge.md) | 知识库、文档处理状态、切片、向量索引和检索接口契约。 |
 | [Knowledge Service 实现说明](services/knowledge-service-design.md) | `services/knowledge/` 本地服务实现、Docker Compose 和入库链路说明。 |
-| [QA 服务接口文档](services/qa.md) | 智能问答、会话、消息、SSE、引用、配置、检索测试和统计接口草案。 |
+| [QA 服务接口文档](services/qa.md) | 智能问答 Agent Host、会话、消息、ReAct 循环、MCP 工具调用、SSE、引用、配置、检索测试和统计接口草案。 |
 | [QA 模块数据库说明](services/qa-database.md) | QA 模块 PostgreSQL 表结构、核心关系、写入流程、索引和迁移规则。 |
-| [AI Gateway 服务接口文档](services/ai-gateway.md) | 内部模型配置、OpenAI-compatible chat/embedding、rerank 和 provider 错误归一化接口草案。 |
+| [AI Gateway 服务接口文档](services/ai-gateway.md) | 内部模型配置、OpenAI-compatible chat/function calling/embedding、rerank 和 provider 错误归一化接口草案。 |
 | [报告生成前端 API 设计](report_generation/report-generation-frontend-api-design.md) | 报告生成模块前端对接 gateway 的页面接口映射、类型约定和旧路径替换说明。 |
 | [前后端集成契约](architecture/frontend-backend-contract.md) | 前端调用 gateway 的入口、认证、请求/响应、错误、分页、SSE 和 mock 约定。 |
 | [Gateway OpenAPI 契约](api/gateway.openapi.yaml) | 当前稳定的 gateway 公开 API 机器可读契约。 |
@@ -55,11 +55,11 @@
 - Auth 相关用户与会话接口。
 - File-owned 文件上传、元数据更新、删除和原文件内容读取接口。
 - Knowledge-owned 知识库、文档处理状态、切片详情和知识检索接口。
-- AI Gateway 内部模型配置、OpenAI-compatible chat/embedding 和 OpenAI-style rerank 接口草案。
+- AI Gateway 内部模型配置、OpenAI-compatible chat/function calling/embedding 和 OpenAI-style rerank 接口草案。
 
 仍待补齐的契约包括：
 
-- `qa` 的会话、消息、意图路由、引用和流式问答接口已形成服务文档草案，仍需升级 OpenAPI 后才能作为稳定公开契约。
+- `qa` 的 Agent Host、会话、消息、MCP 工具调用、引用和流式问答接口已形成服务文档草案，仍需升级 OpenAPI 后才能作为稳定公开契约。
 - `document` 的报告记录、大纲、章节、报告文件和导出接口。
 - 管理后台聚合指标和跨服务统计接口。
 
