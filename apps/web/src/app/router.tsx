@@ -14,6 +14,7 @@ import { KnowledgeManagement } from '@/pages/admin/knowledge-management'
 import { MaterialManagement } from '@/pages/admin/material-management'
 import { AdminPage } from '@/pages/admin/page'
 import { PromptManagement } from '@/pages/admin/prompt-management'
+import { QARetrievalTestPage } from '@/pages/admin/qa-retrieval-test'
 import { QASettings } from '@/pages/admin/qa-settings'
 import { ReportCategory } from '@/pages/admin/report-category'
 import { RoleManagement } from '@/pages/admin/role-management'
@@ -174,6 +175,12 @@ const adminQASettingsRoute = createRoute({
   component: QASettings,
 })
 
+const adminQARetrievalTestRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'qa-retrieval-test',
+  component: QARetrievalTestPage,
+})
+
 const adminSettingsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'settings',
@@ -222,6 +229,7 @@ const routeTree = rootRoute.addChildren([
     adminKnowledgeExperienceRoute,
     adminKnowledgeConfigRoute,
     adminQASettingsRoute,
+    adminQARetrievalTestRoute,
     adminSettingsRoute,
     adminStatsRoute,
     adminReportRecordsRoute,

@@ -19,7 +19,7 @@ const menuItems: AdminMenuItem[] = [
   },
   {
     key: 'stats',
-    label: '统计概览',
+    label: 'QA 统计',
     path: '/admin/stats',
   },
   {
@@ -53,6 +53,7 @@ const menuItems: AdminMenuItem[] = [
       { key: 'knowledge-config', label: '知识配置', path: '/admin/knowledge-config' },
       { key: 'knowledge-experience', label: '知识体验', path: '/admin/knowledge-experience' },
       { key: 'qa-settings', label: 'QA / LLM 配置', path: '/admin/qa-settings' },
+      { key: 'qa-retrieval-test', label: 'QA 检索测试', path: '/admin/qa-retrieval-test' },
     ],
   },
   {
