@@ -2,7 +2,9 @@ package httpapi_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -58,6 +60,34 @@ func TestReadyReturnsEnvelopeAndGeneratedRequestID(t *testing.T) {
 	}
 	if body.Data.Status != "ready" {
 		t.Fatalf("status = %q", body.Data.Status)
+	}
+}
+
+func TestReadyReturnsDependencyErrorWhenCheckFails(t *testing.T) {
+	server := gatewayhttp.NewServer(gatewayhttp.Config{
+		Logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ServiceVersion:     "test",
+		Environment:        "test",
+		RequestTimeout:     time.Second,
+		MaxBodyBytes:       1024,
+		CORSAllowedOrigins: []string{"*"},
+		ReadyCheck: func(context.Context) error {
+			return errors.New("redis unavailable")
+		},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	req.Header.Set("X-Request-Id", "req_ready_down")
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	var body errorBody
+	decodeJSON(t, res.Body, &body)
+	if body.Error.Code != "dependency_error" || body.Error.RequestID != "req_ready_down" {
+		t.Fatalf("error body = %+v", body.Error)
 	}
 }
 
