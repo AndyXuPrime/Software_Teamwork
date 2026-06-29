@@ -43,7 +43,7 @@ export async function createLLMConfigVersion(
 ): Promise<QALLMConfigVersion> {
   return gatewayRequest<QALLMConfigVersion>('/llm-config-versions', {
     method: 'POST',
-    body: JSON.stringify(config),
+    body: config,
   })
 }
 
@@ -72,7 +72,7 @@ export async function createQAConfigVersion(
 ): Promise<QAConfigVersion> {
   return gatewayRequest<QAConfigVersion>('/qa-config-versions', {
     method: 'POST',
-    body: JSON.stringify(config),
+    body: config,
   })
 }
 
@@ -178,7 +178,7 @@ export async function createUser(body: CreateUserRequest): Promise<{
 }> {
   return gatewayRequest<{ user: UserSummary; session: SessionSummary }>('/users', {
     method: 'POST',
-    body: JSON.stringify(body),
+    body,
   })
 }
 
