@@ -117,24 +117,24 @@ export const useAuthStore = create<AuthState>((set) => ({
         return
       }
 
-      // Dev bypass: skip API call, use mock user
-      if (token === 'dev-token-bypass') {
+      // Dev bypass: skip API call, use mock user (only in development)
+      if (import.meta.env.DEV && token === 'dev-token-bypass') {
         const mockUser: UserSummary = {
-        id: 'dev',
-        username: '开发者',
-        roles: ['system:admin'],
-        permissions: [
-          'qa:use',
-          'report:read',
-          'report:write',
-          'knowledge:read',
-          'knowledge:write',
-          'document:upload',
-          'system:admin',
-          'admin:model-profile:write',
-          'admin:parser-config:write',
-        ],
-      }
+          id: 'dev',
+          username: '开发者',
+          roles: ['system:admin'],
+          permissions: [
+            'qa:use',
+            'report:read',
+            'report:write',
+            'knowledge:read',
+            'knowledge:write',
+            'document:upload',
+            'system:admin',
+            'admin:model-profile:write',
+            'admin:parser-config:write',
+          ],
+        }
         set({
           accessToken: token,
           error: null,

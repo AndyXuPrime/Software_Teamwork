@@ -1,7 +1,6 @@
 import { Link, useRouter, useRouterState } from '@tanstack/react-router'
 import { Loader2, LogOut, RefreshCw, ShieldAlert } from 'lucide-react'
 import type { PropsWithChildren, ReactNode } from 'react'
-import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import type { PermissionRequirement } from '@/lib/permissions'
@@ -70,9 +69,7 @@ export function AppLayout({ children }: PropsWithChildren) {
   const user = useAuthStore((state) => state.user)
   const status = useAuthStore((state) => state.status)
   const error = useAuthStore((state) => state.error)
-  const logout = useAuthStore((state) => state.logout)
   const restoreSession = useAuthStore((state) => state.restoreSession)
-  const [isLoggingOut, setIsLoggingOut] = useState(false)
 
   if (status === 'restoring' || status === 'idle') {
     return (
@@ -103,14 +100,9 @@ export function AppLayout({ children }: PropsWithChildren) {
 
   const visibleNavItems = navItems.filter((item) => canAccess(user, item.requirement))
 
-  const handleLogout = async () => {
-    setIsLoggingOut(true)
-    try {
-      await logout()
-      await router.navigate({ to: '/login' })
-    } finally {
-      setIsLoggingOut(false)
-    }
+  const handleLogout = () => {
+    useAuthStore.getState().clearSession()
+    void router.navigate({ to: '/login' })
   }
 
   return (
@@ -152,13 +144,12 @@ export function AppLayout({ children }: PropsWithChildren) {
           )}
           <Button
             aria-label="退出登录"
-            disabled={isLoggingOut}
             size="icon-sm"
             type="button"
             variant="ghost"
             onClick={handleLogout}
           >
-            {isLoggingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut />}
+            <LogOut />
           </Button>
         </div>
       </header>

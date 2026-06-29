@@ -97,9 +97,7 @@ export function KnowledgeSearchPage() {
   // ── Handlers ──
 
   const toggleKb = useCallback((id: string) => {
-    setSelectedKbIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    )
+    setSelectedKbIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }, [])
 
   const selectAllKbs = useCallback(() => {
@@ -201,19 +199,14 @@ export function KnowledgeSearchPage() {
             加载知识库...
           </div>
         )}
-        {kbsError && (
-          <p className="text-sm text-destructive">加载知识库失败: {kbsError}</p>
-        )}
+        {kbsError && <p className="text-sm text-destructive">加载知识库失败: {kbsError}</p>}
         {!kbsLoading && !kbsError && (
           <div className="flex flex-wrap gap-1.5">
             <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs transition-colors hover:bg-muted/30">
               <input
                 type="checkbox"
                 className="size-3 accent-primary"
-                checked={
-                  availableKbs.length > 0 &&
-                  selectedKbIds.length === availableKbs.length
-                }
+                checked={availableKbs.length > 0 && selectedKbIds.length === availableKbs.length}
                 onChange={selectAllKbs}
               />
               全选
@@ -265,9 +258,7 @@ export function KnowledgeSearchPage() {
         <div className="mb-4 space-y-3 rounded-lg border border-border p-4">
           {/* Search mode toggle */}
           <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              检索模式
-            </label>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">检索模式</label>
             <div className="flex gap-2">
               <label
                 className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
@@ -374,9 +365,7 @@ export function KnowledgeSearchPage() {
       {searchMutation.isError && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
           检索失败:{' '}
-          {searchMutation.error instanceof Error
-            ? searchMutation.error.message
-            : '未知错误'}
+          {searchMutation.error instanceof Error ? searchMutation.error.message : '未知错误'}
         </div>
       )}
 
@@ -385,9 +374,7 @@ export function KnowledgeSearchPage() {
         <div className="mt-4 space-y-4">
           {/* Trace info */}
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>
-              查询: &ldquo;{resultSummary.query}&rdquo;
-            </span>
+            <span>查询: &ldquo;{resultSummary.query}&rdquo;</span>
             <span>|</span>
             <span>命中 {resultSummary.trace.hitCount} 条结果</span>
             <span>|</span>
@@ -397,9 +384,7 @@ export function KnowledgeSearchPage() {
             {resultSummary.trace.rerank && (
               <>
                 <span>|</span>
-                <span>
-                  重排序: Top {resultSummary.trace.rerankTopN ?? '-'}
-                </span>
+                <span>重排序: Top {resultSummary.trace.rerankTopN ?? '-'}</span>
               </>
             )}
           </div>
@@ -411,9 +396,7 @@ export function KnowledgeSearchPage() {
                 aria-hidden="true"
                 className="mx-auto mb-3 size-10 text-muted-foreground/40"
               />
-              <p className="text-sm text-muted-foreground">
-                未找到相关内容，请调整检索条件
-              </p>
+              <p className="text-sm text-muted-foreground">未找到相关内容，请调整检索条件</p>
             </div>
           )}
 
@@ -431,20 +414,14 @@ export function KnowledgeSearchPage() {
                         {item.documentName}
                       </p>
                       {item.sectionPath && (
-                        <p className="truncate text-xs text-muted-foreground">
-                          {item.sectionPath}
-                        </p>
+                        <p className="truncate text-xs text-muted-foreground">{item.sectionPath}</p>
                       )}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       {item.tags && item.tags.length > 0 && (
                         <div className="hidden gap-1 sm:flex">
                           {item.tags.slice(0, 3).map((tag) => (
-                            <Badge
-                              key={tag}
-                              variant="secondary"
-                              className="text-[0.65rem]"
-                            >
+                            <Badge key={tag} variant="secondary" className="text-[0.65rem]">
                               {tag}
                             </Badge>
                           ))}
@@ -465,12 +442,8 @@ export function KnowledgeSearchPage() {
 
                   <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
                     <span>#{index + 1}</span>
-                    {item.chunkIndex != null && (
-                      <span>分块 #{item.chunkIndex}</span>
-                    )}
-                    <span className="ml-auto">
-                      文档 ID: {item.documentId.slice(0, 8)}...
-                    </span>
+                    {item.chunkIndex != null && <span>分块 #{item.chunkIndex}</span>}
+                    <span className="ml-auto">文档 ID: {item.documentId.slice(0, 8)}...</span>
                   </div>
                 </div>
               ))}
@@ -482,10 +455,7 @@ export function KnowledgeSearchPage() {
       {/* Empty initial state (no search yet) */}
       {!resultSummary && !searchMutation.isPending && !searchMutation.isError && (
         <div className="rounded-lg border border-dashed border-border p-12 text-center">
-          <Search
-            aria-hidden="true"
-            className="mx-auto mb-3 size-10 text-muted-foreground/40"
-          />
+          <Search aria-hidden="true" className="mx-auto mb-3 size-10 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">
             输入检索词并选择知识库范围，开始检索相关内容
           </p>
