@@ -102,3 +102,36 @@ Implemented the frontend gateway OpenAPI generated types, typed transport wrappe
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Issue 147 Go 1.25 baseline
+
+**Date**: 2026-06-29
+**Task**: Issue 147 Go 1.25 baseline
+**Branch**: `Special/chore/go-125-baseline`
+
+### Summary
+
+Aligned landed Go services, Docker build image, Go service CI, and backend CI spec with the documented Go 1.25 baseline.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a8399d9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
