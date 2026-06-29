@@ -133,7 +133,7 @@ func (r *Postgres) DeleteConversation(ctx context.Context, userID, id string) er
 	return nil
 }
 
-func (r *Postgres) ListMessages(ctx context.Context, userID, conversationID string, page, pageSize int) (service.Page[service.Message], error) {
+func (r *Postgres) ListMessages(ctx context.Context, userID, conversationID string, options service.MessageListOptions) (service.Page[service.Message], error) {
 	total, err := r.queries.CountMessagesForConversation(ctx, conversationID, userID)
 	if err != nil {
 		return service.Page[service.Message]{}, fmt.Errorf("count messages: %w", err)
@@ -141,8 +141,8 @@ func (r *Postgres) ListMessages(ctx context.Context, userID, conversationID stri
 	rows, err := r.queries.ListMessagesForConversation(ctx, sqlc.ListMessagesForConversationParams{
 		ConversationID: conversationID,
 		ExternalUserID: userID,
-		PageSize:       int32(pageSize),
-		PageOffset:     int32((page - 1) * pageSize),
+		PageSize:       int32(options.PageSize),
+		PageOffset:     int32((options.Page - 1) * options.PageSize),
 	})
 	if err != nil {
 		return service.Page[service.Message]{}, fmt.Errorf("list messages: %w", err)
@@ -156,7 +156,10 @@ func (r *Postgres) ListMessages(ctx context.Context, userID, conversationID stri
 			return service.Page[service.Message]{}, err
 		}
 	}
-	return service.Page[service.Message]{Items: items, Page: page, PageSize: pageSize, Total: int(total)}, nil
+	if err := r.enrichMessages(ctx, userID, conversationID, items, options); err != nil {
+		return service.Page[service.Message]{}, err
+	}
+	return service.Page[service.Message]{Items: items, Page: options.Page, PageSize: options.PageSize, Total: int(total)}, nil
 }
 
 func (r *Postgres) AppendMessages(ctx context.Context, userID, conversationID string, messages ...service.Message) (service.ResponseRun, error) {
@@ -170,7 +173,7 @@ func (r *Postgres) AppendMessages(ctx context.Context, userID, conversationID st
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := r.queries.WithTx(tx)
 	if _, err := q.LockConversationForUser(ctx, conversationID, userID); errors.Is(err, pgx.ErrNoRows) {
-		return service.ResponseRun{}, service.NewError(service.CodeNotFound, "conversation not found", err)
+		return service.ResponseRun{}, r.conversationAccessError(ctx, userID, conversationID)
 	} else if err != nil {
 		return service.ResponseRun{}, fmt.Errorf("lock conversation: %w", err)
 	}
@@ -444,12 +447,14 @@ func (r *Postgres) conversationAccessError(ctx context.Context, userID, id strin
 
 func blockStatus(messageStatus string) string {
 	switch messageStatus {
-	case "generating":
-		return "generating"
+	case "queued":
+		return "queued"
+	case "generating", "streaming":
+		return "streaming"
 	case "failed":
 		return "failed"
-	case "cancelled":
-		return "cancelled"
+	case "stopped", "cancelled":
+		return messageStatus
 	default:
 		return "completed"
 	}
@@ -457,9 +462,9 @@ func blockStatus(messageStatus string) string {
 
 func runStatus(messageStatus string) string {
 	switch messageStatus {
-	case "generating", "queued":
+	case "generating", "queued", "streaming":
 		return "running"
-	case "cancelled":
+	case "stopped", "cancelled":
 		return "cancelled"
 	case "failed":
 		return "failed"

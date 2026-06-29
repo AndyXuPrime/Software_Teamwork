@@ -13,9 +13,10 @@ import (
 )
 
 type fakeQAService struct {
-	create func(context.Context, string, string) (service.Conversation, error)
-	list   func(context.Context, string, service.ConversationListOptions) (service.Page[service.Conversation], error)
-	ask    func(context.Context, string, string, service.AskInput, service.ProgressObserver) (service.AskResult, error)
+	create       func(context.Context, string, string) (service.Conversation, error)
+	list         func(context.Context, string, service.ConversationListOptions) (service.Page[service.Conversation], error)
+	listMessages func(context.Context, string, string, service.MessageListOptions) (service.Page[service.Message], error)
+	ask          func(context.Context, string, string, service.AskInput, service.ProgressObserver) (service.AskResult, error)
 }
 
 type fakeSettingsService struct{}
@@ -116,7 +117,10 @@ func (fakeResourceService) GetIntentDistribution(context.Context, int) ([]servic
 	return []service.IntentDistribution{}, nil
 }
 func (fakeQAService) DeleteConversation(context.Context, string, string) error { return nil }
-func (fakeQAService) ListMessages(context.Context, string, string, int, int) (service.Page[service.Message], error) {
+func (f fakeQAService) ListMessages(ctx context.Context, userID, sessionID string, options service.MessageListOptions) (service.Page[service.Message], error) {
+	if f.listMessages != nil {
+		return f.listMessages(ctx, userID, sessionID, options)
+	}
 	return service.Page[service.Message]{Items: []service.Message{}, Page: 1, PageSize: 50}, nil
 }
 func (f fakeQAService) Ask(ctx context.Context, userID, conversationID string, input service.AskInput, observer service.ProgressObserver) (service.AskResult, error) {
@@ -265,6 +269,82 @@ func TestStreamDoesNotDuplicateServiceErrorEvent(t *testing.T) {
 	server.ServeHTTP(recorder, request)
 	if count := strings.Count(recorder.Body.String(), "event: error"); count != 1 {
 		t.Fatalf("error event count=%d body=%s", count, recorder.Body.String())
+	}
+}
+
+func TestListMessagesUsesDocumentedQueryParameters(t *testing.T) {
+	server := newTestServer(t, fakeQAService{listMessages: func(_ context.Context, userID, sessionID string, options service.MessageListOptions) (service.Page[service.Message], error) {
+		if userID != "user-1" || sessionID != "session-1" {
+			t.Fatalf("userID=%q sessionID=%q", userID, sessionID)
+		}
+		want := service.MessageListOptions{Page: 3, PageSize: 10, IncludeThinking: false, IncludeCitations: false}
+		if options != want {
+			t.Fatalf("options=%+v want %+v", options, want)
+		}
+		return service.Page[service.Message]{Items: []service.Message{{ID: "message-id", ConversationID: sessionID, Role: "user", Status: "completed", Content: "question"}}, Page: options.Page, PageSize: options.PageSize, Total: 1}, nil
+	}})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-sessions/session-1/messages?page=3&pageSize=10&includeThinking=false&includeCitations=false", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"pageSize":10`) {
+		t.Fatalf("unexpected page response: %s", recorder.Body.String())
+	}
+}
+
+func TestListMessagesDefaultsIncludeParametersToTrue(t *testing.T) {
+	server := newTestServer(t, fakeQAService{listMessages: func(_ context.Context, _, _ string, options service.MessageListOptions) (service.Page[service.Message], error) {
+		if !options.IncludeThinking || !options.IncludeCitations {
+			t.Fatalf("include defaults = %+v", options)
+		}
+		return service.Page[service.Message]{Items: []service.Message{}, Page: options.Page, PageSize: options.PageSize}, nil
+	}})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-sessions/session-1/messages", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestListMessagesRejectsInvalidIncludeParameter(t *testing.T) {
+	server := newTestServer(t, fakeQAService{listMessages: func(context.Context, string, string, service.MessageListOptions) (service.Page[service.Message], error) {
+		t.Fatal("service should not be called")
+		return service.Page[service.Message]{}, nil
+	}})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-sessions/session-1/messages?includeThinking=maybe", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"includeThinking":"must be a boolean"`) {
+		t.Fatalf("unexpected error response: %s", recorder.Body.String())
+	}
+}
+
+func TestListMessagesPropagatesCrossUserForbidden(t *testing.T) {
+	server := newTestServer(t, fakeQAService{listMessages: func(context.Context, string, string, service.MessageListOptions) (service.Page[service.Message], error) {
+		return service.Page[service.Message]{}, service.NewError(service.CodeForbidden, "conversation access denied", nil)
+	}})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-sessions/other-session/messages", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"code":"forbidden"`) {
+		t.Fatalf("unexpected error response: %s", recorder.Body.String())
 	}
 }
 

@@ -71,16 +71,25 @@ type ConversationListOptions struct {
 }
 
 type Message struct {
-	ID             string     `json:"id"`
-	ConversationID string     `json:"sessionId"`
-	SequenceNo     int        `json:"sequenceNo"`
-	Role           string     `json:"role"`
-	Content        string     `json:"content"`
-	Intent         string     `json:"intent,omitempty"`
-	Status         string     `json:"status"`
-	CitationCount  int        `json:"-"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	CompletedAt    *time.Time `json:"completedAt,omitempty"`
+	ID             string          `json:"id"`
+	ConversationID string          `json:"sessionId"`
+	SequenceNo     int             `json:"sequenceNo"`
+	Role           string          `json:"role"`
+	Content        string          `json:"content"`
+	Intent         string          `json:"intent,omitempty"`
+	Status         string          `json:"status"`
+	Thinking       []ReasoningStep `json:"thinking,omitempty"`
+	Citations      []Citation      `json:"citations,omitempty"`
+	CitationCount  int             `json:"-"`
+	CreatedAt      time.Time       `json:"createdAt"`
+	CompletedAt    *time.Time      `json:"completedAt,omitempty"`
+}
+
+type MessageListOptions struct {
+	Page             int
+	PageSize         int
+	IncludeThinking  bool
+	IncludeCitations bool
 }
 
 type ReasoningStep struct {
@@ -169,7 +178,7 @@ type Repository interface {
 	GetConversation(context.Context, string, string) (Conversation, error)
 	UpdateConversation(context.Context, string, Conversation) (Conversation, error)
 	DeleteConversation(context.Context, string, string) error
-	ListMessages(context.Context, string, string, int, int) (Page[Message], error)
+	ListMessages(context.Context, string, string, MessageListOptions) (Page[Message], error)
 	AppendMessages(context.Context, string, string, ...Message) (ResponseRun, error)
 	UpdateMessage(context.Context, string, Message) error
 	SaveReasoningSteps(context.Context, string, string, []ReasoningStep) error
@@ -266,8 +275,18 @@ func (s *QAService) DeleteConversation(ctx context.Context, userID, id string) e
 	return s.repository.DeleteConversation(ctx, userID, id)
 }
 
-func (s *QAService) ListMessages(ctx context.Context, userID, conversationID string, page, pageSize int) (Page[Message], error) {
-	return s.repository.ListMessages(ctx, userID, conversationID, page, pageSize)
+func (s *QAService) ListMessages(ctx context.Context, userID, conversationID string, options MessageListOptions) (Page[Message], error) {
+	if strings.TrimSpace(userID) == "" {
+		return Page[Message]{}, NewError(CodeUnauthorized, "authentication required", nil)
+	}
+	if strings.TrimSpace(conversationID) == "" {
+		return Page[Message]{}, ValidationError(map[string]string{"sessionId": "is required"})
+	}
+	normalized, err := normalizeMessageListOptions(options)
+	if err != nil {
+		return Page[Message]{}, err
+	}
+	return s.repository.ListMessages(ctx, userID, conversationID, normalized)
 }
 
 func (s *QAService) Ask(ctx context.Context, userID, conversationID string, input AskInput, observe ProgressObserver) (AskResult, error) {
@@ -278,7 +297,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	if err != nil {
 		return AskResult{}, err
 	}
-	history, err := s.repository.ListMessages(ctx, userID, conversationID, 1, 100)
+	history, err := s.repository.ListMessages(ctx, userID, conversationID, MessageListOptions{Page: 1, PageSize: 100})
 	if err != nil {
 		return AskResult{}, err
 	}
@@ -289,7 +308,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 		intent = "unknown"
 	}
 	userMessage := Message{ID: newID("msg"), ConversationID: conversationID, Role: agent.RoleUser, Content: strings.TrimSpace(input.Message), Intent: intent, Status: "completed", CreatedAt: now}
-	assistantMessage := Message{ID: newID("msg"), ConversationID: conversationID, Role: agent.RoleAssistant, Intent: intent, Status: "generating", CreatedAt: now}
+	assistantMessage := Message{ID: newID("msg"), ConversationID: conversationID, Role: agent.RoleAssistant, Intent: intent, Status: "streaming", CreatedAt: now}
 	run, err := s.repository.AppendMessages(ctx, userID, conversationID, userMessage, assistantMessage)
 	if err != nil {
 		return AskResult{}, err
@@ -521,6 +540,19 @@ func normalizeConversationListOptions(options ConversationListOptions) (Conversa
 	case "-updatedAt", "updatedAt", "-createdAt", "createdAt":
 	default:
 		return ConversationListOptions{}, ValidationError(map[string]string{"sort": "must be updatedAt, -updatedAt, createdAt, or -createdAt"})
+	}
+	return options, nil
+}
+
+func normalizeMessageListOptions(options MessageListOptions) (MessageListOptions, error) {
+	if options.Page <= 0 {
+		options.Page = 1
+	}
+	if options.PageSize <= 0 {
+		options.PageSize = 50
+	}
+	if options.PageSize > 100 {
+		return MessageListOptions{}, ValidationError(map[string]string{"pageSize": "must be between 1 and 100"})
 	}
 	return options, nil
 }

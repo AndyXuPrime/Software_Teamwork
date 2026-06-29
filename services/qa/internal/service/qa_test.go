@@ -11,11 +11,12 @@ import (
 )
 
 type fakeRepository struct {
-	conversation Conversation
-	messages     []Message
-	savedSteps   []ReasoningStep
-	savedEvents  []StreamEvent
-	run          ResponseRun
+	conversation   Conversation
+	messages       []Message
+	messageOptions MessageListOptions
+	savedSteps     []ReasoningStep
+	savedEvents    []StreamEvent
+	run            ResponseRun
 }
 
 func (r *fakeRepository) CreateConversation(_ context.Context, value Conversation) (Conversation, error) {
@@ -33,8 +34,9 @@ func (r *fakeRepository) UpdateConversation(_ context.Context, _ string, value C
 	return value, nil
 }
 func (*fakeRepository) DeleteConversation(context.Context, string, string) error { return nil }
-func (r *fakeRepository) ListMessages(context.Context, string, string, int, int) (Page[Message], error) {
-	return Page[Message]{Items: append([]Message(nil), r.messages...), Page: 1, PageSize: 100, Total: len(r.messages)}, nil
+func (r *fakeRepository) ListMessages(_ context.Context, _ string, _ string, options MessageListOptions) (Page[Message], error) {
+	r.messageOptions = options
+	return Page[Message]{Items: append([]Message(nil), r.messages...), Page: options.Page, PageSize: options.PageSize, Total: len(r.messages)}, nil
 }
 func (r *fakeRepository) AppendMessages(_ context.Context, _, sessionID string, values ...Message) (ResponseRun, error) {
 	r.messages = append(r.messages, values...)
@@ -153,6 +155,28 @@ func TestListConversationsNormalizesDocumentedOptions(t *testing.T) {
 	}
 	if _, err = qa.ListConversations(context.Background(), "user-id", ConversationListOptions{Sort: "title"}); err == nil {
 		t.Fatal("expected invalid sort to fail")
+	}
+}
+
+func TestListMessagesNormalizesDocumentedOptions(t *testing.T) {
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", Status: "active"}}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{runner: &fakeAgentRunner{}, prompt: "system"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = qa.ListMessages(context.Background(), "user-id", "conversation-id", MessageListOptions{IncludeThinking: true, IncludeCitations: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := MessageListOptions{Page: 1, PageSize: 50, IncludeThinking: true, IncludeCitations: true}
+	if repository.messageOptions != want {
+		t.Fatalf("options=%+v want %+v", repository.messageOptions, want)
+	}
+	if _, err = qa.ListMessages(context.Background(), "user-id", "conversation-id", MessageListOptions{Page: 1, PageSize: 101}); err == nil {
+		t.Fatal("expected invalid page size to fail")
+	}
+	if _, err = qa.ListMessages(context.Background(), "", "conversation-id", MessageListOptions{}); err == nil {
+		t.Fatal("expected missing user to fail")
 	}
 }
 
