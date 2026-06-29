@@ -19,18 +19,24 @@
 | [服务边界矩阵](architecture/service-boundaries.md) | `gateway`、`auth`、`file`、`knowledge`、`qa`、`document`、`ai-gateway` 的职责边界、公开契约状态和缺失契约登记。 |
 | [技术选型基线](architecture/technology-decisions.md) | 后端数据库访问、迁移、日志、HTTP、配置、队列、认证、前端 API client、测试、CI、观测和 DOCX/MCP 等工程技术选型。 |
 | [Gateway 服务规划](services/gateway/README.md) | Gateway 的设计原则、公开 API、认证上下文、响应约定和后续扩展。 |
+| [Gateway 实现说明](services/gateway/docs/implementation.md) | `services/gateway/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [Auth 服务接口文档](services/auth/README.md) | 用户、会话、权限上下文和 auth 内部服务接口草案。 |
+| [Auth 实现说明](services/auth/docs/implementation.md) | `services/auth/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [File 服务接口文档](services/file/README.md) | 后端内部基础文件对象、元数据、原文件内容读取和 file 内部服务接口草案。 |
 | [File 数据模型文档](services/file/docs/data-models.md) | File 模块基础文件对象元数据、对象存储引用、删除清理和服务间 file reference 约束。 |
+| [File 实现说明](services/file/docs/implementation.md) | `services/file/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [Knowledge 服务接口文档](services/knowledge/README.md) | 知识库、文档处理状态、切片、向量索引和检索接口契约。 |
 | [Knowledge 数据模型文档](services/knowledge/docs/data-models.md) | Knowledge 模块知识库、文档、处理任务、切片、Qdrant payload 和运行时配置逻辑模型。 |
-| [Knowledge Service 实现说明](services/knowledge/docs/implementation.md) | `services/knowledge/` 本地服务实现、Docker Compose 和入库链路说明。 |
+| [Knowledge 实现说明](services/knowledge/docs/implementation.md) | `services/knowledge/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [QA 服务接口文档](services/qa/README.md) | 智能问答 Agent Host、会话、消息、ReAct 循环、MCP 工具调用、SSE、引用、配置、检索测试和统计接口说明。 |
 | [QA 数据模型文档](services/qa/docs/data-models.md) | QA 模块逻辑数据模型、核心关系、写入流程、索引和安全约束。 |
+| [QA 实现说明](services/qa/docs/implementation.md) | `services/qa/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [AI Gateway 服务接口文档](services/ai-gateway/README.md) | 内部模型配置、OpenAI-compatible chat/function calling/embedding、rerank 和 provider 错误归一化接口草案。 |
 | [AI Gateway 数据模型文档](services/ai-gateway/docs/data-models.md) | AI Gateway 模型 profile、provider 凭据、配置审计和脱敏调用日志数据模型。 |
+| [AI Gateway 实现说明](services/ai-gateway/docs/implementation.md) | `services/ai-gateway/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [Document 服务接口文档](services/document/README.md) | 报告模板、素材、报告记录、大纲、章节、生成任务、报告文件、配置、统计和 MCP 工具边界说明。 |
 | [Document 数据模型文档](services/document/docs/data-models.md) | 报告生成逻辑数据模型、实体关系、字段约定和存储约束。 |
+| [Document 实现说明](services/document/docs/implementation.md) | `services/document/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [前后端集成契约](architecture/frontend-backend-contract.md) | 前端调用 gateway 的入口、认证、请求/响应、错误、分页、SSE 和 mock 约定。 |
 | [Gateway OpenAPI 契约](services/gateway/api/openapi.yaml) | 当前稳定的 gateway 公开 API 机器可读契约。 |
 | [Gateway Active API Owner Map](services/gateway/docs/active-api-owner-map.md) | 从 Gateway OpenAPI 审计得到的 active API 清单、owner service、tag、operationId 和认证要求。 |
@@ -71,3 +77,5 @@
 - 涉及内部模型调用、provider 配置或调用记录时，同步更新 [AI Gateway 服务接口文档](services/ai-gateway/README.md)、[AI Gateway 数据模型文档](services/ai-gateway/docs/data-models.md) 和 [AI Gateway OpenAPI 契约](services/ai-gateway/api/openapi.yaml)
 
 跨服务编写标准不要放进单个服务细则：技术选型归 [技术选型基线](architecture/technology-decisions.md)，REST/OpenAPI/响应错误/SSE/上传归 [前后端集成契约](architecture/frontend-backend-contract.md)，服务边界归 [服务边界矩阵](architecture/service-boundaries.md)，协作流程归 [文档维护工作流](collaboration/documentation-workflow.md) 和其他协作文档。
+
+实现状态、代码与契约出入、临时 memory/mock 后端和最近检查记录统一写入各服务的 `docs/implementation.md`。README 和架构文档只保留契约、边界、稳定规则和入口链接，避免重复维护实现缺口。
