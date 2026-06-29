@@ -105,7 +105,7 @@ CREATE TABLE report_sections (
     id uuid PRIMARY KEY,
     report_id uuid NOT NULL REFERENCES reports(id),
     outline_id uuid REFERENCES report_outlines(id),
-    parent_id uuid REFERENCES report_sections(id),
+    parent_id uuid,
     outline_node_id text,
     section_path text NOT NULL,
     title text NOT NULL,
@@ -124,7 +124,10 @@ CREATE TABLE report_sections (
     generated_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (report_id, section_path)
+    UNIQUE (report_id, id),
+    UNIQUE (report_id, section_path),
+    CHECK (parent_id IS NULL OR parent_id <> id),
+    FOREIGN KEY (report_id, parent_id) REFERENCES report_sections(report_id, id)
 );
 
 CREATE TABLE report_section_versions (

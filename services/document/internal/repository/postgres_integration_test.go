@@ -155,8 +155,12 @@ func TestPostgresRepositoryWithinTxRollsBack(t *testing.T) {
 	}
 
 	rollbackErr := errors.New("rollback requested")
-	err = repo.WithinTx(ctx, func(txRepo *PostgresRepository) error {
-		_, err := txRepo.CreateReportJob(ctx, service.ReportJob{
+	err = repo.WithinTx(ctx, func(txRepo service.ReportRepository) error {
+		pgRepo, ok := txRepo.(*PostgresRepository)
+		if !ok {
+			t.Fatalf("tx repository type = %T, want *PostgresRepository", txRepo)
+		}
+		_, err := pgRepo.CreateReportJob(ctx, service.ReportJob{
 			ID:          "00000000-0000-0000-0000-000000000601",
 			Source:      "api",
 			JobType:     service.JobTypeOutlineGeneration,

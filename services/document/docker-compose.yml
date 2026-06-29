@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: document_system
+      POSTGRES_USER: document_app
+      POSTGRES_PASSWORD: document_app_dev
+      TZ: Asia/Shanghai
+    ports:
+      - "${DOCUMENT_POSTGRES_PORT:-5435}:5432"
+    volumes:
+      - document_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U document_app -d document_system"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks:
+      - document_net
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${DOCUMENT_REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks:
+      - document_net
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrate
+    environment:
+      GOOSE_DRIVER: postgres
+      GOOSE_DBSTRING: postgres://document_app:document_app_dev@postgres:5432/document_system?sslmode=disable
+      GOOSE_MIGRATION_DIR: /migrations
+    volumes:
+      - ./migrations:/migrations:ro
+    command: ["up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - document_net
+
+  document:
+    build:
+      context: .
+      dockerfile: ${DOCUMENT_DOCKERFILE:-Dockerfile}
+    environment:
+      DOCUMENT_HTTP_ADDR: ${DOCUMENT_HTTP_ADDR:-:8085}
+      DOCUMENT_DATABASE_URL: postgres://document_app:document_app_dev@postgres:5432/document_system?sslmode=disable
+      DOCUMENT_REDIS_ADDR: redis:6379
+      DOCUMENT_FILE_SERVICE_URL: ${DOCUMENT_COMPOSE_FILE_SERVICE_URL:-http://file:8082}
+      DOCUMENT_AI_GATEWAY_URL: ${DOCUMENT_COMPOSE_AI_GATEWAY_URL:-http://ai-gateway:8086}
+      DOCUMENT_AI_GATEWAY_PROFILE_ID: ${DOCUMENT_AI_GATEWAY_PROFILE_ID:-default-chat}
+      DOCUMENT_PANDOC_PATH: ${DOCUMENT_PANDOC_PATH:-pandoc}
+      DOCUMENT_LIBREOFFICE_PATH: ${DOCUMENT_LIBREOFFICE_PATH:-soffice}
+      DOCUMENT_SHUTDOWN_TIMEOUT: ${DOCUMENT_SHUTDOWN_TIMEOUT:-10s}
+    ports:
+      - "${DOCUMENT_HTTP_PORT:-8085}:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8085/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - document_net
+
+networks:
+  document_net:
+
+volumes:
+  document_pg_data:

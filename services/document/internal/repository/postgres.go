@@ -55,7 +55,7 @@ func (r *PostgresRepository) CheckReady(ctx context.Context) error {
 	return r.pool.Ping(ctx)
 }
 
-func (r *PostgresRepository) WithinTx(ctx context.Context, fn func(*PostgresRepository) error) error {
+func (r *PostgresRepository) WithinTx(ctx context.Context, fn func(service.ReportRepository) error) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin document transaction: %w", err)
@@ -83,6 +83,10 @@ func (r *PostgresRepository) UpsertReportType(ctx context.Context, value service
 	if value.UpdatedAt.IsZero() {
 		value.UpdatedAt = value.CreatedAt
 	}
+	defaultTemplateID, err := parseOptionalUUIDField(value.DefaultTemplateID, "defaultTemplateId")
+	if err != nil {
+		return service.ReportType{}, err
+	}
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO report_types (
 			code, name, description, enabled, default_template_id, created_at, updated_at
@@ -99,7 +103,7 @@ func (r *PostgresRepository) UpsertReportType(ctx context.Context, value service
 		value.Name,
 		value.Description,
 		value.Enabled,
-		value.DefaultTemplateID,
+		defaultTemplateID,
 		value.CreatedAt,
 		value.UpdatedAt,
 	)
@@ -506,6 +510,18 @@ func (r *PostgresRepository) CreateReport(ctx context.Context, value service.Rep
 	if value.UpdatedAt.IsZero() {
 		value.UpdatedAt = value.CreatedAt
 	}
+	templateID, err := parseOptionalUUIDField(value.TemplateID, "templateId")
+	if err != nil {
+		return service.Report{}, err
+	}
+	latestJobID, err := parseOptionalUUIDField(value.LatestJobID, "latestJobId")
+	if err != nil {
+		return service.Report{}, err
+	}
+	latestReportFileID, err := parseOptionalUUIDField(value.LatestReportFileID, "latestReportFileId")
+	if err != nil {
+		return service.Report{}, err
+	}
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO reports (
 			id, report_name, report_type, template_id, topic, specialty,
@@ -528,7 +544,7 @@ func (r *PostgresRepository) CreateReport(ctx context.Context, value service.Rep
 		value.ID,
 		value.Name,
 		value.ReportType,
-		value.TemplateID,
+		templateID,
 		value.Topic,
 		value.Specialty,
 		value.BusinessObject,
@@ -537,8 +553,8 @@ func (r *PostgresRepository) CreateReport(ctx context.Context, value service.Rep
 		value.CreatorID,
 		value.CreatorName,
 		value.Source,
-		value.LatestJobID,
-		value.LatestReportFileID,
+		latestJobID,
+		latestReportFileID,
 		value.GeneratedAt,
 		value.ExportedAt,
 		value.CreatedAt,
@@ -560,6 +576,10 @@ func (r *PostgresRepository) CreateReportJob(ctx context.Context, value service.
 	}
 	if value.MaxAttempts == 0 {
 		value.MaxAttempts = 3
+	}
+	templateID, err := parseOptionalUUIDField(value.TemplateID, "templateId")
+	if err != nil {
+		return service.ReportJob{}, err
 	}
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO report_jobs (
@@ -587,7 +607,7 @@ func (r *PostgresRepository) CreateReportJob(ctx context.Context, value service.
 		value.AsynqTaskID,
 		value.QueueName,
 		value.ReportID,
-		value.TemplateID,
+		templateID,
 		string(value.Status),
 		value.ErrorCode,
 		value.ErrorMessage,
@@ -666,6 +686,10 @@ func (r *PostgresRepository) CreateReportEvent(ctx context.Context, value servic
 	if value.CreatedAt.IsZero() {
 		value.CreatedAt = time.Now().UTC()
 	}
+	jobID, err := parseOptionalUUIDField(value.JobID, "jobId")
+	if err != nil {
+		return service.ReportEvent{}, err
+	}
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO report_events (
 			id, report_id, job_id, event_type, message, created_at
@@ -674,7 +698,7 @@ func (r *PostgresRepository) CreateReportEvent(ctx context.Context, value servic
 		RETURNING id::text, report_id::text, COALESCE(job_id::text, ''), event_type, COALESCE(message, ''), created_at`,
 		value.ID,
 		value.ReportID,
-		value.JobID,
+		jobID,
 		value.EventType,
 		value.Message,
 		value.CreatedAt,
@@ -890,6 +914,17 @@ func parseUUID(value string) (pgtype.UUID, error) {
 		return pgtype.UUID{}, err
 	}
 	return uuid, nil
+}
+
+func parseOptionalUUIDField(value, field string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	if _, err := parseUUID(trimmed); err != nil {
+		return "", service.ValidationError(map[string]string{field: "must be a valid UUID"})
+	}
+	return trimmed, nil
 }
 
 func uuidToString(value pgtype.UUID) string {

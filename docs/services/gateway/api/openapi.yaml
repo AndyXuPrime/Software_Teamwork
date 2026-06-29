@@ -1202,7 +1202,7 @@ paths:
     post:
       tags:
       - report-generation
-      summary: Create report section
+      summary: Create or batch save report sections
       operationId: createReportSection
       x-owner-service: document
       requestBody:
@@ -1210,8 +1210,16 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateReportSectionRequest'
+              oneOf:
+              - $ref: '#/components/schemas/CreateReportSectionRequest'
+              - $ref: '#/components/schemas/SaveReportSectionsRequest'
       responses:
+        '200':
+          description: Report sections batch saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportSectionListResponse'
         '201':
           description: Report section created.
           content:
@@ -1221,6 +1229,8 @@ paths:
         '400':
           $ref: '#/components/responses/Error'
         '404':
+          $ref: '#/components/responses/Error'
+        '409':
           $ref: '#/components/responses/Error'
   /api/v1/reports/{reportId}/sections/{sectionId}:
     parameters:
@@ -3572,9 +3582,6 @@ components:
           type: string
         year:
           type: integer
-        extraContext:
-          type: object
-          additionalProperties: true
         source:
           type: string
           enum:
@@ -3597,9 +3604,6 @@ components:
           type: string
         year:
           type: integer
-        extraContext:
-          type: object
-          additionalProperties: true
     Report:
       type: object
       required:
@@ -3627,9 +3631,6 @@ components:
           type: integer
         status:
           $ref: '#/components/schemas/ReportStatus'
-        extraContext:
-          type: object
-          additionalProperties: true
         creatorId:
           type: string
         creatorName:
@@ -3691,6 +3692,9 @@ components:
           type: string
         level:
           type: integer
+        sortOrder:
+          type: integer
+          minimum: 0
         numbering:
           type: string
         children:
@@ -3785,6 +3789,9 @@ components:
           type: string
         level:
           type: integer
+        sortOrder:
+          type: integer
+          minimum: 0
         numbering:
           type: string
         content:
@@ -3808,6 +3815,45 @@ components:
             additionalProperties: true
         manualEdited:
           type: boolean
+    SaveReportSectionRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Existing section id. Omit to create a new section.
+        outlineNodeId:
+          type: string
+        parentId:
+          type: string
+        title:
+          type: string
+          description: Required when id is omitted.
+        level:
+          type: integer
+        sortOrder:
+          type: integer
+          minimum: 0
+        numbering:
+          type: string
+        content:
+          type: string
+        tables:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        manualEdited:
+          type: boolean
+    SaveReportSectionsRequest:
+      type: object
+      required:
+      - sections
+      properties:
+        sections:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/SaveReportSectionRequest'
     ReportSection:
       type: object
       required:
@@ -3904,12 +3950,6 @@ components:
           - ai
         requirements:
           type: string
-        materialIds:
-          type: array
-          items:
-            type: string
-        preserveManualEdits:
-          type: boolean
     ReportSectionVersion:
       type: object
       required:
