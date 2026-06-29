@@ -967,7 +967,7 @@ components:
           description: Optional AI Gateway profile id. Uses the default embedding profile when omitted.
         model:
           type: string
-          description: OpenAI-compatible model name or configured model alias.
+          description: Must exactly match the resolved embedding profile model. AI Gateway forwards the profile model to the provider.
         input:
           type: array
           minItems: 1
@@ -1044,7 +1044,7 @@ components:
           description: Optional AI Gateway profile id. Uses the default rerank profile when omitted.
         model:
           type: string
-          description: OpenAI-style model name or configured model alias.
+          description: Must exactly match the resolved rerank profile model. AI Gateway forwards the profile model to the provider.
         query:
           type: string
         documents:

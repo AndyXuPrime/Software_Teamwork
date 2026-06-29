@@ -397,6 +397,8 @@ data: [DONE]
 
 `POST /internal/v1/embeddings` 创建一个或多个输入文本的 OpenAI-compatible embedding。该接口不负责将向量写入 Qdrant；`knowledge` 服务负责持久化、索引和 chunk 关联。
 
+请求 `model` 必须与解析出的 embedding profile `model` 完全一致；AI Gateway 实际转发给 provider 的模型名以 profile 配置为准，调用方不能借用该 profile 的凭据调用其他 provider 模型。
+
 ### EmbeddingRequest
 
 ```json
@@ -437,6 +439,8 @@ data: [DONE]
 ## Rerankings
 
 `POST /internal/v1/rerankings` 对候选文本进行重排序。OpenAI 官方 API 没有原生 rerank endpoint，因此该接口是 OpenAI-style 扩展：使用 snake_case 字段、`object` 标记、`data` 列表和 OpenAI-compatible error body。该接口不负责检索候选集，也不决定 RAG 引用格式；`knowledge` 或 `qa` 负责业务过滤、召回和引用。
+
+请求 `model` 必须与解析出的 rerank profile `model` 完全一致；AI Gateway 实际转发给 provider 的模型名以 profile 配置为准，调用方不能借用该 profile 的凭据调用其他 provider 模型。
 
 ### RerankingRequest
 
