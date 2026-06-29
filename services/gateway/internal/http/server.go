@@ -43,6 +43,7 @@ type Server struct {
 	tokenHasher          service.TokenHasher
 	ownerBaseURLs        map[string]*url.URL
 	httpClient           *http.Client
+	streamHTTPClient     *http.Client
 	readyCheck           func(context.Context) error
 	mux                  *http.ServeMux
 	handler              http.Handler
@@ -68,6 +69,7 @@ func NewServer(cfg Config) *Server {
 		tokenHasher:          cfg.TokenHasher,
 		ownerBaseURLs:        parseOwnerBaseURLs(cfg.OwnerBaseURLs),
 		httpClient:           cfg.HTTPClient,
+		streamHTTPClient:     cloneHTTPClientWithoutTimeout(cfg.HTTPClient),
 		readyCheck:           cfg.ReadyCheck,
 		mux:                  http.NewServeMux(),
 	}
@@ -76,7 +78,7 @@ func NewServer(cfg Config) *Server {
 		s.mux,
 		middleware.RequestID(),
 		middleware.Recover(cfg.Logger),
-		middleware.Timeout(cfg.RequestTimeout),
+		middleware.TimeoutWithSkip(cfg.RequestTimeout, skipsFixedRequestTimeout),
 		middleware.CORS(middleware.CORSConfig{
 			AllowedOrigins:   cfg.CORSAllowedOrigins,
 			AllowedMethods:   cfg.CORSAllowedMethods,
@@ -172,4 +174,13 @@ func parseOwnerBaseURLs(values map[string]string) map[string]*url.URL {
 		parsed[owner] = u
 	}
 	return parsed
+}
+
+func cloneHTTPClientWithoutTimeout(client *http.Client) *http.Client {
+	if client == nil {
+		return &http.Client{}
+	}
+	cloned := *client
+	cloned.Timeout = 0
+	return &cloned
 }

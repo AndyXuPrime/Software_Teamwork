@@ -8,14 +8,15 @@ import (
 type Code string
 
 const (
-	CodeValidation   Code = "validation_error"
-	CodeUnauthorized Code = "unauthorized"
-	CodeForbidden    Code = "forbidden"
-	CodeNotFound     Code = "not_found"
-	CodeConflict     Code = "conflict"
-	CodeRateLimited  Code = "rate_limited"
-	CodeDependency   Code = "dependency_error"
-	CodeInternal     Code = "internal_error"
+	CodeValidation     Code = "validation_error"
+	CodeUnauthorized   Code = "unauthorized"
+	CodeForbidden      Code = "forbidden"
+	CodeNotFound       Code = "not_found"
+	CodeConflict       Code = "conflict"
+	CodeRateLimited    Code = "rate_limited"
+	CodeNotImplemented Code = "not_implemented"
+	CodeDependency     Code = "dependency_error"
+	CodeInternal       Code = "internal_error"
 )
 
 type SuccessEnvelope struct {
