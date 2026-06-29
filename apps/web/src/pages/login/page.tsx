@@ -47,7 +47,7 @@ export function LoginPage() {
 
   useEffect(() => {
     if (status === 'authenticated') {
-      void router.navigate({ to: '/chat' })
+      void router.navigate({ to: '/' })
     }
   }, [router, status])
 
@@ -67,7 +67,7 @@ export function LoginPage() {
       } else {
         await register(parsed.data)
       }
-      await router.navigate({ to: '/chat' })
+      await router.navigate({ to: '/' })
     } catch (caught) {
       setFormError(toErrorMessage(caught))
     }

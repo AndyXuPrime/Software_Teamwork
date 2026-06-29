@@ -75,6 +75,28 @@ async function redirectToReportHome() {
   throw redirect({ to: '/forbidden' })
 }
 
+async function redirectToAppHome() {
+  const store = await restoreAuthForRoute()
+
+  if (canAccess(store.user, qaAccess)) {
+    throw redirect({ to: '/chat' })
+  }
+
+  if (canAccess(store.user, reportWriteAccess)) {
+    throw redirect({ to: '/reports/generate' })
+  }
+
+  if (canAccess(store.user, reportAccess)) {
+    throw redirect({ to: '/reports/records' })
+  }
+
+  if (canAccess(store.user, adminAccess)) {
+    throw redirect({ to: '/admin' })
+  }
+
+  throw redirect({ to: '/forbidden' })
+}
+
 async function redirectToAdminHome() {
   const store = await restoreAuthForRoute()
 
@@ -133,7 +155,7 @@ const loginRoute = createRoute({
   beforeLoad: async () => {
     const store = await restoreAuthForRoute()
     if (store.status === 'authenticated') {
-      throw redirect({ to: '/chat' })
+      await redirectToAppHome()
     }
   },
   component: LoginPage,
@@ -153,9 +175,7 @@ const authenticatedRoute = createRoute({
 const indexRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: '/',
-  beforeLoad: () => {
-    throw redirect({ to: '/chat' })
-  },
+  beforeLoad: redirectToAppHome,
 })
 
 const forbiddenRoute = createRoute({

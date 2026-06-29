@@ -14,9 +14,9 @@ export function ForbiddenPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           当前账号没有访问该页面所需的角色或权限，请联系管理员调整授权。
         </p>
-        <Link to="/chat">
+        <Link to="/">
           <Button className="mt-5" variant="outline">
-            返回问答
+            返回首页
           </Button>
         </Link>
       </section>
