@@ -1,27 +1,41 @@
-/**
- * Chat SSE streaming + RAG search — API doc sections 3 & 4.
- *
- * Based on frontend/src/api/chat.ts SSE implementation.
- */
-
-import type {
+﻿import type {
   ChatStreamRequest,
   RAGSearchRequest,
   RAGSearchResult,
   SSECitationData,
   SSEDoneData,
   SSEErrorData,
-  SSEEventType,
   SSEIntentStatusData,
   SSEThinkingStepData,
   SSETokenData,
 } from '@/lib/types'
 
-import { apiClient, doRequest } from './client'
+import { requestJson, streamGateway } from './client'
+import type { components } from './generated/gateway'
 
-// ---------------------------------------------------------------------------
-// SSE handlers (mirrors frontend/src/api/chat.ts SSEHandlers)
-// ---------------------------------------------------------------------------
+export type QASseEventType = components['schemas']['QASseEventType']
+type CreateQAMessageRequest = components['schemas']['CreateQAMessageRequest']
+type KnowledgeQueryRequest = components['schemas']['KnowledgeQueryRequest']
+type KnowledgeQuerySummary = components['schemas']['KnowledgeQuerySummary']
+
+type JsonRecord = Record<string, unknown>
+
+type QAStreamPayload = JsonRecord & {
+  eventSeq?: number
+  seq?: number
+  text?: string
+  delta?: string
+  content?: string
+  messageId?: string
+  message_id?: string
+  citation?: unknown
+  step?: unknown
+  status?: string
+  label?: string
+  code?: string | number
+  message?: string
+  fatal?: boolean
+}
 
 export interface SSEHandlers {
   onIntentStatus?: (data: SSEIntentStatusData) => void
@@ -33,207 +47,193 @@ export interface SSEHandlers {
   onAbort?: () => void
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
+function toRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' ? (value as JsonRecord) : {}
+}
 
-function dispatch(event: SSEEventType, data: unknown, handlers: SSEHandlers): void {
+function parsePayload(data: string): QAStreamPayload {
+  try {
+    return toRecord(JSON.parse(data)) as QAStreamPayload
+  } catch {
+    return { text: data }
+  }
+}
+
+function sequence(payload: QAStreamPayload, fallback: number): number {
+  const raw = payload.eventSeq ?? payload.seq
+  return typeof raw === 'number' ? raw : fallback
+}
+
+function textDelta(payload: QAStreamPayload): string {
+  return String(payload.delta ?? payload.text ?? payload.content ?? '')
+}
+
+function dispatch(
+  event: QASseEventType | string,
+  payload: QAStreamPayload,
+  handlers: SSEHandlers,
+  fallbackSeq: number,
+): void {
+  const seq = sequence(payload, fallbackSeq)
+
   switch (event) {
-    case 'intent_status':
-      handlers.onIntentStatus?.(data as SSEIntentStatusData)
+    case 'message.created':
+      handlers.onIntentStatus?.({
+        status: 'started',
+        label: String(payload.label ?? '消息已创建'),
+        seq,
+      })
       break
-    case 'thinking_step':
-      handlers.onThinkingStep?.(data as SSEThinkingStepData)
+    case 'agent.iteration.started':
+      handlers.onThinkingStep?.({
+        step: {
+          type: 'generation',
+          label: String(payload.label ?? '智能体处理中'),
+          status: 'running',
+          detail: typeof payload.message === 'string' ? payload.message : undefined,
+        },
+        seq,
+      })
       break
-    case 'token':
-      handlers.onToken?.(data as SSETokenData)
+    case 'reasoning.step': {
+      const step = toRecord(payload.step ?? payload)
+      handlers.onThinkingStep?.({
+        step: {
+          type: 'generation',
+          label: String(step.label ?? payload.label ?? '处理步骤'),
+          status:
+            step.status === 'failed' ? 'pending' : step.status === 'done' ? 'done' : 'running',
+          detail: typeof step.detail === 'string' ? step.detail : undefined,
+        },
+        seq,
+      })
       break
-    case 'citation':
-      handlers.onCitation?.(data as SSECitationData)
+    }
+    case 'tool.started':
+    case 'tool.completed':
+    case 'tool.failed':
+      handlers.onThinkingStep?.({
+        step: {
+          type: 'retrieval',
+          label: String(
+            payload.label ?? (event === 'tool.started' ? '工具调用中' : '工具调用完成'),
+          ),
+          status:
+            event === 'tool.started' ? 'running' : event === 'tool.failed' ? 'pending' : 'done',
+          detail: typeof payload.message === 'string' ? payload.message : undefined,
+        },
+        seq,
+      })
       break
-    case 'done':
-      handlers.onDone?.(data as SSEDoneData)
+    case 'answer.delta':
+      handlers.onToken?.({ text: textDelta(payload), index: seq, seq })
+      break
+    case 'citation.delta':
+      handlers.onCitation?.({
+        citation: toRecord(payload.citation ?? payload) as unknown as SSECitationData['citation'],
+        seq,
+      })
+      break
+    case 'answer.completed':
+      handlers.onDone?.({
+        message_id: String(payload.messageId ?? payload.message_id ?? ''),
+        total_tokens: 0,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        latency_ms: 0,
+        seq,
+      })
       break
     case 'error':
-      handlers.onError?.(data as SSEErrorData)
+      handlers.onError?.({
+        code: typeof payload.code === 'number' ? payload.code : 0,
+        message: typeof payload.message === 'string' ? payload.message : '流式回答失败',
+        fatal: payload.fatal !== false,
+        seq,
+      })
       break
-    // heartbeat — silently ignored
+    case 'heartbeat':
+      break
     default:
       break
   }
 }
 
-function anyAbort(...signals: AbortSignal[]): AbortSignal {
-  const ctrl = new AbortController()
-  for (const s of signals) {
-    if (s.aborted) {
-      ctrl.abort(s.reason)
-      return ctrl.signal
-    }
-    s.addEventListener('abort', () => ctrl.abort(s.reason), { once: true })
+function toQAMessageRequest(params: ChatStreamRequest): CreateQAMessageRequest {
+  return {
+    message: params.message,
+    knowledgeBaseIds: params.knowledge_bases,
+    retrieval: params.params
+      ? {
+          topK: params.params.top_k,
+          scoreThreshold: params.params.similarity_threshold,
+        }
+      : undefined,
   }
-  return ctrl.signal
 }
 
-// ---------------------------------------------------------------------------
-// 3.1  SSE streaming chat
-// ---------------------------------------------------------------------------
-
-/**
- * Initiate a streaming chat request via SSE.
- * Returns an `abort` function for cancellation.
- */
 export function streamChat(
   params: ChatStreamRequest,
   handlers: SSEHandlers,
   signal?: AbortSignal,
 ): { abort: () => void } {
-  const controller = new AbortController()
-  const combinedSignal = signal ? anyAbort(signal, controller.signal) : controller.signal
-
-  // Shared across then/catch so connection-level errors can compute a seq
-  // that passes the consumer-side monotonic-seq check.
-  let eventSeq = 0
-
-  // Build request body — only include optional params when explicitly set
-  const body: Record<string, unknown> = {
-    conversation_id: params.conversation_id,
-    message: params.message,
-  }
-  if (params.knowledge_bases?.length) {
-    body.knowledge_bases = params.knowledge_bases
-  }
-  if (params.params) {
-    const p: Record<string, unknown> = {}
-    if (params.params.top_k != null) p.top_k = params.params.top_k
-    if (params.params.similarity_threshold != null) {
-      p.similarity_threshold = params.params.similarity_threshold
-    }
-    if (params.params.use_rerank != null) {
-      p.use_rerank = params.params.use_rerank
-    }
-    if (params.params.rerank_threshold != null) {
-      p.rerank_threshold = params.params.rerank_threshold
-    }
-    if (Object.keys(p).length) body.params = p
-  }
-
-  fetch(`${apiClient.baseUrl}/qa-sessions/${params.conversation_id}/messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
+  let fallbackSeq = 0
+  const stream = streamGateway(
+    `/qa-sessions/${encodeURIComponent(params.conversation_id)}/messages`,
+    {
+      method: 'POST',
+      body: toQAMessageRequest(params),
+      signal,
+      onEvent(event) {
+        fallbackSeq += 1
+        dispatch(event.event, parsePayload(event.data), handlers, fallbackSeq)
+      },
+      onError(error) {
+        handlers.onError?.({
+          code: error.status,
+          message: error.message,
+          fatal: true,
+          seq: fallbackSeq + 1,
+        })
+      },
     },
-    body: JSON.stringify(body),
-    signal: combinedSignal,
-  })
-    .then(async (res) => {
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        handlers.onError?.({
-          code: res.status,
-          message: text || '请求失败',
-          fatal: true,
-          seq: 0,
-        })
-        return
-      }
+  )
 
-      const reader = res.body?.getReader()
-      if (!reader) {
-        handlers.onError?.({
-          code: 50000,
-          message: '无法读取响应流',
-          fatal: true,
-          seq: 0,
-        })
-        return
-      }
-
-      const decoder = new TextDecoder()
-      let buffer = ''
-      // currentEvent persists across read-loop iterations so that when an
-      // SSE event is split across network chunks the data: line in the
-      // later chunk still sees the event type from the earlier chunk.
-      let currentEvent: string | null = null
-
-      const flushEvent = () => {
-        if (!currentEvent || currentData === null) return
-        eventSeq++
-        try {
-          const raw: Record<string, unknown> = JSON.parse(currentData)
-          const data = { seq: eventSeq, ...raw } as unknown
-          dispatch(currentEvent as SSEEventType, data, handlers)
-        } catch {
-          // ignore unparseable data lines
-        }
-        currentEvent = null
-        currentData = null
-      }
-
-      let currentData: string | null = null
-
-      const processLines = (lines: string[]) => {
-        for (const line of lines) {
-          // Strip trailing CR for cross-platform compatibility
-          const trimmed = line.endsWith('\r') ? line.slice(0, -1) : line
-
-          if (trimmed === '') {
-            // Blank line — SSE event boundary
-            flushEvent()
-          } else if (trimmed.startsWith('event: ')) {
-            // New event type — flush previous event (if any), then capture
-            flushEvent()
-            currentEvent = trimmed.slice(7).trim()
-          } else if (trimmed.startsWith('data: ')) {
-            currentData = trimmed.slice(6)
-          }
-          // Lines starting with ':' are SSE comments — silently ignored
-        }
-      }
-
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        // Last element may be a partial line; save it for the next read
-        buffer = lines.pop() || ''
-
-        processLines(lines)
-      }
-
-      // Flush decoder remainder + any buffered partial line
-      buffer += decoder.decode()
-      if (buffer.trim()) {
-        processLines(buffer.split('\n'))
-      }
-      // Flush any event that was fully received before stream end
-      flushEvent()
-    })
-    .catch((err) => {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        handlers.onAbort?.()
-        return
-      }
-      // Connection-level errors use seq = eventSeq + 1 so they always pass
-      // the consumer-side monotonic-seq check, even when events have already
-      // been dispatched.
-      handlers.onError?.({
-        code: 0,
-        message: err instanceof Error ? err.message : '网络异常，请检查连接',
-        fatal: true,
-        seq: eventSeq + 1,
-      })
-    })
-
-  return { abort: () => controller.abort() }
+  return {
+    abort() {
+      stream.abort()
+      handlers.onAbort?.()
+    },
+  }
 }
 
-// ---------------------------------------------------------------------------
-// 4 / 5.1  RAG semantic search (no LLM)
-// ---------------------------------------------------------------------------
+function toKnowledgeQueryRequest(params: RAGSearchRequest): KnowledgeQueryRequest {
+  return {
+    query: params.query,
+    knowledgeBaseIds: params.knowledge_bases,
+    topK: params.top_k ?? 10,
+    scoreThreshold: params.similarity_threshold ?? 0,
+    rerank: params.use_rerank ?? false,
+    rerankTopN: params.rerank_top_n,
+  }
+}
+
+function toRagSearchResult(
+  result: components['schemas']['KnowledgeQueryResult'],
+  index: number,
+): RAGSearchResult {
+  return {
+    rank: index + 1,
+    chunk_id: result.chunkId ?? result.pointId ?? '',
+    doc_id: result.documentId ?? '',
+    doc_name: result.documentName ?? '',
+    text: result.contentPreview,
+    vector_score: result.score,
+    rerank_score: undefined,
+    page_number: undefined,
+    chunk_index: result.chunkIndex ?? undefined,
+  }
+}
 
 export interface RAGSearchResponse {
   query: string
@@ -243,28 +243,19 @@ export interface RAGSearchResponse {
   took_ms: number
 }
 
-/**
- * RAG semantic search.
- * API doc 5.1 — debug/search endpoint, no LLM involved.
- */
 export async function ragSearch(params: RAGSearchRequest): Promise<RAGSearchResponse> {
-  const res = await fetch(`${apiClient.baseUrl}/rag/search`, {
+  const data = await requestJson<KnowledgeQuerySummary>('/knowledge-queries', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    body: toKnowledgeQueryRequest(params),
   })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(text || 'RAG 检索失败')
+  return {
+    query: data.query,
+    mode: 'knowledge_query',
+    results: data.results.map(toRagSearchResult),
+    total_hits: data.results.length,
+    took_ms: 0,
   }
-  const json: { code: number; message: string; data: RAGSearchResponse } = await res.json()
-  if (json.code !== 0) throw new Error(json.message || 'RAG 检索失败')
-  return json.data
 }
-
-// ---------------------------------------------------------------------------
-// 5.3  RAG search compare — vector-only vs vector+rerank
-// ---------------------------------------------------------------------------
 
 export interface RAGSearchCompareRequest {
   query: string
@@ -290,24 +281,37 @@ export interface RAGSearchCompareResponse {
   comparison: RAGSearchComparison
 }
 
-/**
- * Compare vector-only search against vector+rerank search.
- * API doc 5.3 — /rag/search/compare endpoint.
- */
 export async function ragSearchCompare(
   params: RAGSearchCompareRequest,
 ): Promise<RAGSearchCompareResponse> {
-  const body: Record<string, unknown> = {
-    query: params.query,
-  }
-  if (params.knowledge_bases?.length) {
-    body.knowledge_bases = params.knowledge_bases
-  }
-  if (params.top_k != null) body.top_k = params.top_k
-  if (params.threshold != null) body.threshold = params.threshold
+  const [vectorOnly, vectorRerank] = await Promise.all([
+    ragSearch({
+      query: params.query,
+      knowledge_bases: params.knowledge_bases,
+      top_k: params.top_k,
+      similarity_threshold: params.threshold,
+      use_rerank: false,
+    }),
+    ragSearch({
+      query: params.query,
+      knowledge_bases: params.knowledge_bases,
+      top_k: params.top_k,
+      similarity_threshold: params.threshold,
+      use_rerank: true,
+    }),
+  ])
 
-  return doRequest<RAGSearchCompareResponse>('/rag/search/compare', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
+  const vectorIds = new Set(vectorOnly.results.map((result) => result.chunk_id))
+  const rerankIds = new Set(vectorRerank.results.map((result) => result.chunk_id))
+  const overlap = [...vectorIds].filter((id) => rerankIds.has(id)).length
+
+  return {
+    vector_only: { results: vectorOnly.results, took_ms: vectorOnly.took_ms },
+    vector_rerank: { results: vectorRerank.results, took_ms: vectorRerank.took_ms },
+    comparison: {
+      overlap_count: overlap,
+      vector_only_unique: vectorIds.size - overlap,
+      rerank_unique: rerankIds.size - overlap,
+    },
+  }
 }
