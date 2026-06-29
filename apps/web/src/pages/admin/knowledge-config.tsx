@@ -99,13 +99,13 @@ export function KnowledgeConfig() {
               知识库列表
             </h4>
 
-            {!knowledgeBases || knowledgeBases.length === 0 ? (
+            {!knowledgeBases || knowledgeBases.items.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                 暂无知识库
               </div>
             ) : (
               <div className="space-y-2">
-                {knowledgeBases.map((kb) => (
+                {knowledgeBases.items.map((kb) => (
                   <div
                     key={kb.id}
                     className="flex items-center justify-between rounded-md border border-border bg-background p-3"

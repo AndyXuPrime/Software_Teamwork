@@ -141,19 +141,19 @@ export default function ChatSidebar({
 
           {/* Session items */}
           {sessions.map((sess) => {
-            const isEditing = editingId === sess.sessionId
-            const isActive = sess.sessionId === activeId
+            const isEditing = editingId === sess.id
+            const isActive = sess.id === activeId
 
             return (
               <button
-                key={sess.sessionId}
+                key={sess.id}
                 type="button"
                 className={cn(
                   'group relative flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-primary/5',
                   isActive && 'bg-primary/10 text-primary border-l-[3px] border-l-primary',
                 )}
-                onClick={() => onSelect(sess.sessionId)}
-                onDoubleClick={() => startEdit(sess.sessionId, sess.title ?? '')}
+                onClick={() => onSelect(sess.id)}
+                onDoubleClick={() => startEdit(sess.id, sess.title ?? '')}
               >
                 {isEditing ? (
                   /* ── Inline rename ── */
@@ -220,13 +220,13 @@ export default function ChatSidebar({
                         title="重命名"
                         onClick={(e) => {
                           e.stopPropagation()
-                          startEdit(sess.sessionId, sess.title ?? '')
+                          startEdit(sess.id, sess.title ?? '')
                         }}
                         tabIndex={0}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.stopPropagation()
-                            startEdit(sess.sessionId, sess.title ?? '')
+                            startEdit(sess.id, sess.title ?? '')
                           }
                         }}
                       >
@@ -240,13 +240,13 @@ export default function ChatSidebar({
                         title="删除对话"
                         onClick={(e) => {
                           e.stopPropagation()
-                          handleDelete(sess.sessionId)
+                          handleDelete(sess.id)
                         }}
                         tabIndex={0}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.stopPropagation()
-                            handleDelete(sess.sessionId)
+                            handleDelete(sess.id)
                           }
                         }}
                       >

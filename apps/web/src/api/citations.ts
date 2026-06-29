@@ -7,7 +7,7 @@
 
 import type { QACitationDetail } from '@/lib/types'
 
-import { doRequest } from './client'
+import { gatewayRequest } from './client'
 
 // ---------------------------------------------------------------------------
 // GET /citations/{citationId}
@@ -18,7 +18,7 @@ import { doRequest } from './client'
  * for a single citation.
  */
 export async function getCitation(citationId: string): Promise<QACitationDetail> {
-  return doRequest<QACitationDetail>(`/citations/${encodeURIComponent(citationId)}`)
+  return gatewayRequest<QACitationDetail>(`/citations/${encodeURIComponent(citationId)}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -29,7 +29,7 @@ export async function getCitation(citationId: string): Promise<QACitationDetail>
  * Batch lookup citation details by citation IDs.
  */
 export async function lookupCitations(citationIds: string[]): Promise<QACitationDetail[]> {
-  return doRequest<QACitationDetail[]>('/citation-lookups', {
+  return gatewayRequest<QACitationDetail[]>('/citation-lookups', {
     method: 'POST',
     body: JSON.stringify({ citationIds }),
   })

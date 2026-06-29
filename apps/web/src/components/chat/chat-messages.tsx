@@ -16,8 +16,8 @@ import { cn } from '@/lib/utils'
 function CitationTooltip({ c }: { c: QACitation }) {
   const [open, setOpen] = useState(false)
 
-  // Resolve display fields (citationId is always present; docId/docName are deprecated aliases)
-  const displayId = c.citationNo != null ? `[${c.citationNo}]` : c.citationId
+  // Resolve display fields (id is always present; docId/docName are deprecated aliases)
+  const displayId = c.citationNo != null ? `[${c.citationNo}]` : c.id
   const docName = c.documentName ?? c.docName ?? '未知文档'
   const text = c.text ?? c.contentPreview ?? ''
   const score = c.score ?? 0
@@ -266,7 +266,7 @@ function MessageBubble({ msg, isStreaming }: { msg: QAMessage; isStreaming: bool
             <p className="mb-1 text-xs font-semibold text-muted-foreground">引用来源</p>
             <div className="flex flex-wrap gap-1">
               {msg.citations!.map((c) => (
-                <CitationTooltip key={c.citationId} c={c} />
+                <CitationTooltip key={c.id} c={c} />
               ))}
             </div>
           </div>
@@ -347,7 +347,7 @@ export default function ChatMessages({
       {messages.map((msg, i) => {
         const isLast = i === messages.length - 1
         const isStreamingAsst = isLast && msg.role === 'assistant' && streaming
-        return <MessageBubble key={msg.messageId} msg={msg} isStreaming={isStreamingAsst} />
+        return <MessageBubble key={msg.id} msg={msg} isStreaming={isStreamingAsst} />
       })}
 
       {/* ── Error ── */}

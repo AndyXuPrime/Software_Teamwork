@@ -66,12 +66,12 @@ export const useChatStore = create<ChatState>()(
 
       addSession: (session) =>
         set((state) => {
-          if (state.sessions.some((s) => s.sessionId === session.sessionId)) {
+          if (state.sessions.some((s) => s.id === session.id)) {
             return state
           }
           return {
             sessions: [session, ...state.sessions],
-            sessionIds: [session.sessionId, ...state.sessionIds.filter((sid) => sid !== session.sessionId)],
+            sessionIds: [session.id, ...state.sessionIds.filter((sid) => sid !== session.id)],
           }
         }),
 
@@ -79,7 +79,7 @@ export const useChatStore = create<ChatState>()(
         set((state) => {
           const { [sessionId]: _removed, ...restMessages } = state.messagesBySession
           return {
-            sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
+            sessions: state.sessions.filter((s) => s.id !== sessionId),
             sessionIds: state.sessionIds.filter((sid) => sid !== sessionId),
             activeId: state.activeId === sessionId ? null : state.activeId,
             messagesBySession: restMessages,

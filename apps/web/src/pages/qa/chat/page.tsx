@@ -33,7 +33,7 @@ function toSessionListItem(
 ): QASessionListItem {
   const last = messages[messages.length - 1]
   return {
-    sessionId: s.sessionId,
+    id: s.id,
     title: s.title,
     status: s.status,
     messageCount: messages.length,
@@ -105,13 +105,13 @@ export function ChatPage() {
     if (sessionsData?.items) {
       const currentSessions = useChatStore.getState().sessions
       const merged: QASession[] = sessionsData.items.map((item) => {
-        const existing = currentSessions.find((s) => s.sessionId === item.sessionId)
+        const existing = currentSessions.find((s) => s.id === item.id)
         if (existing) {
           // Preserve existing metadata; update title/status/updatedAt from server
           return { ...existing, title: item.title, status: item.status, updatedAt: item.updatedAt }
         }
         return {
-          sessionId: item.sessionId,
+          id: item.id,
           title: item.title,
           status: item.status,
           messageCount: item.messageCount,
@@ -170,7 +170,7 @@ export function ChatPage() {
   const sidebarItems: QASessionListItem[] = useMemo(
     () =>
       sessions.map((s) => {
-        const msgs = messagesBySession[s.sessionId] ?? []
+        const msgs = messagesBySession[s.id] ?? []
         return toSessionListItem(s, msgs)
       }),
     [sessions, messagesBySession],
@@ -184,7 +184,7 @@ export function ChatPage() {
     try {
       const newSession = await createSessionMut.mutateAsync('新对话')
       addSession(newSession)
-      setActiveId(newSession.sessionId)
+      setActiveId(newSession.id)
     } catch {
       setError('创建会话失败，请检查网络连接')
     }
@@ -217,7 +217,7 @@ export function ChatPage() {
         const current = useChatStore.getState().sessions
         setSessions(
           current.map((s) =>
-            s.sessionId === sessionId ? { ...s, title: newTitle } : s,
+            s.id === sessionId ? { ...s, title: newTitle } : s,
           ),
         )
       } catch {
@@ -246,7 +246,7 @@ export function ChatPage() {
           const title = trimmed.slice(0, 30) + (trimmed.length > 30 ? '…' : '')
           const newSession = await createSessionMut.mutateAsync(title)
           addSession(newSession)
-          targetId = newSession.sessionId
+          targetId = newSession.id
           setActiveId(targetId)
         } catch {
           setError('创建会话失败，请检查网络连接')
@@ -258,7 +258,7 @@ export function ChatPage() {
 
       // ② Push user message + empty assistant message into store
       const userMsg: QAMessage = {
-        messageId: nextId(),
+        id: nextId(),
         sessionId: uid,
         role: 'user',
         content: trimmed,
@@ -266,7 +266,7 @@ export function ChatPage() {
         createdAt: new Date().toISOString(),
       }
       const asstMsg: QAMessage = {
-        messageId: nextId(),
+        id: nextId(),
         sessionId: uid,
         role: 'assistant',
         content: '',
@@ -281,7 +281,7 @@ export function ChatPage() {
       // Update session metadata (title for first message)
       useChatStore.setState((state) => ({
         sessions: state.sessions.map((s) => {
-          if (s.sessionId !== uid) return s
+          if (s.id !== uid) return s
           const msgs = state.messagesBySession[uid] ?? []
           const isFirst = msgs.length <= 2
           return {
@@ -304,7 +304,7 @@ export function ChatPage() {
        * Uses Zustand setState with functional updater for latest state.
        */
       const patchAssistant = (patch: {
-        messageId?: string
+        id?: string
         content?: string
         thinking?: QAThinkingStep[]
         citations?: QACitation[]
@@ -346,10 +346,10 @@ export function ChatPage() {
         {
           onMessageCreated(data) {
             if (!verifySeq(data.seq)) return
-            // Capture the real messageId from the server
+            // Capture the real message id from the server
             const serverMsgId = data.messageId as string | undefined
             if (serverMsgId) {
-              patchAssistant({ messageId: serverMsgId })
+              patchAssistant({ id: serverMsgId })
             }
           },
           onAgentIterationStarted(data) {
@@ -523,7 +523,7 @@ export function ChatPage() {
   // Active session
   // ══════════════════════════════════════════════════════════════════════════
 
-  const activeSession = sessions.find((s) => s.sessionId === activeId)
+  const activeSession = sessions.find((s) => s.id === activeId)
   const activeMessages = activeId ? (messagesBySession[activeId] ?? []) : []
 
   // ══════════════════════════════════════════════════════════════════════════

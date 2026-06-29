@@ -121,6 +121,8 @@ class ApiClientImpl {
    * Parses `{ data, requestId }` on 2xx → returns `data`.
    * Parses `{ error }` on non-2xx → throws `ApiError`.
    * Clears token on 401.
+   * @deprecated Use `gatewayRequest` instead. This class-based method is kept for
+   * backward compatibility with existing API modules during migration.
    */
   async doRequest<T>(path: string, options?: RequestInit): Promise<T> {
     const res = await this.fetchWithAuth(path, options)
@@ -145,6 +147,8 @@ class ApiClientImpl {
   /**
    * Paginated-list request.
    * Parses `{ data, page, requestId }` on 2xx.
+   * @deprecated Use `gatewayPageRequest` instead. This class-based method is kept for
+   * backward compatibility with existing API modules during migration.
    */
   async listRequest<T>(path: string, options?: RequestInit): Promise<ListResponse<T>> {
     const res = await this.fetchWithAuth(path, options)
@@ -250,6 +254,8 @@ export const apiClient = new ApiClientImpl()
 /**
  * Single-resource request via the singleton API client.
  * @see ApiClientImpl.doRequest
+ * @deprecated Use `gatewayRequest` instead. This wrapper is kept for backward
+ * compatibility with existing API modules during migration.
  */
 export function doRequest<T>(path: string, options?: RequestInit): Promise<T> {
   return apiClient.doRequest<T>(path, options)
@@ -271,49 +277,24 @@ export type GatewayPaginatedEnvelope<T> = GatewaySuccessEnvelope<T[]> & {
 /**
  * Paginated-list request via the singleton API client.
  * @see ApiClientImpl.listRequest
+ * @deprecated Use `gatewayPageRequest` instead. This wrapper is kept for backward
+ * compatibility with existing API modules during migration.
  */
 export function listRequest<T>(path: string, options?: RequestInit): Promise<ListResponse<T>> {
   return apiClient.listRequest<T>(path, options)
 }
 
-export class ApiError extends Error {
-  code: string
-  status: number
-  requestId?: string
-  fields?: Record<string, string>
+function getAccessToken(): string | null {
+  // Primary: unified apiClient-managed token
+  const clientToken = apiClient.getToken()
+  if (clientToken) return clientToken
 
-  constructor(
-    params:
-      | {
-          code: string
-          message: string
-          status: number
-          requestId?: string
-          fields?: Record<string, string>
-        }
-      | string
-      | number,
-    message?: string,
-    options?: { requestId?: string; fields?: Record<string, string> },
-  ) {
-    const normalized =
-      typeof params === 'object'
-        ? params
-        : {
-            code: String(params),
-            message: message ?? 'Request failed',
-            status: typeof params === 'number' ? params : 0,
-            requestId: options?.requestId,
-            fields: options?.fields,
-          }
-
-    super(normalized.message)
-    this.name = 'ApiError'
-    this.code = normalized.code
-    this.status = normalized.status
-    this.requestId = normalized.requestId
-    this.fields = normalized.fields
-  }
+  // Fallback: legacy token storage keys (for migration / different auth flows)
+  return (
+    window.localStorage.getItem('accessToken') ??
+    window.localStorage.getItem('qa-access-token') ??
+    window.localStorage.getItem('auth.accessToken')
+  )
 }
 
 type RequestBody = BodyInit | Record<string, unknown> | unknown[] | null
@@ -561,10 +542,20 @@ export function buildQuery(
   return query ? `?${query}` : ''
 }
 
-function withJsonHeaders(options: GatewayRequestOptions = {}): GatewayRequestOptions {
-  const headers = new Headers(options.headers)
-  if (options.body != null && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
-    headers.set('Content-Type', JSON_CONTENT_TYPE)
+async function readGatewayError(res: Response): Promise<ApiError> {
+  const fallbackMessage = `HTTP ${res.status}: ${res.statusText}`
+
+  try {
+    const json = (await res.json()) as GatewayErrorEnvelope
+    const error = json.error
+    return new ApiError(
+      String(error?.code ?? res.status),
+      error?.message ?? fallbackMessage,
+      error?.requestId ?? '',
+      error?.fields,
+    )
+  } catch {
+    return new ApiError(String(res.status), fallbackMessage, '')
   }
   return { ...options, headers }
 }
@@ -668,88 +659,36 @@ function mergeAbortSignals(primary: AbortSignal, secondary?: AbortSignal | null)
   return controller.signal
 }
 
-async function readSseStream(
-  body: ReadableStream<Uint8Array>,
-  onEvent: (event: SseEvent) => void,
-  signal: AbortSignal,
-): Promise<void> {
-  const reader = body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let eventName = 'message'
-  let eventId: string | undefined
-  let retry: number | undefined
-  let dataLines: string[] = []
+/**
+ * Streaming request — returns raw Response for SSE / event-stream consumption.
+ *
+ * Attaches auth and request-id headers but does NOT parse the response body.
+ * The caller is responsible for reading the stream and handling errors.
+ *
+ * @example
+ *   const res = await gatewayStreamRequest(`/qa-sessions/${id}/messages`, {
+ *     method: 'POST',
+ *     body: JSON.stringify({ message: 'hello' }),
+ *   })
+ *   // res.body is a ReadableStream for SSE parsing
+ */
+export async function gatewayStreamRequest(
+  path: string,
+  options?: RequestInit,
+): Promise<Response> {
+  const body = options?.body ?? null
+  const res = await fetch(`${apiClient.baseUrl}${path}`, {
+    ...options,
+    headers: {
+      ...gatewayHeaders(body),
+      Accept: 'text/event-stream',
+      ...options?.headers,
+    },
+  })
 
-  const flush = () => {
-    if (!dataLines.length) {
-      eventName = 'message'
-      eventId = undefined
-      retry = undefined
-      return
-    }
-    onEvent({
-      event: eventName,
-      data: dataLines.join('\n'),
-      id: eventId,
-      retry,
-    })
-    eventName = 'message'
-    eventId = undefined
-    retry = undefined
-    dataLines = []
+  if (!res.ok) {
+    throw await readGatewayError(res)
   }
 
-  const processLine = (line: string) => {
-    const normalized = line.endsWith('\r') ? line.slice(0, -1) : line
-    if (normalized === '') {
-      flush()
-      return
-    }
-    if (normalized.startsWith(':')) return
-
-    const colon = normalized.indexOf(':')
-    const field = colon === -1 ? normalized : normalized.slice(0, colon)
-    const value = colon === -1 ? '' : normalized.slice(colon + 1).replace(/^ /, '')
-
-    switch (field) {
-      case 'event':
-        eventName = value || 'message'
-        break
-      case 'data':
-        dataLines.push(value)
-        break
-      case 'id':
-        eventId = value
-        break
-      case 'retry': {
-        const parsed = Number(value)
-        if (Number.isFinite(parsed)) retry = parsed
-        break
-      }
-      default:
-        break
-    }
-  }
-
-  try {
-    for (;;) {
-      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() ?? ''
-      for (const line of lines) processLine(line)
-    }
-
-    buffer += decoder.decode()
-    if (buffer) processLine(buffer)
-    flush()
-  } finally {
-    reader.releaseLock()
-  }
+  return res
 }
-
-// Compatibility alias for existing feature wrappers while they migrate.
-export const doRequest = requestJson

@@ -1,36 +1,47 @@
 /**
  * QA Sessions CRUD — Gateway OpenAPI qa-sessions paths.
  *
- * All functions use doRequest / listRequest from ./client.
- * Types imported from @/lib/types (camelCase, per OpenAPI).
+ * All functions use gatewayRequest / gatewayPageRequest from ./client.
+ * Types imported from @/lib/types (re-exported from generated/gateway).
  */
 
-import type { QAMessage, QASession } from '@/lib/types'
+import type { QAMessage, QASession, QASessionStatus } from '@/lib/types'
 
-import { doRequest, listRequest, type ListResponse } from './client'
+import { buildQuery, gatewayPageRequest, gatewayRequest } from './client'
 
 // ---------------------------------------------------------------------------
 // POST /qa-sessions
 // ---------------------------------------------------------------------------
 
 export async function createSession(title?: string): Promise<QASession> {
-  return doRequest<QASession>('/qa-sessions', {
+  return gatewayRequest<QASession>('/qa-sessions', {
     method: 'POST',
     body: JSON.stringify({ title }),
   })
 }
 
 // ---------------------------------------------------------------------------
-// GET /qa-sessions?page=&pageSize=&sort=-updatedAt
+// GET /qa-sessions?page=&pageSize=&status=&sort=-updatedAt
 // ---------------------------------------------------------------------------
 
-export async function listSessions(page = 1, pageSize = 20): Promise<ListResponse<QASession>> {
-  const params = new URLSearchParams({
-    page: String(page),
-    pageSize: String(pageSize),
-    sort: '-updatedAt',
-  })
-  return listRequest<QASession>(`/qa-sessions?${params}`)
+export interface ListSessionsParams {
+  page?: number
+  pageSize?: number
+  status?: QASessionStatus
+  sort?: string
+}
+
+export async function listSessions(
+  params: ListSessionsParams = {},
+): Promise<{ items: QASession[]; page: { page: number; pageSize: number; total: number } }> {
+  return gatewayPageRequest<QASession>(
+    `/qa-sessions${buildQuery({
+      page: params.page,
+      pageSize: params.pageSize,
+      status: params.status,
+      sort: params.sort ?? '-updatedAt',
+    })}`,
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -38,7 +49,7 @@ export async function listSessions(page = 1, pageSize = 20): Promise<ListRespons
 // ---------------------------------------------------------------------------
 
 export async function getSession(sessionId: string): Promise<QASession> {
-  return doRequest<QASession>(`/qa-sessions/${encodeURIComponent(sessionId)}`)
+  return gatewayRequest<QASession>(`/qa-sessions/${encodeURIComponent(sessionId)}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -46,7 +57,7 @@ export async function getSession(sessionId: string): Promise<QASession> {
 // ---------------------------------------------------------------------------
 
 export async function renameSession(sessionId: string, title: string): Promise<QASession> {
-  return doRequest<QASession>(`/qa-sessions/${encodeURIComponent(sessionId)}`, {
+  return gatewayRequest<QASession>(`/qa-sessions/${encodeURIComponent(sessionId)}`, {
     method: 'PATCH',
     body: { title },
   })
@@ -58,13 +69,30 @@ export async function renameSession(sessionId: string, title: string): Promise<Q
 // ---------------------------------------------------------------------------
 
 export async function deleteSession(sessionId: string): Promise<void> {
-  await doRequest<void>(`/qa-sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
+  await gatewayRequest<void>(`/qa-sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
 }
 
 // ---------------------------------------------------------------------------
-// GET /qa-sessions/{sessionId}/messages
+// GET /qa-sessions/{sessionId}/messages?page=&pageSize=&includeThinking=&includeCitations=
 // ---------------------------------------------------------------------------
 
-export async function getSessionMessages(sessionId: string): Promise<QAMessage[]> {
-  return doRequest<QAMessage[]>(`/qa-sessions/${encodeURIComponent(sessionId)}/messages`)
+export interface GetSessionMessagesParams {
+  page?: number
+  pageSize?: number
+  includeThinking?: boolean
+  includeCitations?: boolean
+}
+
+export async function getSessionMessages(
+  sessionId: string,
+  params: GetSessionMessagesParams = {},
+): Promise<{ items: QAMessage[]; page: { page: number; pageSize: number; total: number } }> {
+  return gatewayPageRequest<QAMessage>(
+    `/qa-sessions/${encodeURIComponent(sessionId)}/messages${buildQuery({
+      page: params.page,
+      pageSize: params.pageSize,
+      includeThinking: params.includeThinking,
+      includeCitations: params.includeCitations,
+    })}`,
+  )
 }

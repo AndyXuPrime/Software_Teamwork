@@ -2,7 +2,7 @@
  * Admin API — Gateway OpenAPI admin-runtime-config, qa-settings,
  * qa-retrieval-tests, qa-metrics, knowledge, auth paths.
  *
- * All functions use doRequest from ./client.
+ * All functions use gatewayRequest / gatewayPageRequest from ./client.
  * Types imported from @/lib/types (camelCase, per OpenAPI).
  */
 
@@ -10,6 +10,7 @@ import type {
   CreateKnowledgeBaseRequest,
   CreateQAConfigVersionRequest,
   CreateQALLMConfigVersionRequest,
+  CreateUserRequest,
   KnowledgeBaseSummary,
   QAConfigVersion,
   QAIntentDistributionItem,
@@ -21,9 +22,11 @@ import type {
   QARetrievalTestRun,
   QARetrievalTestRunRequest,
   QATopQuery,
+  SessionSummary,
+  UserSummary,
 } from '@/lib/types'
 
-import { doRequest } from './client'
+import { buildQuery, gatewayPageRequest, gatewayRequest } from './client'
 
 // =========================================================================
 // LLM Configuration
@@ -31,14 +34,14 @@ import { doRequest } from './client'
 
 /** GET /llm-config-versions/current */
 export function getCurrentLLMConfig(): Promise<QALLMConfigVersion> {
-  return doRequest<QALLMConfigVersion>('/llm-config-versions/current')
+  return gatewayRequest<QALLMConfigVersion>('/llm-config-versions/current')
 }
 
 /** POST /llm-config-versions */
 export async function createLLMConfigVersion(
   config: CreateQALLMConfigVersionRequest,
 ): Promise<QALLMConfigVersion> {
-  return doRequest<QALLMConfigVersion>('/llm-config-versions', {
+  return gatewayRequest<QALLMConfigVersion>('/llm-config-versions', {
     method: 'POST',
     body: JSON.stringify(config),
   })
@@ -48,7 +51,7 @@ export async function createLLMConfigVersion(
 export async function testLLMConnection(
   params: QALLMConnectionTestRequest,
 ): Promise<QALLMConnectionTest> {
-  return doRequest<QALLMConnectionTest>('/llm-connection-tests', {
+  return gatewayRequest<QALLMConnectionTest>('/llm-connection-tests', {
     method: 'POST',
     body: {
       provider: 'ai-gateway',
@@ -70,14 +73,14 @@ export async function testLLMConnection(
 
 /** GET /qa-config-versions/current */
 export function getCurrentQAConfig(): Promise<QAConfigVersion> {
-  return doRequest<QAConfigVersion>('/qa-config-versions/current')
+  return gatewayRequest<QAConfigVersion>('/qa-config-versions/current')
 }
 
 /** POST /qa-config-versions */
 export async function createQAConfigVersion(
   config: CreateQAConfigVersionRequest,
 ): Promise<QAConfigVersion> {
-  return doRequest<QAConfigVersion>('/qa-config-versions', {
+  return gatewayRequest<QAConfigVersion>('/qa-config-versions', {
     method: 'POST',
     body: JSON.stringify(config),
   })
@@ -91,7 +94,7 @@ export async function createQAConfigVersion(
 export async function runRetrievalTest(
   params: QARetrievalTestRunRequest,
 ): Promise<QARetrievalTestRun> {
-  return doRequest<QARetrievalTestRun>('/retrieval-test-runs', {
+  return gatewayRequest<QARetrievalTestRun>('/retrieval-test-runs', {
     method: 'POST',
     body: {
       defaultKnowledgeBaseIds: defaults.knowledge_bases,
@@ -114,45 +117,55 @@ export async function runRetrievalTest(
 
 /** GET /qa-metrics/overview?days=N */
 export function getQAMetricsOverview(days?: number): Promise<QAMetricsOverview> {
-  const qs = days != null ? `?days=${days}` : ''
-  return doRequest<QAMetricsOverview>(`/qa-metrics/overview${qs}`)
+  return gatewayRequest<QAMetricsOverview>(
+    `/qa-metrics/overview${buildQuery({ days })}`,
+  )
 }
 
 /** GET /qa-metrics/trend?days=N */
 export function getQAMetricsTrend(days?: number): Promise<QAMetricsTrend> {
-  const qs = days != null ? `?days=${days}` : '?days=30'
-  return doRequest<QAMetricsTrend>(`/qa-metrics/trend${qs}`)
+  return gatewayRequest<QAMetricsTrend>(
+    `/qa-metrics/trend${buildQuery({ days: days ?? 30 })}`,
+  )
 }
 
 /** GET /qa-metrics/top-queries?limit=N&days=N */
 export async function getQATopQueries(limit?: number, days?: number): Promise<QATopQuery[]> {
-  const params = new URLSearchParams()
-  if (limit != null) params.set('limit', String(limit))
-  if (days != null) params.set('days', String(days))
-  const qs = params.toString()
-  return doRequest<QATopQuery[]>(`/qa-metrics/top-queries${qs ? `?${qs}` : ''}`)
+  return gatewayRequest<QATopQuery[]>(
+    `/qa-metrics/top-queries${buildQuery({ limit, days })}`,
+  )
 }
 
 /** GET /qa-metrics/intent-distribution?days=N */
 export async function getQAIntentDistribution(days?: number): Promise<QAIntentDistributionItem[]> {
-  const qs = days != null ? `?days=${days}` : ''
-  return doRequest<QAIntentDistributionItem[]>(`/qa-metrics/intent-distribution${qs}`)
+  return gatewayRequest<QAIntentDistributionItem[]>(
+    `/qa-metrics/intent-distribution${buildQuery({ days })}`,
+  )
 }
 
 // =========================================================================
 // Knowledge Bases
 // =========================================================================
 
-/** GET /knowledge-bases */
-export function listKnowledgeBases(): Promise<KnowledgeBaseSummary[]> {
-  return doRequest<KnowledgeBaseSummary[]>('/knowledge-bases')
+/** GET /knowledge-bases?page=&pageSize= */
+export interface ListKnowledgeBasesParams {
+  page?: number
+  pageSize?: number
+}
+
+export async function listKnowledgeBases(
+  params: ListKnowledgeBasesParams = {},
+): Promise<{ items: KnowledgeBaseSummary[]; page: { page: number; pageSize: number; total: number } }> {
+  return gatewayPageRequest<KnowledgeBaseSummary>(
+    `/knowledge-bases${buildQuery({ page: params.page, pageSize: params.pageSize })}`,
+  )
 }
 
 /** POST /knowledge-bases */
 export async function createKnowledgeBase(
   params: CreateKnowledgeBaseRequest,
 ): Promise<KnowledgeBaseSummary> {
-  return doRequest<KnowledgeBaseSummary>('/knowledge-bases', {
+  return gatewayRequest<KnowledgeBaseSummary>('/knowledge-bases', {
     method: 'POST',
     body: {
       name: params.name,
@@ -162,73 +175,36 @@ export async function createKnowledgeBase(
   return toKnowledgeBaseConfig(kb)
 }
 
-/** DELETE /knowledge-bases/{id} */
+/** DELETE /knowledge-bases/{knowledgeBaseId} */
 export async function deleteKnowledgeBase(id: string): Promise<void> {
-  await doRequest<void>(`/knowledge-bases/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  await gatewayRequest<void>(`/knowledge-bases/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 // =========================================================================
-// User Management (stubs — reserved)
+// User Management — gateway auth paths
+//
+// The gateway exposes only these auth resources through /api/v1:
+//   POST   /users              — Create user (registration)
+//   GET    /users/me           — Get current user
+//   POST   /sessions           — Create session (login)
+//   DELETE /sessions/current   — Delete current session (logout)
+//
+// There are no list-all-users, update-user, delete-user, or role CRUD
+// endpoints in the current gateway contract.
 // =========================================================================
 
-/** GET /users */
-export function listUsers(): Promise<Record<string, unknown>[]> {
-  return doRequest<Record<string, unknown>[]>('/users')
-}
-
-/** POST /users */
-export async function createUser(body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  return doRequest<Record<string, unknown>>('/users', {
+/** POST /users — Create a new user (registration). Returns user + session (envelope unwrapped). */
+export async function createUser(body: CreateUserRequest): Promise<{
+  user: UserSummary
+  session: SessionSummary
+}> {
+  return gatewayRequest<{ user: UserSummary; session: SessionSummary }>('/users', {
     method: 'POST',
     body: JSON.stringify(body),
   })
 }
 
-/** PUT /users/{id} */
-export async function updateUser(
-  id: string,
-  body: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  return doRequest<Record<string, unknown>>(`/users/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  })
-}
-
-/** DELETE /users/{id} */
-export async function deleteUser(id: string): Promise<void> {
-  await doRequest<void>(`/users/${encodeURIComponent(id)}`, { method: 'DELETE' })
-}
-
-// =========================================================================
-// Role Management (stubs — reserved)
-// =========================================================================
-
-/** GET /roles */
-export function listRoles(): Promise<Record<string, unknown>[]> {
-  return doRequest<Record<string, unknown>[]>('/roles')
-}
-
-/** POST /roles */
-export async function createRole(body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  return doRequest<Record<string, unknown>>('/roles', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
-/** PUT /roles/{id} */
-export async function updateRole(
-  id: string,
-  body: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  return doRequest<Record<string, unknown>>(`/roles/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  })
-}
-
-/** DELETE /roles/{id} */
-export async function deleteRole(id: string): Promise<void> {
-  await doRequest<void>(`/roles/${encodeURIComponent(id)}`, { method: 'DELETE' })
+/** GET /users/me — Get current authenticated user. */
+export function getCurrentUser(): Promise<UserSummary> {
+  return gatewayRequest<UserSummary>('/users/me')
 }

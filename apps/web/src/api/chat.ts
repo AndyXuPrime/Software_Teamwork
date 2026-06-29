@@ -11,10 +11,9 @@
  *   error            heartbeat
  */
 
-import type { KnowledgeQueryRequest, KnowledgeQuerySummary, QAMessageEventType } from '@/lib/types'
+import type { KnowledgeQueryRequest, KnowledgeQuerySummary, QASseEventType } from '@/lib/types'
 
-import { requestJson, streamGateway } from './client'
-import type { components } from './generated/gateway'
+import { apiClient, gatewayRequest } from './client'
 
 // ---------------------------------------------------------------------------
 // SSE handlers interface
@@ -55,15 +54,7 @@ function textDelta(payload: QAStreamPayload): string {
   return String(payload.delta ?? payload.text ?? payload.content ?? '')
 }
 
-function dispatch(
-  event: QASseEventType | string,
-  payload: QAStreamPayload,
-  handlers: SSEHandlers,
-  fallbackSeq: number,
-): void {
-  const seq = sequence(payload, fallbackSeq)
-
-function dispatch(event: QAMessageEventType, data: unknown, handlers: ChatStreamHandlers): void {
+function dispatch(event: QASseEventType, data: unknown, handlers: ChatStreamHandlers): void {
   switch (event) {
     case 'message.created':
       handlers.onMessageCreated?.(data as Record<string, unknown> & { seq: number })
@@ -113,6 +104,20 @@ function toQAMessageRequest(params: ChatStreamRequest): CreateQAMessageRequest {
   }
 }
 
+/** Build auth + request-id headers for SSE requests. */
+function buildStreamHeaders(): HeadersInit {
+  const token = apiClient.getToken()
+  const headers: Record<string, string> = {
+    'X-Request-Id': `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    'Content-Type': 'application/json',
+    Accept: 'text/event-stream',
+  }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  return headers
+}
+
 // ---------------------------------------------------------------------------
 // POST /qa-sessions/{sessionId}/messages  (SSE stream)
 // ---------------------------------------------------------------------------
@@ -144,10 +149,7 @@ export function streamChat(
 
   fetch(`${apiClient.baseUrl}/qa-sessions/${encodeURIComponent(sessionId)}/messages`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-    },
+    headers: buildStreamHeaders(),
     body: JSON.stringify(body),
     signal: combinedSignal,
   })
@@ -188,7 +190,7 @@ export function streamChat(
         try {
           const raw: Record<string, unknown> = JSON.parse(currentData)
           const data = { seq: eventSeq, ...raw } as unknown
-          dispatch(currentEvent as QAMessageEventType, data, handlers)
+          dispatch(currentEvent as QASseEventType, data, handlers)
         } catch {
           // ignore unparseable data lines
         }
@@ -265,7 +267,7 @@ export function streamChat(
 export async function queryKnowledge(
   params: KnowledgeQueryRequest,
 ): Promise<KnowledgeQuerySummary> {
-  return doRequest<KnowledgeQuerySummary>('/knowledge-queries', {
+  return gatewayRequest<KnowledgeQuerySummary>('/knowledge-queries', {
     method: 'POST',
     body: JSON.stringify(params),
   })
