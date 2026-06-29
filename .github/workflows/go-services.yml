@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [auth, document, file, gateway, knowledge, qa]
+        service: [ai-gateway, auth, document, file, gateway, knowledge, qa]
     defaults:
       run:
         working-directory: services/${{ matrix.service }}
