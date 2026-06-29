@@ -24,7 +24,7 @@ const navItems: Array<{
   {
     label: '报告',
     to: '/reports/generate',
-    requirement: { any: ['report:read', 'report:write', 'reports:write'] },
+    requirement: { any: ['report:write', 'reports:write'] },
   },
   {
     label: '管理',

@@ -61,6 +61,42 @@ function requireAuth(requirement?: PermissionRequirement) {
   }
 }
 
+async function redirectToReportHome() {
+  const store = await restoreAuthForRoute()
+
+  if (canAccess(store.user, reportWriteAccess)) {
+    throw redirect({ to: '/reports/generate' })
+  }
+
+  if (canAccess(store.user, reportAccess)) {
+    throw redirect({ to: '/reports/records' })
+  }
+
+  throw redirect({ to: '/forbidden' })
+}
+
+async function redirectToAdminHome() {
+  const store = await restoreAuthForRoute()
+
+  if (canAccess(store.user, systemAdminAccess)) {
+    throw redirect({ to: '/admin/stats' })
+  }
+
+  if (canAccess(store.user, reportAccess)) {
+    throw redirect({ to: '/admin/reports/records' })
+  }
+
+  if (canAccess(store.user, knowledgeAccess)) {
+    throw redirect({ to: '/admin/knowledge' })
+  }
+
+  if (canAccess(store.user, qaAdminAccess)) {
+    throw redirect({ to: '/admin/prompts' })
+  }
+
+  throw redirect({ to: '/forbidden' })
+}
+
 const qaAccess: PermissionRequirement = { any: ['qa:use'] }
 const qaAdminAccess: PermissionRequirement = { any: ['qa:write', 'system:admin'] }
 const reportAccess: PermissionRequirement = {
@@ -142,14 +178,13 @@ const reportsRoute = createRoute({
 const reportsIndexRoute = createRoute({
   getParentRoute: () => reportsRoute,
   path: '/',
-  beforeLoad: () => {
-    throw redirect({ to: '/reports/generate' })
-  },
+  beforeLoad: redirectToReportHome,
 })
 
 const reportGenerateRoute = createRoute({
   getParentRoute: () => reportsRoute,
   path: 'generate',
+  beforeLoad: requireAuth(reportWriteAccess),
   component: ReportGeneratePage,
 })
 
@@ -175,7 +210,7 @@ const adminRoute = createRoute({
 const adminIndexRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: '/',
-  component: StatsOverviewPage,
+  beforeLoad: redirectToAdminHome,
 })
 
 const adminUsersRoute = createRoute({
