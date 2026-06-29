@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
+  cancelReportJob,
   createReport,
   createReportFile,
   createReportJob,
@@ -13,12 +14,14 @@ import {
   getReportStatisticsOverview,
   getReportTemplateStructure,
   listDailyReportStatistics,
+  listReportEvents,
   listReportMaterials,
   listReportOutlines,
   listReports,
   listReportSections,
   listReportTemplates,
   listReportTypes,
+  listSectionVersions,
   updateReportOutline,
   updateReportSection,
   updateReportTemplateStructure,
@@ -41,6 +44,9 @@ export const reportKeys = {
   outlines: (reportId: string) => [...reportKeys.all, reportId, 'outlines'] as const,
   sections: (reportId: string) => [...reportKeys.all, reportId, 'sections'] as const,
   job: (jobId: string) => [...reportKeys.all, 'jobs', jobId] as const,
+  events: (reportId: string) => [...reportKeys.all, reportId, 'events'] as const,
+  sectionVersions: (reportId: string, sectionId: string) =>
+    [...reportKeys.all, reportId, 'sections', sectionId, 'versions'] as const,
   stats: () => [...reportKeys.all, 'statistics'] as const,
   templateStructure: (templateId: string) =>
     [...reportKeys.templates(), templateId, 'structure'] as const,
@@ -253,5 +259,46 @@ export function useDeleteTemplate() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: reportKeys.templates() })
     },
+  })
+}
+
+export function useReportEvents(reportId: string | null) {
+  return useQuery({
+    queryKey: reportKeys.events(reportId ?? ''),
+    queryFn: () => listReportEvents(reportId ?? ''),
+    enabled: Boolean(reportId),
+    refetchInterval: (query) => {
+      const events = query.state.data
+      if (!events || events.length === 0) return false
+      const latest = events[events.length - 1]
+      return latest?.eventType === 'job.completed' || latest?.eventType === 'job.failed'
+        ? false
+        : 5000
+    },
+    select: (data) => data,
+  })
+}
+
+export function useCancelReportJob() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (jobId: string) => cancelReportJob(jobId),
+    onSuccess: (job) => {
+      void queryClient.invalidateQueries({ queryKey: reportKeys.job(job.id) })
+      if (job.reportId) {
+        void queryClient.invalidateQueries({
+          queryKey: reportKeys.events(job.reportId),
+        })
+      }
+    },
+  })
+}
+
+export function useSectionVersions(reportId: string | null, sectionId: string | null) {
+  return useQuery({
+    queryKey: reportKeys.sectionVersions(reportId ?? '', sectionId ?? ''),
+    queryFn: () => listSectionVersions(reportId ?? '', sectionId ?? ''),
+    enabled: Boolean(reportId) && Boolean(sectionId),
   })
 }

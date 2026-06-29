@@ -5,11 +5,13 @@ import type {
   CreateReportPayload,
   Report,
   ReportDailyStatistic,
+  ReportEvent,
   ReportFile,
   ReportJob,
   ReportMaterial,
   ReportOutline,
   ReportSection,
+  ReportSectionVersion,
   ReportStatisticsOverview,
   ReportStatus,
   ReportTemplate,
@@ -179,4 +181,24 @@ export function deleteReportTemplate(templateId: string): Promise<void> {
   return gatewayRequest<void>(`/report-templates/${encodeURIComponent(templateId)}`, {
     method: 'DELETE',
   })
+}
+
+export function listReportEvents(reportId: string): Promise<ReportEvent[]> {
+  return gatewayRequest<ReportEvent[]>(`/reports/${encodeURIComponent(reportId)}/events`)
+}
+
+export function cancelReportJob(jobId: string): Promise<ReportJob> {
+  return gatewayRequest<ReportJob>(`/report-jobs/${encodeURIComponent(jobId)}`, {
+    method: 'PATCH',
+    body: { status: 'canceled' },
+  })
+}
+
+export function listSectionVersions(
+  reportId: string,
+  sectionId: string,
+): Promise<ReportSectionVersion[]> {
+  return gatewayRequest<ReportSectionVersion[]>(
+    `/reports/${encodeURIComponent(reportId)}/sections/${encodeURIComponent(sectionId)}/versions`,
+  )
 }

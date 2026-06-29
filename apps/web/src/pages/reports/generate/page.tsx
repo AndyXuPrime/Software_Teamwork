@@ -1,4 +1,4 @@
-import { Download, FileText, Loader2, PencilLine, Play, RefreshCw, Save } from 'lucide-react'
+import { Ban, Download, FileText, Loader2, PencilLine, Play, RefreshCw, Save } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -12,20 +12,24 @@ import type {
   ReportMaterial,
   ReportOutlineNode,
   ReportSection,
+  ReportSectionVersion,
   ReportTemplate,
   ReportType,
 } from '@/features/reports'
 import {
   createReportSchema,
   defaultCreateReportValues,
+  useCancelReportJob,
   useCreateReportFileMutation,
   useCreateReportJobMutation,
   useCreateReportMutation,
   useDownloadReportFileMutation,
   useReportBootstrapQueries,
   useReportDetailQueries,
+  useReportEvents,
   useReportJobQuery,
   useRetryReportJobMutation,
+  useSectionVersions,
   useUpdateReportOutlineMutation,
   useUpdateReportSectionMutation,
 } from '@/features/reports'
@@ -169,6 +173,7 @@ export function ReportGeneratePage() {
   const [latestFile, setLatestFile] = useState<ReportFile | null>(null)
   const [activeSectionId, setActiveSectionId] = useState(fallbackInitialSection.id)
   const [sectionDraft, setSectionDraft] = useState(fallbackInitialSection.content ?? '')
+  const [showVersions, setShowVersions] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -182,6 +187,12 @@ export function ReportGeneratePage() {
   const createFileMutation = useCreateReportFileMutation()
   const retryJobMutation = useRetryReportJobMutation()
   const downloadMutation = useDownloadReportFileMutation()
+  const cancelJobMutation = useCancelReportJob()
+  const eventsQuery = useReportEvents(currentReport?.id ?? null)
+  const sectionVersionsQuery = useSectionVersions(
+    currentReport?.id ?? null,
+    showVersions ? activeSectionId : null,
+  )
 
   const reportTypes = typeQuery.data?.length ? typeQuery.data : fallbackTypes
   const templates = templateQuery.data?.items.length
@@ -379,6 +390,19 @@ export function ReportGeneratePage() {
     setNotice(
       '本地演示中已保留失败章节，可在真实接口联通后通过 POST /api/v1/report-jobs/{jobId}/attempts 重试。',
     )
+  }
+
+  const handleCancel = async () => {
+    if (!effectiveJob?.id || effectiveJob.id.startsWith('local-')) {
+      setNotice('本地演示任务无需取消。')
+      return
+    }
+    if (effectiveJob.status !== 'pending' && effectiveJob.status !== 'running') {
+      setNotice('只有等待中或运行中的任务才能取消。')
+      return
+    }
+    await cancelJobMutation.mutateAsync(effectiveJob.id)
+    setNotice('已请求取消任务。')
   }
 
   const handleExport = async () => {
@@ -671,9 +695,24 @@ export function ReportGeneratePage() {
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" onClick={handleRetry}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowVersions((prev) => !prev)}
+                    >
+                      版本记录{showVersions ? ' ▲' : ' ▼'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleRetry}
+                      disabled={
+                        effectiveJob?.status !== 'failed' &&
+                        effectiveJob?.status !== 'partial_succeeded' &&
+                        effectiveJob?.status !== 'canceled'
+                      }
+                    >
                       <RefreshCw className="size-4" />
-                      重试失败任务
+                      重试任务
                     </Button>
                     <Button variant="outline" onClick={handleSaveSection}>
                       <PencilLine className="size-4" />
@@ -685,6 +724,53 @@ export function ReportGeneratePage() {
                     </Button>
                   </div>
                 </div>
+
+                {showVersions && (
+                  <div className="mb-4 rounded-lg border border-border bg-muted/30 p-3">
+                    <h4 className="mb-2 text-sm font-medium">历史版本</h4>
+                    {sectionVersionsQuery.isLoading ? (
+                      <p className="text-xs text-muted-foreground">加载中...</p>
+                    ) : sectionVersionsQuery.isError ? (
+                      <p className="text-xs text-muted-foreground">
+                        当前使用本地演示可用，真实接口联通后将列出章节版本记录。
+                      </p>
+                    ) : sectionVersionsQuery.data && sectionVersionsQuery.data.length > 0 ? (
+                      <div className="max-h-40 space-y-2 overflow-auto">
+                        {(sectionVersionsQuery.data as ReportSectionVersion[]).map((version) => (
+                          <div
+                            key={version.id}
+                            className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 text-xs"
+                          >
+                            <div className="flex items-center gap-3">
+                              <span className="font-medium">v{version.version}</span>
+                              <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
+                                {version.source === 'manual' ? '手动' : 'AI'}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {formatDate(version.createdAt)}
+                              </span>
+                            </div>
+                            {version.content && (
+                              <button
+                                type="button"
+                                className="text-primary hover:underline"
+                                onClick={() => {
+                                  setSectionDraft(version.content ?? '')
+                                  setNotice(`已恢复版本 v${version.version} 的内容到编辑区。`)
+                                }}
+                              >
+                                恢复
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">暂无历史版本。</p>
+                    )}
+                  </div>
+                )}
+
                 <textarea
                   className="min-h-[360px] w-full rounded-lg border border-input bg-background px-4 py-3 text-sm leading-7 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                   value={sectionDraft}
@@ -763,7 +849,17 @@ export function ReportGeneratePage() {
               </div>
               <div className="flex justify-between gap-4 text-sm">
                 <span className="text-muted-foreground">状态</span>
-                <span>{effectiveJob ? statusText[effectiveJob.status] : '-'}</span>
+                <span
+                  className={cn(
+                    effectiveJob?.status === 'failed' && 'text-destructive',
+                    effectiveJob?.status === 'canceled' && 'text-yellow-600',
+                    effectiveJob?.status === 'succeeded' && 'text-green-600',
+                    (effectiveJob?.status === 'running' || effectiveJob?.status === 'pending') &&
+                      'text-primary',
+                  )}
+                >
+                  {effectiveJob ? statusText[effectiveJob.status] : '-'}
+                </span>
               </div>
               <div>
                 <div className="mb-1 flex justify-between text-xs text-muted-foreground">
@@ -772,11 +868,31 @@ export function ReportGeneratePage() {
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full rounded-full bg-primary transition-all"
+                    className={cn(
+                      'h-full rounded-full transition-all',
+                      effectiveJob?.status === 'canceled' ? 'bg-yellow-500' : 'bg-primary',
+                      effectiveJob?.status === 'failed' && 'bg-destructive',
+                    )}
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
               </div>
+              {(effectiveJob?.status === 'pending' || effectiveJob?.status === 'running') && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="w-full"
+                  onClick={handleCancel}
+                  disabled={
+                    cancelJobMutation.isPending ||
+                    Boolean(effectiveJob.id.startsWith('local-'))
+                  }
+                >
+                  {cancelJobMutation.isPending && <Loader2 className="size-3 animate-spin" />}
+                  <Ban className="size-3" />
+                  取消任务
+                </Button>
+              )}
               {effectiveJob?.error?.message && (
                 <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
                   {effectiveJob.error.message}
@@ -789,6 +905,28 @@ export function ReportGeneratePage() {
               )}
             </div>
           </section>
+
+          {eventsQuery.data && eventsQuery.data.length > 0 && (
+            <section className="rounded-lg border border-border bg-card p-4">
+              <h2 className="text-sm font-semibold">事件日志</h2>
+              <div className="mt-3 max-h-48 space-y-2 overflow-auto">
+                {eventsQuery.data.slice(-10).reverse().map((event) => (
+                  <div
+                    key={event.id}
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-xs"
+                  >
+                    <div className="flex justify-between text-muted-foreground">
+                      <span className="font-medium">{event.eventType}</span>
+                      <span>{formatDate(event.createdAt)}</span>
+                    </div>
+                    {event.message && (
+                      <p className="mt-1 text-foreground">{event.message}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="rounded-lg border border-border bg-card p-4">
             <h2 className="text-sm font-semibold">接口契约</h2>
