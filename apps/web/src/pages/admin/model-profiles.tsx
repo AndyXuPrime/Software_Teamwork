@@ -84,13 +84,6 @@ const EMPTY_FORM: FormData = {
 // ── Helpers ──
 
 function formToCreateRequest(form: FormData): CreateModelProfileRequest {
-  const defaultParams: Record<string, unknown> = { max_tokens: form.maxTokens }
-  if (form.purpose === 'embedding' && form.dimension > 0) {
-    defaultParams.dimension = form.dimension
-  }
-  if (form.purpose === 'rerank' && form.topN > 0) {
-    defaultParams.top_n = form.topN
-  }
   return {
     name: form.name,
     purpose: form.purpose,
@@ -99,7 +92,9 @@ function formToCreateRequest(form: FormData): CreateModelProfileRequest {
     model: form.model,
     apiKey: form.apiKey,
     timeoutMs: form.timeoutMs,
-    defaultParameters: defaultParams,
+    defaultParameters: { max_tokens: form.maxTokens },
+    ...(form.purpose === 'embedding' && form.dimension > 0 ? { dimensions: form.dimension } : {}),
+    ...(form.purpose === 'rerank' && form.topN > 0 ? { topN: form.topN } : {}),
     enabled: true,
     isDefault: false,
     supportsStreaming: false,
@@ -209,8 +204,8 @@ export function ModelProfilesPage() {
       apiKey: '',
       timeoutMs: profile.timeoutMs,
       maxTokens: (profile.defaultParameters?.max_tokens as number) ?? 0,
-      dimension: (profile.defaultParameters?.dimension as number) ?? 0,
-      topN: (profile.defaultParameters?.top_n as number) ?? 0,
+      dimension: (profile.dimensions as number) ?? 0,
+      topN: (profile.topN as number) ?? 0,
     })
     setEditOpen(true)
   }, [])
