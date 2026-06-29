@@ -99,6 +99,8 @@ func (w *Worker) handleReportJob(ctx context.Context, t *asynq.Task) error {
 
 	if err := w.jobsMgr.SetJobRunning(ctx, payload.JobID); err != nil {
 		w.logger.ErrorContext(ctx, "mark job running failed", "job_id", payload.JobID, "error", err)
+	} else {
+		w.recordJobStatusOperation(ctx, payload, service.OperationReportJobRunning, service.OperationResultSucceeded, "")
 	}
 	if payload.AttemptID != "" {
 		if err := w.jobsMgr.SetAttemptRunning(ctx, payload.AttemptID); err != nil {
@@ -114,6 +116,7 @@ func (w *Worker) handleReportJob(ctx context.Context, t *asynq.Task) error {
 		if payload.AttemptID != "" {
 			_ = w.jobsMgr.SetAttemptFailed(ctx, payload.AttemptID, "state_error", err.Error())
 		}
+		w.recordJobStatusOperation(ctx, payload, service.OperationReportJobFailed, service.OperationResultFailed, "failed to mark job succeeded")
 		return err
 	}
 	if payload.AttemptID != "" {
@@ -121,5 +124,27 @@ func (w *Worker) handleReportJob(ctx context.Context, t *asynq.Task) error {
 			w.logger.ErrorContext(ctx, "mark attempt succeeded failed", "attempt_id", payload.AttemptID, "error", err)
 		}
 	}
+	w.recordJobStatusOperation(ctx, payload, service.OperationReportJobSucceeded, service.OperationResultSucceeded, "")
 	return nil
+}
+
+func (w *Worker) recordJobStatusOperation(ctx context.Context, payload ReportJobPayload, operationType, result, errorMessage string) {
+	recorder, ok := w.jobsMgr.(service.OperationLogRecorder)
+	if !ok {
+		return
+	}
+	_, _ = recorder.CreateOperationLog(ctx, service.OperationLog{
+		OperatorID:      payload.UserID,
+		OperatorName:    payload.UserID,
+		OperationType:   operationType,
+		TargetType:      "job",
+		TargetID:        payload.JobID,
+		RequestID:       payload.RequestID,
+		RequestSource:   "worker",
+		OperationResult: result,
+		ErrorMessage:    errorMessage,
+		ParameterSummary: map[string]any{
+			"jobType": payload.JobType,
+		},
+	})
 }

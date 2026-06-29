@@ -6,9 +6,9 @@ operation logs.
 
 The current implementation provides the service/data baseline, implemented
 report type/template/material/report/outline/section APIs, and the report
-job/attempt/event state machine. It does not implement real AI generation, DOCX
-export execution, MCP tools, report file content, settings/statistics/logs, or
-AI Gateway generation calls yet.
+job/attempt/event state machine, report settings, report statistics, and
+operation logs. It does not implement real AI generation, DOCX export
+execution, MCP tools, report file content, or AI Gateway generation calls yet.
 
 ## Local Configuration
 
@@ -27,6 +27,8 @@ Optional variables:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DOCUMENT_HTTP_ADDR` | `:8085` | HTTP listen address. |
+| `DOCUMENT_AI_GATEWAY_SERVICE_TOKEN` | empty | Service token sent to AI Gateway profile validation APIs. Falls back to `INTERNAL_SERVICE_TOKEN` when empty. |
+| `INTERNAL_SERVICE_TOKEN` | empty | Shared internal service token fallback for local/dev deployments. |
 | `DOCUMENT_PANDOC_PATH` | `pandoc` | DOCX toolchain command path reserved for worker usage. |
 | `DOCUMENT_LIBREOFFICE_PATH` | `soffice` | LibreOffice command path reserved for worker usage. |
 | `DOCUMENT_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown timeout. |
@@ -71,9 +73,9 @@ The service-local operational contract is documented in [`api/openapi.yaml`](api
 Gateway exposes these document-owned report routes under `/api/v1`. The service
 local paths below omit that prefix. Implemented routes call the document service
 layer. Job routes persist state and drive the worker state machine, but the
-worker currently does not execute real AI or DOCX generation. Scaffold routes are
-registered and return the standard error envelope with `error.code=not_implemented`
-and HTTP `501` until their business workflows land.
+worker currently does not execute real AI or DOCX generation. Report file
+routes are still scaffolded and return the standard error envelope with
+`error.code=not_implemented` and HTTP `501` until that workflow lands.
 
 | Method | Local path | Operation ID | Status |
 | --- | --- | --- | --- |
@@ -115,11 +117,11 @@ and HTTP `501` until their business workflows land.
 | `POST` | `/report-files` | `createReportFile` | Scaffold |
 | `GET` | `/report-files/{reportFileId}` | `getReportFile` | Scaffold |
 | `GET` | `/report-files/{reportFileId}/content` | `getReportFileContent` | Scaffold |
-| `GET` | `/report-statistics/overview` | `getReportStatisticsOverview` | Scaffold |
-| `GET` | `/report-statistics/daily` | `listDailyReportStatistics` | Scaffold |
-| `GET` | `/report-operation-logs` | `listReportOperationLogs` | Scaffold |
-| `GET` | `/report-settings` | `getReportSettings` | Scaffold |
-| `PATCH` | `/report-settings` | `updateReportSettings` | Scaffold |
+| `GET` | `/report-statistics/overview` | `getReportStatisticsOverview` | Implemented |
+| `GET` | `/report-statistics/daily` | `listDailyReportStatistics` | Implemented |
+| `GET` | `/report-operation-logs` | `listReportOperationLogs` | Implemented |
+| `GET` | `/report-settings` | `getReportSettings` | Implemented |
+| `PATCH` | `/report-settings` | `updateReportSettings` | Implemented; admin/super_admin only |
 
 ## Migrations
 
@@ -138,6 +140,9 @@ report types:
 `report_jobs`, `report_job_attempts`, and `report_events` are PostgreSQL
 business-state tables. Redis/asynq should only carry queue payloads and task
 execution coordination.
+
+The second migration creates the singleton report settings row and adds indexes
+used by active report, statistics, job status, and operation-log queries.
 
 ## SQLC
 

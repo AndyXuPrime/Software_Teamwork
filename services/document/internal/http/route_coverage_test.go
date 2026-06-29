@@ -58,11 +58,11 @@ func TestActiveReportRoutesHaveStableScaffoldCoverage(t *testing.T) {
 		{http.MethodPost, "/report-files", "not_implemented"},
 		{http.MethodGet, "/report-files/rfile_123", "not_implemented"},
 		{http.MethodGet, "/report-files/rfile_123/content", "not_implemented"},
-		{http.MethodGet, "/report-statistics/overview", "not_implemented"},
-		{http.MethodGet, "/report-statistics/daily", "not_implemented"},
-		{http.MethodGet, "/report-operation-logs", "not_implemented"},
-		{http.MethodGet, "/report-settings", "not_implemented"},
-		{http.MethodPatch, "/report-settings", "not_implemented"},
+		{http.MethodGet, "/report-statistics/overview", "dependency_error"},
+		{http.MethodGet, "/report-statistics/daily", "dependency_error"},
+		{http.MethodGet, "/report-operation-logs", "dependency_error"},
+		{http.MethodGet, "/report-settings", "dependency_error"},
+		{http.MethodPatch, "/report-settings", "dependency_error"},
 	}
 
 	for _, route := range routes {

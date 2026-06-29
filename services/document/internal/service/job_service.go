@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -118,6 +119,10 @@ func (s *JobService) CreateJob(ctx context.Context, rctx RequestContext, input C
 		finishedAt := time.Now().UTC()
 		_, _ = s.repo.UpdateReportJobStatus(ctx, created.ID, JobStatusFailed, "enqueue_failed", "failed to enqueue task", nil, &finishedAt)
 		_ = s.repo.SetAttemptFailed(ctx, attempt.ID, "enqueue_failed", "failed to enqueue task")
+		recordJobFailureIfSupported(ctx, s.repo, rctx, created, input.RequestID, "failed to enqueue task", map[string]any{
+			"reportId":  created.ReportID,
+			"attemptId": attempt.ID,
+		})
 		return ReportJob{}, fmt.Errorf("enqueue job task: %w", err)
 	}
 	if err := s.repo.UpdateJobAsynqTaskID(ctx, created.ID, taskID); err != nil {
@@ -125,6 +130,25 @@ func (s *JobService) CreateJob(ctx context.Context, rctx RequestContext, input C
 	}
 	_ = s.repo.UpdateAttemptAsynqTaskID(ctx, attempt.ID, taskID)
 	created.AsynqTaskID = taskID
+	recordOperationIfSupported(ctx, s.repo, OperationLog{
+		OperatorID:      rctx.UserID,
+		OperatorName:    rctx.UserID,
+		OperationType:   operationForJobType(created.JobType),
+		TargetType:      "job",
+		TargetID:        created.ID,
+		RequestID:       input.RequestID,
+		RequestSource:   requestSource(rctx, created.Source),
+		OperationResult: OperationResultSucceeded,
+		ParameterSummary: map[string]any{
+			"jobType":    created.JobType,
+			"targetType": created.TargetType,
+		},
+		Metadata: map[string]any{
+			"reportId": created.ReportID,
+			"taskId":   created.AsynqTaskID,
+		},
+		CreatedAt: now,
+	})
 	return created, nil
 }
 
@@ -148,9 +172,32 @@ func (s *JobService) RetryJob(ctx context.Context, rctx RequestContext, id, reas
 		finishedAt := time.Now().UTC()
 		_, _ = s.repo.UpdateReportJobStatus(ctx, job.ID, JobStatusFailed, "enqueue_failed", "failed to enqueue retry task", nil, &finishedAt)
 		_ = s.repo.SetAttemptFailed(ctx, attempt.ID, "enqueue_failed", "failed to enqueue retry task")
+		recordJobFailureIfSupported(ctx, s.repo, rctx, job, job.RequestID, "failed to enqueue retry task", map[string]any{
+			"reportId":  job.ReportID,
+			"attemptId": attempt.ID,
+		})
 		return ReportJobAttempt{}, fmt.Errorf("enqueue retry task: %w", err)
 	}
 	_ = s.repo.UpdateAttemptAsynqTaskID(ctx, attempt.ID, taskID)
+	recordOperationIfSupported(ctx, s.repo, OperationLog{
+		OperatorID:      rctx.UserID,
+		OperatorName:    rctx.UserID,
+		OperationType:   OperationRetryReportJob,
+		TargetType:      "job",
+		TargetID:        job.ID,
+		RequestID:       job.RequestID,
+		RequestSource:   requestSource(rctx, "api"),
+		OperationResult: OperationResultSucceeded,
+		ParameterSummary: map[string]any{
+			"jobType":        job.JobType,
+			"reasonProvided": strings.TrimSpace(reason) != "",
+		},
+		Metadata: map[string]any{
+			"attemptId": attempt.ID,
+			"taskId":    taskID,
+		},
+		CreatedAt: time.Now().UTC(),
+	})
 	return attempt, nil
 }
 
@@ -184,4 +231,43 @@ func isSupportedReportJobType(jobType JobType) bool {
 	default:
 		return false
 	}
+}
+
+func operationForJobType(jobType JobType) string {
+	switch jobType {
+	case JobTypeOutlineGeneration:
+		return OperationOutlineGeneration
+	case JobTypeOutlineRegeneration:
+		return OperationOutlineRegeneration
+	case JobTypeContentGeneration:
+		return OperationContentGeneration
+	case JobTypeContentRegeneration:
+		return OperationContentRegeneration
+	case JobTypeSectionRegeneration:
+		return OperationSectionRegeneration
+	case JobTypeReportFileCreation:
+		return OperationReportFileCreation
+	default:
+		return OperationCreateReportJob
+	}
+}
+
+func recordJobFailureIfSupported(ctx context.Context, recorder any, rctx RequestContext, job ReportJob, requestID, message string, metadata map[string]any) {
+	recordOperationIfSupported(ctx, recorder, OperationLog{
+		OperatorID:      rctx.UserID,
+		OperatorName:    rctx.UserID,
+		OperationType:   OperationReportJobFailed,
+		TargetType:      "job",
+		TargetID:        job.ID,
+		RequestID:       requestID,
+		RequestSource:   requestSource(rctx, job.Source),
+		OperationResult: OperationResultFailed,
+		ErrorMessage:    message,
+		ParameterSummary: map[string]any{
+			"jobType":    job.JobType,
+			"targetType": job.TargetType,
+		},
+		Metadata:  metadata,
+		CreatedAt: time.Now().UTC(),
+	})
 }

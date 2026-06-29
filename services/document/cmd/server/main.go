@@ -12,6 +12,7 @@ import (
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/config"
 	httpapi "github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/http"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/platform/aigateway"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/platform/fileclient"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/repository"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/service"
@@ -41,11 +42,17 @@ func main() {
 		logger.Error("file client initialization failed", "service", "document", "dependency", "file", "error", err)
 		os.Exit(1)
 	}
+	profiles, err := aigateway.NewProfileClient(cfg.AIGatewayURL, cfg.AIGatewayServiceToken, nil)
+	if err != nil {
+		logger.Error("ai gateway client initialization failed", "service", "document", "dependency", "ai-gateway", "error", err)
+		os.Exit(1)
+	}
 	taskClient := worker.NewClient(cfg.RedisAddr)
 	w := worker.New(cfg.RedisAddr, logger, repo)
 	documents := service.New(repo, files)
 	reportService := service.NewReportService(repo)
 	jobService := service.NewJobService(repo, taskClient)
+	adminService := service.NewAdminService(repo, profiles)
 	go func() {
 		if err := w.Start(); err != nil {
 			logger.Error("worker failed to start", "service", "document", "error", err)
@@ -59,6 +66,7 @@ func main() {
 		DocumentService: documents,
 		ReportService:   reportService,
 		JobSvc:          jobService,
+		AdminService:    adminService,
 	})
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
