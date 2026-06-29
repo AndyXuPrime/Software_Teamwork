@@ -168,6 +168,48 @@ func TestCreateChatCompletionRecordsProviderStatusOnOpenAIError(t *testing.T) {
 	}
 }
 
+func TestCreateChatCompletionRecordsCancelledInvocationAfterRequestCancel(t *testing.T) {
+	repo := newMemoryRepository()
+	ctx, cancel := context.WithCancel(context.Background())
+	svc := NewWithChatProvider(repo, mustEncryptor(t), 60000, fakeChatProvider{
+		complete: func(providerCtx context.Context, req ProviderChatRequest) (ProviderChatResult, error) {
+			cancel()
+			<-providerCtx.Done()
+			return ProviderChatResult{}, providerCtx.Err()
+		},
+	})
+	isDefault := true
+	if _, err := svc.CreateModelProfile(ctx, RequestContext{UserID: "user_1"}, CreateModelProfileInput{
+		Name:              "default-chat",
+		Purpose:           PurposeChat,
+		Provider:          ProviderOpenAICompatible,
+		BaseURL:           "https://provider.example/v1",
+		Model:             "provider-model",
+		APIKey:            "sk-secret-value",
+		IsDefault:         &isDefault,
+		SupportsStreaming: &isDefault,
+	}); err != nil {
+		t.Fatalf("CreateModelProfile() error = %v", err)
+	}
+
+	_, err := svc.CreateChatCompletion(ctx, ChatCompletionInput{
+		RequestContext: RequestContext{RequestID: "req_cancelled", CallerService: "qa", UserID: "user_1"},
+		Payload: map[string]json.RawMessage{
+			"model":    json.RawMessage(`"alias"`),
+			"messages": json.RawMessage(`[{"role":"user","content":"full prompt text"}]`),
+		},
+	})
+	if err == nil {
+		t.Fatal("CreateChatCompletion() error = nil, want cancellation error")
+	}
+	if len(repo.invocations) != 1 || len(repo.attempts) != 1 {
+		t.Fatalf("recorded invocations=%d attempts=%d, want 1/1", len(repo.invocations), len(repo.attempts))
+	}
+	if repo.invocations[0].Status != InvocationCancelled || repo.attempts[0].Status != InvocationCancelled {
+		t.Fatalf("status invocation=%s attempt=%s, want cancelled", repo.invocations[0].Status, repo.attempts[0].Status)
+	}
+}
+
 type fakeChatProvider struct {
 	complete func(context.Context, ProviderChatRequest) (ProviderChatResult, error)
 	stream   func(context.Context, ProviderChatRequest) (ProviderChatStream, error)

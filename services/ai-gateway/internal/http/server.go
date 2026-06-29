@@ -242,32 +242,64 @@ func (s *Server) handleCreateChatCompletionStream(w http.ResponseWriter, r *http
 		return
 	}
 	defer stream.Body.Close()
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.WriteHeader(http.StatusOK)
-
 	flusher, _ := w.(http.Flusher)
 	reader := bufio.NewReader(stream.Body)
 	status := service.InvocationSucceeded
 	var streamErr *service.OpenAIError
 	var usage *service.TokenUsage
 	sawDone := false
+	streamStarted := false
+	startStream := func() {
+		if streamStarted {
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.WriteHeader(http.StatusOK)
+		streamStarted = true
+	}
 	for {
 		chunk, readErr := reader.ReadBytes('\n')
 		if len(chunk) > 0 {
-			if bytes.Contains(chunk, []byte("data: [DONE]")) {
-				sawDone = true
-			} else if parsedUsage := parseStreamUsage(chunk); parsedUsage != nil {
-				usage = parsedUsage
-			}
-			if _, err := w.Write(chunk); err != nil {
-				status = service.InvocationCancelled
-				streamErr = &service.OpenAIError{HTTPStatus: http.StatusBadGateway, Message: "request was cancelled", Type: "upstream_error", Code: "cancelled", Err: err}
+			validation := validateStreamChunk(chunk)
+			if validation.err != nil {
+				status = service.InvocationFailed
+				streamErr = validation.err
+				if !streamStarted {
+					writeOpenAIErrorFromError(w, streamErr)
+				}
 				break
 			}
-			if flusher != nil {
-				flusher.Flush()
+			if validation.skip {
+				if streamStarted && len(bytes.TrimSpace(chunk)) == 0 {
+					if _, err := w.Write(chunk); err != nil {
+						status = service.InvocationCancelled
+						streamErr = &service.OpenAIError{HTTPStatus: http.StatusBadGateway, Message: "request was cancelled", Type: "upstream_error", Code: "cancelled", Err: err}
+						break
+					}
+					if flusher != nil {
+						flusher.Flush()
+					}
+				}
+				if readErr == nil {
+					continue
+				}
+			} else {
+				if validation.done {
+					sawDone = true
+				} else if validation.usage != nil {
+					usage = validation.usage
+				}
+				startStream()
+				if _, err := w.Write(chunk); err != nil {
+					status = service.InvocationCancelled
+					streamErr = &service.OpenAIError{HTTPStatus: http.StatusBadGateway, Message: "request was cancelled", Type: "upstream_error", Code: "cancelled", Err: err}
+					break
+				}
+				if flusher != nil {
+					flusher.Flush()
+				}
 			}
 		}
 		if readErr == nil {
@@ -288,6 +320,9 @@ func (s *Server) handleCreateChatCompletionStream(w http.ResponseWriter, r *http
 	if status == service.InvocationSucceeded && !sawDone {
 		status = service.InvocationFailed
 		streamErr = &service.OpenAIError{HTTPStatus: http.StatusBadGateway, Message: "provider stream ended without completion marker", Type: "upstream_error", Code: "dependency_error"}
+		if !streamStarted {
+			writeOpenAIErrorFromError(w, streamErr)
+		}
 	}
 	if err := stream.Finalize(service.StreamFinalizeInput{Status: status, Error: streamErr, Usage: usage}); err != nil {
 		s.logger.WarnContext(r.Context(), "record provider stream invocation failed", "service", "ai-gateway", "request_id", requestIDFromContext(r.Context()), "operation", "chat_completion")
@@ -522,10 +557,10 @@ func rawBool(raw json.RawMessage) bool {
 
 func parseStreamUsage(chunk []byte) *service.TokenUsage {
 	line := bytes.TrimSpace(chunk)
-	if !bytes.HasPrefix(line, []byte("data: ")) {
+	if !bytes.HasPrefix(line, []byte("data:")) {
 		return nil
 	}
-	payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data: ")))
+	payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
 	if bytes.Equal(payload, []byte("[DONE]")) {
 		return nil
 	}
@@ -544,6 +579,50 @@ func parseStreamUsage(chunk []byte) *service.TokenUsage {
 		CompletionTokens: value.Usage.CompletionTokens,
 		TotalTokens:      value.Usage.TotalTokens,
 	}
+}
+
+type streamChunkValidation struct {
+	skip  bool
+	done  bool
+	usage *service.TokenUsage
+	err   *service.OpenAIError
+}
+
+func validateStreamChunk(chunk []byte) streamChunkValidation {
+	line := bytes.TrimSpace(chunk)
+	if len(line) == 0 || bytes.HasPrefix(line, []byte(":")) {
+		return streamChunkValidation{skip: true}
+	}
+	if !bytes.HasPrefix(line, []byte("data:")) {
+		return invalidProviderStreamChunk()
+	}
+	payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+	if bytes.Equal(payload, []byte("[DONE]")) {
+		return streamChunkValidation{done: true}
+	}
+	if !isOpenAIChatCompletionChunk(payload) {
+		return invalidProviderStreamChunk()
+	}
+	return streamChunkValidation{usage: parseStreamUsage(chunk)}
+}
+
+func invalidProviderStreamChunk() streamChunkValidation {
+	return streamChunkValidation{err: &service.OpenAIError{
+		HTTPStatus: http.StatusBadGateway,
+		Message:    "provider stream returned a non-contract response",
+		Type:       "upstream_error",
+		Code:       "dependency_error",
+	}}
+}
+
+func isOpenAIChatCompletionChunk(payload []byte) bool {
+	var value struct {
+		Object string `json:"object"`
+	}
+	if err := json.Unmarshal(payload, &value); err != nil {
+		return false
+	}
+	return value.Object == "chat.completion.chunk"
 }
 
 func statusForCode(code service.Code) int {

@@ -272,6 +272,44 @@ func TestCreateChatCompletionStreamWithoutDoneRecordsFailure(t *testing.T) {
 	}
 }
 
+func TestCreateChatCompletionStreamRejectsNonContractBodyWithoutLeak(t *testing.T) {
+	fakeProvider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"error":"raw provider secret body"}`))
+	}))
+	defer fakeProvider.Close()
+
+	server, repo := newTestServerWithChatProviderAndRepo(t, provider.NewHTTPChatClient(fakeProvider.Client()))
+	createBody := `{"name":"default-chat","purpose":"chat","provider":"openai_compatible","baseUrl":"` + fakeProvider.URL + `/v1","model":"provider-model","apiKey":"sk-stream-secret","enabled":true,"isDefault":true,"supportsStreaming":true}`
+	createReq := authedRequest(http.MethodPost, "/internal/v1/model-profiles", strings.NewReader(createBody))
+	createRec := httptest.NewRecorder()
+	server.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create profile status = %d, body = %s", createRec.Code, createRec.Body.String())
+	}
+
+	body := `{"model":"alias","stream":true,"messages":[{"role":"user","content":"secret prompt text"}]}`
+	req := authedRequest(http.MethodPost, "/internal/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("X-Caller-Service", "qa")
+	req.Header.Set("Accept", "text/event-stream")
+	rec := httptest.NewRecorder()
+
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "raw provider secret body") || strings.Contains(rec.Body.String(), "secret prompt text") {
+		t.Fatalf("stream error leaked provider or prompt body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"type":"upstream_error"`) {
+		t.Fatalf("body = %s, want OpenAI-style upstream error", rec.Body.String())
+	}
+	if len(repo.invocations) != 1 || repo.invocations[0].Status != service.InvocationFailed {
+		t.Fatalf("recorded invocation = %+v, want failed", repo.invocations)
+	}
+}
+
 func TestModelInvocationRoutesRejectUnknownCallerService(t *testing.T) {
 	server := newTestServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/internal/v1/chat/completions", strings.NewReader(`{}`))

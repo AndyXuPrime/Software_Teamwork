@@ -34,7 +34,13 @@ func (s *Service) CreateChatCompletion(ctx context.Context, input ChatCompletion
 	if err == nil {
 		status = InvocationSucceeded
 	}
-	if recordErr := s.recordChatInvocation(ctx, prepared, invocationRecordInput{
+	recordCtx := ctx
+	var recordCancel context.CancelFunc
+	if err != nil {
+		recordCtx, recordCancel = recordContext(ctx)
+		defer recordCancel()
+	}
+	if recordErr := s.recordChatInvocation(recordCtx, prepared, invocationRecordInput{
 		status:             status,
 		startedAt:          startedAt,
 		finishedAt:         finishedAt,
