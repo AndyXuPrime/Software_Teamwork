@@ -386,13 +386,20 @@ func validateSafeJSON(raw json.RawMessage) error {
 	return rejectSensitiveKeys(object)
 }
 
-func rejectSensitiveKeys(object map[string]any) error {
-	for key, value := range object {
-		if containsSensitiveToken(key) {
-			return fmt.Errorf("must not contain sensitive keys")
+func rejectSensitiveKeys(value any) error {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			if containsSensitiveToken(key) {
+				return fmt.Errorf("must not contain sensitive keys")
+			}
+			if err := rejectSensitiveKeys(child); err != nil {
+				return err
+			}
 		}
-		if nested, ok := value.(map[string]any); ok {
-			if err := rejectSensitiveKeys(nested); err != nil {
+	case []any:
+		for _, child := range typed {
+			if err := rejectSensitiveKeys(child); err != nil {
 				return err
 			}
 		}

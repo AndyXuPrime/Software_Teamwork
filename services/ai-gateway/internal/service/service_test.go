@@ -54,6 +54,22 @@ func TestCreateModelProfileRejectsSensitiveDefaultParameters(t *testing.T) {
 	}
 }
 
+func TestCreateModelProfileRejectsSensitiveDefaultParametersInArray(t *testing.T) {
+	svc := New(newMemoryRepository(), mustEncryptor(t), 60000)
+	_, err := svc.CreateModelProfile(context.Background(), RequestContext{}, CreateModelProfileInput{
+		Name:              "default-chat",
+		Purpose:           PurposeChat,
+		Provider:          ProviderSiliconFlow,
+		BaseURL:           "https://api.siliconflow.cn/v1",
+		Model:             "model",
+		APIKey:            "sk-secret",
+		DefaultParameters: json.RawMessage(`{"headers":[{"authorization":"Bearer secret"}]}`),
+	})
+	if err == nil {
+		t.Fatalf("CreateModelProfile() error = nil, want validation error")
+	}
+}
+
 func TestDefaultProfileConstraint(t *testing.T) {
 	svc := New(newMemoryRepository(), mustEncryptor(t), 60000)
 	isDefault := true

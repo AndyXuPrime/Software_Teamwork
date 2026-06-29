@@ -90,6 +90,49 @@ func TestReadyReturnsDegradedWhenProfilesMissing(t *testing.T) {
 	}
 }
 
+func TestModelInvocationRoutesReturnNotImplemented(t *testing.T) {
+	server := newTestServer(t)
+	paths := []string{
+		"/internal/v1/chat/completions",
+		"/internal/v1/embeddings",
+		"/internal/v1/rerankings",
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			req := authedRequest(http.MethodPost, path, strings.NewReader(`{}`))
+			rec := httptest.NewRecorder()
+
+			server.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusNotImplemented {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+			if !bytes.Contains(rec.Body.Bytes(), []byte(`"type":"not_implemented_error"`)) {
+				t.Fatalf("body = %s, want OpenAI-style not implemented error", rec.Body.String())
+			}
+			if bytes.Contains(rec.Body.Bytes(), []byte(`"data"`)) || bytes.Contains(rec.Body.Bytes(), []byte(`"requestId"`)) {
+				t.Fatalf("body = %s, model invocation errors must not use project envelope", rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestModelInvocationRoutesRequireServiceToken(t *testing.T) {
+	server := newTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/chat/completions", strings.NewReader(`{}`))
+	req.Header.Set("X-Caller-Service", "qa")
+	rec := httptest.NewRecorder()
+
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"type":"authentication_error"`)) {
+		t.Fatalf("body = %s, want OpenAI-style auth error", rec.Body.String())
+	}
+}
+
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	tokenHash := sha256.Sum256([]byte("service-token"))

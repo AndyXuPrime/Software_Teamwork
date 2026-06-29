@@ -69,6 +69,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /internal/v1/model-profiles/{profileId}", s.handleGetModelProfile)
 	s.mux.HandleFunc("PATCH /internal/v1/model-profiles/{profileId}", s.handleUpdateModelProfile)
 	s.mux.HandleFunc("DELETE /internal/v1/model-profiles/{profileId}", s.handleDeleteModelProfile)
+	s.mux.HandleFunc("POST /internal/v1/chat/completions", s.handleModelInvocationNotImplemented)
+	s.mux.HandleFunc("POST /internal/v1/embeddings", s.handleModelInvocationNotImplemented)
+	s.mux.HandleFunc("POST /internal/v1/rerankings", s.handleModelInvocationNotImplemented)
 	s.mux.HandleFunc("/", s.handleNotFound)
 }
 
@@ -199,6 +202,13 @@ func (s *Server) handleDeleteModelProfile(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handleModelInvocationNotImplemented(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeModelInvocation(w, r) {
+		return
+	}
+	writeOpenAIError(w, http.StatusNotImplemented, "model invocation is not implemented", "not_implemented_error", "not_implemented")
+}
+
 func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
 	writeError(w, r, service.NotFoundError("route not found", nil))
 }
@@ -226,6 +236,18 @@ func (s *Server) authorizeInternal(w http.ResponseWriter, r *http.Request) bool 
 	}
 	if strings.TrimSpace(r.Header.Get("X-Caller-Service")) == "" {
 		writeError(w, r, service.UnauthorizedError())
+		return false
+	}
+	return true
+}
+
+func (s *Server) authorizeModelInvocation(w http.ResponseWriter, r *http.Request) bool {
+	if s.authenticator == nil || !s.authenticator.Authenticate(r.Header.Get("X-Service-Token")) {
+		writeOpenAIError(w, http.StatusUnauthorized, "authentication is required", "authentication_error", "unauthorized")
+		return false
+	}
+	if strings.TrimSpace(r.Header.Get("X-Caller-Service")) == "" {
+		writeOpenAIError(w, http.StatusUnauthorized, "authentication is required", "authentication_error", "unauthorized")
 		return false
 	}
 	return true
@@ -288,11 +310,21 @@ type errorEnvelope struct {
 	Error errorBody `json:"error"`
 }
 
+type openAIErrorEnvelope struct {
+	Error openAIErrorBody `json:"error"`
+}
+
 type errorBody struct {
 	Code      service.Code      `json:"code"`
 	Message   string            `json:"message"`
 	RequestID string            `json:"requestId"`
 	Fields    map[string]string `json:"fields,omitempty"`
+}
+
+type openAIErrorBody struct {
+	Message string `json:"message"`
+	Type    string `json:"type"`
+	Code    string `json:"code,omitempty"`
 }
 
 func writeData(w http.ResponseWriter, r *http.Request, status int, value any) {
@@ -309,6 +341,14 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		Message:   appErr.Message,
 		RequestID: requestIDFromContext(r.Context()),
 		Fields:    appErr.Fields,
+	}})
+}
+
+func writeOpenAIError(w http.ResponseWriter, status int, message, errorType, code string) {
+	writeJSON(w, status, openAIErrorEnvelope{Error: openAIErrorBody{
+		Message: message,
+		Type:    errorType,
+		Code:    code,
 	}})
 }
 
