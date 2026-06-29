@@ -16,6 +16,8 @@ type fakeRepository struct {
 	messageOptions MessageListOptions
 	savedSteps     []ReasoningStep
 	savedEvents    []StreamEvent
+	invocations    []ModelInvocation
+	finalization   ResponseRunFinalization
 	run            ResponseRun
 }
 
@@ -38,9 +40,13 @@ func (r *fakeRepository) ListMessages(_ context.Context, _ string, _ string, opt
 	r.messageOptions = options
 	return Page[Message]{Items: append([]Message(nil), r.messages...), Page: options.Page, PageSize: options.PageSize, Total: len(r.messages)}, nil
 }
-func (r *fakeRepository) AppendMessages(_ context.Context, _, sessionID string, values ...Message) (ResponseRun, error) {
+func (r *fakeRepository) AppendMessages(_ context.Context, _, sessionID string, start ResponseRunStart, values ...Message) (ResponseRun, error) {
 	r.messages = append(r.messages, values...)
-	r.run = ResponseRun{ID: "run-id", SessionID: sessionID, UserMessageID: values[0].ID, AssistantMessageID: values[1].ID, Status: "running", MaxIterations: 5, CreatedAt: values[0].CreatedAt}
+	maxIterations := start.MaxIterations
+	if maxIterations == 0 {
+		maxIterations = 5
+	}
+	r.run = ResponseRun{ID: "run-id", SessionID: sessionID, UserMessageID: values[0].ID, AssistantMessageID: values[1].ID, Status: "running", MaxIterations: maxIterations, CreatedAt: values[0].CreatedAt}
 	return r.run, nil
 }
 func (r *fakeRepository) SaveStreamEvents(_ context.Context, _, _ string, events []StreamEvent) error {
@@ -60,11 +66,29 @@ func (r *fakeRepository) UpdateMessage(_ context.Context, _ string, value Messag
 	}
 	return errors.New("message not found")
 }
+func (r *fakeRepository) FinalizeResponseRun(_ context.Context, _ string, final ResponseRunFinalization) (ResponseRun, error) {
+	r.finalization = final
+	if err := r.UpdateMessage(context.Background(), "", final.AssistantMessage); err != nil {
+		return ResponseRun{}, err
+	}
+	r.savedSteps = append([]ReasoningStep(nil), final.ReasoningSteps...)
+	r.savedEvents = append([]StreamEvent(nil), final.StreamEvents...)
+	r.run.Status = final.Status
+	r.run.CurrentIteration = final.CurrentIteration
+	r.run.TotalTokens = final.TotalTokens
+	r.run.CompletedAt = &final.CompletedAt
+	if final.TerminationReason != "" {
+		reason := final.TerminationReason
+		r.run.TerminationReason = &reason
+	}
+	return r.run, nil
+}
 func (r *fakeRepository) SaveReasoningSteps(_ context.Context, _, _ string, steps []ReasoningStep) error {
 	r.savedSteps = append([]ReasoningStep(nil), steps...)
 	return nil
 }
 func (r *fakeRepository) SaveModelInvocation(_ context.Context, _ string, invocation ModelInvocation) (string, error) {
+	r.invocations = append(r.invocations, invocation)
 	return fmt.Sprintf("invocation-%d", invocation.IterationNo), nil
 }
 
@@ -82,18 +106,43 @@ func (r blockingAgentRunner) RunWithObserver(ctx context.Context, _ []agent.Mess
 func (r *fakeAgentRunner) RunWithObserver(_ context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
 	r.input = append([]agent.Message(nil), input...)
 	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
-	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1})
+	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1, Usage: agent.TokenUsage{PromptTokens: 10, CompletionTokens: 4, TotalTokens: 14}})
 	final := agent.Message{Role: agent.RoleAssistant, Content: "测试回答"}
 	return agent.Result{Final: final, Messages: append(input, final), Iterations: 1}, nil
 }
 
+type errorAgentRunner struct{ err error }
+
+func (r errorAgentRunner) RunWithObserver(_ context.Context, _ []agent.Message, observer agent.Observer) (agent.Result, error) {
+	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
+	return agent.Result{}, r.err
+}
+
+type maxIterationsAgentRunner struct{}
+
+func (maxIterationsAgentRunner) RunWithObserver(_ context.Context, _ []agent.Message, observer agent.Observer) (agent.Result, error) {
+	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 2})
+	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 2, Usage: agent.TokenUsage{PromptTokens: 3, CompletionTokens: 2, TotalTokens: 5}})
+	return agent.Result{Iterations: 2}, agent.ErrMaxIterations
+}
+
 type fakeRuntimeProvider struct {
-	runner AgentRunner
-	prompt string
+	runner         AgentRunner
+	prompt         string
+	maxIterations  int
+	overallTimeout time.Duration
 }
 
 func (p fakeRuntimeProvider) Acquire() (RuntimeSnapshot, func(), error) {
-	return RuntimeSnapshot{Runner: p.runner, SystemPrompt: p.prompt, LLMModel: "deepseek-v4-pro", LLMProfileID: "default"}, func() {}, nil
+	maxIterations := p.maxIterations
+	if maxIterations == 0 {
+		maxIterations = 5
+	}
+	return RuntimeSnapshot{
+		Runner: p.runner, SystemPrompt: p.prompt, LLMModel: "deepseek-v4-pro", LLMProfileID: "default",
+		QAConfigVersionID: "qa-config-id", LLMConfigVersionID: "llm-config-id",
+		MaxIterations: maxIterations, OverallTimeout: p.overallTimeout,
+	}, func() {}, nil
 }
 
 func TestAskPersistsConversationMessagesAndDisplayableSteps(t *testing.T) {
@@ -123,6 +172,12 @@ func TestAskPersistsConversationMessagesAndDisplayableSteps(t *testing.T) {
 	}
 	if len(repository.savedSteps) != 2 || len(events) != 6 || len(repository.savedEvents) != 6 {
 		t.Fatalf("steps=%d events=%d", len(repository.savedSteps), len(events))
+	}
+	if result.ResponseRun.Status != "completed" || result.ResponseRun.TerminationReason == nil || *result.ResponseRun.TerminationReason != "completed" || result.ResponseRun.TotalTokens != 14 {
+		t.Fatalf("unexpected response run: %+v", result.ResponseRun)
+	}
+	if len(repository.invocations) != 1 || repository.invocations[0].TotalTokens != 14 {
+		t.Fatalf("unexpected model invocations: %+v", repository.invocations)
 	}
 	if len(runner.input) < 2 || runner.input[0].Role != agent.RoleSystem || runner.input[len(runner.input)-1].Content != "锅炉检查要求" {
 		t.Fatalf("unexpected agent input: %+v", runner.input)
@@ -200,5 +255,63 @@ func TestCancelActiveRunCancelsAgentAndPersistsCancelledMessage(t *testing.T) {
 	}
 	if got := repository.messages[1].Status; got != "cancelled" {
 		t.Fatalf("assistant status=%q", got)
+	}
+	if repository.finalization.TerminationReason != "cancelled" || repository.finalization.Status != "cancelled" {
+		t.Fatalf("finalization=%+v", repository.finalization)
+	}
+}
+
+func TestAskPersistsModelFailureReason(t *testing.T) {
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"}}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{runner: errorAgentRunner{err: errors.New("provider secret detail")}, prompt: "system"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "hello"}, nil)
+	appErr, ok := Classify(err)
+	if !ok || appErr.Code != CodeDependency {
+		t.Fatalf("error=%v, want dependency_error", err)
+	}
+	if repository.finalization.Status != "failed" || repository.finalization.TerminationReason != "model_error" {
+		t.Fatalf("finalization=%+v", repository.finalization)
+	}
+	if len(repository.invocations) != 1 || repository.invocations[0].Status != "failed" || repository.invocations[0].ErrorMessage != "answer generation failed" {
+		t.Fatalf("invocations=%+v", repository.invocations)
+	}
+}
+
+func TestAskPersistsTimeoutReason(t *testing.T) {
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"}}
+	runner := blockingAgentRunner{started: make(chan struct{})}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{runner: runner, prompt: "system", overallTimeout: time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "timeout"}, nil)
+	appErr, ok := Classify(err)
+	if !ok || appErr.Code != CodeDependency {
+		t.Fatalf("error=%v, want dependency_error", err)
+	}
+	if repository.finalization.Status != "failed" || repository.finalization.TerminationReason != "timeout" {
+		t.Fatalf("finalization=%+v", repository.finalization)
+	}
+}
+
+func TestAskPersistsMaxIterationsReason(t *testing.T) {
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"}}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{runner: maxIterationsAgentRunner{}, prompt: "system", maxIterations: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "loop"}, nil)
+	appErr, ok := Classify(err)
+	if !ok || appErr.Code != CodeDependency {
+		t.Fatalf("error=%v, want dependency_error", err)
+	}
+	if repository.finalization.Status != "failed" || repository.finalization.TerminationReason != "max_iterations" || repository.finalization.CurrentIteration != 2 {
+		t.Fatalf("finalization=%+v", repository.finalization)
+	}
+	if len(repository.invocations) == 0 || repository.invocations[0].TotalTokens != 5 {
+		t.Fatalf("invocations=%+v", repository.invocations)
 	}
 }

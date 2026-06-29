@@ -31,7 +31,7 @@ func TestDocumentedResourceRoundTrip(t *testing.T) {
 	if _, err = repo.CreateConversation(ctx, conversation); err != nil {
 		t.Fatal(err)
 	}
-	run, err := repo.AppendMessages(ctx, "integration-user", conversationID, service.Message{ID: userMessageID, ConversationID: conversationID, Role: "user", Content: "question", Status: "completed", CreatedAt: now}, service.Message{ID: assistantMessageID, ConversationID: conversationID, Role: "assistant", Status: "streaming", CreatedAt: now})
+	run, err := repo.AppendMessages(ctx, "integration-user", conversationID, service.ResponseRunStart{RequestID: "req-integration", MaxIterations: 5}, service.Message{ID: userMessageID, ConversationID: conversationID, Role: "user", Content: "question", Status: "completed", CreatedAt: now}, service.Message{ID: assistantMessageID, ConversationID: conversationID, Role: "assistant", Status: "streaming", CreatedAt: now})
 	if err != nil {
 		t.Fatal(err)
 	}
