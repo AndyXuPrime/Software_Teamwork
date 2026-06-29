@@ -98,7 +98,9 @@ async function redirectToAdminHome() {
 }
 
 const qaAccess: PermissionRequirement = { any: ['qa:use'] }
-const qaAdminAccess: PermissionRequirement = { any: ['qa:write', 'system:admin'] }
+const qaAdminAccess: PermissionRequirement = {
+  any: ['admin:model-profile:write', 'admin:parser-config:write', 'system:admin'],
+}
 const reportAccess: PermissionRequirement = {
   any: ['report:read', 'report:write', 'reports:write'],
 }
@@ -116,7 +118,8 @@ const adminAccess: PermissionRequirement = {
     'knowledge:read',
     'knowledge:write',
     'document:upload',
-    'qa:write',
+    'admin:model-profile:write',
+    'admin:parser-config:write',
   ],
 }
 

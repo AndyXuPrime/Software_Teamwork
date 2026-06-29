@@ -77,12 +77,22 @@ const menuItems: AdminNavigationItem[] = [
     key: 'prompts',
     label: '提示词管理',
     path: '/admin/prompts',
-    requirement: { any: ['qa:write', 'system:admin'] },
+    requirement: {
+      any: ['admin:model-profile:write', 'admin:parser-config:write', 'system:admin'],
+    },
   },
   {
     key: 'rag',
     label: 'RAG 知识库',
-    requirement: { any: ['knowledge:read', 'knowledge:write', 'document:upload', 'qa:write'] },
+    requirement: {
+      any: [
+        'knowledge:read',
+        'knowledge:write',
+        'document:upload',
+        'admin:model-profile:write',
+        'admin:parser-config:write',
+      ],
+    },
     children: [
       {
         key: 'knowledge',
@@ -106,13 +116,17 @@ const menuItems: AdminNavigationItem[] = [
         key: 'qa-settings',
         label: 'QA / LLM 配置',
         path: '/admin/qa-settings',
-        requirement: { any: ['qa:write', 'system:admin'] },
+        requirement: {
+          any: ['admin:model-profile:write', 'admin:parser-config:write', 'system:admin'],
+        },
       },
       {
         key: 'qa-retrieval-test',
         label: 'QA 检索测试',
         path: '/admin/qa-retrieval-test',
-        requirement: { any: ['qa:write', 'system:admin'] },
+        requirement: {
+          any: ['admin:model-profile:write', 'admin:parser-config:write', 'system:admin'],
+        },
       },
     ],
   },
