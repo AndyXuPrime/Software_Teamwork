@@ -22,15 +22,12 @@ func TestIngestionHandlerRejectsInvalidA10PayloadWithoutTouchingState(t *testing
 	handler, svc, repo, _ := newWorkerHarness(t, newSourceStore())
 	handoff := seedIngestionJob(t, repo, "file_123")
 
-	err := handler.HandleIngestionPayload(context.Background(), mustJSON(t, map[string]string{
+	if err := handler.HandleIngestionPayload(context.Background(), mustJSON(t, map[string]string{
 		"requestId": "req_worker",
 		"jobId":     handoff.jobID,
 		"userId":    "usr_123",
-	}))
-
-	appErr := requireAppError(t, err, service.CodeValidation)
-	if appErr.Fields["documentId"] == "" || appErr.Fields["knowledgeBaseId"] == "" {
-		t.Fatalf("fields = %+v", appErr.Fields)
+	})); err != nil {
+		t.Fatalf("HandleIngestionPayload() error = %v, want ack for permanent payload error", err)
 	}
 	job, err := svc.GetJob(context.Background(), actorContext(), handoff.jobID)
 	if err != nil {
@@ -140,15 +137,78 @@ func TestIngestionHandlerDoesNotReprocessSucceededJob(t *testing.T) {
 	if err := handler.HandleIngestionPayload(context.Background(), payload); err != nil {
 		t.Fatalf("first HandleIngestionPayload() error = %v", err)
 	}
-	err := handler.HandleIngestionPayload(context.Background(), payload)
-
-	requireAppError(t, err, service.CodeConflict)
+	if err := handler.HandleIngestionPayload(context.Background(), payload); err != nil {
+		t.Fatalf("second HandleIngestionPayload() error = %v, want ack for succeeded job redelivery", err)
+	}
 	chunks, err := svc.ListChunks(context.Background(), actorContext(), service.ListChunksInput{DocumentID: handoff.documentID})
 	if err != nil {
 		t.Fatalf("ListChunks() error = %v", err)
 	}
 	if chunks.Page.Total != 1 || len(vectors.points) != 1 {
 		t.Fatalf("chunks = %+v, vectors = %+v", chunks, vectors.points)
+	}
+	if source.readCount != 1 {
+		t.Fatalf("source reads = %d, want 1", source.readCount)
+	}
+}
+
+func TestIngestionHandlerAcksPermanentParsingFailure(t *testing.T) {
+	source := newSourceStore()
+	source.Put("file_empty", "", "text/plain")
+	handler, svc, repo, vectors := newWorkerHarness(t, source)
+	handoff := seedIngestionJob(t, repo, "file_empty")
+
+	if err := handler.HandleIngestionPayload(context.Background(), mustJSON(t, worker.IngestionPayload{
+		RequestID:       "req_worker",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	})); err != nil {
+		t.Fatalf("HandleIngestionPayload() error = %v, want ack for permanent parsing failure", err)
+	}
+
+	job, err := svc.GetJob(context.Background(), actorContext(), handoff.jobID)
+	if err != nil {
+		t.Fatalf("GetJob() error = %v", err)
+	}
+	if job.Status != service.JobStatusFailed || job.ErrorCode == nil || *job.ErrorCode != "parse_failed" {
+		t.Fatalf("job = %+v", job)
+	}
+	doc, err := svc.GetDocument(context.Background(), actorContext(), handoff.documentID)
+	if err != nil {
+		t.Fatalf("GetDocument() error = %v", err)
+	}
+	if doc.Status != service.DocumentStatusFailed || doc.ErrorMessage == nil || strings.Contains(*doc.ErrorMessage, "file_empty") {
+		t.Fatalf("doc = %+v", doc)
+	}
+	if len(vectors.points) != 0 {
+		t.Fatalf("vector points = %+v", vectors.points)
+	}
+}
+
+func TestIngestionHandlerAcksDependencyFailureAfterMaxAttempts(t *testing.T) {
+	source := newSourceStore()
+	source.err = service.NewError(service.CodeDependency, "file service content read failed", nil)
+	handler, svc, repo, _ := newWorkerHarness(t, source)
+	handoff := seedIngestionJobWithMaxAttempts(t, repo, "file_missing", 1)
+
+	if err := handler.HandleIngestionPayload(context.Background(), mustJSON(t, worker.IngestionPayload{
+		RequestID:       "req_worker",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	})); err != nil {
+		t.Fatalf("HandleIngestionPayload() error = %v, want ack once max attempts is reached", err)
+	}
+
+	job, err := svc.GetJob(context.Background(), actorContext(), handoff.jobID)
+	if err != nil {
+		t.Fatalf("GetJob() error = %v", err)
+	}
+	if job.Status != service.JobStatusFailed || job.Attempts != 1 || job.MaxAttempts != 1 {
+		t.Fatalf("job = %+v", job)
 	}
 }
 
@@ -182,6 +242,11 @@ type ingestionHandoff struct {
 
 func seedIngestionJob(t *testing.T, repo *repository.MemoryRepository, fileID string) ingestionHandoff {
 	t.Helper()
+	return seedIngestionJobWithMaxAttempts(t, repo, fileID, service.DefaultIngestionMaxAttempts)
+}
+
+func seedIngestionJobWithMaxAttempts(t *testing.T, repo *repository.MemoryRepository, fileID string, maxAttempts int32) ingestionHandoff {
+	t.Helper()
 	now := fixedNow()
 	doc, job, err := repo.CreateDocumentWithJob(context.Background(), service.CreateDocumentWithJobRecord{
 		DocumentID:      "doc_1",
@@ -198,7 +263,7 @@ func seedIngestionJob(t *testing.T, repo *repository.MemoryRepository, fileID st
 		JobStatus:       service.JobStatusQueued,
 		JobStage:        "uploaded",
 		JobMessage:      "document uploaded and queued for ingestion",
-		MaxAttempts:     3,
+		MaxAttempts:     maxAttempts,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}, service.AccessScope{UserID: "usr_123", CanWrite: true})
@@ -227,6 +292,7 @@ type sourceStore struct {
 	docs        map[string]sourceDoc
 	err         error
 	lastRequest service.RequestContext
+	readCount   int
 }
 
 type sourceDoc struct {
@@ -246,6 +312,7 @@ func (s *sourceStore) ReadSource(ctx context.Context, reqCtx service.RequestCont
 	if err := ctx.Err(); err != nil {
 		return service.SourceDocument{}, err
 	}
+	s.readCount++
 	s.lastRequest = reqCtx
 	if s.err != nil {
 		return service.SourceDocument{}, s.err

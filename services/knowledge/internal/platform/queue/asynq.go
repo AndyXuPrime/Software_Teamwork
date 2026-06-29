@@ -27,7 +27,11 @@ func (q *AsynqQueue) EnqueueDocumentIngestion(ctx context.Context, task service.
 	if q == nil || q.client == nil {
 		return service.NewError(service.CodeDependency, "ingestion queue is not configured", nil)
 	}
-	_, err = q.client.EnqueueContext(ctx, asynq.NewTask(DocumentIngestionTaskType, payload))
+	maxRetries := int(service.DefaultIngestionMaxAttempts - 1)
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+	_, err = q.client.EnqueueContext(ctx, asynq.NewTask(DocumentIngestionTaskType, payload), asynq.MaxRetry(maxRetries))
 	if err != nil {
 		return service.NewError(service.CodeDependency, "ingestion queue handoff failed", err)
 	}

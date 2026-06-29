@@ -36,6 +36,9 @@ func (s *Service) ProcessIngestionTask(ctx context.Context, reqCtx RequestContex
 	if job.KnowledgeBaseID != normalized.KnowledgeBaseID || strings.TrimSpace(*job.DocumentID) != normalized.DocumentID {
 		return ProcessingJob{}, ConflictError("worker payload does not match job", nil)
 	}
+	if job.Status == JobStatusFailed && hasExhaustedJobAttempts(job) {
+		return job, ConflictError("job has reached max attempts", nil)
+	}
 	if job.Status != JobStatusQueued && job.Status != JobStatusFailed {
 		return ProcessingJob{}, ConflictError("job is not ready to run", nil)
 	}
@@ -127,9 +130,8 @@ func (s *Service) ProcessIngestionTask(ctx context.Context, reqCtx RequestContex
 		return failed, DependencyError("job state update failed", err)
 	}
 	if _, err := s.repo.UpdateDocumentProcessingState(ctx, doc.ID, DocumentStateUpdate{
-		Status:        DocumentStatusChunking,
-		ParsedContent: &parsed.Content,
-		UpdatedAt:     chunkingAt,
+		Status:    DocumentStatusChunking,
+		UpdatedAt: chunkingAt,
 	}); err != nil {
 		failed := s.failProcessing(ctx, job, doc.ID, string(CodeDependency), "document state update failed")
 		return failed, DependencyError("document state update failed", err)
@@ -401,6 +403,10 @@ func classifyProcessingDependencyCode(err error) string {
 		return string(appErr.Code)
 	}
 	return string(CodeDependency)
+}
+
+func hasExhaustedJobAttempts(job ProcessingJob) bool {
+	return job.MaxAttempts > 0 && job.Attempts >= job.MaxAttempts
 }
 
 func sanitizeProcessingFailureMessage(err error) string {

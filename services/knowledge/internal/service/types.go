@@ -101,6 +101,8 @@ const (
 	JobTypeDocumentIngestion = JobTypeIngest
 	LegacyJobTypeIngestion   = "document_ingestion"
 
+	DefaultIngestionMaxAttempts int32 = 3
+
 	JobStatusQueued    = "queued"
 	JobStatusRunning   = "running"
 	JobStatusSucceeded = "succeeded"
@@ -422,11 +424,10 @@ type CreateDocumentWithJobRecord struct {
 }
 
 type DocumentStateUpdate struct {
-	Status        DocumentStatus
-	ErrorCode     *string
-	ErrorMessage  *string
-	ParsedContent *string
-	UpdatedAt     time.Time
+	Status       DocumentStatus
+	ErrorCode    *string
+	ErrorMessage *string
+	UpdatedAt    time.Time
 }
 
 type JobStateUpdate struct {

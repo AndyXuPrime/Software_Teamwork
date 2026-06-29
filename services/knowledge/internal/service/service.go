@@ -361,7 +361,7 @@ func (s *Service) UploadDocument(ctx context.Context, reqCtx RequestContext, inp
 		JobStatus:            JobStatusQueued,
 		JobStage:             "uploaded",
 		JobMessage:           "document uploaded and queued for ingestion",
-		MaxAttempts:          3,
+		MaxAttempts:          DefaultIngestionMaxAttempts,
 		ParserConfigID:       parserSnapshot.ParserConfigID,
 		ParserConfigSnapshot: parserSnapshotJSON,
 		CreatedAt:            now,

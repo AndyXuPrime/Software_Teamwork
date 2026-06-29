@@ -44,7 +44,9 @@ func WithLogger(logger *slog.Logger) IngestionHandlerOption {
 func (h *IngestionHandler) HandleIngestionPayload(ctx context.Context, payload []byte) error {
 	parsed, err := DecodeIngestionPayload(payload)
 	if err != nil {
-		return err
+		h.logFailure(ctx, IngestionPayload{}, err)
+		// Malformed task payloads are permanent; retrying cannot make the JSON valid.
+		return nil
 	}
 	if h.knowledge == nil {
 		return service.DependencyError("knowledge service is not configured", nil)
@@ -55,25 +57,60 @@ func (h *IngestionHandler) HandleIngestionPayload(ctx context.Context, payload [
 		CallerService: "knowledge",
 	}
 	_, err = h.knowledge.ProcessIngestionTask(ctx, reqCtx, parsed)
-	if err != nil && h.logger != nil {
-		code := "unknown"
-		if appErr, ok := service.Classify(err); ok {
-			code = string(appErr.Code)
-		}
-		// Keep worker logs to identifiers and normalized error codes only.
-		h.logger.WarnContext(ctx, "knowledge ingestion job failed",
-			"service", "knowledge",
-			"request_id", parsed.RequestID,
-			"user_id", parsed.UserID,
-			"job_id", parsed.JobID,
-			"document_id", parsed.DocumentID,
-			"knowledge_base_id", parsed.KnowledgeBaseID,
-			"operation", "knowledge_ingestion_worker",
-			"status", "failed",
-			"error_code", code,
-		)
+	if err == nil {
+		return nil
+	}
+	h.logFailure(ctx, parsed, err)
+	if shouldAckIngestionError(err) || h.jobReachedMaxAttempts(ctx, reqCtx, parsed.JobID) {
+		return nil
 	}
 	return err
+}
+
+func (h *IngestionHandler) logFailure(ctx context.Context, payload IngestionPayload, err error) {
+	if h.logger == nil || err == nil {
+		return
+	}
+	code := "unknown"
+	if appErr, ok := service.Classify(err); ok {
+		code = string(appErr.Code)
+	}
+	// Keep worker logs to identifiers and normalized error codes only.
+	h.logger.WarnContext(ctx, "knowledge ingestion job failed",
+		"service", "knowledge",
+		"request_id", payload.RequestID,
+		"user_id", payload.UserID,
+		"job_id", payload.JobID,
+		"document_id", payload.DocumentID,
+		"knowledge_base_id", payload.KnowledgeBaseID,
+		"operation", "knowledge_ingestion_worker",
+		"status", "failed",
+		"error_code", code,
+	)
+}
+
+func shouldAckIngestionError(err error) bool {
+	appErr, ok := service.Classify(err)
+	if !ok {
+		return false
+	}
+	switch appErr.Code {
+	case service.CodeValidation, service.CodeUnauthorized, service.CodeForbidden, service.CodeNotFound, service.CodeConflict:
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *IngestionHandler) jobReachedMaxAttempts(ctx context.Context, reqCtx service.RequestContext, jobID string) bool {
+	if h.knowledge == nil || strings.TrimSpace(jobID) == "" {
+		return false
+	}
+	job, err := h.knowledge.GetJob(ctx, reqCtx, jobID)
+	if err != nil {
+		return false
+	}
+	return job.MaxAttempts > 0 && job.Attempts >= job.MaxAttempts
 }
 
 func DecodeIngestionPayload(payload []byte) (IngestionPayload, error) {

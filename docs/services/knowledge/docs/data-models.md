@@ -127,7 +127,6 @@ parser service
 | `Status` | `status` | `status` | text | 文档处理状态，见第 7.1 节。 |
 | `ErrorCode` | `errorCode` | `error_code` | text nullable | 处理失败分类。 |
 | `ErrorMessage` | `errorMessage` | `error_message` | text nullable | 可展示或可排查的错误摘要。 |
-| `ParsedContent` | hidden | `parsed_content` | text nullable | 解析后的全文，主要用于调试、重切片和 fallback。 |
 | `ChunkCount` | `chunkCount` | derived | integer | 从 `document_chunks` 聚合得出。 |
 | `Tags` | `tags` | `tags` | jsonb | 文档标签，当前最多 32 个，每个最多 64 字符。 |
 | `ParserBackend` | `parserBackend` | `parser_backend` | text nullable | 解析器标识，例如 `router` 或 `text`。 |
