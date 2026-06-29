@@ -36,6 +36,45 @@ func TestJobServiceCreateJobAcceptsDocumentJobTypes(t *testing.T) {
 	}
 }
 
+func TestJobServiceCreateReportFileJobCreatesPendingReportFile(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeJobRepository{
+		report: Report{
+			ID:        "report-1",
+			Name:      "Export Source",
+			CreatorID: "user-1",
+			Status:    ReportStatusGenerated,
+		},
+	}
+	enqueuer := &fakeTaskEnqueuer{}
+	svc := NewJobService(repo, enqueuer)
+
+	job, err := svc.CreateJob(ctx, RequestContext{UserID: "user-1"}, CreateJobInput{
+		RequestID: "req-1",
+		UserID:    "user-1",
+		ReportID:  "report-1",
+		JobType:   JobTypeReportFileCreation,
+	})
+	if err != nil {
+		t.Fatalf("CreateJob() error = %v", err)
+	}
+	if job.JobType != JobTypeReportFileCreation {
+		t.Fatalf("JobType = %q, want %q", job.JobType, JobTypeReportFileCreation)
+	}
+	if repo.reportFile.JobID != job.ID {
+		t.Fatalf("ReportFile.JobID = %q, want %q", repo.reportFile.JobID, job.ID)
+	}
+	if repo.reportFile.Status != ReportFileStatusPending || repo.reportFile.Format != ReportFileFormatDOCX {
+		t.Fatalf("unexpected report file: %+v", repo.reportFile)
+	}
+	if repo.reportFile.Filename != "Export Source.docx" {
+		t.Fatalf("ReportFile.Filename = %q", repo.reportFile.Filename)
+	}
+	if enqueuer.jobType != JobTypeReportFileCreation {
+		t.Fatalf("enqueued job type = %q, want %q", enqueuer.jobType, JobTypeReportFileCreation)
+	}
+}
+
 func TestJobServiceCreateJobRejectsUnknownJobType(t *testing.T) {
 	ctx := context.Background()
 	svc := NewJobService(&fakeJobRepository{
@@ -138,6 +177,7 @@ func TestJobServiceRetryJobDoesNotPersistRawReason(t *testing.T) {
 type fakeJobRepository struct {
 	report        Report
 	job           ReportJob
+	reportFile    ReportFile
 	operationLogs []OperationLog
 }
 
@@ -178,6 +218,16 @@ func (f *fakeJobRepository) UpdateAttemptAsynqTaskID(context.Context, string, st
 
 func (f *fakeJobRepository) SetAttemptFailed(context.Context, string, string, string) error {
 	return nil
+}
+
+func (f *fakeJobRepository) CreateReportFile(_ context.Context, value ReportFile) (ReportFile, error) {
+	f.reportFile = value
+	return value, nil
+}
+
+func (f *fakeJobRepository) UpdateReportFile(_ context.Context, value ReportFile) (ReportFile, error) {
+	f.reportFile = value
+	return value, nil
 }
 
 func (f *fakeJobRepository) ClaimRetry(context.Context, string, string, string, string) (ReportJobAttempt, error) {
