@@ -70,15 +70,6 @@ check 名称补入 `contexts`。
 - 同步成功后把正文中的 `Project sync` 改为 `synced`；同步失败则改为
   `blocked`。
 
-[.github/workflows/task-project-bootstrap.yml](../../.github/workflows/task-project-bootstrap.yml)
-提供手动迁移和视图初始化：
-
-- 创建缺失的 `All Tasks`、`Platform View`、`QA View`、`Report View`、
-  `Frontend View`、`Special View`、`Dependency View`。
-- 扫描现有 `[A/B/C/F/S-...]` issue，加入 `Software Teamwork` Project 并填充
-  Project 字段。
-- 需要仓库 secret `PROJECTS_TOKEN`，建议使用带 `project` scope 的 classic PAT。
-
 新任务 issue 默认使用 [.github/ISSUE_TEMPLATE/issue.md](../../.github/ISSUE_TEMPLATE/issue.md)。
 模板标题采用 `[F-YYYYMMDD-01] English task title` 格式，并内置任务前缀和模块枚举，
 以便 Task Issue Sync 识别和同步 Project 字段。
