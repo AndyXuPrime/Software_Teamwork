@@ -42,6 +42,14 @@ type JobSvc interface {
 	ListEvents(ctx context.Context, rctx service.RequestContext, reportID string) ([]service.ReportEvent, error)
 }
 
+type AdminSvc interface {
+	GetReportSettings(context.Context, service.RequestContext) (service.ReportSettings, error)
+	UpdateReportSettings(context.Context, service.RequestContext, service.UpdateReportSettingsInput) (service.ReportSettings, error)
+	GetStatisticsOverview(context.Context, service.RequestContext, int) (service.ReportStatisticsOverview, error)
+	ListDailyStatistics(context.Context, service.RequestContext, int) ([]service.ReportDailyStatistic, error)
+	ListOperationLogs(context.Context, service.RequestContext, service.OperationLogListFilter) (service.OperationLogListResult, error)
+}
+
 const defaultMaxUploadBytes = int64(32 << 20)
 
 type Config struct {
@@ -50,6 +58,7 @@ type Config struct {
 	DocumentService DocumentService
 	ReportService   ReportService
 	JobSvc          JobSvc
+	AdminService    AdminSvc
 	MaxUploadBytes  int64
 }
 
@@ -59,6 +68,7 @@ type Server struct {
 	documents      DocumentService
 	reportService  ReportService
 	jobSvc         JobSvc
+	adminService   AdminSvc
 	maxUploadBytes int64
 	mux            *http.ServeMux
 }
@@ -76,6 +86,7 @@ func NewServer(cfg Config) *Server {
 		documents:      cfg.DocumentService,
 		reportService:  cfg.ReportService,
 		jobSvc:         cfg.JobSvc,
+		adminService:   cfg.AdminService,
 		maxUploadBytes: cfg.MaxUploadBytes,
 		mux:            http.NewServeMux(),
 	}
@@ -111,11 +122,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /report-files", s.handleNotImplemented)
 	s.mux.HandleFunc("GET /report-files/{reportFileId}", s.handleNotImplemented)
 	s.mux.HandleFunc("GET /report-files/{reportFileId}/content", s.handleNotImplemented)
-	s.mux.HandleFunc("GET /report-statistics/overview", s.handleNotImplemented)
-	s.mux.HandleFunc("GET /report-statistics/daily", s.handleNotImplemented)
-	s.mux.HandleFunc("GET /report-operation-logs", s.handleNotImplemented)
-	s.mux.HandleFunc("GET /report-settings", s.handleNotImplemented)
-	s.mux.HandleFunc("PATCH /report-settings", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /report-statistics/overview", s.handleGetReportStatisticsOverview)
+	s.mux.HandleFunc("GET /report-statistics/daily", s.handleListReportDailyStatistics)
+	s.mux.HandleFunc("GET /report-operation-logs", s.handleListReportOperationLogs)
+	s.mux.HandleFunc("GET /report-settings", s.handleGetReportSettings)
+	s.mux.HandleFunc("PATCH /report-settings", s.handleUpdateReportSettings)
 	s.mux.HandleFunc("/", s.handleNotFound)
 }
 
