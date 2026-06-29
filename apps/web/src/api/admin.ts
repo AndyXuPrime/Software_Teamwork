@@ -10,7 +10,6 @@ import type {
   CreateKnowledgeBaseRequest,
   CreateQAConfigVersionRequest,
   CreateQALLMConfigVersionRequest,
-  CreateUserRequest,
   KnowledgeBaseSummary,
   QAConfigVersion,
   QAIntentDistributionItem,
@@ -22,12 +21,12 @@ import type {
   QARetrievalTestRun,
   QARetrievalTestRunRequest,
   QATopQuery,
-  SessionSummary,
   UpdateKnowledgeBaseRequest,
-  UserSummary,
 } from '@/lib/types'
 
 import { buildQuery, gatewayPageRequest, gatewayRequest } from './client'
+
+export { createUserSession as createUser, getCurrentUser } from './auth'
 
 // =========================================================================
 // LLM Configuration
@@ -186,17 +185,5 @@ export async function deleteKnowledgeBase(id: string): Promise<void> {
 // =========================================================================
 
 /** POST /users — Create a new user (registration). Returns user + session (envelope unwrapped). */
-export async function createUser(body: CreateUserRequest): Promise<{
-  user: UserSummary
-  session: SessionSummary
-}> {
-  return gatewayRequest<{ user: UserSummary; session: SessionSummary }>('/users', {
-    method: 'POST',
-    body,
-  })
-}
 
 /** GET /users/me — Get current authenticated user. */
-export function getCurrentUser(): Promise<UserSummary> {
-  return gatewayRequest<UserSummary>('/users/me')
-}

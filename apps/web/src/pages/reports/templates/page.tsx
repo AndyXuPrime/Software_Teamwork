@@ -193,7 +193,10 @@ export function ReportTemplatesPage() {
           </div>
           <div className="divide-y divide-border">
             {templates.map((template) => (
-              <div key={template.id} className="flex items-center justify-between gap-4 p-4 hover:bg-muted/20 transition-colors">
+              <div
+                key={template.id}
+                className="flex items-center justify-between gap-4 p-4 hover:bg-muted/20 transition-colors"
+              >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{template.templateName}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -236,7 +239,10 @@ export function ReportTemplatesPage() {
           </div>
           <div className="divide-y divide-border">
             {materials.map((material) => (
-              <div key={material.id} className="flex items-center justify-between gap-4 p-4 hover:bg-muted/20 transition-colors">
+              <div
+                key={material.id}
+                className="flex items-center justify-between gap-4 p-4 hover:bg-muted/20 transition-colors"
+              >
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{material.materialName}</p>
                   <p className="mt-1 text-xs text-muted-foreground">

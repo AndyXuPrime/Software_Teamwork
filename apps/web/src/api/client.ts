@@ -153,6 +153,7 @@ type MockRoute = {
 
 let accessTokenProvider: (() => string | null | undefined) | undefined
 let requestIdProvider: (() => string | undefined) | undefined
+let unauthorizedHandler: (() => void) | undefined
 let mockRoutes: MockRoute[] = []
 
 // ---------------------------------------------------------------------------
@@ -187,6 +188,9 @@ export const apiClient = {
   },
   setRequestIdProvider(provider: typeof requestIdProvider) {
     requestIdProvider = provider
+  },
+  setUnauthorizedHandler(handler: typeof unauthorizedHandler) {
+    unauthorizedHandler = handler
   },
   setMockRoutes(routes: readonly MockRoute[]) {
     mockRoutes = routes.map((route) => {
@@ -237,7 +241,8 @@ function joinUrl(
 
 function buildHeaders(options: GatewayRequestOptions, hasJsonBody: boolean): Headers {
   const headers = new Headers(options.headers)
-  const token = options.token ?? accessTokenProvider?.() ?? loadToken()
+  const token =
+    options.token !== undefined ? options.token : (accessTokenProvider?.() ?? loadToken())
   const requestId = options.requestId ?? requestIdProvider?.()
 
   if (hasJsonBody && !headers.has('Content-Type')) {
@@ -294,6 +299,7 @@ async function toApiError(response: Response): Promise<ApiError> {
   // Clear stale token on 401 (unauthorized)
   if (response.status === 401) {
     apiClient.setToken(null)
+    unauthorizedHandler?.()
   }
 
   const body = await readJsonSafely(response)

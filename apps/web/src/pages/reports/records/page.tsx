@@ -14,6 +14,10 @@ import {
 import { Input } from '@/components/ui/input'
 import type { Report } from '@/features/reports'
 import { useDeleteReport, useReportsQuery } from '@/features/reports'
+import { canAccess } from '@/lib/permissions'
+import { useAuthStore } from '@/stores/auth-store'
+
+const reportWriteAccess = { any: ['report:write', 'reports:write'] }
 
 const fallbackReports: Report[] = [
   {
@@ -56,15 +60,17 @@ function formatDate(value?: string): string {
 export function ReportRecordsPage() {
   const [keyword, setKeyword] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Report | null>(null)
+  const user = useAuthStore((state) => state.user)
   const reportsQuery = useReportsQuery(keyword)
   const deleteMutation = useDeleteReport()
   const isFallback = reportsQuery.isError
+  const canWriteReports = canAccess(user, reportWriteAccess)
   const reports = isFallback
     ? fallbackReports.filter((report) => report.name.includes(keyword))
     : (reportsQuery.data?.items ?? [])
 
   const handleDelete = () => {
-    if (!deleteTarget) return
+    if (!canWriteReports || !deleteTarget) return
     deleteMutation.mutate(deleteTarget.id)
     setDeleteTarget(null)
   }
@@ -78,10 +84,12 @@ export function ReportRecordsPage() {
             分页查询 /api/v1/reports，后端保留报告、任务和导出文件审计链路。
           </p>
         </div>
-        <Button render={<Link to="/reports/generate" />}>
-          <FilePlus2 className="size-4" />
-          新建报告
-        </Button>
+        {canWriteReports && (
+          <Button render={<Link to="/reports/generate" />}>
+            <FilePlus2 className="size-4" />
+            新建报告
+          </Button>
+        )}
       </div>
 
       <div className="mb-4 flex max-w-md items-center gap-2">
@@ -115,7 +123,10 @@ export function ReportRecordsPage() {
           </thead>
           <tbody>
             {reports.map((report) => (
-              <tr key={report.id} className="border-t border-border hover:bg-muted/30 transition-colors">
+              <tr
+                key={report.id}
+                className="border-t border-border hover:bg-muted/30 transition-colors"
+              >
                 <td className="px-4 py-3 font-medium">{report.name}</td>
                 <td className="px-4 py-3 text-muted-foreground">{report.reportType}</td>
                 <td className="px-4 py-3 text-muted-foreground">{report.year ?? '-'}</td>
@@ -126,7 +137,7 @@ export function ReportRecordsPage() {
                   {formatDate(report.updatedAt ?? report.createdAt)}
                 </td>
                 <td className="px-4 py-3">
-                  {!isFallback && (
+                  {canWriteReports && !isFallback && (
                     <Button
                       variant="ghost"
                       size="icon-xs"

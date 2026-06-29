@@ -13,10 +13,10 @@ export function AdminPage() {
         {/* Back link */}
         <div className="border-b border-border px-6 py-3">
           <Link
-            to="/chat"
+            to="/"
             className="inline-block text-sm text-muted-foreground transition-colors hover:text-primary"
           >
-            &larr; 返回对话
+            &larr; 返回首页
           </Link>
         </div>
 
