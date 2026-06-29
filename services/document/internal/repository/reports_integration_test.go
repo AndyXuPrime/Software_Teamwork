@@ -262,6 +262,63 @@ func TestPostgresRepositoryCreateReportOutlinePreservesCurrentOnConflict(t *test
 	}
 }
 
+func TestPostgresRepositoryUpdateReportSectionPersistsMetadata(t *testing.T) {
+	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DOCUMENT_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	pool := newTestPool(t, ctx, databaseURL)
+	defer pool.Close()
+	applyMigration(t, ctx, pool)
+
+	repo := NewPostgresRepository(pool)
+	now := time.Date(2026, 6, 29, 14, 0, 0, 0, time.UTC)
+	report := createRepositoryTestReport(t, ctx, repo, "section_metadata_report", "00000000-0000-0000-0000-000000001201", now)
+
+	outline, err := repo.CreateReportOutline(ctx, service.ReportOutline{
+		ID:        "00000000-0000-0000-0000-000000001202",
+		ReportID:  report.ID,
+		Sections:  []service.ReportOutlineNode{{ID: "node-parent", Title: "Parent", Level: 1}},
+		Version:   1,
+		Source:    service.OutlineSourceManual,
+		IsCurrent: true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("CreateReportOutline() error = %v", err)
+	}
+	parent := createRepositoryTestSection(t, ctx, repo, report.ID, "00000000-0000-0000-0000-000000001203", now)
+	child := createRepositoryTestSection(t, ctx, repo, report.ID, "00000000-0000-0000-0000-000000001204", now)
+
+	child.OutlineID = outline.ID
+	child.ParentID = parent.ID
+	child.OutlineNodeID = "node-child"
+	child.Title = "Child section"
+	child.Level = 2
+	child.SortOrder = 7
+	child.Numbering = "1.1"
+	child.UpdatedAt = now.Add(time.Minute)
+
+	updated, err := repo.UpdateReportSection(ctx, child)
+	if err != nil {
+		t.Fatalf("UpdateReportSection() error = %v", err)
+	}
+	if updated.ParentID != parent.ID || updated.OutlineID != outline.ID || updated.OutlineNodeID != "node-child" || updated.Level != 2 || updated.SortOrder != 7 || updated.Numbering != "1.1" {
+		t.Fatalf("UpdateReportSection() did not return metadata fields: %+v", updated)
+	}
+
+	reloaded, err := repo.GetReportSectionByID(ctx, child.ID)
+	if err != nil {
+		t.Fatalf("GetReportSectionByID() error = %v", err)
+	}
+	if reloaded.ParentID != parent.ID || reloaded.OutlineID != outline.ID || reloaded.OutlineNodeID != "node-child" || reloaded.Level != 2 || reloaded.SortOrder != 7 || reloaded.Numbering != "1.1" {
+		t.Fatalf("metadata fields were not persisted: %+v", reloaded)
+	}
+}
+
 func TestPostgresRepositoryRejectsInvalidOptionalUUIDs(t *testing.T) {
 	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
 	if databaseURL == "" {

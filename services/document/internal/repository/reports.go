@@ -490,19 +490,42 @@ func (r *PostgresRepository) UpdateReportSection(ctx context.Context, value serv
 	if err != nil {
 		return service.ReportSection{}, service.NewError(service.CodeValidation, "invalid report section id", err)
 	}
+	outlineID, err := parseOptionalUUIDField(value.OutlineID, "outlineId")
+	if err != nil {
+		return service.ReportSection{}, err
+	}
+	parentID, err := parseOptionalUUIDField(value.ParentID, "parentId")
+	if err != nil {
+		return service.ReportSection{}, err
+	}
+	lastJobID, err := parseOptionalUUIDField(value.LastJobID, "lastJobId")
+	if err != nil {
+		return service.ReportSection{}, err
+	}
 	tablesJSON, err := marshalTables(value.Tables)
 	if err != nil {
 		return service.ReportSection{}, err
 	}
 	row := r.db.QueryRow(ctx, `
 		UPDATE report_sections SET
-			title = $2,
-			content = $3,
-			tables_json = $4,
-			content_source = NULLIF($5, ''),
-			manual_edited = $6,
-			version = $7,
-			updated_at = $8
+			outline_id = NULLIF($2, '')::uuid,
+			parent_id = NULLIF($3, '')::uuid,
+			outline_node_id = NULLIF($4, ''),
+			section_path = $5,
+			title = $6,
+			level = $7,
+			sort_order = $8,
+			numbering = NULLIF($9, ''),
+			section_type = $10,
+			content = $11,
+			tables_json = $12,
+			generation_status = $13,
+			content_source = NULLIF($14, ''),
+			manual_edited = $15,
+			version = $16,
+			last_job_id = NULLIF($17, '')::uuid,
+			generated_at = $18,
+			updated_at = $19
 		WHERE id = $1
 		RETURNING
 			id::text, report_id::text, COALESCE(outline_id::text, ''), COALESCE(parent_id::text, ''),
@@ -511,12 +534,23 @@ func (r *PostgresRepository) UpdateReportSection(ctx context.Context, value serv
 			generation_status, COALESCE(content_source, ''), manual_edited, version,
 			COALESCE(last_job_id::text, ''), generated_at, created_at, updated_at`,
 		sectionID,
+		outlineID,
+		parentID,
+		value.OutlineNodeID,
+		value.SectionPath,
 		value.Title,
+		value.Level,
+		value.SortOrder,
+		value.Numbering,
+		string(value.SectionType),
 		value.Content,
 		tablesJSON,
+		string(value.GenerationStatus),
 		string(value.ContentSource),
 		value.ManualEdited,
 		value.Version,
+		lastJobID,
+		value.GeneratedAt,
 		value.UpdatedAt,
 	)
 	section, err := scanReportSection(row)
