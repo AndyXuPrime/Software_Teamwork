@@ -63,6 +63,13 @@ type Conversation struct {
 	LastMessageAt      *time.Time `json:"-"`
 }
 
+type ConversationListOptions struct {
+	Page     int
+	PageSize int
+	Status   string
+	Sort     string
+}
+
 type Message struct {
 	ID             string     `json:"id"`
 	ConversationID string     `json:"sessionId"`
@@ -139,7 +146,7 @@ type ProgressObserver func(ProgressEvent)
 
 type Repository interface {
 	CreateConversation(context.Context, Conversation) (Conversation, error)
-	ListConversations(context.Context, string, int, int, string) (Page[Conversation], error)
+	ListConversations(context.Context, string, ConversationListOptions) (Page[Conversation], error)
 	GetConversation(context.Context, string, string) (Conversation, error)
 	UpdateConversation(context.Context, string, Conversation) (Conversation, error)
 	DeleteConversation(context.Context, string, string) error
@@ -193,8 +200,15 @@ func (s *QAService) CreateConversation(ctx context.Context, userID, title string
 	})
 }
 
-func (s *QAService) ListConversations(ctx context.Context, userID string, page, pageSize int, query string) (Page[Conversation], error) {
-	return s.repository.ListConversations(ctx, userID, page, pageSize, query)
+func (s *QAService) ListConversations(ctx context.Context, userID string, options ConversationListOptions) (Page[Conversation], error) {
+	if strings.TrimSpace(userID) == "" {
+		return Page[Conversation]{}, NewError(CodeUnauthorized, "authentication required", nil)
+	}
+	normalized, err := normalizeConversationListOptions(options)
+	if err != nil {
+		return Page[Conversation]{}, err
+	}
+	return s.repository.ListConversations(ctx, userID, normalized)
 }
 
 func (s *QAService) GetConversation(ctx context.Context, userID, id string) (Conversation, error) {
@@ -437,4 +451,30 @@ func truncateRunes(value string, limit int) string {
 		return value
 	}
 	return string(runes[:limit])
+}
+
+func normalizeConversationListOptions(options ConversationListOptions) (ConversationListOptions, error) {
+	if options.Page <= 0 {
+		options.Page = 1
+	}
+	if options.PageSize <= 0 {
+		options.PageSize = 20
+	}
+	options.Status = strings.TrimSpace(options.Status)
+	if options.Status == "" {
+		options.Status = "active"
+	}
+	if options.Status != "active" && options.Status != "archived" {
+		return ConversationListOptions{}, ValidationError(map[string]string{"status": "must be active or archived"})
+	}
+	options.Sort = strings.TrimSpace(options.Sort)
+	if options.Sort == "" {
+		options.Sort = "-updatedAt"
+	}
+	switch options.Sort {
+	case "-updatedAt", "updatedAt", "-createdAt", "createdAt":
+	default:
+		return ConversationListOptions{}, ValidationError(map[string]string{"sort": "must be updatedAt, -updatedAt, createdAt, or -createdAt"})
+	}
+	return options, nil
 }

@@ -1,0 +1,2 @@
+{"ts":"2026-06-29T10:45:00+08:00","actor":"JerryTeam","action":"rebased","detail":"Rebased JerryTeam/feat/qa-session-resource-api onto upstream/develop after the administrator QA framework landed; old commits preserved in backup/qa-session-resource-api-before-framework-sync."}
+{"ts":"2026-06-29T10:50:00+08:00","actor":"JerryTeam","action":"implemented","detail":"Aligned QA session list options with latest README by removing q, adding status/sort options, and keeping implementation on the framework service/repository path."}
