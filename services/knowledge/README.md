@@ -12,7 +12,7 @@ File Service, creates durable document/job state, and enqueues ingestion work.
 - Go module: `go 1.25.0`
 - HTTP: standard `net/http` `ServeMux`
 - Logging: `log/slog`
-- PostgreSQL access: `pgx` + `sqlc`-shaped query package
+- PostgreSQL access: `pgx` + generated `sqlc` query package
 - Migrations: `goose`
 
 All landed Go services use the repository Go 1.25 baseline. Knowledge keeps the
@@ -114,5 +114,8 @@ go test ./...
 go build ./cmd/server
 ```
 
-If `sqlc` is available, regenerate the query package from `sqlc.yaml` after
-changing SQL files.
+Regenerate the query package from `sqlc.yaml` after changing SQL files:
+
+```bash
+go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0 generate
+```
