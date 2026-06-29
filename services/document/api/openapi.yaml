@@ -86,6 +86,7 @@ components:
                 - rate_limited
                 - dependency_error
                 - internal_error
+                - not_implemented
             message:
               type: string
             requestId:

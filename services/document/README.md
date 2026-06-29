@@ -4,9 +4,11 @@
 report jobs, job attempts, events, generated file metadata, statistics, and
 operation logs.
 
-This first implementation slice is the service/data baseline for issue #97. It
-does not implement AI generation, DOCX export execution, MCP tools, file-service
-upload/download calls, or AI Gateway calls yet.
+The current implementation provides the service/data baseline, implemented
+report type/template/material metadata APIs, and scaffold coverage for the
+remaining active report-generation contract. It does not implement AI generation,
+DOCX export execution, MCP tools, report workflow orchestration, or AI Gateway
+calls yet.
 
 ## Local Configuration
 
@@ -49,6 +51,59 @@ GET /readyz
 
 Both JSON responses use the project envelope: `{ "data": ..., "requestId": "..." }`.
 The service-local operational contract is documented in [`api/openapi.yaml`](api/openapi.yaml).
+
+## Active Report Route Coverage
+
+Gateway exposes these document-owned report routes under `/api/v1`. The service
+local paths below omit that prefix. Implemented routes call the document service
+layer. Scaffold routes are registered and return the standard error envelope with
+`error.code=not_implemented` and HTTP `501` until their business workflows land.
+
+| Method | Local path | Operation ID | Status |
+| --- | --- | --- | --- |
+| `GET` | `/report-types` | `listReportTypes` | Implemented |
+| `GET` | `/report-templates` | `listReportTemplates` | Implemented |
+| `POST` | `/report-templates` | `createReportTemplate` | Implemented |
+| `GET` | `/report-templates/{reportTemplateId}` | `getReportTemplate` | Implemented |
+| `PATCH` | `/report-templates/{reportTemplateId}` | `updateReportTemplate` | Implemented |
+| `DELETE` | `/report-templates/{reportTemplateId}` | `deleteReportTemplate` | Implemented |
+| `GET` | `/report-templates/{reportTemplateId}/structure` | `getReportTemplateStructure` | Implemented |
+| `PATCH` | `/report-templates/{reportTemplateId}/structure` | `updateReportTemplateStructure` | Implemented |
+| `GET` | `/report-materials` | `listReportMaterials` | Implemented |
+| `POST` | `/report-materials` | `createReportMaterial` | Implemented |
+| `GET` | `/report-materials/{materialId}` | `getReportMaterial` | Implemented |
+| `DELETE` | `/report-materials/{materialId}` | `deleteReportMaterial` | Implemented |
+| `GET` | `/reports` | `listReports` | Scaffold |
+| `POST` | `/reports` | `createReport` | Scaffold |
+| `GET` | `/reports/{reportId}` | `getReport` | Scaffold |
+| `PATCH` | `/reports/{reportId}` | `updateReport` | Scaffold |
+| `DELETE` | `/reports/{reportId}` | `deleteReport` | Scaffold |
+| `GET` | `/reports/{reportId}/outlines` | `listReportOutlines` | Scaffold |
+| `POST` | `/reports/{reportId}/outlines` | `createReportOutline` | Scaffold |
+| `GET` | `/reports/{reportId}/outlines/{outlineId}` | `getReportOutline` | Scaffold |
+| `PATCH` | `/reports/{reportId}/outlines/{outlineId}` | `updateReportOutline` | Scaffold |
+| `DELETE` | `/reports/{reportId}/outlines/{outlineId}/sections/{sectionId}` | `deleteReportOutlineSection` | Scaffold |
+| `GET` | `/reports/{reportId}/sections` | `listReportSections` | Scaffold |
+| `POST` | `/reports/{reportId}/sections` | `createReportSection` | Scaffold |
+| `GET` | `/reports/{reportId}/sections/{sectionId}` | `getReportSection` | Scaffold |
+| `PATCH` | `/reports/{reportId}/sections/{sectionId}` | `updateReportSection` | Scaffold |
+| `GET` | `/reports/{reportId}/sections/{sectionId}/versions` | `listReportSectionVersions` | Scaffold |
+| `POST` | `/reports/{reportId}/sections/{sectionId}/versions` | `createReportSectionVersion` | Scaffold |
+| `GET` | `/reports/{reportId}/jobs` | `listReportJobs` | Scaffold |
+| `POST` | `/reports/{reportId}/jobs` | `createReportJob` | Scaffold |
+| `GET` | `/report-jobs/{jobId}` | `getReportJob` | Scaffold |
+| `GET` | `/report-jobs/{jobId}/attempts` | `listReportJobAttempts` | Scaffold |
+| `POST` | `/report-jobs/{jobId}/attempts` | `createReportJobAttempt` | Scaffold |
+| `GET` | `/reports/{reportId}/events` | `listReportEvents` | Scaffold |
+| `GET` | `/report-files` | `listReportFiles` | Scaffold |
+| `POST` | `/report-files` | `createReportFile` | Scaffold |
+| `GET` | `/report-files/{reportFileId}` | `getReportFile` | Scaffold |
+| `GET` | `/report-files/{reportFileId}/content` | `getReportFileContent` | Scaffold |
+| `GET` | `/report-statistics/overview` | `getReportStatisticsOverview` | Scaffold |
+| `GET` | `/report-statistics/daily` | `listDailyReportStatistics` | Scaffold |
+| `GET` | `/report-operation-logs` | `listReportOperationLogs` | Scaffold |
+| `GET` | `/report-settings` | `getReportSettings` | Scaffold |
+| `PATCH` | `/report-settings` | `updateReportSettings` | Scaffold |
 
 ## Migrations
 

@@ -83,6 +83,37 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /report-materials", s.handleCreateReportMaterial)
 	s.mux.HandleFunc("GET /report-materials/{materialId}", s.handleGetReportMaterial)
 	s.mux.HandleFunc("DELETE /report-materials/{materialId}", s.handleDeleteReportMaterial)
+	s.mux.HandleFunc("GET /reports", s.handleNotImplemented)
+	s.mux.HandleFunc("POST /reports", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /reports/{reportId}", s.handleNotImplemented)
+	s.mux.HandleFunc("PATCH /reports/{reportId}", s.handleNotImplemented)
+	s.mux.HandleFunc("DELETE /reports/{reportId}", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /reports/{reportId}/outlines", s.handleNotImplemented)
+	s.mux.HandleFunc("POST /reports/{reportId}/outlines", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /reports/{reportId}/outlines/{outlineId}", s.handleNotImplemented)
+	s.mux.HandleFunc("PATCH /reports/{reportId}/outlines/{outlineId}", s.handleNotImplemented)
+	s.mux.HandleFunc("DELETE /reports/{reportId}/outlines/{outlineId}/sections/{sectionId}", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /reports/{reportId}/sections", s.handleNotImplemented)
+	s.mux.HandleFunc("POST /reports/{reportId}/sections", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /reports/{reportId}/sections/{sectionId}", s.handleNotImplemented)
+	s.mux.HandleFunc("PATCH /reports/{reportId}/sections/{sectionId}", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /reports/{reportId}/sections/{sectionId}/versions", s.handleNotImplemented)
+	s.mux.HandleFunc("POST /reports/{reportId}/sections/{sectionId}/versions", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /reports/{reportId}/jobs", s.handleNotImplemented)
+	s.mux.HandleFunc("POST /reports/{reportId}/jobs", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /report-jobs/{jobId}", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /report-jobs/{jobId}/attempts", s.handleNotImplemented)
+	s.mux.HandleFunc("POST /report-jobs/{jobId}/attempts", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /reports/{reportId}/events", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /report-files", s.handleNotImplemented)
+	s.mux.HandleFunc("POST /report-files", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /report-files/{reportFileId}", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /report-files/{reportFileId}/content", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /report-statistics/overview", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /report-statistics/daily", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /report-operation-logs", s.handleNotImplemented)
+	s.mux.HandleFunc("GET /report-settings", s.handleNotImplemented)
+	s.mux.HandleFunc("PATCH /report-settings", s.handleNotImplemented)
 	s.mux.HandleFunc("/", s.handleNotFound)
 }
 
@@ -200,6 +231,8 @@ func statusForCode(code service.Code) int {
 		return http.StatusTooManyRequests
 	case service.CodeDependency:
 		return http.StatusBadGateway
+	case service.CodeNotImplemented:
+		return http.StatusNotImplemented
 	default:
 		return http.StatusInternalServerError
 	}

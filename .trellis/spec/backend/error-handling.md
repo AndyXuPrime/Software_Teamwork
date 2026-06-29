@@ -30,6 +30,7 @@ Every service should classify errors into these categories:
 | `rate_limited` | `429` | Caller exceeded a rate or quota limit |
 | `dependency_error` | `502` | Downstream service or infrastructure failed |
 | `internal_error` | `500` | Unexpected server-side failure |
+| `not_implemented` | `501` | Active contract route is scaffolded but the business workflow has not landed |
 
 Prefer service-local error constructors or sentinel errors over matching error
 strings.

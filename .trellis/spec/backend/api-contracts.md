@@ -132,6 +132,7 @@ when values are available:
 | Resource does not exist or is hidden | `404 not_found` |
 | State conflict | `409 conflict` |
 | Rate or quota exceeded | `429 rate_limited` |
+| Active contract route scaffolded before workflow implementation | `501 not_implemented` |
 | Downstream service or infrastructure failed | `502 dependency_error` |
 | Unexpected gateway failure | `500 internal_error` |
 
@@ -283,6 +284,7 @@ payloads, SQL details, or internal URLs.
 | Profile or resource does not exist | `404 not_found` |
 | State or configuration conflict | `409 conflict` |
 | Rate or quota exceeded | `429 rate_limited` or OpenAI-style `rate_limit_error` |
+| Active contract route scaffolded before workflow implementation | `501 not_implemented` |
 | Provider or infrastructure failed | `502 dependency_error` or OpenAI-style `upstream_error` |
 | Unexpected service failure | `500 internal_error` |
 

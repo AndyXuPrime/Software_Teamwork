@@ -2424,6 +2424,7 @@ components:
           - rate_limited
           - dependency_error
           - internal_error
+          - not_implemented
           - unsupported_intent
           - unsupported_mode
         message:
