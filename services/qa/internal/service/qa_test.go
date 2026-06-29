@@ -21,8 +21,8 @@ func (r *fakeRepository) CreateConversation(_ context.Context, value Conversatio
 	r.conversation = value
 	return value, nil
 }
-func (r *fakeRepository) ListConversations(context.Context, string, int, int, string) (Page[Conversation], error) {
-	return Page[Conversation]{Items: []Conversation{r.conversation}}, nil
+func (r *fakeRepository) ListConversations(_ context.Context, _ string, options ConversationListOptions) (Page[Conversation], error) {
+	return Page[Conversation]{Items: []Conversation{r.conversation}, Page: options.Page, PageSize: options.PageSize, Total: 1}, nil
 }
 func (r *fakeRepository) GetConversation(context.Context, string, string) (Conversation, error) {
 	return r.conversation, nil
@@ -128,6 +128,27 @@ func TestAskRejectsUnsupportedDataAnalysis(t *testing.T) {
 	appErr, ok := Classify(err)
 	if !ok || appErr.Code != CodeUnsupportedIntent {
 		t.Fatalf("error = %v, want unsupported_intent", err)
+	}
+}
+
+func TestListConversationsNormalizesDocumentedOptions(t *testing.T) {
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", Status: "active"}}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{runner: &fakeAgentRunner{}, prompt: "system"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := qa.ListConversations(context.Background(), "user-id", ConversationListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Page != 1 || result.PageSize != 20 {
+		t.Fatalf("page=%d pageSize=%d", result.Page, result.PageSize)
+	}
+	if _, err = qa.ListConversations(context.Background(), "user-id", ConversationListOptions{Status: "deleted"}); err == nil {
+		t.Fatal("expected invalid status to fail")
+	}
+	if _, err = qa.ListConversations(context.Background(), "user-id", ConversationListOptions{Sort: "title"}); err == nil {
+		t.Fatal("expected invalid sort to fail")
 	}
 }
 

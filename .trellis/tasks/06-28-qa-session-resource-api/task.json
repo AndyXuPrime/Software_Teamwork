@@ -1,0 +1,31 @@
+{
+  "id": "qa-session-resource-api",
+  "name": "qa-session-resource-api",
+  "title": "QA session resource API",
+  "description": "Implement the current-user QA session resource API on top of the upstream QA service framework.",
+  "status": "in_progress",
+  "dev_type": "backend",
+  "scope": "services/qa",
+  "package": "services/qa",
+  "priority": "P1",
+  "creator": "JerryTeam",
+  "assignee": "JerryTeam",
+  "createdAt": "2026-06-28",
+  "completedAt": null,
+  "branch": "JerryTeam/feat/qa-session-resource-api",
+  "base_branch": "develop",
+  "worktree_path": "D:/agent/Software_Teamwork_conversation_history",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "D:/download/README.md",
+    "docs/services/gateway/api/openapi.yaml",
+    "docs/services/qa/README.md",
+    "services/qa"
+  ],
+  "notes": "Rebased onto upstream/develop after the QA framework landed; old branch implementation is kept in backup/qa-session-resource-api-before-framework-sync.",
+  "meta": {}
+}
