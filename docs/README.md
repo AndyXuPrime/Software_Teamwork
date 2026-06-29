@@ -17,6 +17,8 @@
 
 | 文档 | 内容 |
 | --- | --- |
+| [整体需求分析](requirements-analysis/overall-requirements-analysis.md) | 智能知识管理与报告生成系统的业务范围、用户角色、核心模块、非功能要求和分期范围。 |
+| [Discussion #48 决策同步清单](requirements-analysis/decision-sync-checklist.md) | 整体需求分析和 API 契约中原先未定稿问题的确认结果。 |
 | [服务边界矩阵](architecture/service-boundaries.md) | `gateway`、`auth`、`file`、`knowledge`、`qa`、`document`、`ai-gateway` 的职责边界、公开契约状态和缺失契约登记。 |
 | [当前能力矩阵](architecture/current-capability-matrix.md) | 根据当前 `develop`、今日 issue/PR 和实现说明汇总已实现、部分实现、占位和缺失能力。 |
 | [技术选型基线](architecture/technology-decisions.md) | 后端数据库访问、迁移、日志、HTTP、配置、队列、认证、前端 API client、测试、CI、观测和 DOCX/MCP 等工程技术选型。 |
@@ -59,7 +61,7 @@
 | --- | --- |
 | [前端协作工作流](collaboration/frontend-workflow.md) | 前端目录、Bun 命令、检查、PR 和 CI 建议。 |
 | [仓库维护设置](collaboration/repository-settings.md) | GitHub label、分支保护、PR Guard、Auto Label 和 Commitlint 设置。 |
-| [文档维护工作流](collaboration/documentation-workflow.md) | `docs/` 内容归属、接口文档更新顺序和服务文档检查清单。 |
+| [文档维护工作流](collaboration/documentation-workflow.md) | `docs/` 内容归属、接口文档更新顺序、文档/代码出入判定和服务文档检查清单。 |
 
 仓库级分支、PR、提交和合并策略以根目录 [CONTRIBUTING.md](../CONTRIBUTING.md) 为准。
 
@@ -88,6 +90,8 @@
 - 涉及内部模型调用、provider 配置或调用记录时，同步更新 [AI Gateway 服务接口文档](services/ai-gateway/README.md)、[AI Gateway 数据模型文档](services/ai-gateway/docs/data-models.md) 和 [AI Gateway OpenAPI 契约](services/ai-gateway/api/openapi.yaml)
 - 涉及 provider adapter、embedding、rerank 或模型调用摘要时，同步更新 [AI Gateway Provider Adapter 说明](services/ai-gateway/docs/provider-adapters.md)
 - 涉及本地 Compose、环境变量、跨服务 smoke 或 PR 前检查策略时，同步更新 [本地联调运行手册](runbooks/local-integration.md) 和 [测试策略](testing/strategy.md)
+
+契约语义变更必须先交管理组决策。实现 PR 可以更新 implementation 文档记录当前事实，但不能用“代码已经这样写了”直接覆盖 Gateway OpenAPI、服务边界、数据模型或已确认需求。
 
 跨服务编写标准不要放进单个服务细则：技术选型归 [技术选型基线](architecture/technology-decisions.md)，REST/OpenAPI/响应错误/SSE/上传归 [前后端集成契约](architecture/frontend-backend-contract.md)，服务边界归 [服务边界矩阵](architecture/service-boundaries.md)，协作流程归 [文档维护工作流](collaboration/documentation-workflow.md) 和其他协作文档。
 

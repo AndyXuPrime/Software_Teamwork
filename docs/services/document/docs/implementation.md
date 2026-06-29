@@ -26,11 +26,11 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | 文档状态 | active | README、需求、数据模型、前端 API 设计和 OpenAPI 存在。 |
-| 代码状态 | partial | Go service、PostgreSQL repository、模板/材料/报告/大纲/章节 API、report jobs/attempts/events 和 asynq worker 状态机已实现；文件生成、统计、settings 等仍为 scaffold。 |
+| 代码状态 | partial | Go service、PostgreSQL repository、模板/材料/报告/大纲/章节 API、report jobs/attempts/events 和 asynq worker 状态机已实现；文件生成、统计、settings、Document MCP tools 等仍未闭环。 |
 | 契约对齐 | partial | Gateway active document paths 有 43 个；jobs/attempts/events 已由服务处理，report files/statistics/settings 等部分 routes 仍返回 `not_implemented`。 |
 | 数据持久化 | postgres | runtime 使用 PostgreSQL；模板/材料底层文件通过 File Service client。 |
 | 测试状态 | partial | service、HTTP、repository tests 存在；集成测试依赖 `DOCUMENT_TEST_DATABASE_URL`。 |
-| 建议动作 | 补实现 / 回写文档 | 优先实现 report files、settings、statistics 和真实 AI/Pandoc/DOCX 生成，或把剩余 active contract 标为阶段性未实现。 |
+| 建议动作 | 补实现 / 回写文档 | 优先实现 report files、settings、statistics、Document MCP tools 和真实 AI/Pandoc/DOCX 生成；#221/#223 合入验证后再升级状态。 |
 
 ## 3. 已实现
 
@@ -51,11 +51,12 @@
 
 | 缺口 | 文档来源 | 影响范围 | 建议任务 |
 | --- | --- | --- | --- |
-| report files / content | Gateway OpenAPI | API / file / export | 待确认：实现 DOCX 文件创建和内容读取。 |
-| report statistics / operation logs | Gateway OpenAPI | admin / metrics | 待确认：实现聚合查询和日志写入。 |
-| report settings | Gateway OpenAPI | admin / AI Gateway | 待确认：实现配置持久化。 |
-| 真实生成逻辑 | Document README | worker / report content | 待确认：worker 当前只推进状态，尚未调用 AI Gateway 填充大纲/章节内容。 |
-| AI Gateway / Pandoc / LibreOffice generation | Document README | AI provider / DOCX | 待确认：实现生成编排和导出工具链。 |
+| report files / content | Gateway OpenAPI | API / file / export | 实现 DOCX 文件创建和内容读取；#223 合入验证前仍标未闭环。 |
+| report statistics / operation logs | Gateway OpenAPI | admin / metrics | 实现聚合查询和日志写入；#221 合入验证前仍标未闭环。 |
+| report settings | Gateway OpenAPI | admin / AI Gateway | 实现配置持久化、默认模板/profile 校验和敏感字段脱敏。 |
+| Document MCP tools | Document README / requirements | QA / tool integration | 注册工具、权限校验、参数校验、脱敏输出和调用链路仍未实现。 |
+| 真实生成逻辑 | Document README | worker / report content | worker 当前只推进状态，尚未调用 AI Gateway 填充大纲/章节内容；需要真实生成闭环任务。 |
+| AI Gateway / Pandoc / LibreOffice generation | Document README | AI provider / DOCX | 实现生成编排和导出工具链；落地前不得承诺 DOCX 可生成。 |
 
 ## 5. 文档与实现出入
 
@@ -64,16 +65,17 @@
 | Active document paths | Gateway OpenAPI 将 jobs/files/statistics/logs/settings 设为 active | jobs/attempts/events 已实现；report files/statistics/settings 仍有 scaffold routes 返回 501 | 前端可创建并观察任务，但无法得到真实生成文件和统计/settings 闭环 | 补剩余实现，或在契约/owner map 标注阶段性不可调用。 |
 | Redis/asynq | README 要求使用 asynq over Redis 执行报告任务 | `cmd/server` 已创建 asynq client/worker，任务创建会入队并持久化 task id | 运行时需要 Redis；worker 目前只更新状态，不执行真实生成 | 补真实生成 handler 和 Redis smoke。 |
 | AI Gateway/Pandoc/LibreOffice | README 描述生成和导出依赖 | config 校验相关 env/path，但服务未调用 AI Gateway 或工具链 | 部署方配置后仍不会生成 DOCX | 在 implementation 中标为未实现；补 worker 后更新。 |
+| Document MCP tools | README/requirements 描述后续可注册 Document MCP 工具 | 当前没有 Document MCP tool registry、handler 或 QA 调用链路 | 后续排期容易漏掉 MCP tools，或误以为 README 中的工具已可用 | 在本文未实现任务表单列；拆实现任务。 |
 | Service path prefix | Gateway public paths 是 `/api/v1/report-*` | Document service 本地 routes 无 `/internal/v1` 前缀，gateway 默认剥离 `/api/v1` | 这与 gateway proxy 逻辑一致但易误解 | README/implementation 明确 document local path 形态。 |
 
 ## 6. MVP / mock / memory backend / 占位
 
 | 项目 | 当前用途 | 退出条件 | 关联任务 |
 | --- | --- | --- | --- |
-| `handleNotImplemented` scaffold | 为剩余 active but pending document operations 返回稳定 501 | report files、statistics、settings 等实现 | 待确认 |
-| worker success placeholder | 让 report job 队列和状态机先闭环 | worker 执行真实大纲/章节/文件生成 | 待确认 |
+| `handleNotImplemented` scaffold | 为剩余 active but pending document operations 返回稳定 501 | report files、statistics、settings 等实现并通过契约测试 | report files/settings/statistics/logs follow-up |
+| worker success placeholder | 让 report job 队列和状态机先闭环 | worker 执行真实大纲/章节/文件生成；`job succeeded` 对应真实内容产出 | Document 真实生成闭环任务 |
 | fake repositories in tests | service/http 单元测试 | 保留测试用 | 无 |
-| env-gated repository integration tests | 无 DB 环境跳过 | CI 提供 `DOCUMENT_TEST_DATABASE_URL` | 待确认 |
+| env-gated repository integration tests | 无 DB 环境跳过 | CI 提供 `DOCUMENT_TEST_DATABASE_URL` | testing required checks 分阶段升级任务 |
 
 ## 7. 运行与配置
 
@@ -100,7 +102,9 @@
 | --- | --- | --- | --- | --- |
 | 实现 report files/content | 新任务 | P0 | DOCX 导出核心 | 调 File Service 保存并读取生成文件。 |
 | 实现 worker 真实生成步骤 | 新任务 | P0 | 报告生成闭环核心 | 在当前 job/attempt/asynq 状态机内调用 AI Gateway、更新大纲/章节和事件。 |
+| 实现 Document MCP tools | 新任务 | P0 | README / requirements 已保留工具目标 | 注册 `generate_report_outline`、`generate_report_text`、`get_generation_status`、`get_report_result`、`export_report_docx` 等工具，并覆盖权限和脱敏输出。 |
 | 实现 report settings/statistics/logs | 新任务 | P1 | Gateway active paths | 补管理端闭环。 |
+| #221/#223 合入后回写状态文档 | 回写文档 | P1 | open PR 不提前算 develop 能力 | 合入并验证后更新能力矩阵、generation workflow 和本文。 |
 | 回写预留配置状态 | 回写文档 | P1 | AI/Pandoc env 当前要求但未使用 | 防部署误判。 |
 
 ## 10. 最近检查记录

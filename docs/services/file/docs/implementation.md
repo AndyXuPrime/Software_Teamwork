@@ -50,12 +50,12 @@
 
 | 缺口 | 文档来源 | 影响范围 | 建议任务 |
 | --- | --- | --- | --- |
-| `cmd/server` 未根据 `FILE_DATABASE_URL` 接入 PostgreSQL repository | `docs/services/file/README.md`、`docs/services/file/docs/data-models.md` | DB / API / deploy | 待确认：接入持久 metadata runtime。 |
-| PostgreSQL repository 的 legacy document 方法仍返回 `ErrConflict` / `ErrNotFound` | `services/file/internal/repository/postgres.go` | API / DB | 待确认：删除兼容业务方法或显式迁移到 owner service。 |
-| MinIO adapter 未实现 | `docs/architecture/service-boundaries.md`、`docs/services/file/README.md` | Object storage / deploy | 待确认：实现 `internal/platform/storage/minio`。 |
-| 对象清理 worker / asynq 未实现 | `docs/services/file/README.md`、`docs/services/file/docs/data-models.md` | worker / Redis | 待确认：按 `file:object:purge` 增加清理任务。 |
-| 内部服务 token 鉴权未落地 | `docs/services/file/README.md` | API / security | 待确认：明确 `X-Service-Token` 或等价服务认证。 |
-| `sqlc` query 目录和生成代码未落地 | `docs/architecture/technology-decisions.md` | DB / CI | 待确认：补 queries 和生成产物，或回写当前手写 SQL 过渡状态。 |
+| `cmd/server` 未根据 `FILE_DATABASE_URL` 接入 PostgreSQL repository | `docs/services/file/README.md`、`docs/services/file/docs/data-models.md` | DB / API / deploy | 接入持久 metadata runtime；完成前 README 只说明当前 runtime 状态。 |
+| PostgreSQL repository 的 legacy document 方法仍返回 `ErrConflict` / `ErrNotFound` | `services/file/internal/repository/postgres.go` | API / DB | 删除兼容业务方法或显式迁移到 owner service。 |
+| MinIO adapter 未实现 | `docs/architecture/service-boundaries.md`、`docs/services/file/README.md` | Object storage / deploy | 实现 `internal/platform/storage/minio` 并固定 server/client/SDK 版本。 |
+| 对象清理 worker / asynq 未实现 | `docs/services/file/README.md`、`docs/services/file/docs/data-models.md` | worker / Redis | 按 `file:object:purge` 增加清理任务。 |
+| 内部服务 token 鉴权未落地 | `docs/services/file/README.md` | API / security | 明确并实现 `X-Service-Token` 或等价服务认证。 |
+| `sqlc` query 目录和生成代码未落地 | `docs/architecture/technology-decisions.md` | DB / CI | 补 queries 和生成产物，或回写当前手写 SQL 过渡状态。 |
 
 ## 5. 文档与实现出入
 
@@ -71,10 +71,10 @@
 
 | 项目 | 当前用途 | 退出条件 | 关联任务 |
 | --- | --- | --- | --- |
-| memory repository | handler tests 和早期本地联调 | PostgreSQL repository 接入 runtime 且测试覆盖 | 待确认 |
-| memory object store | 单元测试和无文件系统本地运行 | local/MinIO smoke 成为默认验证路径 | 待确认 |
-| local object store | 本地持久化 smoke | MinIO adapter 可在 Compose/部署中使用 | 待确认 |
-| knowledge-document 兼容路由 | 兼容早期 knowledge/file 联调 | Knowledge 只调用 `/internal/v1/files/**` 且无调用方依赖旧路由 | 待确认 |
+| memory repository | handler tests 和早期本地联调 | PostgreSQL repository 接入 runtime 且测试覆盖 | PostgreSQL runtime 接入任务 |
+| memory object store | 单元测试和无文件系统本地运行 | local/MinIO smoke 成为默认验证路径 | MinIO adapter / smoke 任务 |
+| local object store | 本地持久化 smoke | MinIO adapter 可在 Compose/部署中使用 | MinIO adapter / smoke 任务 |
+| knowledge-document 兼容路由 | 兼容早期 knowledge/file 联调 | Knowledge 只调用 `/internal/v1/files/**` 且无调用方依赖旧路由 | 兼容路由退出任务 |
 
 ## 7. 运行与配置
 

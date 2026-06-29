@@ -75,7 +75,7 @@
 | --- | --- | --- | --- |
 | fake provider tests | 验证 provider adapter、错误归一化和脱敏 | 保留测试用；真实 provider smoke 另补 | #125 |
 | memory repository in tests | profile、invocation 和 HTTP 单元测试 | 保留测试用；repository 行为由 migration/DB smoke 补充 | 无 |
-| OpenAI-compatible shared HTTP adapter | 统一处理 `openai_compatible`、`siliconflow`、`local_compatible` 的兼容路径 | 出现 provider 特异差异时拆分 adapter 并补测试 | 待确认 |
+| OpenAI-compatible shared HTTP adapter | 统一处理 `openai_compatible`、`siliconflow`、`local_compatible` 的兼容路径 | 出现 provider 特异差异时拆分 adapter 并补测试 | provider-specific adapter follow-up |
 
 ## 7. 运行与配置
 

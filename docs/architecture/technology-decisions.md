@@ -44,6 +44,20 @@
 | `services/ai-gateway` | 已落地 Go AI Gateway、PostgreSQL repository、model profile CRUD、credential encryption、service-token auth、OpenAI-compatible chat completions、embeddings、rerankings、provider invocation 记录和 usage aggregate；真实 provider/跨服务 smoke 仍待补齐。 | `services/ai-gateway/go.mod`、`services/ai-gateway/migrations/`、`docs/services/ai-gateway/docs/implementation.md` |
 | CI | 已有 PR guard、commitlint、auto-label、Go service build/test workflow 和 goose migration apply workflow；前端流水线尚未落地。 | `.github/workflows/*.yml` |
 
+## 当前事实与目标基线
+
+本文同时记录当前仓库事实和目标技术基线。已经写入仓库配置或锁文件的版本先按当前事实记录；如果与目标基线不一致，应优先开实现 issue 让代码向目标基线对齐，而不是在实现 PR 中临时改契约或让文档长期迁就漂移。
+
+当前已知需要对齐的差异：
+
+| 领域 | 当前仓库事实 | 目标基线 / 后续动作 |
+| --- | --- | --- |
+| PostgreSQL client | Auth 使用 `pgx/v4@v4.18.3`；Knowledge、QA、Document、AI Gateway 使用 `pgx/v5@v5.7.6`。 | 新增服务不得引入第三种版本；单独决策是否统一到 `pgx/v5`。 |
+| Redis client | Gateway 直接使用 `go-redis/v9@v9.21.0`；Knowledge 通过 asynq 间接使用 `go-redis/v9@v9.14.1`。 | 后续统一 Redis client 版本策略，并同步 `go.mod` 和本文。 |
+| asynq | Knowledge 和 Document 已接入 `asynq v0.26.0`；队列目标基线已确认。 | 技术表和三选一记录统一标为已固定；新增异步任务复用该版本或显式决策升级。 |
+| File object store | Runtime 已有 memory/local object store；MinIO adapter 未落地。 | File 仍是 MinIO 对象存储边界；实现 MinIO adapter 时固定 server/client/SDK 版本。 |
+| 前端 OpenAPI 类型生成 | `openapi-typescript@7.13.0` 已进入 `apps/web/package.json` 和 `bun.lock`。 | API type drift check 持续约束 generated diff；升级版本需同步本文。 |
+
 ## 已确认选型总览
 
 | 领域 | 选型 | 当前版本 | 状态 | 说明 |
@@ -61,7 +75,7 @@
 | 前端图标 | Lucide React | `1.21.0` | 已固定 | `components.json` 的 `iconLibrary` 为 `lucide`。 |
 | 前端 Markdown | react-markdown | `10.1.0` | 已固定 | QA 聊天消息渲染使用。 |
 | 前端 class 工具 | `clsx` + `class-variance-authority` | `clsx@2.1.1`，`cva@0.7.1` | 已固定 | UI variant 和 class 合并基础。 |
-| 前端 API 类型 | `openapi-typescript` + typed fetch wrapper | openapi-typescript 版本待固定 | 已选型，待固定 | wrapper 已有手写基础；生成目录约定为 `apps/web/src/api/generated/`。 |
+| 前端 API 类型 | `openapi-typescript` + typed fetch wrapper | `openapi-typescript@7.13.0` | 已固定 | `api:generate` 已进入 `apps/web/package.json`；生成目录为 `apps/web/src/api/generated/`。 |
 | 前端 SSE | `fetch` stream wrapper | Web 标准 | 标准库 / 协议 | QA 消息创建使用 POST + `text/event-stream`，支持 `AbortController`。 |
 | 前端测试 | Vitest + React Testing Library + Playwright | 待固定 | 已选型，待固定 | 当前未加入 `apps/web/package.json`。 |
 | 前端代码质量 | ESLint Flat Config + Prettier | ESLint `9.39.4`，Prettier `3.9.0` | 已固定 | 插件版本见前端明细。 |
@@ -72,12 +86,12 @@
 | ORM | 不使用 ORM | N/A | 已固定 | 禁止默认引入 GORM/ent 等 ORM。 |
 | 数据库迁移 | `goose` | `v3.27.1` | 已固定 | 使用 `pressly/goose` CLI 或库执行服务内 migration；该版本要求 Go 1.25+。 |
 | 关系数据库 | PostgreSQL | `postgres:16-alpine` | 已固定 | 当前本地 Compose 固定在 16 Alpine。 |
-| Redis 队列 | `asynq` over Redis | `asynq v0.26.0`；Redis `7-alpine` | 部分已固定 | Knowledge 和 Document 已接入 asynq client/worker；后续异步服务按需复用该队列基线。 |
+| Redis 队列 | `asynq` over Redis | `asynq v0.26.0`；Redis `7-alpine` | 已固定 | Knowledge 和 Document 已接入 asynq client/worker；后续异步服务按需复用该队列基线。 |
 | Redis 缓存/会话 | `go-redis` | `go-redis/v9 v9.21.0`、`v9.14.1` 间接依赖 | 部分已固定 | Gateway 直接使用 `github.com/redis/go-redis/v9@v9.21.0`；Knowledge 通过 asynq 间接固定 `v9.14.1`。后续需统一版本策略。 |
 | 向量数据库 | Qdrant | 镜像版本待固定 | 已选型，待固定 | Knowledge schema 已保留 Qdrant point 字段；runtime adapter 尚未落地。 |
 | Qdrant 客户端 | 手写 HTTP client | Go 标准 HTTP client | 已选型，待落地 | 当前代码尚未实现 Qdrant client；落地时先不引入官方 client。 |
-| 对象存储 | MinIO | 镜像版本待固定 | 已选型，待固定 | File service 当前只有 memory/local object store；MinIO adapter 尚未落地。 |
-| MinIO Go SDK | 官方 MinIO Go SDK | 待固定 | 已选型，待固定 | `services/file` 当前只有 memory object store。 |
+| 对象存储 | MinIO 边界；当前 memory/local object store | MinIO 镜像版本待固定 | 已选型，待固定 | File service 当前 runtime 只有 memory/local object store；MinIO adapter 尚未落地。 |
+| MinIO Go SDK | 官方 MinIO Go SDK | 待固定 | 已选型，待固定 | `services/file` 当前只有 memory/local object store；MinIO adapter 落地时固定 SDK 版本。 |
 | 认证 token | Opaque Bearer token | 协议契约 | 标准库 / 协议 | 不使用 JWT access token；服务端保存 token hash。 |
 | 密码哈希 | `argon2id` | `argon2id-v1`，PHC `v=19` | 已固定 | 参数：`m=65536 KiB`、`t=3`、`p=2`、`salt=16 bytes`、`key=32 bytes`。 |
 | Secret 管理 | 本地 env；生产 secret ref；第一阶段可加密列 | 加密实现待固定 | 已选型，待固定 | AI Gateway 不保存明文 provider API key。 |
@@ -175,8 +189,8 @@
 | 日志 | `slog` | `zap` | `zerolog` | `slog` | Go `1.25` 标准库 |
 | HTTP 路由 | 标准库 `ServeMux` | `chi` | `gin` | 标准库 `ServeMux` | Go `1.25` 标准库 |
 | 配置 | 手写 `os.Getenv` | `envconfig` | `viper` | `envconfig` 风格结构化加载 | 依赖待固定；允许先手写等价实现 |
-| 队列 | Redis Streams 手写 | `asynq` | PostgreSQL queue | `asynq` | 待固定 |
-| 前端 API client | 手写 fetch 类型 | `openapi-typescript` + wrapper | Orval | `openapi-typescript` + wrapper | wrapper 已有；生成器待固定 |
+| 队列 | Redis Streams 手写 | `asynq` | PostgreSQL queue | `asynq` | `asynq v0.26.0` 已固定 |
+| 前端 API client | 手写 fetch 类型 | `openapi-typescript` + wrapper | Orval | `openapi-typescript` + wrapper | `openapi-typescript@7.13.0` 已固定；wrapper 已有 |
 | 认证 token | Opaque token | JWT access + refresh | HttpOnly cookie session | Opaque Bearer token | 协议契约 |
 | DOCX 生成 | Go DOCX 库 | Pandoc/LibreOffice | 独立模板服务 | Document worker + Pandoc/LibreOffice 类工具链 | 待固定 |
 
@@ -225,7 +239,7 @@ services/<service>/
 
 - 业务状态、任务最终状态、失败摘要和重试次数以 PostgreSQL 为权威；asynq 只负责排队、调度和执行。
 - handler 不直接执行长任务，只创建业务 job 记录并投递 asynq task。
-- 当前 Redis 本地版本为 `redis:7-alpine`；Knowledge 已固定 `asynq v0.26.0`，并通过 asynq 依赖 `go-redis/v9 v9.14.1`。
+- 当前 Redis 本地版本为 `redis:7-alpine`；Knowledge 和 Document 已固定 `asynq v0.26.0`，并通过 asynq 依赖 `go-redis/v9 v9.14.1`。Gateway 直接使用 `go-redis/v9@v9.21.0`；后续应单独统一 Redis client 版本策略。
 
 ### 日志、指标和追踪
 
@@ -244,7 +258,7 @@ services/<service>/
 
 ## 前端落地约定
 
-- OpenAPI 类型生成统一使用 `openapi-typescript`；当前生成器版本未固定，首次引入时必须写入 `apps/web/package.json` 和 `bun.lock`。
+- OpenAPI 类型生成统一使用 `openapi-typescript@7.13.0`；版本已写入 `apps/web/package.json` 和 `bun.lock`。
 - 生成目录为 `apps/web/src/api/generated/`，生成文件不得手工修改。
 - `apps/web/src/api/client.ts` 只负责 transport：base URL、认证头、request id、JSON/form/SSE 处理、envelope 和错误归一化。
 - 前端不得继续依赖旧 `{ code, message, data }` envelope；gateway 项目自有 JSON 接口使用 `{ data, requestId }` 成功响应和 `{ error }` 错误响应。
