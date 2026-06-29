@@ -1,15 +1,7 @@
-/**
- * Citation endpoints — API doc sections 7.1 & 7.2.
- *
- * getCitation        GET  /api/citations/:chunk_id
- * batchGetCitations  POST /api/citations/batch
- */
+﻿import { requestJson } from './client'
+import type { components } from './generated/gateway'
 
-import { doRequest } from './client'
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+type QACitationDetail = components['schemas']['QACitationDetail']
 
 export interface CitationDetail {
   chunk_id: string
@@ -26,28 +18,32 @@ interface BatchCitationsRequest {
   chunk_ids: string[]
 }
 
-// ---------------------------------------------------------------------------
-// 7.1  Single citation
-// ---------------------------------------------------------------------------
+function toCitationDetail(citation: QACitationDetail): CitationDetail {
+  return {
+    chunk_id: citation.chunkId ?? '',
+    doc_id: citation.documentId ?? citation.docId ?? '',
+    doc_name: citation.documentName ?? citation.docName ?? '',
+    text: citation.content ?? citation.text ?? citation.contentPreview ?? '',
+    context_before: citation.context ?? '',
+    context_after: '',
+    page_number: citation.pageNumber ?? 0,
+    score: citation.score ?? 0,
+  }
+}
 
-/**
- * Retrieve full citation detail (including surrounding context) for a
- * single chunk.
- */
 export async function getCitation(chunkId: string): Promise<CitationDetail> {
-  return doRequest<CitationDetail>(`/citations/${encodeURIComponent(chunkId)}`)
+  const citation = await requestJson<QACitationDetail>(`/citations/${encodeURIComponent(chunkId)}`)
+  return toCitationDetail(citation)
 }
 
-// ---------------------------------------------------------------------------
-// 7.2  Batch citations
-// ---------------------------------------------------------------------------
-
-/**
- * Retrieve citation details for multiple chunks at once.
- */
 export async function batchGetCitations(chunkIds: string[]): Promise<CitationDetail[]> {
-  return doRequest<CitationDetail[]>('/citations/batch', {
+  const citations = await requestJson<QACitationDetail[]>('/citation-lookups', {
     method: 'POST',
-    body: JSON.stringify({ chunk_ids: chunkIds } satisfies BatchCitationsRequest),
+    body: {
+      citationIds: chunkIds,
+    } satisfies components['schemas']['CreateQACitationLookupRequest'],
   })
+  return citations.map(toCitationDetail)
 }
+
+export type { BatchCitationsRequest }
