@@ -82,7 +82,7 @@
 | 环境变量 | `DATABASE_URL`、`FILE_SERVICE_BASE_URL`、`KNOWLEDGE_REDIS_ADDR` 必填；另有 HTTP/version/env/max upload/service token/shutdown | 缺 Qdrant、embedding/rerank、parser 配置 runtime env。 |
 | PostgreSQL / migration | `migrations/0001_create_knowledge_core_tables.sql`，runtime `pgx/v5` | 需要 migration apply CI/集成测试证据。 |
 | Redis / queue | 使用 `asynq` client 投递 ingestion | worker 未实现。 |
-| Object storage / vector store / AI provider | 通过 File Service 保存 raw file | Qdrant、AI Gateway embedding/rerank 未实现。 |
+| Object storage / vector store / AI provider | 通过 File Service 保存 raw file | Qdrant adapter 尚未落地；Knowledge 尚未接入 AI Gateway embedding/rerank 调用。 |
 
 ## 8. 测试与验证
 

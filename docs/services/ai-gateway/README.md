@@ -12,6 +12,7 @@ RESTful 路径、统一响应和错误 envelope 以 [前后端集成契约](../.
 | --- | --- |
 | [AI Gateway OpenAPI](api/openapi.yaml) | 内部服务机器可读 API 契约。 |
 | [数据模型](docs/data-models.md) | 模型 profile、provider 凭据、配置审计、脱敏调用日志和安全约束。 |
+| [Provider Adapter 说明](docs/provider-adapters.md) | Chat、embedding、rerank provider adapter 的请求映射、响应校验、脱敏和 usage aggregate 约束。 |
 | [实现说明](docs/implementation.md) | 当前代码实现、契约对齐、缺口和最近检查记录。 |
 
 ## 职责边界
