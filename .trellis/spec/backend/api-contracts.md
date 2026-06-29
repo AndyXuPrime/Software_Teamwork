@@ -6,8 +6,24 @@
 
 ## Documentation Authority
 
-`docs/` is the source of truth for project contracts. When this Trellis spec and
-`docs/` disagree, inspect and follow these files first, then update this spec:
+`docs/` is the source of truth for project contracts, but do not collapse every
+docs/code mismatch into a single "docs wins" or "code wins" rule. Apply the
+documented hierarchy from `docs/collaboration/documentation-workflow.md`:
+
+1. Contract layer first: Gateway OpenAPI, service boundaries, data models,
+   confirmed requirements, and team-approved decisions are collaboration
+   contracts.
+2. `develop` code is the current implementation fact baseline. Open PRs,
+   draft issues, and unmerged work must not be described as already implemented.
+3. `docs/services/<service>/docs/implementation.md` records current facts,
+   including implemented, partial, pending, not implemented, scaffold, memory,
+   mock, and docs/code divergence states.
+4. README, runbooks, and testing strategy documents provide entry points,
+   commands, and limits; they do not replace contracts or implementation-status
+   documents.
+
+When this Trellis spec and `docs/` disagree, inspect and follow these files
+first, then update this spec:
 
 - `docs/architecture/service-boundaries.md`
 - `docs/architecture/frontend-backend-contract.md`
@@ -18,7 +34,11 @@
   `docs/services/<service>/api/*.openapi.yaml`
 
 Do not implement or generate frontend/backend clients from Trellis examples that
-contradict the current `docs/` contracts.
+contradict the current `docs/` contracts. If code diverges from a confirmed
+contract, default to fixing code. Changing contract semantics requires a
+management/team decision before an implementation PR rewrites Gateway OpenAPI,
+service boundaries, core data models, confirmed acceptance semantics, or
+parallel-team internal service interfaces.
 
 ## Scenario: Gateway Contract-First API
 

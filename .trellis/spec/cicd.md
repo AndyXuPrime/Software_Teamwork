@@ -38,6 +38,25 @@ These workflows already exist and must remain separate from product build jobs:
 
 Do not weaken collaboration checks when adding product CI.
 
+## Current CI Status
+
+Use `docs/testing/strategy.md` as the authority for current CI coverage and
+required-check candidates. As of the current docs baseline:
+
+- Current CI covers collaboration guardrails, Go service tests/builds, goose
+  migration apply, Gateway contract drift, and frontend Gateway API type drift.
+- The best required-check candidates are Go service tests, goose migration
+  apply, Gateway contract/API drift, and API type drift.
+- Full frontend `check/build` CI, Vitest/React Testing Library/Playwright,
+  path-filter matrices, Docker image builds, full DB integration test jobs, and
+  cross-service E2E smoke are gaps until stable workflows and dependencies land.
+- Open PRs, draft issues, and unmerged capabilities must be documented as
+  pending/follow-up, not as current `develop` behavior.
+
+When editing workflow specs, keep the current-vs-target distinction explicit:
+current CI coverage, PR-before local recommendations, and future gaps are not
+interchangeable.
+
 ---
 
 ## Auto Label Service Path Contract
@@ -201,9 +220,9 @@ blocked semantics, or `.github/workflows/auto-label.yml` blocked-label logic.
 
 ---
 
-## Required Product Workflows
+## Target Product Workflows
 
-Recommended workflow files:
+Recommended workflow files after the corresponding implementation issues land:
 
 | Workflow | Suggested File | Trigger |
 |----------|----------------|---------|
@@ -315,19 +334,21 @@ Let .github/workflows/gateway-contract.yml enforce the same gate in PR
 
 ---
 
-## Frontend CI
+## Frontend CI Target
 
-Frontend CI should run only when frontend files or frontend-related workflow
-files change.
+Frontend CI is not yet a landed required workflow. Until it exists, frontend
+`check` and `build` remain PR-before local checks that should be reported in
+the PR body when frontend files change.
 
-Required steps once `apps/web/package.json` exists:
+When the workflow is added, it should run only when frontend files or
+frontend-related workflow files change.
+
+Target steps:
 
 ```bash
-cd apps/web
 bun install --frozen-lockfile
-bun run lint
-bun run test
-bun run build
+bun run --cwd apps/web check
+bun run --cwd apps/web build
 ```
 
 Rules:
@@ -336,6 +357,9 @@ Rules:
 - Do not encode a specific build tool in workflow logic unless the frontend tool is selected and documented.
 - Cache package-manager dependencies using lockfile-based keys.
 - Fail if the lockfile and package manifest are inconsistent.
+- Add Vitest, React Testing Library, and Playwright only after their scripts and
+  dependencies exist in `apps/web/package.json`; do not mark them required from
+  this spec alone.
 
 ---
 
@@ -477,16 +501,21 @@ Minimum rollback strategy:
 
 ---
 
-## Required Checks Before Merge
+## Checks Before Merge
 
-For PRs:
+Current required checks are defined by repository branch protection and
+`docs/testing/strategy.md`; do not infer additional required checks from target
+workflow sections above. For PRs:
 
 - PR Guard passes.
 - Commitlint passes.
-- Frontend CI passes when `apps/web/**` changes.
-- Go service CI passes for each changed service.
-- Docker build passes when Dockerfiles or deploy definitions change.
-- Documentation changes update README/specs when architecture or commands change.
+- Current product CI passes for touched areas when the workflow exists.
+- Frontend changes should report local `bun run --cwd apps/web check` and
+  `bun run --cwd apps/web build` until full frontend CI lands.
+- Docker build, full DB integration jobs, and cross-service smoke are future
+  gates until stable workflows land.
+- Documentation changes update README/specs when architecture, commands,
+  contracts, or implementation status change.
 
 ---
 
