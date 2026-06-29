@@ -24,12 +24,12 @@ jobs:
 
       - name: Generate API types
         working-directory: apps/web
-        run: bun run generate:api
+        run: bun run api:generate
 
       - name: Check for drift
         run: |
           if ! git diff --exit-code apps/web/src/api/generated/gateway.ts; then
-            echo "::error::Generated types are out of sync. Run 'bun run --cwd apps/web generate:api' locally."
+            echo "::error::Generated types are out of sync. Run 'bun run --cwd apps/web api:generate' locally."
             exit 1
           fi
           echo "Types are in sync."
