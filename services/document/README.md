@@ -36,7 +36,9 @@ Optional variables:
 Docker Compose starts PostgreSQL, Redis, applies goose migrations, and then
 starts the document service. Default values are embedded in `docker-compose.yml`;
 copy `.env.example` to `.env` only when local ports or downstream service URLs
-need to be changed:
+need to be changed. Compose uses `DOCUMENT_COMPOSE_FILE_SERVICE_URL` and
+`DOCUMENT_COMPOSE_AI_GATEWAY_URL` for container-network downstream overrides, so
+host-run `localhost` examples do not leak into the container by accident:
 
 ```powershell
 # Optional: Copy-Item .env.example .env
