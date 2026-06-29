@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -49,6 +51,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	ownerBaseURLs := map[string]string{
+		"auth":       cfg.AuthBaseURL,
+		"knowledge":  cfg.KnowledgeBaseURL,
+		"qa":         cfg.QABaseURL,
+		"document":   cfg.DocumentBaseURL,
+		"ai-gateway": cfg.AIGatewayBaseURL,
+	}
+
 	handler := gatewayhttp.NewServer(gatewayhttp.Config{
 		Logger:               logger,
 		ServiceVersion:       cfg.ServiceVersion,
@@ -64,13 +74,8 @@ func main() {
 		AuthClient:           authClient,
 		SessionStore:         sessionStore,
 		TokenHasher:          tokenHasher,
-		OwnerBaseURLs: map[string]string{
-			"auth":       cfg.AuthBaseURL,
-			"knowledge":  cfg.KnowledgeBaseURL,
-			"qa":         cfg.QABaseURL,
-			"document":   cfg.DocumentBaseURL,
-			"ai-gateway": cfg.AIGatewayBaseURL,
-		},
+		OwnerBaseURLs:        ownerBaseURLs,
+		ReadyCheck:           gatewayReadyCheck(sessionStore, authClient, ownerBaseURLs),
 	})
 
 	server := &http.Server{
@@ -104,4 +109,36 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("gateway service shutdown complete", "service", "gateway")
+}
+
+func gatewayReadyCheck(sessionStore *redisstore.SessionStore, authClient *authclient.Client, ownerBaseURLs map[string]string) func(context.Context) error {
+	return func(ctx context.Context) error {
+		if sessionStore == nil {
+			return service.ErrSessionStoreUnavailable
+		}
+		if err := sessionStore.CheckReady(ctx); err != nil {
+			return fmt.Errorf("redis: %w", err)
+		}
+		if authClient == nil {
+			return fmt.Errorf("auth client is not configured")
+		}
+		if err := authClient.CheckReady(ctx); err != nil {
+			return fmt.Errorf("auth service: %w", err)
+		}
+		if missing := missingOwnerBaseURLs(ownerBaseURLs); len(missing) > 0 {
+			return fmt.Errorf("owner service base URLs are not configured: %s", strings.Join(missing, ","))
+		}
+		return nil
+	}
+}
+
+func missingOwnerBaseURLs(ownerBaseURLs map[string]string) []string {
+	required := []string{"knowledge", "qa", "document", "ai-gateway"}
+	missing := make([]string, 0, len(required))
+	for _, owner := range required {
+		if strings.TrimSpace(ownerBaseURLs[owner]) == "" {
+			missing = append(missing, owner)
+		}
+	}
+	return missing
 }

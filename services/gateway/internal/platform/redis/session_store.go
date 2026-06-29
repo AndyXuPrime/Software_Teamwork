@@ -45,6 +45,16 @@ func (s *SessionStore) Close() error {
 	return s.client.Close()
 }
 
+func (s *SessionStore) CheckReady(ctx context.Context) error {
+	if s == nil || s.client == nil {
+		return service.ErrSessionStoreUnavailable
+	}
+	if err := s.client.Ping(ctx).Err(); err != nil {
+		return fmt.Errorf("%w: %v", service.ErrSessionStoreUnavailable, err)
+	}
+	return nil
+}
+
 func (s *SessionStore) Put(ctx context.Context, entry service.SessionCacheEntry, ttl time.Duration) error {
 	if s == nil || s.client == nil {
 		return service.ErrSessionStoreUnavailable

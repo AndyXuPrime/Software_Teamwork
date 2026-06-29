@@ -250,6 +250,126 @@ func TestAuthClientErrorIsSanitized(t *testing.T) {
 	}
 }
 
+func TestProtectedRouteRejectsRevokedAuthoritativeSession(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	revokedAt := time.Now().UTC()
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_1",
+		UserID:      "usr_1",
+		Username:    "alice",
+		Roles:       []string{"admin"},
+		Permissions: []string{"knowledge:read"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("downstream should not be called for a revoked session")
+	}))
+	defer downstream.Close()
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		auth: &fakeAuthClient{
+			getSessionResult: service.SessionIdentity{
+				SessionID: "sess_1",
+				User: service.UserSummary{
+					ID:          "usr_1",
+					Username:    "alice",
+					Roles:       []string{"admin"},
+					Permissions: []string{"knowledge:read"},
+				},
+				TokenType: "Bearer",
+				ExpiresAt: time.Now().Add(time.Hour).UTC(),
+				IssuedAt:  time.Now().Add(-time.Minute).UTC(),
+				RevokedAt: &revokedAt,
+			},
+			getUserResult: service.UserRecord{
+				ID:          "usr_1",
+				Username:    "alice",
+				Roles:       []string{"admin"},
+				Permissions: []string{"knowledge:read"},
+				Status:      "active",
+			},
+		},
+		store:         store,
+		hasher:        hasher,
+		ownerBaseURLs: map[string]string{"knowledge": downstream.URL},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge-bases", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("X-Request-Id", "req_revoked")
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	hash, err := hasher.Hash(accessToken)
+	if err != nil {
+		t.Fatalf("Hash() error = %v", err)
+	}
+	if _, err := store.Get(context.Background(), hash); !errors.Is(err, service.ErrSessionNotFound) {
+		t.Fatalf("cache lookup error = %v, want ErrSessionNotFound", err)
+	}
+}
+
+func TestProtectedRouteTreatsAuthAuthorityUnauthorizedAsDependencyError(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_1",
+		UserID:      "usr_1",
+		Username:    "alice",
+		Roles:       []string{"admin"},
+		Permissions: []string{"knowledge:read"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("downstream should not be called when auth authority is unavailable")
+	}))
+	defer downstream.Close()
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		auth: &fakeAuthClient{
+			getSessionErr: &authclient.RemoteError{
+				Status: http.StatusUnauthorized,
+				Detail: authclient.ErrorDetail{Code: "unauthorized", Message: "service authentication required"},
+			},
+		},
+		store:         store,
+		hasher:        hasher,
+		ownerBaseURLs: map[string]string{"knowledge": downstream.URL},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge-bases", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("X-Request-Id", "req_auth_dependency")
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	var body errorBody
+	decodeJSON(t, res.Body, &body)
+	if body.Error.Code != "dependency_error" {
+		t.Fatalf("error = %+v", body.Error)
+	}
+	hash, err := hasher.Hash(accessToken)
+	if err != nil {
+		t.Fatalf("Hash() error = %v", err)
+	}
+	if _, err := store.Get(context.Background(), hash); err != nil {
+		t.Fatalf("cache lookup error = %v, want cached entry retained", err)
+	}
+}
+
 func TestProxyMapsGatewayPathsToOwnerServiceNamespaces(t *testing.T) {
 	hasher := testHasher(t)
 	store := newMemorySessionStore()
@@ -495,25 +615,66 @@ type fakeAuthClient struct {
 	createUserErr       error
 	createSessionResult service.SessionResponse
 	createSessionErr    error
+	getUserResult       service.UserRecord
+	getUserErr          error
+	getSessionResult    service.SessionIdentity
+	getSessionErr       error
 	deleteSessionID     string
 	deleteSessionErr    error
 }
 
-func (c *fakeAuthClient) CreateUser(context.Context, string, []byte) (service.SessionResponse, error) {
+func (c *fakeAuthClient) CreateUser(context.Context, string, []byte, authclient.ForwardingContext) (service.SessionResponse, error) {
 	if c.createUserErr != nil {
 		return service.SessionResponse{}, c.createUserErr
 	}
 	return c.createUserResult, nil
 }
 
-func (c *fakeAuthClient) CreateSession(context.Context, string, []byte) (service.SessionResponse, error) {
+func (c *fakeAuthClient) CreateSession(context.Context, string, []byte, authclient.ForwardingContext) (service.SessionResponse, error) {
 	if c.createSessionErr != nil {
 		return service.SessionResponse{}, c.createSessionErr
 	}
 	return c.createSessionResult, nil
 }
 
-func (c *fakeAuthClient) DeleteSession(_ context.Context, _ string, sessionID string) error {
+func (c *fakeAuthClient) GetUser(context.Context, string, string, authclient.ForwardingContext) (service.UserRecord, error) {
+	if c.getUserErr != nil {
+		return service.UserRecord{}, c.getUserErr
+	}
+	if strings.TrimSpace(c.getUserResult.ID) != "" {
+		return c.getUserResult, nil
+	}
+	return service.UserRecord{
+		ID:          "usr_1",
+		Username:    "alice",
+		Roles:       []string{"admin"},
+		Permissions: []string{"knowledge:read"},
+		Status:      "active",
+	}, nil
+}
+
+func (c *fakeAuthClient) GetSession(_ context.Context, _ string, sessionID string, _ authclient.ForwardingContext) (service.SessionIdentity, error) {
+	if c.getSessionErr != nil {
+		return service.SessionIdentity{}, c.getSessionErr
+	}
+	if strings.TrimSpace(c.getSessionResult.SessionID) != "" {
+		return c.getSessionResult, nil
+	}
+	return service.SessionIdentity{
+		SessionID: sessionID,
+		User: service.UserSummary{
+			ID:          "usr_1",
+			Username:    "alice",
+			Roles:       []string{"admin"},
+			Permissions: []string{"knowledge:read"},
+		},
+		TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour).UTC(),
+		IssuedAt:  time.Now().Add(-time.Minute).UTC(),
+	}, nil
+}
+
+func (c *fakeAuthClient) DeleteSession(_ context.Context, _ string, sessionID string, _ authclient.ForwardingContext) error {
 	if c.deleteSessionErr != nil {
 		return c.deleteSessionErr
 	}

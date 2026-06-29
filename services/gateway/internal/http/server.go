@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -29,6 +30,7 @@ type Config struct {
 	SessionStore         service.SessionStore
 	TokenHasher          service.TokenHasher
 	HTTPClient           *http.Client
+	ReadyCheck           func(context.Context) error
 }
 
 type Server struct {
@@ -41,6 +43,7 @@ type Server struct {
 	tokenHasher          service.TokenHasher
 	ownerBaseURLs        map[string]*url.URL
 	httpClient           *http.Client
+	readyCheck           func(context.Context) error
 	mux                  *http.ServeMux
 	handler              http.Handler
 }
@@ -65,6 +68,7 @@ func NewServer(cfg Config) *Server {
 		tokenHasher:          cfg.TokenHasher,
 		ownerBaseURLs:        parseOwnerBaseURLs(cfg.OwnerBaseURLs),
 		httpClient:           cfg.HTTPClient,
+		readyCheck:           cfg.ReadyCheck,
 		mux:                  http.NewServeMux(),
 	}
 	s.routes()
@@ -112,6 +116,25 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	if s.readyCheck != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := s.readyCheck(ctx); err != nil {
+			s.logger.WarnContext(r.Context(), "gateway dependencies are not ready",
+				"service", "gateway",
+				"request_id", middleware.RequestIDFromContext(r.Context()),
+				"operation", "readyz",
+				"status", "failed",
+				"error", err,
+			)
+			response.WriteError(w, http.StatusServiceUnavailable, response.ErrorDetail{
+				Code:      response.CodeDependency,
+				Message:   "gateway dependencies are not ready",
+				RequestID: middleware.RequestIDFromContext(r.Context()),
+			})
+			return
+		}
+	}
 	response.WriteJSON(w, http.StatusOK, healthResponse{
 		Status:      "ready",
 		Service:     "gateway",

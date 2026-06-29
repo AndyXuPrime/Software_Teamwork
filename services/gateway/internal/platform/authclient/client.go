@@ -20,6 +20,11 @@ type Client struct {
 	httpClient   *http.Client
 }
 
+type ForwardingContext struct {
+	ForwardedFor   string
+	ForwardedProto string
+}
+
 type ErrorDetail struct {
 	Code      string            `json:"code"`
 	Message   string            `json:"message"`
@@ -64,31 +69,59 @@ func New(baseURL string, serviceToken string, timeout time.Duration) (*Client, e
 	}, nil
 }
 
-func (c *Client) CreateUser(ctx context.Context, requestID string, body []byte) (service.SessionResponse, error) {
+func (c *Client) CreateUser(ctx context.Context, requestID string, body []byte, forwarding ForwardingContext) (service.SessionResponse, error) {
 	var envelope service.SessionEnvelope
-	if err := c.doJSON(ctx, http.MethodPost, "/internal/v1/users", requestID, body, http.StatusCreated, &envelope); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/internal/v1/users", requestID, body, http.StatusCreated, forwarding, &envelope); err != nil {
 		return service.SessionResponse{}, err
 	}
 	return envelope.Data, nil
 }
 
-func (c *Client) CreateSession(ctx context.Context, requestID string, body []byte) (service.SessionResponse, error) {
+func (c *Client) CreateSession(ctx context.Context, requestID string, body []byte, forwarding ForwardingContext) (service.SessionResponse, error) {
 	var envelope service.SessionEnvelope
-	if err := c.doJSON(ctx, http.MethodPost, "/internal/v1/sessions", requestID, body, http.StatusOK, &envelope); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/internal/v1/sessions", requestID, body, http.StatusOK, forwarding, &envelope); err != nil {
 		return service.SessionResponse{}, err
 	}
 	return envelope.Data, nil
 }
 
-func (c *Client) DeleteSession(ctx context.Context, requestID string, sessionID string) error {
+func (c *Client) GetUser(ctx context.Context, requestID string, userID string, forwarding ForwardingContext) (service.UserRecord, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return service.UserRecord{}, &RemoteError{Status: http.StatusUnauthorized, Detail: ErrorDetail{Code: "unauthorized", Message: "invalid user"}}
+	}
+	var envelope service.UserRecordEnvelope
+	if err := c.doJSON(ctx, http.MethodGet, "/internal/v1/users/"+url.PathEscape(userID), requestID, nil, http.StatusOK, forwarding, &envelope); err != nil {
+		return service.UserRecord{}, err
+	}
+	return envelope.Data, nil
+}
+
+func (c *Client) GetSession(ctx context.Context, requestID string, sessionID string, forwarding ForwardingContext) (service.SessionIdentity, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return service.SessionIdentity{}, &RemoteError{Status: http.StatusUnauthorized, Detail: ErrorDetail{Code: "unauthorized", Message: "invalid session"}}
+	}
+	var envelope service.SessionIdentityEnvelope
+	if err := c.doJSON(ctx, http.MethodGet, "/internal/v1/sessions/"+url.PathEscape(sessionID), requestID, nil, http.StatusOK, forwarding, &envelope); err != nil {
+		return service.SessionIdentity{}, err
+	}
+	return envelope.Data, nil
+}
+
+func (c *Client) DeleteSession(ctx context.Context, requestID string, sessionID string, forwarding ForwardingContext) error {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		return &RemoteError{Status: http.StatusUnauthorized, Detail: ErrorDetail{Code: "unauthorized", Message: "invalid session"}}
 	}
-	return c.doJSON(ctx, http.MethodDelete, "/internal/v1/sessions/"+url.PathEscape(sessionID), requestID, nil, http.StatusNoContent, nil)
+	return c.doJSON(ctx, http.MethodDelete, "/internal/v1/sessions/"+url.PathEscape(sessionID), requestID, nil, http.StatusNoContent, forwarding, nil)
 }
 
-func (c *Client) doJSON(ctx context.Context, method string, path string, requestID string, body []byte, successStatus int, target any) error {
+func (c *Client) CheckReady(ctx context.Context) error {
+	return c.doJSON(ctx, http.MethodGet, "/readyz", "", nil, http.StatusOK, ForwardingContext{}, nil)
+}
+
+func (c *Client) doJSON(ctx context.Context, method string, path string, requestID string, body []byte, successStatus int, forwarding ForwardingContext, target any) error {
 	if c == nil || c.baseURL == nil {
 		return fmt.Errorf("auth client is not configured")
 	}
@@ -108,6 +141,12 @@ func (c *Client) doJSON(ctx context.Context, method string, path string, request
 	req.Header.Set("X-Caller-Service", "gateway")
 	if c.serviceToken != "" {
 		req.Header.Set("X-Service-Token", c.serviceToken)
+	}
+	if forwardedFor := strings.TrimSpace(forwarding.ForwardedFor); forwardedFor != "" {
+		req.Header.Set("X-Forwarded-For", forwardedFor)
+	}
+	if forwardedProto := strings.TrimSpace(forwarding.ForwardedProto); forwardedProto != "" {
+		req.Header.Set("X-Forwarded-Proto", forwardedProto)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

@@ -198,11 +198,7 @@ func applyGatewayHeaders(proxyReq *http.Request, incoming *http.Request, authCon
 	proxyReq.Header.Set("X-User-Roles", strings.Join(authContext.Roles, ","))
 	proxyReq.Header.Set("X-User-Permissions", strings.Join(authContext.Permissions, ","))
 	proxyReq.Header.Set("X-Forwarded-For", clientIP(incoming))
-	proto := "http"
-	if incoming.TLS != nil {
-		proto = "https"
-	}
-	proxyReq.Header.Set("X-Forwarded-Proto", proto)
+	proxyReq.Header.Set("X-Forwarded-Proto", gatewayForwardedProto(incoming))
 }
 
 func downstreamErrorCode(status int) response.Code {
@@ -242,6 +238,13 @@ func clientIP(r *http.Request) string {
 		return strings.TrimSpace(host)
 	}
 	return strings.TrimSpace(r.RemoteAddr)
+}
+
+func gatewayForwardedProto(r *http.Request) string {
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
 }
 
 func joinProxyPath(base string, path string) string {

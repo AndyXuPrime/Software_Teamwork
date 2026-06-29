@@ -60,11 +60,29 @@ type UserSummary struct {
 	Permissions []string `json:"permissions"`
 }
 
+type UserRecord struct {
+	ID          string   `json:"id"`
+	Username    string   `json:"username"`
+	Roles       []string `json:"roles"`
+	Permissions []string `json:"permissions"`
+	Status      string   `json:"status"`
+}
+
 type SessionSummary struct {
 	SessionID   string    `json:"sessionId"`
 	AccessToken string    `json:"accessToken"`
 	TokenType   string    `json:"tokenType"`
 	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
+type SessionIdentity struct {
+	SessionID    string      `json:"sessionId"`
+	User         UserSummary `json:"user"`
+	TokenType    string      `json:"tokenType"`
+	ExpiresAt    time.Time   `json:"expiresAt"`
+	IssuedAt     time.Time   `json:"issuedAt"`
+	RevokedAt    *time.Time  `json:"revokedAt,omitempty"`
+	RevokeReason *string     `json:"revokeReason,omitempty"`
 }
 
 type SessionResponse struct {
@@ -80,6 +98,16 @@ type SessionEnvelope struct {
 type UserEnvelope struct {
 	Data      UserSummary `json:"data"`
 	RequestID string      `json:"requestId"`
+}
+
+type UserRecordEnvelope struct {
+	Data      UserRecord `json:"data"`
+	RequestID string     `json:"requestId"`
+}
+
+type SessionIdentityEnvelope struct {
+	Data      SessionIdentity `json:"data"`
+	RequestID string          `json:"requestId"`
 }
 
 type SessionCacheEntry struct {
@@ -112,6 +140,44 @@ func CacheEntryFromSession(result SessionResponse, accessTokenHash string, reque
 	}
 	if entry.TokenType == "" {
 		entry.TokenType = "Bearer"
+	}
+	if err := entry.Validate(accessTokenHash, now); err != nil {
+		return SessionCacheEntry{}, 0, err
+	}
+	return entry, entry.ExpiresAt.Sub(now), nil
+}
+
+func CacheEntryFromIdentity(identity SessionIdentity, user UserRecord, accessTokenHash string, requestID string, now time.Time) (SessionCacheEntry, time.Duration, error) {
+	if identity.RevokedAt != nil || !identity.ExpiresAt.After(now) || !strings.EqualFold(strings.TrimSpace(user.Status), "active") {
+		return SessionCacheEntry{}, 0, ErrSessionInvalid
+	}
+	entry := SessionCacheEntry{
+		SessionID:       strings.TrimSpace(identity.SessionID),
+		UserID:          strings.TrimSpace(user.ID),
+		Username:        strings.TrimSpace(user.Username),
+		Roles:           safeStrings(user.Roles),
+		Permissions:     safeStrings(user.Permissions),
+		TokenType:       strings.TrimSpace(identity.TokenType),
+		AccessTokenHash: strings.TrimSpace(accessTokenHash),
+		ExpiresAt:       identity.ExpiresAt,
+		IssuedAt:        identity.IssuedAt,
+		CachedAt:        now,
+		RequestID:       requestID,
+	}
+	if entry.TokenType == "" {
+		entry.TokenType = "Bearer"
+	}
+	if entry.UserID == "" {
+		entry.UserID = strings.TrimSpace(identity.User.ID)
+	}
+	if entry.Username == "" {
+		entry.Username = strings.TrimSpace(identity.User.Username)
+	}
+	if entry.Roles == nil {
+		entry.Roles = safeStrings(identity.User.Roles)
+	}
+	if entry.Permissions == nil {
+		entry.Permissions = safeStrings(identity.User.Permissions)
 	}
 	if err := entry.Validate(accessTokenHash, now); err != nil {
 		return SessionCacheEntry{}, 0, err

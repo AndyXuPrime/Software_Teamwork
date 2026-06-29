@@ -15,9 +15,11 @@ import (
 )
 
 type AuthClient interface {
-	CreateUser(ctx context.Context, requestID string, body []byte) (service.SessionResponse, error)
-	CreateSession(ctx context.Context, requestID string, body []byte) (service.SessionResponse, error)
-	DeleteSession(ctx context.Context, requestID string, sessionID string) error
+	CreateUser(ctx context.Context, requestID string, body []byte, forwarding authclient.ForwardingContext) (service.SessionResponse, error)
+	CreateSession(ctx context.Context, requestID string, body []byte, forwarding authclient.ForwardingContext) (service.SessionResponse, error)
+	GetUser(ctx context.Context, requestID string, userID string, forwarding authclient.ForwardingContext) (service.UserRecord, error)
+	GetSession(ctx context.Context, requestID string, sessionID string, forwarding authclient.ForwardingContext) (service.SessionIdentity, error)
+	DeleteSession(ctx context.Context, requestID string, sessionID string, forwarding authclient.ForwardingContext) error
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -36,7 +38,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	s.handleAuthSessionResponse(w, r, s.authClient.CreateSession, http.StatusOK)
 }
 
-func (s *Server) handleAuthSessionResponse(w http.ResponseWriter, r *http.Request, call func(context.Context, string, []byte) (service.SessionResponse, error), status int) {
+func (s *Server) handleAuthSessionResponse(w http.ResponseWriter, r *http.Request, call func(context.Context, string, []byte, authclient.ForwardingContext) (service.SessionResponse, error), status int) {
 	if s.authClient == nil || s.sessionStore == nil {
 		s.writeDependencyError(w, r, "auth or session cache is not configured")
 		return
@@ -46,7 +48,7 @@ func (s *Server) handleAuthSessionResponse(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	requestID := middleware.RequestIDFromContext(r.Context())
-	result, err := call(r.Context(), requestID, body)
+	result, err := call(r.Context(), requestID, body, forwardingContextFromRequest(r))
 	if err != nil {
 		s.writeAuthClientError(w, r, err)
 		return
@@ -87,7 +89,7 @@ func (s *Server) handleDeleteCurrentSession(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	requestID := middleware.RequestIDFromContext(r.Context())
-	if err := s.authClient.DeleteSession(r.Context(), requestID, entry.SessionID); err != nil {
+	if err := s.authClient.DeleteSession(r.Context(), requestID, entry.SessionID, forwardingContextFromRequest(r)); err != nil {
 		s.writeAuthClientError(w, r, err)
 		return
 	}
@@ -126,7 +128,63 @@ func (s *Server) authenticateRequest(w http.ResponseWriter, r *http.Request) (se
 		s.writeUnauthorized(w, r, "invalid authentication")
 		return service.SessionCacheEntry{}, "", false
 	}
+	if s.authClient != nil {
+		refreshed, ok := s.refreshSessionAuthority(w, r, entry, accessTokenHash)
+		if !ok {
+			return service.SessionCacheEntry{}, "", false
+		}
+		entry = refreshed
+	}
 	return entry, accessTokenHash, true
+}
+
+func (s *Server) refreshSessionAuthority(w http.ResponseWriter, r *http.Request, entry service.SessionCacheEntry, accessTokenHash string) (service.SessionCacheEntry, bool) {
+	requestID := middleware.RequestIDFromContext(r.Context())
+	forwarding := forwardingContextFromRequest(r)
+	identity, err := s.authClient.GetSession(r.Context(), requestID, entry.SessionID, forwarding)
+	if err != nil {
+		s.writeSessionAuthorityError(w, r, err, accessTokenHash)
+		return service.SessionCacheEntry{}, false
+	}
+	user, err := s.authClient.GetUser(r.Context(), requestID, identity.User.ID, forwarding)
+	if err != nil {
+		s.writeSessionAuthorityError(w, r, err, accessTokenHash)
+		return service.SessionCacheEntry{}, false
+	}
+	refreshed, ttl, err := service.CacheEntryFromIdentity(identity, user, accessTokenHash, requestID, time.Now().UTC())
+	if err != nil {
+		_ = s.sessionStore.Delete(r.Context(), accessTokenHash)
+		s.writeUnauthorized(w, r, "invalid authentication")
+		return service.SessionCacheEntry{}, false
+	}
+	if err := s.sessionStore.Put(r.Context(), refreshed, ttl); err != nil {
+		s.writeDependencyError(w, r, "session cache is unavailable")
+		return service.SessionCacheEntry{}, false
+	}
+	return refreshed, true
+}
+
+func (s *Server) writeSessionAuthorityError(w http.ResponseWriter, r *http.Request, err error, accessTokenHash string) {
+	var remote *authclient.RemoteError
+	if errors.As(err, &remote) {
+		switch remote.Status {
+		case http.StatusBadRequest, http.StatusNotFound:
+			_ = s.sessionStore.Delete(r.Context(), accessTokenHash)
+			s.writeUnauthorized(w, r, "invalid authentication")
+			return
+		case http.StatusUnauthorized, http.StatusForbidden:
+			s.writeDependencyError(w, r, "auth service is unavailable")
+			return
+		}
+	}
+	s.writeAuthClientError(w, r, err)
+}
+
+func forwardingContextFromRequest(r *http.Request) authclient.ForwardingContext {
+	return authclient.ForwardingContext{
+		ForwardedFor:   clientIP(r),
+		ForwardedProto: gatewayForwardedProto(r),
+	}
 }
 
 func bearerToken(value string) (string, bool) {
