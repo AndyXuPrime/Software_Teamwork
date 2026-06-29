@@ -241,7 +241,7 @@ export function KnowledgeDocumentsPage({
 
   const user = useAuthStore((s) => s.user)
   const canUpload = canAccess(user, { any: ['document:upload', 'knowledge:write'] })
-  const canEditTags = canAccess(user, { any: ['knowledge:write', 'document:upload'] })
+  const canEditTags = canAccess(user, { any: ['knowledge:write'] })
   const canDelete = canAccess(user, { any: ['knowledge:write'] })
 
   // ── Fetch KB name ──

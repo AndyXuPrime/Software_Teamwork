@@ -57,6 +57,8 @@ interface FormData {
   apiKey: string
   timeoutMs: number
   maxTokens: number
+  dimension: number
+  topN: number
 }
 
 type NotificationState = {
@@ -75,11 +77,20 @@ const EMPTY_FORM: FormData = {
   apiKey: '',
   timeoutMs: 60000,
   maxTokens: 0,
+  dimension: 0,
+  topN: 0,
 }
 
 // ── Helpers ──
 
 function formToCreateRequest(form: FormData): CreateModelProfileRequest {
+  const defaultParams: Record<string, unknown> = { max_tokens: form.maxTokens }
+  if (form.purpose === 'embedding' && form.dimension > 0) {
+    defaultParams.dimension = form.dimension
+  }
+  if (form.purpose === 'rerank' && form.topN > 0) {
+    defaultParams.top_n = form.topN
+  }
   return {
     name: form.name,
     purpose: form.purpose,
@@ -88,7 +99,7 @@ function formToCreateRequest(form: FormData): CreateModelProfileRequest {
     model: form.model,
     apiKey: form.apiKey,
     timeoutMs: form.timeoutMs,
-    defaultParameters: { max_tokens: form.maxTokens },
+    defaultParameters: defaultParams,
     enabled: true,
     isDefault: false,
     supportsStreaming: false,
@@ -198,6 +209,8 @@ export function ModelProfilesPage() {
       apiKey: '',
       timeoutMs: profile.timeoutMs,
       maxTokens: (profile.defaultParameters?.max_tokens as number) ?? 0,
+      dimension: (profile.defaultParameters?.dimension as number) ?? 0,
+      topN: (profile.defaultParameters?.top_n as number) ?? 0,
     })
     setEditOpen(true)
   }, [])
