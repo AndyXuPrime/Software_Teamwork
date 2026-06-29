@@ -43,33 +43,31 @@
 | 文档列表和详情 | `services/knowledge/internal/http/server.go` | `services/knowledge/api/openapi.yaml` | `TestDocumentListAndDetailExcludeDeletedKnowledgeBase` | 只覆盖文档元数据/状态。 |
 | 文档上传 handoff | `services/knowledge/internal/platform/fileclient/client.go`、`internal/service/service.go` | `docs/services/knowledge/README.md`、`docs/services/file/README.md` | `TestUploadDocumentCreatesDocumentJobAndQueuesIngestion` | multipart 上传后调用 File `/internal/v1/files`，保存 `file_ref`，创建 processing job。 |
 | Parser configs 运行时管理 | `services/knowledge/internal/http/server.go`、`internal/service/parser_config.go`、`internal/repository/postgres.go` | `docs/services/gateway/api/openapi.yaml`、`docs/architecture/service-boundaries.md` | `cd services/knowledge && go test ./...`；repository integration CI | 支持 list/get/create/update/delete、默认 builtin seed、上传 parser snapshot、重复名称 conflict、空配置 fallback 和 MIME 匹配选择。 |
-| asynq 入队 | `services/knowledge/internal/platform/queue` | `docs/architecture/technology-decisions.md` | service tests with fake queue | 只投递 ingestion task；worker 未落地。 |
-| PostgreSQL migration/repository | `services/knowledge/migrations/0001_create_knowledge_core_tables.sql`、`0002_create_parser_configs.sql`、`internal/repository/postgres.go` | `docs/services/knowledge/docs/data-models.md` | `go test ./...`；CI 用 `KNOWLEDGE_TEST_DATABASE_URL` 跑 repository lifecycle integration test | runtime 使用 PostgreSQL。 |
+| asynq 入队 | `services/knowledge/internal/platform/queue` | `docs/architecture/technology-decisions.md` | service tests with fake queue | 投递 `knowledge:document:ingest`，retry 次数与 `processing_jobs.max_attempts` 默认值对齐。 |
+| 文档入库 worker | `services/knowledge/internal/worker`、`internal/service/ingestion.go` | `docs/services/knowledge/README.md` | worker/service tests | 消费 A10 payload，读取 File content，解析、切片、embedding、写 vector index 和 chunks，并推进 ready/failed 状态。 |
+| File content reader | `services/knowledge/internal/platform/fileclient/client.go` | `docs/services/file/README.md` | fileclient tests | 调用 `/internal/v1/files/{fileId}/content`，透传 request/user/service headers，失败脱敏为 dependency error。 |
+| Parser Service client / chunker | `services/knowledge/internal/platform/parser`、`internal/service/chunker.go` | `docs/services/knowledge/README.md`、`docs/services/parser/README.md` | parser/client、worker/service tests | Knowledge 调用独立 Parser Service 获取 parsed content，并在 Knowledge 内完成 chunking；PaddleOCR runtime 不在 Knowledge Go 进程内。 |
+| embedding / vector index | `services/knowledge/internal/platform/embedding`、`internal/platform/vector` | `docs/architecture/service-boundaries.md` | platform/worker tests | local hashing 默认；可选 AI Gateway embedding；Qdrant HTTP adapter 或 in-memory index。 |
+| PostgreSQL migration/repository | `services/knowledge/migrations/0001_create_knowledge_core_tables.sql`、`0002_create_parser_configs.sql`、`internal/repository/postgres.go` | `docs/services/knowledge/docs/data-models.md` | `go test ./...`；CI 用 `KNOWLEDGE_TEST_DATABASE_URL` 跑 repository lifecycle integration test | runtime 使用 PostgreSQL，保存文档、job、parser configs 和 chunks。 |
 
 ## 4. 未实现
 
 | 缺口 | 文档来源 | 影响范围 | 建议任务 |
 | --- | --- | --- | --- |
-| 文档处理 worker 未实现 | `docs/services/knowledge/README.md`、`docs/requirements-analysis/overall-requirements-analysis.md`、`docs/services/parser/README.md` | worker / DB / Redis / Parser | 实现 worker 调用 Parser Service 解析 raw bytes，再执行 chunking/embedding/indexing 状态流转；上传入队不能被写成入库闭环完成。 |
-| chunks API 未实现 | `docs/services/gateway/api/openapi.yaml` | API / frontend / QA | 实现 `GET /internal/v1/documents/{documentId}/chunks` 并开放 gateway route。 |
-| 原文 content API 未实现 | `docs/services/gateway/api/openapi.yaml` | API / file integration | 通过 file reference 读取原文件内容。 |
-| `knowledge-queries` 检索未实现 | `docs/services/gateway/api/openapi.yaml`、`docs/services/knowledge/api/public.openapi.yaml`、`docs/services/knowledge/docs/api-contract.md` 2.6 | API / QA / document | 可先用 seeded chunks、fake vector hits 和 fake AI Gateway adapter 实现契约；真实 Qdrant/embedding/rerank runtime 作为集成层补齐。 |
-| Qdrant adapter / embedding / rerank 未实现 | `docs/architecture/service-boundaries.md`、`docs/services/knowledge/docs/data-models.md` | vector store / AI provider | 接入 AI Gateway embeddings/rerank 和 Qdrant；AI Gateway endpoint 已有不等于 Knowledge RAG 可用。 |
-| Parser service runtime 未实现 | `docs/services/parser/README.md`、`docs/services/parser/api/internal.openapi.yaml` | parser / OCR / ingestion | Parser 已有内部契约；Python/PaddleOCR runtime、Docker image、部署 wiring 和 Knowledge HTTP client 仍需后续实现。 |
-| document PATCH/DELETE 未实现 | `docs/services/gateway/api/openapi.yaml` | API / frontend | 实现标签更新、删除和 file/index cleanup。 |
+| chunks HTTP API 未实现 | `docs/services/gateway/api/openapi.yaml` | API / frontend / QA | service/repository 已有 `ListChunks`，仍需实现 `GET /internal/v1/documents/{documentId}/chunks` 并开放 gateway route。 |
+| 原文 content API 未实现 | `docs/services/gateway/api/openapi.yaml` | API / file integration | 待确认：通过 file reference 读取原文件内容。 |
+| `knowledge-queries` 检索未实现 | `docs/services/gateway/api/openapi.yaml`、`docs/services/knowledge/api/public.openapi.yaml` | API / QA / document | 待确认：实现 retrieval response，接入 Qdrant 或阶段性检索 adapter。 |
+| rerank 未实现 | `docs/architecture/service-boundaries.md`、`docs/services/knowledge/docs/data-models.md` | retrieval / AI Gateway | embedding 和 vector 写入已落地；检索 rerank 仍需在 `knowledge-queries` 中接入。 |
+| document PATCH/DELETE 未实现 | `docs/services/gateway/api/openapi.yaml` | API / frontend | 待确认：实现标签更新、删除和 file/index cleanup。 |
 
 ## 5. 文档与实现出入
 
 | 出入点 | 文档要求 | 当前实现 | 风险 | 建议处理 |
 | --- | --- | --- | --- | --- |
 | Gateway active Knowledge paths | Gateway OpenAPI 将 Knowledge operations 设为 active | `services/gateway/internal/http/routes.go` 中 `PATCH/DELETE /documents`、chunks、content、knowledge-queries 仍标为 `NotImplemented`；parser-configs 已转为 Knowledge proxy | 未落地路径前端生成 client 后调用会得到 501 | 对剩余 owner service routes 补实现，或在契约/owner map 标注阶段性不可调用。 |
-| 旧实现说明提到 Qdrant/local hashing | 早期文档描述 Qdrant HTTP adapter 和 local hashing embedding | 当前 `services/knowledge/` 无 Qdrant/embedding platform 代码 | 文档高估实现成熟度 | 已在本文改为未实现；同步更新技术选型状态。 |
-| AI Gateway embedding/rerank 状态 | AI Gateway 已实现 embeddings/rerankings endpoint | Knowledge 尚未调用 AI Gateway，也没有 Qdrant adapter 或 ingestion worker 闭环 | 容易误读为 Knowledge RAG 已可用 | 维持 Knowledge 未闭环表述，并拆 Knowledge ingestion worker + Qdrant + embedding/rerank 接入任务。 |
+| AI Gateway rerank 状态 | AI Gateway 已实现 embeddings/rerankings endpoint，Knowledge 已接入 embedding | Knowledge 尚未在 `knowledge-queries` 检索链路中调用 rerank | 容易把向量写入误读为完整 RAG 检索可用 | 在 `knowledge-queries` 中实现检索和可选 rerank，并补跨服务 smoke。 |
 | 公开 Knowledge 草案范围 | `docs/services/knowledge/api/public.openapi.yaml` 覆盖 deletion jobs、processing jobs、query tests、support materials、settings、statistics | runtime 只实现 KB CRUD 和文档 upload/list/detail | 公开草案可能被误读为已落地 | 保留为设计草案，在 implementation 中明确缺口。 |
 | File handoff 边界 | Knowledge 拥有文档资源，File 只保存基础 file object | 当前已按 `/internal/v1/files` 保存 raw file，但 content/delete cleanup 未闭环 | 删除或内容读取时 file reference 可能残留 | 实现 document lifecycle cleanup。 |
-| asynq 任务状态权威 | PostgreSQL 为 job 状态权威，Redis 只排队 | 已创建 job 并投递任务，但无 worker 更新状态 | 文档状态可能长期停留在 uploaded | 补 worker 或阶段性标记为 pending implementation。 |
-| A-12/A-14 对 A-11 的误依赖 | `docs/api-contract.md` 2.6 定义稳定 chunk/vector fixture 交接面 | runtime worker 未完成，但契约测试可 seed 所需数据 | Project 依赖字段可能把可并行工作排成串行 | A-12/A-14 的单元、handler、contract 测试按 fixture/fake adapter 执行；端到端 smoke 另等 A-11。 |
-| Parser 边界 | 解析运行时应在 Parser Service，Knowledge 只消费 parsed content | 当前 Knowledge runtime 尚未接入 Parser；PR #226 提供了文档和实现草案但未合入当前分支 | 容易把 OCR 依赖放回 Knowledge Go 进程 | 保留 Parser HTTP 契约，后续实现不得在 Knowledge 中引入 PaddleOCR/PaddlePaddle/OpenCV/CUDA。 |
 
 ## 6. MVP / mock / memory backend / 占位
 
@@ -87,10 +85,10 @@
 | 项目 | 当前状态 | 缺口 |
 | --- | --- | --- |
 | 启动命令 | `cd services/knowledge && go run ./cmd/server` | 需要 PostgreSQL、File Service 和 Redis。 |
-| 环境变量 | `DATABASE_URL`、`FILE_SERVICE_BASE_URL`、`KNOWLEDGE_REDIS_ADDR` 必填；另有 HTTP/version/env/max upload/service token/shutdown | 缺 Qdrant、embedding/rerank、Parser Service runtime env。 |
+| 环境变量 | `DATABASE_URL`、`FILE_SERVICE_BASE_URL`、`PARSER_SERVICE_BASE_URL`、`KNOWLEDGE_REDIS_ADDR`、`KNOWLEDGE_SERVICE_TOKEN` 必填；另有 embedding、AI Gateway、Qdrant、HTTP/version/env/max upload/shutdown 配置 | 仍需按部署环境补真实依赖连通性检查。 |
 | PostgreSQL / migration | `migrations/0001_create_knowledge_core_tables.sql`、`0002_create_parser_configs.sql`，runtime `pgx/v5` | goose apply CI 已覆盖 migration；repository lifecycle 由 `KNOWLEDGE_TEST_DATABASE_URL` 集成测试覆盖。 |
-| Redis / queue | 使用 `asynq` client 投递 ingestion | worker 未实现。 |
-| Parser / object storage / vector store / AI provider | 通过 File Service 保存 raw file；Parser 契约已补 | Parser runtime、Qdrant adapter 尚未落地；Knowledge 尚未接入 Parser 或 AI Gateway embedding/rerank 调用。 |
+| Redis / queue | 使用 `asynq` client 投递 ingestion，worker 在同进程消费 `knowledge:document:ingest` | 后续可按部署形态拆分独立 worker 进程。 |
+| Parser / object storage / vector store / AI provider | 通过 File Service 保存和读取 raw file；通过 Parser Service 解析 raw bytes；Qdrant adapter 与 AI Gateway embedding adapter 已接入 | 仍需真实 File/Parser/Qdrant/AI Gateway 端到端联调。 |
 
 当 `EMBEDDING_PROVIDER=ai_gateway` 时，`EMBEDDING_MODEL` 必须匹配解析出的 AI Gateway embedding profile `model`。`AI_GATEWAY_EMBEDDING_PROFILE_ID` 可留空以使用 AI Gateway 默认启用的 embedding profile，但 provider 调用前仍会强制校验 model 匹配。
 
@@ -101,20 +99,16 @@
 | 单元测试 | `cd services/knowledge && go test ./...` | pass（A-13 PR 验证） | 主要使用 memory/fake 依赖，并覆盖 parser-configs 管理、fallback、conflict 和上传 snapshot。 |
 | Repository 集成测试 | `KNOWLEDGE_TEST_DATABASE_URL=... go test ./internal/repository -count=1` | CI 覆盖 repository lifecycle；无 env 时本地跳过 | 只覆盖 PostgreSQL repository，不覆盖 File/Redis/Qdrant。 |
 | 端到端上传联调 | PostgreSQL + File + Redis end-to-end upload | missing | 需要真实依赖联调。 |
-| A-12 检索契约测试 | seeded documents/chunks + fake vector/AI adapter | documented, not implemented | 不要求真实 A-11 worker；覆盖 topK/threshold/tags/rerank、空结果、不可见文档过滤。 |
-| A-14 active operation 契约测试 | gateway route matrix + Knowledge handler tests + fake dependencies | partial | 可先验证 OpenAPI schema、错误 envelope、request id 和 501 退出；Parser/File/Qdrant/AI Gateway 跨服务 smoke 另列。 |
-| Parser contract test | `docs/services/parser/api/internal.openapi.yaml` schema review + future HTTP tests | documented, not implemented | 需要 Parser runtime 实现后补 health/ready/parse/error/de-sensitization tests。 |
+| 契约测试 | gateway route matrix + Knowledge handler tests | partial | content、knowledge-queries、parser-configs 等 active path 仍需继续补齐或回写阶段状态。 |
 | 手工 smoke | 启动 PostgreSQL、File、Redis 后上传文档 | not run | 需要可复现脚本或 Compose。 |
 
 ## 9. 建议任务
 
 | 任务 | 类型 | 优先级 | 依据 | 说明 |
 | --- | --- | --- | --- | --- |
-| 实现 Knowledge 文档内容、删除和 chunks API | 新任务 | P0 | Gateway active contract | 解除 `/documents/**` 相关 501。 |
-| 实现 ingestion worker 与状态流转 | 新任务 | P0 | 上传后必须进入处理闭环 | 调用 Parser 解析 raw bytes，再处理 chunking/embedding/ready/failed。 |
-| 实现 Parser runtime | 新任务 | P0 | A-11 解析运行时边界 | 按 `docs/services/parser/api/internal.openapi.yaml` 落地 Python/PaddleOCR 服务、Docker image、service token、payload limit 和脱敏错误。 |
-| 实现 Qdrant + AI Gateway embedding/rerank 接入 | 新任务 | P0 | 文档/代码出入评审结论 | 上传入队 -> chunk/content -> embedding -> Qdrant -> retrieval/rerank 最小闭环。 |
-| 实现 knowledge-queries 检索 | 新任务 | P0 | QA/Document 依赖检索 | 先按 seeded chunk/vector fixture 返回 chunk/document/source/score，并可选 rerank 摘要；真实 worker/Qdrant/AI Gateway smoke 作为集成层。 |
+| 实现 Knowledge 文档内容、删除和 chunks HTTP API | 新任务 | P0 | Gateway active contract | service-local chunk 查询已具备，仍需解除 `/documents/**` 相关 501。 |
+| 实现 knowledge-queries 检索和可选 rerank | 新任务 | P0 | QA/Document 依赖检索 | 基于已落地 chunks/vector index 返回 chunk/document/source/score，并接入 AI Gateway rerank。 |
+| 补真实 File/Parser/Qdrant/AI Gateway 端到端 smoke | 新任务 | P0 | 当前 worker 主要由 fake/memory 依赖覆盖 | 覆盖上传、入队、worker 消费、Parser Service parse、document ready、chunks 可查、Qdrant points 存在。 |
 
 ## 10. 最近检查记录
 
@@ -124,3 +118,4 @@
 | 2026-06-30 | Codex | A-13 PR #249 | parser-configs 运行时管理已落地并合入：Knowledge 内部 API、Gateway proxy、默认 builtin seed、上传 snapshot、conflict 映射和前端管理入口均已覆盖。 |
 | 2026-06-30 | Codex | PR #226 docs extraction | 从 PR #226 单独抽出 Parser Runtime 文档和 OpenAPI 契约；当前分支只记录契约，未引入 Knowledge worker 实现代码。 |
 | 2026-06-29 | Codex goal | `eddf917` + working tree | Knowledge 已完成 KB CRUD 和文档上传 handoff；当时 parser config 与入库 worker、chunks、content、retrieval 均为关键缺口，其中 parser config 已由 A-13 补齐。 |
+| 2026-06-29 | Codex | A11 branch | Knowledge 已完成文档上传 handoff、入库 worker、Parser Service 解析调用、切片、embedding、vector 写入和 chunk 持久化；content、knowledge-queries、并发/外部副作用一致性加固和真实依赖联调仍是后续重点。 |
