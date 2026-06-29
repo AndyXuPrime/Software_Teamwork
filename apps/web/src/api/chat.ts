@@ -11,9 +11,9 @@
  *   error            heartbeat
  */
 
-import type { KnowledgeQueryRequest, KnowledgeQuerySummary, QASseEventType } from '@/lib/types'
+import type { KnowledgeQueryRequest, KnowledgeQuerySummary, QAMessage, QASseEvent, QASseEventType } from '@/lib/types'
 
-import { apiClient, gatewayRequest } from './client'
+import { apiClient, buildQuery, gatewayRequest } from './client'
 
 // ---------------------------------------------------------------------------
 // SSE handlers interface
@@ -231,6 +231,56 @@ export function streamChat(
     })
 
   return { abort: () => controller.abort() }
+}
+
+// ---------------------------------------------------------------------------
+// POST /qa-sessions/{sessionId}/messages  (non-streaming)
+// ---------------------------------------------------------------------------
+
+/**
+ * Send a chat message and receive a completed QAMessage response.
+ *
+ * Unlike `streamChat`, this does NOT set `Accept: text/event-stream`.
+ * The server returns a single JSON response containing the created QAMessage.
+ *
+ * @param sessionId  QA session id (path parameter)
+ * @param message    User message text (required body field)
+ * @returns The created QAMessage
+ */
+export async function sendMessage(
+  sessionId: string,
+  message: string,
+): Promise<QAMessage> {
+  return gatewayRequest<QAMessage>(
+    `/qa-sessions/${encodeURIComponent(sessionId)}/messages`,
+    {
+      method: 'POST',
+      body: { message },
+    },
+  )
+}
+
+// ---------------------------------------------------------------------------
+// GET /qa-sessions/{sessionId}/events?responseRunId=...
+// ---------------------------------------------------------------------------
+
+/**
+ * Replay short-lived persisted SSE events for reconnect recovery or debugging.
+ *
+ * Polls the server for events associated with a specific response run.
+ * Useful after a disconnect to recover missed streaming events.
+ *
+ * @param sessionId      QA session id (path parameter)
+ * @param responseRunId  The response run to replay events for (query parameter)
+ * @returns Array of QASseEvent objects
+ */
+export async function replayEvents(
+  sessionId: string,
+  responseRunId: string,
+): Promise<QASseEvent[]> {
+  return gatewayRequest<QASseEvent[]>(
+    `/qa-sessions/${encodeURIComponent(sessionId)}/events${buildQuery({ responseRunId })}`,
+  )
 }
 
 // ---------------------------------------------------------------------------

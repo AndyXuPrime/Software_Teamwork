@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { streamChat } from '@/api/chat'
+import { replayEvents, sendMessage as _sendMessageApi, streamChat } from '@/api/chat'
 import { ChatInput, ChatMessages, ChatSidebar } from '@/components/chat'
 import {
   useCreateSession,
@@ -95,6 +95,9 @@ export function ChatPage() {
 
   // ── SSE cleanup ref ──
   const abortRef = useRef<(() => void) | null>(null)
+
+  // ── Event replay: track current responseRunId for reconnect recovery ──
+  const responseRunIdRef = useRef<string | null>(null)
 
   // ══════════════════════════════════════════════════════════════════════════
   // Refresh recovery: sync server list into store
@@ -345,11 +348,13 @@ export function ChatPage() {
         {
           onMessageCreated(data) {
             if (!verifySeq(data.seq)) return
-            // Capture the real message id from the server
+            // Capture the real message id and responseRunId from the server
             const serverMsgId = data.messageId as string | undefined
             if (serverMsgId) {
               patchAssistant({ id: serverMsgId })
             }
+            const runId = data.responseRunId as string | undefined
+            if (runId) responseRunIdRef.current = runId
           },
           onAgentIterationStarted(data) {
             if (!verifySeq(data.seq)) return
@@ -437,9 +442,11 @@ export function ChatPage() {
               patchAssistant({ citations: [...cites] })
             }
           },
-          onAnswerCompleted() {
+          onAnswerCompleted(data) {
             setStreaming(false)
             abortRef.current = null
+            const runId = data.responseRunId as string | undefined
+            if (runId) responseRunIdRef.current = runId
             patchAssistant({
               content,
               thinking: [...steps],
@@ -461,6 +468,20 @@ export function ChatPage() {
                 status: 'failed',
               })
               abort()
+            } else {
+              // Non-fatal error: attempt event replay to recover missed events
+              console.warn(`[SSE] Non-fatal error: ${sseErr.code} - ${sseErr.message}`)
+              const runId = responseRunIdRef.current
+              if (runId) {
+                replayEvents(uid, runId)
+                  .then((events) => {
+                    console.warn(`[SSE] Replayed ${events.length} events for run ${runId}`)
+                    // Future: replay events into the conversation state
+                  })
+                  .catch((err) => {
+                    console.error('[SSE] Event replay failed:', err)
+                  })
+              }
             }
           },
           onAbort() {
