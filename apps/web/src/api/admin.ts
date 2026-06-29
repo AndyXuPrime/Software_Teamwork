@@ -235,9 +235,7 @@ export async function uploadDocument(
 
 /** GET /documents/{documentId} */
 export async function getDocument(documentId: string): Promise<DocumentSummary> {
-  return gatewayRequest<DocumentSummary>(
-    `/documents/${encodeURIComponent(documentId)}`,
-  )
+  return gatewayRequest<DocumentSummary>(`/documents/${encodeURIComponent(documentId)}`)
 }
 
 /** PATCH /documents/{documentId} */
@@ -245,18 +243,15 @@ export async function updateDocument(
   documentId: string,
   params: UpdateDocumentRequest,
 ): Promise<DocumentSummary> {
-  return gatewayRequest<DocumentSummary>(
-    `/documents/${encodeURIComponent(documentId)}`,
-    { method: 'PATCH', body: params },
-  )
+  return gatewayRequest<DocumentSummary>(`/documents/${encodeURIComponent(documentId)}`, {
+    method: 'PATCH',
+    body: params,
+  })
 }
 
 /** DELETE /documents/{documentId} */
 export async function deleteDocument(documentId: string): Promise<void> {
-  await gatewayRequest<void>(
-    `/documents/${encodeURIComponent(documentId)}`,
-    { method: 'DELETE' },
-  )
+  await gatewayRequest<void>(`/documents/${encodeURIComponent(documentId)}`, { method: 'DELETE' })
 }
 
 /** GET /documents/{documentId}/chunks?page=&pageSize= */
@@ -282,9 +277,7 @@ export async function listChunks(
 
 /** GET /documents/{documentId}/content — returns the original file as a Blob */
 export function getDocumentContent(documentId: string): Promise<Blob> {
-  return gatewayFileRequest(
-    `/documents/${encodeURIComponent(documentId)}/content`,
-  )
+  return gatewayFileRequest(`/documents/${encodeURIComponent(documentId)}/content`)
 }
 
 /** POST /knowledge-queries */

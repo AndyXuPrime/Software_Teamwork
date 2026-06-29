@@ -33,9 +33,7 @@ const menuItems: AdminNavigationItem[] = [
     key: 'system',
     label: '系统管理',
     requirement: { any: ['system:admin'] },
-    children: [
-      { key: 'styles', label: '样式管理', path: '/admin/styles' },
-    ],
+    children: [{ key: 'styles', label: '样式管理', path: '/admin/styles' }],
   },
   {
     key: 'reports',
@@ -64,10 +62,30 @@ const menuItems: AdminNavigationItem[] = [
       ],
     },
     children: [
-      { key: 'knowledge', label: '知识管理', path: '/admin/knowledge' },
-      { key: 'knowledge-documents', label: '文档管理', path: '/admin/knowledge/documents' },
-      { key: 'knowledge-search', label: '知识检索', path: '/admin/knowledge/search' },
-      { key: 'knowledge-config', label: '知识配置', path: '/admin/knowledge-config' },
+      {
+        key: 'knowledge',
+        label: '知识管理',
+        path: '/admin/knowledge',
+        requirement: { any: ['knowledge:write'] },
+      },
+      {
+        key: 'knowledge-documents',
+        label: '文档管理',
+        path: '/admin/knowledge/documents',
+        requirement: { any: ['knowledge:write', 'document:upload'] },
+      },
+      {
+        key: 'knowledge-search',
+        label: '知识检索',
+        path: '/admin/knowledge/search',
+        requirement: { any: ['knowledge:read'] },
+      },
+      {
+        key: 'knowledge-config',
+        label: '知识配置',
+        path: '/admin/knowledge-config',
+        requirement: { any: ['knowledge:read'] },
+      },
       { key: 'qa-settings', label: 'QA / LLM 配置', path: '/admin/qa-settings' },
       { key: 'qa-retrieval-test', label: 'QA 检索测试', path: '/admin/qa-retrieval-test' },
     ],

@@ -32,7 +32,9 @@ import {
   useUpdateDocument,
   useUploadDocument,
 } from '@/features/knowledge'
+import { canAccess } from '@/lib/permissions'
 import type { DocumentStatus, DocumentSummary } from '@/lib/types'
+import { useAuthStore } from '@/stores/auth-store'
 
 // ── Constants ──
 
@@ -193,7 +195,9 @@ export function KnowledgeDocumentsPage({
   const [activeKbId, setActiveKbId] = useState(initialKbId ?? '')
   const knowledgeBaseId = activeKbId
 
-  const [kbName, setKbName] = useState(initialKbId ? (KB_NAME_CACHE[initialKbId] ?? initialKbId) : '')
+  const [kbName, setKbName] = useState(
+    initialKbId ? (KB_NAME_CACHE[initialKbId] ?? initialKbId) : '',
+  )
   const [notification, setNotification] = useState<{
     type: 'success' | 'error'
     text: string
@@ -232,6 +236,13 @@ export function KnowledgeDocumentsPage({
 
   const isMutating =
     uploadMutation.isPending || updateMutation.isPending || deleteMutation.isPending
+
+  // ── Permissions ──
+
+  const user = useAuthStore((s) => s.user)
+  const canUpload = canAccess(user, { any: ['document:upload', 'knowledge:write'] })
+  const canEditTags = canAccess(user, { any: ['knowledge:write', 'document:upload'] })
+  const canDelete = canAccess(user, { any: ['knowledge:write'] })
 
   // ── Fetch KB name ──
 
@@ -407,7 +418,7 @@ export function KnowledgeDocumentsPage({
             </p>
           )}
         </div>
-        {knowledgeBaseId && (
+        {knowledgeBaseId && canUpload && (
           <Button onClick={() => setUploadOpen(true)}>
             <Upload aria-hidden="true" className="mr-1 size-4" />
             上传文档
@@ -419,9 +430,7 @@ export function KnowledgeDocumentsPage({
       {!knowledgeBaseId && (
         <div className="mb-6 rounded-lg border border-border bg-card p-6 text-center">
           <FileText aria-hidden="true" className="mx-auto mb-3 size-10 text-muted-foreground/40" />
-          <p className="mb-4 text-sm text-muted-foreground">
-            选择一个知识库以查看和管理其文档
-          </p>
+          <p className="mb-4 text-sm text-muted-foreground">选择一个知识库以查看和管理其文档</p>
           <select
             className="h-9 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             value=""
@@ -522,8 +531,13 @@ export function KnowledgeDocumentsPage({
                   ? '未找到匹配的文档，请调整筛选条件'
                   : '暂无文档，点击上传文档开始'}
               </p>
-              {!keyword && !statusFilter && (
-                <Button variant="outline" size="sm" className="mt-3" onClick={() => setUploadOpen(true)}>
+              {!keyword && !statusFilter && canUpload && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => setUploadOpen(true)}
+                >
                   <Upload aria-hidden="true" className="mr-1 size-3.5" />
                   上传文档
                 </Button>
@@ -563,10 +577,7 @@ export function KnowledgeDocumentsPage({
                   </thead>
                   <tbody className="divide-y divide-border">
                     {filteredItems.map((doc) => (
-                      <tr
-                        key={doc.id}
-                        className="transition-colors duration-150 hover:bg-muted/30"
-                      >
+                      <tr key={doc.id} className="transition-colors duration-150 hover:bg-muted/30">
                         <td className="max-w-40 truncate px-4 py-2.5 font-medium text-foreground">
                           <span title={doc.name}>{doc.name}</span>
                           {isProcessing(doc.status) && (
@@ -579,7 +590,7 @@ export function KnowledgeDocumentsPage({
                         <td className="hidden whitespace-nowrap px-4 py-2.5 text-muted-foreground sm:table-cell">
                           {fileIconForContentType(doc.contentType)
                             ? fileIconForContentType(doc.contentType)!.toUpperCase()
-                            : doc.contentType ?? '-'}
+                            : (doc.contentType ?? '-')}
                         </td>
                         <td className="hidden whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-muted-foreground md:table-cell">
                           {formatSize(doc.sizeBytes)}
@@ -589,7 +600,10 @@ export function KnowledgeDocumentsPage({
                             {STATUS_LABELS[doc.status] ?? doc.status}
                           </Badge>
                           {doc.status === 'failed' && doc.errorMessage && (
-                            <p className="mt-1 max-w-48 truncate text-xs text-destructive" title={doc.errorMessage}>
+                            <p
+                              className="mt-1 max-w-48 truncate text-xs text-destructive"
+                              title={doc.errorMessage}
+                            >
                               {doc.errorMessage}
                             </p>
                           )}
@@ -600,11 +614,7 @@ export function KnowledgeDocumentsPage({
                               <span className="text-muted-foreground">-</span>
                             ) : (
                               (doc.tags ?? []).map((tag) => (
-                                <Badge
-                                  key={tag}
-                                  variant="secondary"
-                                  className="text-xs"
-                                >
+                                <Badge key={tag} variant="secondary" className="text-xs">
                                   {tag}
                                 </Badge>
                               ))
@@ -629,15 +639,17 @@ export function KnowledgeDocumentsPage({
                               </Button>
                             )}
                             {/* Edit tags */}
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() => openEditTags(doc)}
-                              aria-label={`编辑 ${doc.name} 标签`}
-                              title="编辑标签"
-                            >
-                              <Edit aria-hidden="true" className="size-3.5" />
-                            </Button>
+                            {canEditTags && (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => openEditTags(doc)}
+                                aria-label={`编辑 ${doc.name} 标签`}
+                                title="编辑标签"
+                              >
+                                <Edit aria-hidden="true" className="size-3.5" />
+                              </Button>
+                            )}
                             {/* Download content */}
                             <Button
                               variant="ghost"
@@ -668,15 +680,17 @@ export function KnowledgeDocumentsPage({
                               <Download aria-hidden="true" className="size-3.5" />
                             </Button>
                             {/* Delete */}
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() => openDelete(doc)}
-                              aria-label={`删除 ${doc.name}`}
-                              className="text-destructive hover:text-destructive"
-                            >
-                              <Trash2 aria-hidden="true" className="size-3.5" />
-                            </Button>
+                            {canDelete && (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => openDelete(doc)}
+                                aria-label={`删除 ${doc.name}`}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 aria-hidden="true" className="size-3.5" />
+                              </Button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -767,13 +781,8 @@ export function KnowledgeDocumentsPage({
                 </div>
               ) : (
                 <>
-                  <Upload
-                    aria-hidden="true"
-                    className="mb-2 size-8 text-muted-foreground/50"
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    拖拽文件到此处，或点击选择文件
-                  </p>
+                  <Upload aria-hidden="true" className="mb-2 size-8 text-muted-foreground/50" />
+                  <p className="text-sm text-muted-foreground">拖拽文件到此处，或点击选择文件</p>
                   <p className="mt-1 text-xs text-muted-foreground/60">
                     PDF, DOCX, PPTX, XLSX, MD, TXT, 图片 (PNG, JPG, GIF, BMP, WebP)
                   </p>

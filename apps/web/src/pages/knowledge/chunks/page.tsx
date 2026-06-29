@@ -82,10 +82,7 @@ interface KnowledgeChunksPageProps {
   onNavigateBack?: () => void
 }
 
-export function KnowledgeChunksPage({
-  documentId,
-  onNavigateBack,
-}: KnowledgeChunksPageProps) {
+export function KnowledgeChunksPage({ documentId, onNavigateBack }: KnowledgeChunksPageProps) {
   // ── State ──
   const [page, setPage] = useState(1)
   const [docInfo, setDocInfo] = useState<DocumentSummary | null>(null)
@@ -95,11 +92,7 @@ export function KnowledgeChunksPage({
 
   // ── Query ──
 
-  const { data, isLoading, isError, error, refetch } = useChunks(
-    documentId,
-    page,
-    PAGE_SIZE,
-  )
+  const { data, isLoading, isError, error, refetch } = useChunks(documentId, page, PAGE_SIZE)
 
   // ── Fetch document info and KB name ──
 
@@ -165,18 +158,14 @@ export function KnowledgeChunksPage({
         )}
         {docInfo && !docLoading && (
           <div>
-            <h3 className="text-2xl font-semibold text-foreground">
-              文档分块 - {docInfo.name}
-            </h3>
+            <h3 className="text-2xl font-semibold text-foreground">文档分块 - {docInfo.name}</h3>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <Badge variant={STATUS_VARIANTS[docInfo.status] ?? 'secondary'}>
                 {STATUS_LABELS[docInfo.status] ?? docInfo.status}
               </Badge>
               <span>知识库: {kbName}</span>
               <span>|</span>
-              <span>
-                共 {docInfo.chunkCount} 个分块
-              </span>
+              <span>共 {docInfo.chunkCount} 个分块</span>
               {docInfo.contentType && (
                 <>
                   <span>|</span>

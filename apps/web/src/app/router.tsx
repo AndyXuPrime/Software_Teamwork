@@ -289,7 +289,8 @@ const adminKnowledgeDocumentsRoute = createRoute({
   beforeLoad: requireAuth(knowledgeAccess),
   component: AdminKnowledgeDocumentsPage,
   validateSearch: (search: Record<string, unknown>): AdminKnowledgeDocumentsSearch => ({
-    knowledgeBaseId: typeof search.knowledgeBaseId === 'string' ? search.knowledgeBaseId : undefined,
+    knowledgeBaseId:
+      typeof search.knowledgeBaseId === 'string' ? search.knowledgeBaseId : undefined,
   }),
 })
 
