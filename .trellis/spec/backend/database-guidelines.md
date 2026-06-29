@@ -10,14 +10,35 @@ Each backend service owns its persistence concerns. A service may use
 PostgreSQL, Redis, Qdrant, or MinIO only through service-local repository or
 platform packages. Handlers must not talk directly to infrastructure clients.
 
-Confirmed Go infrastructure stack:
+Confirmed Go infrastructure target stack:
 
 - PostgreSQL: `pgx` + `sqlc`.
-- Migrations: `goose`.
+- Migrations: `goose@v3.27.1`.
 - Redis cache/session access: `go-redis`.
-- Redis queues: `asynq`.
+- Redis queues: `asynq v0.26.0`.
 - Qdrant: a short-term hand-written HTTP client until usage justifies an official or generated client.
-- MinIO: official MinIO Go SDK.
+- Object storage: File Service owns an `ObjectStore` port. Production target is
+  MinIO or an equivalent persistent object-store adapter; the MinIO adapter is
+  not implemented yet.
+
+Current repository facts from `docs/architecture/technology-decisions.md`:
+
+- Auth currently uses `pgx/v4@v4.18.3`; Knowledge, QA, Document, and AI Gateway
+  use `pgx/v5@v5.7.6`. New services must not introduce a third pgx major
+  version. A separate decision should align existing services on one major
+  version.
+- Gateway directly uses `go-redis/v9@v9.21.0`; Knowledge indirectly uses
+  `go-redis/v9@v9.14.1` through asynq. Aligning Redis client versions is a
+  follow-up decision, not an implementation-PR side effect.
+- Knowledge and Document have fixed `asynq v0.26.0`; new asynchronous jobs
+  should reuse that version unless a documented decision upgrades it.
+- File Service runtime currently has memory/local object-store adapters.
+  PostgreSQL metadata repository files and migrations exist, but
+  `cmd/server` still uses a memory metadata repository until the runtime
+  integration lands.
+- Qdrant remains a Knowledge target; the runtime adapter and Knowledge
+  embedding/rerank retrieval loop are not implemented just because AI Gateway
+  exposes embedding and rerank endpoints.
 
 Do not introduce an ORM by default. If a service needs one, document the reason
 in that service README, update `docs/architecture/technology-decisions.md`,
@@ -253,9 +274,9 @@ Rules:
 
 ---
 
-## MinIO
+## Object Storage
 
-Use MinIO for object payloads:
+Use the File Service object-store boundary for object payloads:
 
 - uploaded source files,
 - extracted text artifacts if they are too large for PostgreSQL,
@@ -269,6 +290,10 @@ Rules:
 - Generate object keys server-side.
 - Never expose raw internal object keys as authorization decisions.
 - Prefer pre-signed URLs only after checking ownership and permission in the service.
+- `FILE_STORAGE_BACKEND=memory` is for tests and early local development only.
+  `local` is acceptable for durable local smoke tests. Production must use
+  MinIO or an equivalent persistent object-store adapter after that adapter
+  lands.
 
 ---
 

@@ -13,7 +13,8 @@
 ## API Types
 
 - Store generated clients/types under `apps/web/src/api/generated/`.
-- Generate gateway types from `docs/services/gateway/api/openapi.yaml`.
+- Generate gateway types from `docs/services/gateway/api/openapi.yaml` with
+  `openapi-typescript@7.13.0`.
 - Do not generate frontend clients from `docs/services/ai-gateway/api/openapi.yaml`
   or any internal `/internal/v1/**` service contract.
 - Do not manually edit generated files.
