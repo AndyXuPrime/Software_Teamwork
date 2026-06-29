@@ -183,17 +183,18 @@ func TestIngestionHandlerAtomicallyClaimsDuplicateDeliveries(t *testing.T) {
 	}()
 	select {
 	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("duplicate HandleIngestionPayload() error = %v, want ack", err)
-		}
+		requireAppError(t, err, service.CodeDependency)
 	case <-time.After(300 * time.Millisecond):
 		close(source.release)
-		t.Fatal("duplicate delivery was not acked before attempting source read")
+		t.Fatal("duplicate delivery blocked instead of returning retryable running state")
 	}
 
 	close(source.release)
 	if err := <-errCh; err != nil {
 		t.Fatalf("claimed HandleIngestionPayload() error = %v", err)
+	}
+	if err := handler.HandleIngestionPayload(context.Background(), payload); err != nil {
+		t.Fatalf("completed redelivery error = %v, want ack for succeeded job", err)
 	}
 	if reads := source.reads.Load(); reads != 1 {
 		t.Fatalf("source reads = %d, want 1", reads)
@@ -204,6 +205,46 @@ func TestIngestionHandlerAtomicallyClaimsDuplicateDeliveries(t *testing.T) {
 	}
 	if chunks.Page.Total != 1 || len(vectors.points) != 1 {
 		t.Fatalf("chunks = %+v, vectors = %+v", chunks, vectors.points)
+	}
+}
+
+func TestIngestionHandlerRetriesWhenFailureStateCannotPersist(t *testing.T) {
+	source := newSourceStore()
+	source.Put("file_empty", "", "text/plain")
+	baseRepo := repository.NewMemoryRepository()
+	seedKnowledgeBase(t, baseRepo)
+	repo := &markFailureRepository{
+		MemoryRepository: baseRepo,
+		err:              errors.New("temporary postgres outage"),
+	}
+	vectors := &recordingVectorIndex{}
+	svc := service.NewWithDependencies(
+		repo,
+		nil,
+		nil,
+		fixedClock(),
+		sequenceIDs(),
+		service.WithProcessingPipeline(source, parser.NewRouter(), parser.NewFixedChunker()),
+		service.WithVectorIndex(embedding.NewLocalHasher("local_hashing", "local_hashing", 16), vectors),
+	)
+	handler := worker.NewIngestionHandler(svc)
+	handoff := seedIngestionJob(t, baseRepo, "file_empty")
+
+	err := handler.HandleIngestionPayload(context.Background(), mustJSON(t, worker.IngestionPayload{
+		RequestID:       "req_worker",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	}))
+
+	requireAppError(t, err, service.CodeDependency)
+	job, getErr := svc.GetJob(context.Background(), actorContext(), handoff.jobID)
+	if getErr != nil {
+		t.Fatalf("GetJob() error = %v", getErr)
+	}
+	if job.Status != service.JobStatusRunning {
+		t.Fatalf("job status = %s, want running until failure state can be persisted", job.Status)
 	}
 }
 
@@ -424,6 +465,15 @@ func (s *blockingSourceStore) ReadSource(ctx context.Context, reqCtx service.Req
 type recordingVectorIndex struct {
 	mu     sync.Mutex
 	points []service.VectorPoint
+}
+
+type markFailureRepository struct {
+	*repository.MemoryRepository
+	err error
+}
+
+func (r *markFailureRepository) MarkDocumentJobFailed(ctx context.Context, documentID string, jobID string, code string, message string, failedAt time.Time) error {
+	return r.err
 }
 
 func (i *recordingVectorIndex) Upsert(ctx context.Context, points []service.VectorPoint) error {

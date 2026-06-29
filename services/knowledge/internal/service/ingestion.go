@@ -40,8 +40,11 @@ func (s *Service) ProcessIngestionTask(ctx context.Context, reqCtx RequestContex
 	if job.Status == JobStatusFailed && hasExhaustedJobAttempts(job) {
 		return job, ConflictError("job has reached max attempts", nil)
 	}
+	if job.Status == JobStatusRunning {
+		return job, DependencyError("job is already running", nil)
+	}
 	if job.Status != JobStatusQueued && job.Status != JobStatusFailed {
-		return ProcessingJob{}, ConflictError("job is not ready to run", nil)
+		return job, ConflictError("job is not ready to run", nil)
 	}
 
 	doc, err := s.repo.GetDocument(ctx, normalized.DocumentID, scope)
@@ -67,30 +70,40 @@ func (s *Service) ProcessIngestionTask(ctx context.Context, reqCtx RequestContex
 	})
 	if err != nil {
 		if errors.Is(err, ErrConflict) {
-			return job, ConflictError("job is not ready to run", err)
+			latest, latestErr := s.repo.GetProcessingJob(ctx, job.ID)
+			if latestErr != nil {
+				return job, DependencyError("job state update failed", latestErr)
+			}
+			if latest.Status == JobStatusRunning {
+				return latest, DependencyError("job is already running", err)
+			}
+			if latest.Status == JobStatusFailed && hasExhaustedJobAttempts(latest) {
+				return latest, ConflictError("job has reached max attempts", err)
+			}
+			return latest, ConflictError("job is not ready to run", err)
 		}
 		return ProcessingJob{}, DependencyError("job state update failed", err)
 	}
 	if s.source == nil || s.parser == nil || s.chunker == nil {
-		failed := s.failProcessing(ctx, job, normalized.DocumentID, string(CodeDependency), "processing pipeline is not configured")
-		return failed, DependencyError("processing pipeline is not configured", nil)
+		return s.failProcessingAndReturn(ctx, job, normalized.DocumentID, string(CodeDependency), "processing pipeline is not configured",
+			DependencyError("processing pipeline is not configured", nil))
 	}
 	if doc.FileRef == nil || strings.TrimSpace(*doc.FileRef) == "" {
-		failed := s.failProcessing(ctx, job, doc.ID, string(CodeDependency), "document source is not configured")
-		return failed, DependencyError("document source is not configured", nil)
+		return s.failProcessingAndReturn(ctx, job, doc.ID, string(CodeDependency), "document source is not configured",
+			DependencyError("document source is not configured", nil))
 	}
 	if _, err := s.repo.UpdateDocumentProcessingState(ctx, doc.ID, DocumentStateUpdate{
 		Status:    DocumentStatusParsing,
 		UpdatedAt: startedAt,
 	}); err != nil {
-		failed := s.failProcessing(ctx, job, doc.ID, string(CodeDependency), "document state update failed")
-		return failed, DependencyError("document state update failed", err)
+		return s.failProcessingAndReturn(ctx, job, doc.ID, string(CodeDependency), "document state update failed",
+			DependencyError("document state update failed", err))
 	}
 
 	source, err := s.source.ReadSource(ctx, reqCtx, strings.TrimSpace(*doc.FileRef))
 	if err != nil {
-		failed := s.failProcessing(ctx, job, doc.ID, string(CodeDependency), "source content read failed")
-		return failed, DependencyError("source content read failed", err)
+		return s.failProcessingAndReturn(ctx, job, doc.ID, string(CodeDependency), "source content read failed",
+			DependencyError("source content read failed", err))
 	}
 	defer source.Body.Close()
 
@@ -112,11 +125,11 @@ func (s *Service) ProcessIngestionTask(ctx context.Context, reqCtx RequestContex
 		if appErr, ok := Classify(err); ok && appErr.Code == CodeDependency {
 			code = string(CodeDependency)
 		}
-		failed := s.failProcessing(ctx, job, doc.ID, code, message)
 		if code == string(CodeDependency) {
-			return failed, DependencyError(message, err)
+			return s.failProcessingAndReturn(ctx, job, doc.ID, code, message, DependencyError(message, err))
 		}
-		return failed, ValidationError(message, map[string]string{"file": "could not be parsed"})
+		return s.failProcessingAndReturn(ctx, job, doc.ID, code, message,
+			ValidationError(message, map[string]string{"file": "could not be parsed"}))
 	}
 
 	chunkingAt := s.now()
@@ -128,15 +141,15 @@ func (s *Service) ProcessIngestionTask(ctx context.Context, reqCtx RequestContex
 		UpdatedAt:       chunkingAt,
 	})
 	if err != nil {
-		failed := s.failProcessing(ctx, job, doc.ID, string(CodeDependency), "job state update failed")
-		return failed, DependencyError("job state update failed", err)
+		return s.failProcessingAndReturn(ctx, job, doc.ID, string(CodeDependency), "job state update failed",
+			DependencyError("job state update failed", err))
 	}
 	if _, err := s.repo.UpdateDocumentProcessingState(ctx, doc.ID, DocumentStateUpdate{
 		Status:    DocumentStatusChunking,
 		UpdatedAt: chunkingAt,
 	}); err != nil {
-		failed := s.failProcessing(ctx, job, doc.ID, string(CodeDependency), "document state update failed")
-		return failed, DependencyError("document state update failed", err)
+		return s.failProcessingAndReturn(ctx, job, doc.ID, string(CodeDependency), "document state update failed",
+			DependencyError("document state update failed", err))
 	}
 
 	chunkSpecs, err := s.chunker.Chunk(ctx, ChunkInput{
@@ -144,8 +157,8 @@ func (s *Service) ProcessIngestionTask(ctx context.Context, reqCtx RequestContex
 		Strategy: kb.ChunkStrategy,
 	})
 	if err != nil {
-		failed := s.failProcessing(ctx, job, doc.ID, "chunk_failed", "document chunking failed")
-		return failed, ValidationError("document chunking failed", map[string]string{"content": "could not be chunked"})
+		return s.failProcessingAndReturn(ctx, job, doc.ID, "chunk_failed", "document chunking failed",
+			ValidationError("document chunking failed", map[string]string{"content": "could not be chunked"}))
 	}
 	chunks := make([]DocumentChunk, 0, len(chunkSpecs))
 	for index, spec := range chunkSpecs {
@@ -175,19 +188,20 @@ func (s *Service) ProcessIngestionTask(ctx context.Context, reqCtx RequestContex
 			UpdatedAt:       embeddingAt,
 		})
 		if err != nil {
-			failed := s.failProcessing(ctx, job, doc.ID, string(CodeDependency), "job state update failed")
-			return failed, DependencyError("job state update failed", err)
+			return s.failProcessingAndReturn(ctx, job, doc.ID, string(CodeDependency), "job state update failed",
+				DependencyError("job state update failed", err))
 		}
 		if _, err := s.repo.UpdateDocumentProcessingState(ctx, doc.ID, DocumentStateUpdate{
 			Status:    DocumentStatusEmbedding,
 			UpdatedAt: embeddingAt,
 		}); err != nil {
-			failed := s.failProcessing(ctx, job, doc.ID, string(CodeDependency), "document state update failed")
-			return failed, DependencyError("document state update failed", err)
+			return s.failProcessingAndReturn(ctx, job, doc.ID, string(CodeDependency), "document state update failed",
+				DependencyError("document state update failed", err))
 		}
 		if err := s.embedAndIndex(ctx, reqCtx, doc, chunks); err != nil {
-			failed := s.failProcessing(ctx, job, doc.ID, classifyProcessingDependencyCode(err), sanitizeProcessingFailureMessage(err))
-			return failed, DependencyError(sanitizeProcessingFailureMessage(err), err)
+			message := sanitizeProcessingFailureMessage(err)
+			return s.failProcessingAndReturn(ctx, job, doc.ID, classifyProcessingDependencyCode(err), message,
+				DependencyError(message, err))
 		}
 	}
 
@@ -203,8 +217,8 @@ func (s *Service) ProcessIngestionTask(ctx context.Context, reqCtx RequestContex
 		if s.vectorIndex != nil {
 			_ = s.vectorIndex.DeleteByDocument(ctx, doc.ID)
 		}
-		failed := s.failProcessing(ctx, job, doc.ID, string(CodeDependency), "ingestion completion failed")
-		return failed, DependencyError("ingestion completion failed", err)
+		return s.failProcessingAndReturn(ctx, job, doc.ID, string(CodeDependency), "ingestion completion failed",
+			DependencyError("ingestion completion failed", err))
 	}
 	return completed, nil
 }
@@ -320,14 +334,24 @@ func (s *Service) embedAndIndex(ctx context.Context, reqCtx RequestContext, doc 
 	return s.vectorIndex.Upsert(ctx, points)
 }
 
-func (s *Service) failProcessing(ctx context.Context, job ProcessingJob, documentID string, code string, message string) ProcessingJob {
+func (s *Service) failProcessingAndReturn(ctx context.Context, job ProcessingJob, documentID string, code string, message string, processingErr error) (ProcessingJob, error) {
+	failed, err := s.failProcessing(ctx, job, documentID, code, message)
+	if err != nil {
+		return failed, err
+	}
+	return failed, processingErr
+}
+
+func (s *Service) failProcessing(ctx context.Context, job ProcessingJob, documentID string, code string, message string) (ProcessingJob, error) {
 	now := s.now()
-	_ = s.repo.MarkDocumentJobFailed(ctx, documentID, job.ID, code, message, now)
+	if err := s.repo.MarkDocumentJobFailed(ctx, documentID, job.ID, code, message, now); err != nil {
+		return job, DependencyError("failed to persist ingestion failure state", err)
+	}
 	failed, err := s.repo.GetProcessingJob(ctx, job.ID)
 	if err != nil {
-		return job
+		return job, DependencyError("failed to reload ingestion failure state", err)
 	}
-	return failed
+	return failed, nil
 }
 
 func normalizeIngestionTask(task DocumentIngestionTask) (DocumentIngestionTask, error) {

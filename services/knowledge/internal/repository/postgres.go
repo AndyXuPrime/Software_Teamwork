@@ -469,13 +469,14 @@ func (r *PostgresRepository) MarkDocumentJobFailed(ctx context.Context, document
 	}()
 
 	qtx := r.queries.WithTx(tx)
-	docRows, err := qtx.MarkDocumentFailed(ctx, sqlc.MarkDocumentFailedParams{
+	// A document can be soft-deleted while a worker is running. The processing job
+	// must still reach a terminal state so later redeliveries do not get stuck.
+	if _, err := qtx.MarkDocumentFailed(ctx, sqlc.MarkDocumentFailedParams{
 		ID:           documentID,
 		ErrorCode:    code,
 		ErrorMessage: message,
 		UpdatedAt:    pgTime(failedAt),
-	})
-	if err != nil {
+	}); err != nil {
 		return wrapPostgresError("mark document failed", err)
 	}
 	jobRows, err := qtx.MarkProcessingJobFailed(ctx, sqlc.MarkProcessingJobFailedParams{
@@ -487,7 +488,7 @@ func (r *PostgresRepository) MarkDocumentJobFailed(ctx context.Context, document
 	if err != nil {
 		return wrapPostgresError("mark processing job failed", err)
 	}
-	if docRows == 0 || jobRows == 0 {
+	if jobRows == 0 {
 		return service.ErrNotFound
 	}
 	if err := tx.Commit(ctx); err != nil {

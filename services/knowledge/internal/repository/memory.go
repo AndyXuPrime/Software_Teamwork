@@ -418,19 +418,21 @@ func (r *MemoryRepository) MarkDocumentJobFailed(ctx context.Context, documentID
 
 	doc, docExists := r.documents[documentID]
 	job, jobExists := r.jobs[jobID]
-	if !docExists || !jobExists {
+	if !jobExists {
 		return service.ErrNotFound
 	}
-	doc.Status = service.DocumentStatusFailed
-	doc.ErrorCode = cloneStringPtr(&code)
-	doc.ErrorMessage = cloneStringPtr(&message)
-	doc.UpdatedAt = failedAt
+	if docExists && doc.DeletedAt == nil {
+		doc.Status = service.DocumentStatusFailed
+		doc.ErrorCode = cloneStringPtr(&code)
+		doc.ErrorMessage = cloneStringPtr(&message)
+		doc.UpdatedAt = failedAt
+		r.documents[documentID] = doc
+	}
 	job.Status = service.JobStatusFailed
 	job.ErrorCode = cloneStringPtr(&code)
 	job.ErrorMessage = cloneStringPtr(&message)
 	job.FinishedAt = &failedAt
 	job.UpdatedAt = failedAt
-	r.documents[documentID] = doc
 	r.jobs[jobID] = job
 	return nil
 }

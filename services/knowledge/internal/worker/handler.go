@@ -110,7 +110,7 @@ func (h *IngestionHandler) jobReachedMaxAttempts(ctx context.Context, reqCtx ser
 	if err != nil {
 		return false
 	}
-	return job.MaxAttempts > 0 && job.Attempts >= job.MaxAttempts
+	return job.Status == service.JobStatusFailed && job.MaxAttempts > 0 && job.Attempts >= job.MaxAttempts
 }
 
 func DecodeIngestionPayload(payload []byte) (IngestionPayload, error) {
