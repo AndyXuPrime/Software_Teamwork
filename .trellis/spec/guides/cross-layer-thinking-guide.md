@@ -19,7 +19,8 @@ Common cross-layer bugs:
 
 ### Step 0: Load Project Contract Sources
 
-For this repository, `docs/` is the contract source of truth. Before changing a
+For this repository, `docs/` is the contract source of truth, with the hierarchy
+defined in `docs/collaboration/documentation-workflow.md`. Before changing a
 gateway route, frontend API client, service interface, model invocation flow, or
 cross-service ownership rule, read the relevant source document:
 
@@ -30,6 +31,19 @@ cross-service ownership rule, read the relevant source document:
 - Internal service APIs: `docs/services/<service>/api/openapi.yaml` or
   `docs/services/<service>/api/*.openapi.yaml`
 - Service-specific behavior: `docs/services/<service>/README.md`
+- Current implementation facts and docs/code divergence:
+  `docs/services/<service>/docs/implementation.md`
+
+Apply the documented mismatch rule:
+
+- Confirmed contracts win over implementation drift; default to fixing code.
+- `develop` code is the current fact baseline; open PRs and unmerged issues are
+  pending, not implemented.
+- `implementation.md` records service current-state facts, temporary scaffolds,
+  memory/mock backends, and known divergence.
+- Contract semantic changes require management/team decision before an
+  implementation PR rewrites OpenAPI, service boundaries, data models, or
+  confirmed requirement semantics.
 
 If Trellis specs disagree with these documents, follow `docs/` and update the
 Trellis spec before or alongside implementation.

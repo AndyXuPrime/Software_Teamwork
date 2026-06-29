@@ -35,7 +35,7 @@ Use this stack unless a task has an explicit reason to diverge:
 | Drag sorting | dnd-kit | Report outline and block ordering. |
 | Charts | Recharts | 30-day trends and dashboard metrics. |
 | Icons | lucide-react | Menus, actions, and status indicators. |
-| API types | OpenAPI + openapi-typescript or Orval | Generated API client/types from backend contracts. |
+| API types | OpenAPI + `openapi-typescript@7.13.0` | Generated API client/types from the public Gateway contract. |
 | Tests | Vitest + React Testing Library + Playwright | Unit, component, and critical workflow E2E tests. |
 | Formatting | ESLint + Prettier + Husky + lint-staged | Team consistency and pre-commit checks. |
 
@@ -57,7 +57,7 @@ Read these files before frontend implementation:
 The frontend spec was merged from two sources:
 
 - `upstream/develop` already had a frontend spec structure and repository collaboration rules. Those files established that frontend guidance belongs under `.trellis/spec/frontend/` and that repository-level branch/PR policy belongs in `CONTRIBUTING.md`.
-- L1ngg's previous frontend work filled the placeholders with concrete implementation decisions for `apps/web`: Vite, React, TypeScript, TanStack Router/Query, Zustand, Tailwind, shadcn/Radix, Bun commands, and the AI management product modules.
+- L1ngg's previous frontend work filled the placeholders with concrete implementation decisions for `apps/web`: Vite, React, TypeScript, TanStack Router/Query, Zustand, Tailwind, shadcn/Radix, Bun commands, `openapi-typescript@7.13.0`, and the AI management product modules.
 
 The merged result keeps the `develop` ownership model: `CONTRIBUTING.md` remains the source of truth for branch, PR, commit, and merge policy. The frontend spec only defines how to implement and verify frontend code under `apps/web/`.
 
@@ -89,6 +89,8 @@ Frontend and backend should converge early on:
 - Type generation source: `docs/services/gateway/api/openapi.yaml` only.
   `docs/services/ai-gateway/api/openapi.yaml` is an internal backend contract
   and must not generate browser clients.
+- Type generation command: `bun run --cwd apps/web api:generate`; it writes
+  `apps/web/src/api/generated/gateway.ts`.
 - Pagination shape: list payloads return `data` as the item array plus a
   `page` object containing `page`, `pageSize`, and `total`.
 - Success envelope: `{ data, requestId }`; paginated envelope:
