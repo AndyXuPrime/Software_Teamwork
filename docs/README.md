@@ -33,6 +33,7 @@
 | [Document 数据模型文档](services/document/docs/data-models.md) | 报告生成逻辑数据模型、实体关系、字段约定和存储约束。 |
 | [前后端集成契约](architecture/frontend-backend-contract.md) | 前端调用 gateway 的入口、认证、请求/响应、错误、分页、SSE 和 mock 约定。 |
 | [Gateway OpenAPI 契约](services/gateway/api/openapi.yaml) | 当前稳定的 gateway 公开 API 机器可读契约。 |
+| [Gateway Active API Owner Map](services/gateway/docs/active-api-owner-map.md) | 从 Gateway OpenAPI 审计得到的 active API 清单、owner service、tag、operationId 和认证要求。 |
 | [AI Gateway OpenAPI 契约](services/ai-gateway/api/openapi.yaml) | AI Gateway 内部服务机器可读契约；前端不得直接调用。 |
 
 ## 协作与维护

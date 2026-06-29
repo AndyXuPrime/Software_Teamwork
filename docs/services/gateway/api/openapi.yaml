@@ -5506,7 +5506,7 @@ components:
         requestId:
           type: string
 x-missing-contracts:
-- service: admin
+- service: gateway
   status: missing
   reason: Administration overview and metrics aggregation contract is not finalized yet. Runtime model/parser configuration is an active gateway contract.
   placeholderOperations:
