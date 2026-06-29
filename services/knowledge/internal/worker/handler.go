@@ -1,0 +1,108 @@
+package worker
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"strings"
+
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
+)
+
+const IngestionTaskType = "knowledge:ingestion:process"
+
+type IngestionPayload struct {
+	RequestID string `json:"requestId"`
+	JobID     string `json:"jobId"`
+	UserID    string `json:"userId"`
+}
+
+type IngestionHandler struct {
+	knowledge *service.KnowledgeService
+	logger    *slog.Logger
+}
+
+type IngestionHandlerOption func(*IngestionHandler)
+
+func NewIngestionHandler(knowledge *service.KnowledgeService, opts ...IngestionHandlerOption) *IngestionHandler {
+	h := &IngestionHandler{
+		knowledge: knowledge,
+		logger:    slog.Default(),
+	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
+}
+
+func WithLogger(logger *slog.Logger) IngestionHandlerOption {
+	return func(h *IngestionHandler) {
+		if logger != nil {
+			h.logger = logger
+		}
+	}
+}
+
+func (h *IngestionHandler) HandleIngestionPayload(ctx context.Context, payload []byte) error {
+	parsed, err := DecodeIngestionPayload(payload)
+	if err != nil {
+		return err
+	}
+	if h.knowledge == nil {
+		return service.DependencyError("knowledge service is not configured", nil)
+	}
+	reqCtx := service.RequestContext{
+		RequestID: parsed.RequestID,
+		UserID:    parsed.UserID,
+	}
+	_, err = h.knowledge.ProcessIngestionJob(ctx, reqCtx, parsed.JobID)
+	if err != nil && h.logger != nil {
+		code := "unknown"
+		if appErr, ok := service.Classify(err); ok {
+			code = string(appErr.Code)
+		}
+		// Keep worker logs to identifiers and normalized error codes only.
+		h.logger.WarnContext(ctx, "knowledge ingestion job failed",
+			"service", "knowledge",
+			"request_id", parsed.RequestID,
+			"user_id", parsed.UserID,
+			"job_id", parsed.JobID,
+			"operation", "knowledge_ingestion_worker",
+			"status", "failed",
+			"error_code", code,
+		)
+	}
+	return err
+}
+
+func DecodeIngestionPayload(payload []byte) (IngestionPayload, error) {
+	var parsed IngestionPayload
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&parsed); err != nil {
+		return IngestionPayload{}, service.ValidationError("worker payload validation failed", map[string]string{"body": "must be a valid ingestion payload"})
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return IngestionPayload{}, service.ValidationError("worker payload validation failed", map[string]string{"body": "must contain only one JSON object"})
+	}
+	parsed.RequestID = strings.TrimSpace(parsed.RequestID)
+	parsed.JobID = strings.TrimSpace(parsed.JobID)
+	parsed.UserID = strings.TrimSpace(parsed.UserID)
+
+	fields := map[string]string{}
+	if parsed.RequestID == "" {
+		fields["requestId"] = "is required"
+	}
+	if parsed.JobID == "" {
+		fields["jobId"] = "is required"
+	}
+	if parsed.UserID == "" {
+		fields["userId"] = "is required"
+	}
+	if len(fields) > 0 {
+		return IngestionPayload{}, service.ValidationError("worker payload validation failed", fields)
+	}
+	return parsed, nil
+}
