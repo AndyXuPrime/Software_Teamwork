@@ -836,3 +836,107 @@ gateway receives Authorization: Bearer token
 gateway hashes token and reads gateway:session:<accessTokenHash>
 gateway injects cached user, roles, and permissions into downstream headers
 ```
+
+## Scenario: Auth Service Source-of-Truth API
+
+### 1. Scope / Trigger
+
+- Trigger: changing user creation, session creation, token hashing, RBAC source
+  reads, session revocation, security events, or auth-owned migrations.
+- Applies to `services/auth/internal/service`, `services/auth/internal/http`,
+  `services/auth/internal/repository`, `services/auth/migrations`,
+  `services/auth/api/openapi.yaml`, and `docs/services/auth/api/openapi.yaml`.
+
+### 2. Signatures
+
+- Internal routes:
+  - `POST /internal/v1/users`
+  - `POST /internal/v1/sessions`
+  - `GET /internal/v1/users/{userId}`
+  - `GET /internal/v1/users/{userId}/permissions`
+  - `GET /internal/v1/sessions/{sessionId}`
+  - `DELETE /internal/v1/sessions/{sessionId}`
+- Required caller context: `X-Service-Token` and `X-Caller-Service`; propagate
+  `X-Request-Id` when present.
+- Environment keys:
+  - `AUTH_DATABASE_URL`
+  - `AUTH_INTERNAL_SERVICE_TOKEN` required when `AUTH_DATABASE_URL` is set
+  - `AUTH_TOKEN_HASH_SECRET` required when `AUTH_DATABASE_URL` is set
+  - `AUTH_TOKEN_HASH_KEY_VERSION`, default `v1`
+  - `AUTH_SESSION_TTL`, default `24h`
+  - `AUTH_DEFAULT_ROLE_CODE`, default `standard`
+- Database source tables include `auth_users`, `auth_credentials`,
+  `auth_roles`, `auth_permissions`, `user_roles`, `role_permissions`,
+  `auth_sessions`, `session_revocations`, and `auth_security_events`.
+
+### 3. Contracts
+
+- `POST /internal/v1/users` creates a user, password credential, default role
+  assignment, session, and security events, then returns
+  `{ data: { user, session }, requestId }`.
+- `POST /internal/v1/sessions` validates username/password without account
+  enumeration and returns the same session response shape.
+- Passwords are stored as `argon2id-v1` PHC strings with `m=65536`, `t=3`,
+  `p=2`, `salt=16`, and `key=32`.
+- Access tokens are opaque bearer tokens. Auth persists only
+  `hmac-sha256:<keyVersion>:<hex>` token hashes.
+- Raw access tokens may appear only in create-user/create-session success
+  responses. Session read responses must not include raw tokens and should not
+  include token hashes unless a reviewed internal diagnostics contract requires
+  it.
+- Default role/permission seed data must include `standard`, `admin`, and
+  `super_admin` system roles.
+- Security events must cover user creation, session creation failure, session
+  creation success, default role assignment, and session revocation.
+
+### 4. Validation & Error Matrix
+
+| Condition | Response/error |
+| --- | --- |
+| Missing or blank username/password | `400 validation_error` |
+| Missing or invalid service token | `401 unauthorized` |
+| Missing internal caller context | `401 unauthorized` |
+| Unknown username or wrong password | `401 unauthorized` with the same message |
+| Disabled, locked, or otherwise unavailable user | `401 unauthorized` |
+| Duplicate username | `409 conflict` |
+| Missing user/session source record | `404 not_found` for internal reads/deletes |
+| Missing database or token hash secret at runtime | `502 dependency_error` |
+| Repository or migration-dependent write fails | `502 dependency_error` |
+
+### 5. Good/Base/Bad Cases
+
+- Good: handler decodes JSON and maps path values; service validates
+  credentials and generates password/token material; repository writes SQL
+  records and maps rows back to domain structs; response exposes only safe DTOs.
+- Base: gateway calls auth once for user/session creation, stores the returned
+  session identity in Redis, and later uses auth source reads only for cache
+  repair or revocation workflows.
+- Bad: handler hashes passwords directly, stores raw access tokens, returns
+  `accessTokenHash` to public callers, or logs raw credentials/token material.
+
+### 6. Tests Required
+
+- Service tests for duplicate username, wrong password, token hash generation,
+  session creation, security-event recording, and revoked token lookup failure.
+- HTTP tests for success envelopes, request id propagation, validation errors,
+  missing caller context, and no token/hash leakage from session read responses.
+- Repository tests for explicit-column queries, user roles/permissions mapping,
+  revocation mapping, and security event writes where database tooling exists.
+- Config tests for `AUTH_TOKEN_HASH_SECRET` requirements and TTL/key-version
+  parsing.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+POST /internal/v1/sessions -> handler verifies password -> DB stores accessToken
+GET /internal/v1/sessions/{id} -> returns accessTokenHash to gateway/frontend
+```
+
+#### Correct
+
+```text
+POST /internal/v1/sessions -> service verifies argon2id password -> DB stores hmac token hash
+GET /internal/v1/sessions/{id} -> returns session identity without raw token/hash
+```

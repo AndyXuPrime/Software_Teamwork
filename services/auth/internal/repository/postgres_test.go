@@ -173,6 +173,10 @@ func (q *fakeQueries) RevokeSession(_ context.Context, arg sqlc.RevokeSessionPar
 	return session, nil
 }
 
+func (q *fakeQueries) CreateSecurityEvent(context.Context, sqlc.CreateSecurityEventParams) error {
+	return nil
+}
+
 func (q *fakeQueries) user() sqlc.AuthUser {
 	return sqlc.AuthUser{
 		ID:          "usr_123",

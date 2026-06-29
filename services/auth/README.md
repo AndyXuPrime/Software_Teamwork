@@ -12,18 +12,29 @@ Implemented now:
 - Independent Go module.
 - `GET /healthz`
 - `GET /readyz`
+- `POST /internal/v1/users`
+- `POST /internal/v1/sessions`
+- `GET /internal/v1/users/{userId}`
+- `GET /internal/v1/users/{userId}/permissions`
+- `GET /internal/v1/sessions/{sessionId}`
+- `DELETE /internal/v1/sessions/{sessionId}`
 - Validated runtime configuration.
 - PostgreSQL migration for auth users, credentials, roles, permissions, user
   roles, role permissions, sessions, revocations, and security events.
+- Seed migration for `standard`, `admin`, and `super_admin` roles plus baseline
+  permission strings.
 - Service-local `sqlc.yaml` plus explicit-column query files.
-- `pgx` repository adapter for basic user, credential, session, role, and
-  permission lookups.
-- Repository, config, and HTTP tests.
+- `pgx` repository adapter for user, credential, session, role, permission,
+  revocation, and security-event persistence.
+- Argon2id password hashes and opaque bearer access-token issuance with
+  versioned HMAC token hashes.
+- Repository, service, config, and HTTP tests.
 
 Out of scope for this baseline:
 
-- Registration, login, logout, password hashing, token generation, and gateway
-  Redis session caching.
+- Gateway public `/api/v1/**` route implementation and Redis session caching.
+- User, role, and permission management endpoints beyond default role assignment
+  and source reads needed by gateway.
 - Public `/api/v1/**` routes.
 
 ## Local Run
@@ -54,10 +65,16 @@ readiness still reflects durable store availability.
 | `AUTH_SERVICE_VERSION` | `0.1.0` | Service version returned by health checks. |
 | `AUTH_ENV` | `local` | Runtime environment label. |
 | `AUTH_DATABASE_URL` | unset | PostgreSQL connection string. Required for readiness. |
+| `AUTH_INTERNAL_SERVICE_TOKEN` | unset | Shared service-to-service token expected in `X-Service-Token`. Required when `AUTH_DATABASE_URL` is set. |
+| `AUTH_TOKEN_HASH_SECRET` | unset | HMAC secret for access-token hashes. Required when `AUTH_DATABASE_URL` is set. |
+| `AUTH_TOKEN_HASH_KEY_VERSION` | `v1` | Version label embedded in token hash values. |
+| `AUTH_SESSION_TTL` | `24h` | Access-token session lifetime. Accepts Go duration strings or seconds. |
+| `AUTH_DEFAULT_ROLE_CODE` | `standard` | Role assigned to newly created users. |
 | `AUTH_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown timeout. |
 | `AUTH_READINESS_TIMEOUT` | `2s` | PostgreSQL readiness check timeout. |
 
-Do not log `AUTH_DATABASE_URL` because it may contain credentials.
+Do not log `AUTH_DATABASE_URL`, `AUTH_INTERNAL_SERVICE_TOKEN`, or
+`AUTH_TOKEN_HASH_SECRET` because they may contain credentials.
 
 ## Migration
 

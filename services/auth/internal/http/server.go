@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"log/slog"
 	"net/http"
@@ -23,15 +24,28 @@ type ReadinessChecker interface {
 	Check(ctx context.Context) error
 }
 
+type AuthService interface {
+	CreateUser(ctx context.Context, reqCtx service.RequestContext, input service.CreateUserInput) (service.SessionResponse, error)
+	CreateSession(ctx context.Context, reqCtx service.RequestContext, input service.CreateSessionInput) (service.SessionResponse, error)
+	GetUser(ctx context.Context, reqCtx service.RequestContext, userID string) (service.UserRecord, error)
+	GetUserPermissions(ctx context.Context, reqCtx service.RequestContext, userID string) (service.UserPermissions, error)
+	GetSession(ctx context.Context, reqCtx service.RequestContext, sessionID string) (service.SessionIdentity, error)
+	RevokeSession(ctx context.Context, reqCtx service.RequestContext, sessionID string, reason string) error
+}
+
 type Config struct {
 	ServiceVersion   string
 	Environment      string
 	ReadinessTimeout time.Duration
 	ReadinessChecker ReadinessChecker
+	Auth             AuthService
+	ServiceToken     string
 	Logger           *slog.Logger
 }
 
 type Server struct {
+	auth             AuthService
+	serviceToken     string
 	serviceVersion   string
 	environment      string
 	readinessTimeout time.Duration
@@ -55,6 +69,8 @@ func NewServer(cfg Config) *Server {
 	}
 
 	s := &Server{
+		auth:             cfg.Auth,
+		serviceToken:     strings.TrimSpace(cfg.ServiceToken),
 		serviceVersion:   cfg.ServiceVersion,
 		environment:      cfg.Environment,
 		readinessTimeout: cfg.ReadinessTimeout,
@@ -69,6 +85,12 @@ func NewServer(cfg Config) *Server {
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("GET /readyz", s.handleReady)
+	s.mux.HandleFunc("POST /internal/v1/users", s.handleCreateUser)
+	s.mux.HandleFunc("GET /internal/v1/users/{userId}", s.handleGetUser)
+	s.mux.HandleFunc("GET /internal/v1/users/{userId}/permissions", s.handleGetUserPermissions)
+	s.mux.HandleFunc("POST /internal/v1/sessions", s.handleCreateSession)
+	s.mux.HandleFunc("GET /internal/v1/sessions/{sessionId}", s.handleGetSession)
+	s.mux.HandleFunc("DELETE /internal/v1/sessions/{sessionId}", s.handleDeleteSession)
 	s.mux.HandleFunc("/", s.handleNotFound)
 }
 
@@ -81,6 +103,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := contextWithRequestID(r.Context(), requestID)
 	r = r.WithContext(ctx)
 	w.Header().Set("X-Request-Id", requestID)
+
+	if strings.HasPrefix(r.URL.Path, "/internal/v1/") && s.serviceToken != "" && !secureTokenEqual(r.Header.Get("X-Service-Token"), s.serviceToken) {
+		writeAppError(w, r, service.NewError(service.CodeUnauthorized, "service authentication required", nil))
+		return
+	}
 
 	recorder := &statusRecorder{ResponseWriter: w}
 	start := time.Now()
@@ -146,6 +173,15 @@ func newRequestID() string {
 		return "req_" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	}
 	return "req_" + hex.EncodeToString(bytes)
+}
+
+func secureTokenEqual(left string, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if len(left) != len(right) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }
 
 type healthResponse struct {

@@ -13,6 +13,70 @@ import (
 	"github.com/jackc/pgtype"
 )
 
+const assignRoleByCode = `-- name: AssignRoleByCode :one
+INSERT INTO user_roles (
+    id,
+    user_id,
+    role_id,
+    assigned_by,
+    assigned_at,
+    expires_at,
+    created_at
+)
+SELECT
+    $1,
+    $2,
+    r.id,
+    $4,
+    $5,
+    NULL,
+    $6
+FROM auth_roles r
+WHERE r.code = $3
+    AND r.enabled = TRUE
+ON CONFLICT (user_id, role_id) DO UPDATE
+SET assigned_by = EXCLUDED.assigned_by
+RETURNING
+    id,
+    user_id,
+    role_id,
+    assigned_by,
+    assigned_at,
+    expires_at,
+    created_at
+`
+
+type AssignRoleByCodeParams struct {
+	ID         string         `db:"id" json:"id"`
+	UserID     string         `db:"user_id" json:"user_id"`
+	Code       string         `db:"code" json:"code"`
+	AssignedBy sql.NullString `db:"assigned_by" json:"assigned_by"`
+	AssignedAt time.Time      `db:"assigned_at" json:"assigned_at"`
+	CreatedAt  time.Time      `db:"created_at" json:"created_at"`
+}
+
+func (q *Queries) AssignRoleByCode(ctx context.Context, arg AssignRoleByCodeParams) (UserRole, error) {
+	row := q.db.QueryRow(ctx, assignRoleByCode,
+		arg.ID,
+		arg.UserID,
+		arg.Code,
+		arg.AssignedBy,
+		arg.AssignedAt,
+		arg.CreatedAt,
+	)
+	var i UserRole
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RoleID,
+		&i.AssignedBy,
+		&i.AssignedAt,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createCredential = `-- name: CreateCredential :one
 INSERT INTO auth_credentials (
     id,
@@ -91,6 +155,60 @@ func (q *Queries) CreateCredential(ctx context.Context, arg CreateCredentialPara
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const createSecurityEvent = `-- name: CreateSecurityEvent :exec
+INSERT INTO auth_security_events (
+    id,
+    event_type,
+    user_id,
+    session_id,
+    username_snapshot,
+    request_id,
+    client_ip,
+    user_agent,
+    caller_service,
+    status,
+    reason_code,
+    metadata_json,
+    created_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13)
+`
+
+type CreateSecurityEventParams struct {
+	ID               string         `db:"id" json:"id"`
+	EventType        string         `db:"event_type" json:"event_type"`
+	UserID           sql.NullString `db:"user_id" json:"user_id"`
+	SessionID        sql.NullString `db:"session_id" json:"session_id"`
+	UsernameSnapshot sql.NullString `db:"username_snapshot" json:"username_snapshot"`
+	RequestID        sql.NullString `db:"request_id" json:"request_id"`
+	ClientIp         sql.NullString `db:"client_ip" json:"client_ip"`
+	UserAgent        sql.NullString `db:"user_agent" json:"user_agent"`
+	CallerService    sql.NullString `db:"caller_service" json:"caller_service"`
+	Status           string         `db:"status" json:"status"`
+	ReasonCode       sql.NullString `db:"reason_code" json:"reason_code"`
+	Column12         pgtype.JSONB   `db:"column_12" json:"column_12"`
+	CreatedAt        time.Time      `db:"created_at" json:"created_at"`
+}
+
+func (q *Queries) CreateSecurityEvent(ctx context.Context, arg CreateSecurityEventParams) error {
+	_, err := q.db.Exec(ctx, createSecurityEvent,
+		arg.ID,
+		arg.EventType,
+		arg.UserID,
+		arg.SessionID,
+		arg.UsernameSnapshot,
+		arg.RequestID,
+		arg.ClientIp,
+		arg.UserAgent,
+		arg.CallerService,
+		arg.Status,
+		arg.ReasonCode,
+		arg.Column12,
+		arg.CreatedAt,
+	)
+	return err
 }
 
 const createSession = `-- name: CreateSession :one
@@ -188,6 +306,43 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (A
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const createSessionRevocation = `-- name: CreateSessionRevocation :exec
+INSERT INTO session_revocations (
+    id,
+    session_id,
+    user_id,
+    reason,
+    revoked_by,
+    request_id,
+    revoked_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (session_id) DO NOTHING
+`
+
+type CreateSessionRevocationParams struct {
+	ID        string         `db:"id" json:"id"`
+	SessionID string         `db:"session_id" json:"session_id"`
+	UserID    string         `db:"user_id" json:"user_id"`
+	Reason    string         `db:"reason" json:"reason"`
+	RevokedBy sql.NullString `db:"revoked_by" json:"revoked_by"`
+	RequestID sql.NullString `db:"request_id" json:"request_id"`
+	RevokedAt time.Time      `db:"revoked_at" json:"revoked_at"`
+}
+
+func (q *Queries) CreateSessionRevocation(ctx context.Context, arg CreateSessionRevocationParams) error {
+	_, err := q.db.Exec(ctx, createSessionRevocation,
+		arg.ID,
+		arg.SessionID,
+		arg.UserID,
+		arg.Reason,
+		arg.RevokedBy,
+		arg.RequestID,
+		arg.RevokedAt,
+	)
+	return err
 }
 
 const createUser = `-- name: CreateUser :one
@@ -619,4 +774,22 @@ func (q *Queries) RevokeSession(ctx context.Context, arg RevokeSessionParams) (A
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateUserLastLoginAt = `-- name: UpdateUserLastLoginAt :exec
+UPDATE auth_users
+SET last_login_at = $2,
+    updated_at = $2
+WHERE id = $1
+    AND deleted_at IS NULL
+`
+
+type UpdateUserLastLoginAtParams struct {
+	ID          string       `db:"id" json:"id"`
+	LastLoginAt sql.NullTime `db:"last_login_at" json:"last_login_at"`
+}
+
+func (q *Queries) UpdateUserLastLoginAt(ctx context.Context, arg UpdateUserLastLoginAtParams) error {
+	_, err := q.db.Exec(ctx, updateUserLastLoginAt, arg.ID, arg.LastLoginAt)
+	return err
 }

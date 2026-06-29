@@ -32,6 +32,7 @@ type userQueries interface {
 	ListPermissionCodesByUserID(ctx context.Context, userID string) ([]string, error)
 	CreateSession(ctx context.Context, arg sqlc.CreateSessionParams) (sqlc.AuthSession, error)
 	RevokeSession(ctx context.Context, arg sqlc.RevokeSessionParams) (sqlc.AuthSession, error)
+	CreateSecurityEvent(ctx context.Context, arg sqlc.CreateSecurityEventParams) error
 }
 
 type PostgresRepository struct {
@@ -157,14 +158,31 @@ func (r *PostgresRepository) CreateUserWithCredential(ctx context.Context, param
 		return service.UserRecord{}, fmt.Errorf("create credential: %w", err)
 	}
 
+	if params.DefaultRoleCode != "" {
+		if _, err := q.AssignRoleByCode(ctx, sqlc.AssignRoleByCodeParams{
+			ID:         params.RoleAssignmentID,
+			UserID:     user.ID,
+			Code:       params.DefaultRoleCode,
+			AssignedBy: nullableString(&params.AssignedBy),
+			AssignedAt: now,
+			CreatedAt:  now,
+		}); err != nil {
+			return service.UserRecord{}, classifyNoRows("assign default role", err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return service.UserRecord{}, fmt.Errorf("commit create user transaction: %w", err)
 	}
 
-	return service.UserRecord{User: mapUser(user), Roles: []string{}, Permissions: []string{}}, nil
+	return r.FindUserByID(ctx, user.ID)
 }
 
 func (r *PostgresRepository) CreateSession(ctx context.Context, params service.CreateSessionParams) (service.SessionIdentity, error) {
+	if r.db != nil {
+		return r.createSessionTx(ctx, params)
+	}
+
 	issuedAt := params.IssuedAt
 	if issuedAt.IsZero() {
 		issuedAt = time.Now().UTC()
@@ -192,7 +210,55 @@ func (r *PostgresRepository) CreateSession(ctx context.Context, params service.C
 	return r.sessionIdentity(ctx, mapSession(session))
 }
 
+func (r *PostgresRepository) createSessionTx(ctx context.Context, params service.CreateSessionParams) (service.SessionIdentity, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return service.SessionIdentity{}, fmt.Errorf("begin create session transaction: %w", err)
+	}
+	defer rollback(ctx, tx)
+
+	q := sqlc.New(tx)
+	issuedAt := params.IssuedAt
+	if issuedAt.IsZero() {
+		issuedAt = time.Now().UTC()
+	}
+	session, err := q.CreateSession(ctx, sqlc.CreateSessionParams{
+		ID:                        params.ID,
+		UserID:                    params.UserID,
+		AccessTokenHash:           params.AccessTokenHash,
+		AccessTokenHashAlg:        params.AccessTokenHashAlg,
+		AccessTokenHashKeyVersion: params.AccessTokenHashKeyVersion,
+		IssuedAt:                  issuedAt,
+		ExpiresAt:                 params.ExpiresAt,
+		ClientIp:                  nullableString(params.ClientIP),
+		UserAgent:                 nullableString(params.UserAgent),
+		CreatedRequestID:          nullableString(params.RequestID),
+		CreatedAt:                 issuedAt,
+		UpdatedAt:                 issuedAt,
+	})
+	if err != nil {
+		if isUniqueViolation(err) {
+			return service.SessionIdentity{}, service.ErrConflict
+		}
+		return service.SessionIdentity{}, fmt.Errorf("create session: %w", err)
+	}
+	if err := q.UpdateUserLastLoginAt(ctx, sqlc.UpdateUserLastLoginAtParams{
+		ID:          params.UserID,
+		LastLoginAt: sql.NullTime{Time: issuedAt, Valid: true},
+	}); err != nil {
+		return service.SessionIdentity{}, fmt.Errorf("update user last login: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return service.SessionIdentity{}, fmt.Errorf("commit create session transaction: %w", err)
+	}
+	return r.sessionIdentity(ctx, mapSession(session))
+}
+
 func (r *PostgresRepository) RevokeSession(ctx context.Context, params service.RevokeSessionParams) (service.Session, error) {
+	if r.db != nil {
+		return r.revokeSessionTx(ctx, params)
+	}
+
 	revokedAt := params.RevokedAt
 	if revokedAt.IsZero() {
 		revokedAt = time.Now().UTC()
@@ -207,6 +273,76 @@ func (r *PostgresRepository) RevokeSession(ctx context.Context, params service.R
 		return service.Session{}, classifyNoRows("revoke session", err)
 	}
 	return mapSession(session), nil
+}
+
+func (r *PostgresRepository) revokeSessionTx(ctx context.Context, params service.RevokeSessionParams) (service.Session, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return service.Session{}, fmt.Errorf("begin revoke session transaction: %w", err)
+	}
+	defer rollback(ctx, tx)
+
+	q := sqlc.New(tx)
+	revokedAt := params.RevokedAt
+	if revokedAt.IsZero() {
+		revokedAt = time.Now().UTC()
+	}
+	session, err := q.RevokeSession(ctx, sqlc.RevokeSessionParams{
+		ID:               params.SessionID,
+		RevokedAt:        sql.NullTime{Time: revokedAt, Valid: true},
+		RevokeReason:     sql.NullString{String: params.Reason, Valid: params.Reason != ""},
+		RevokedRequestID: nullableString(params.RequestID),
+	})
+	if err != nil {
+		return service.Session{}, classifyNoRows("revoke session", err)
+	}
+	if err := q.CreateSessionRevocation(ctx, sqlc.CreateSessionRevocationParams{
+		ID:        "rev_" + session.ID,
+		SessionID: session.ID,
+		UserID:    session.UserID,
+		Reason:    params.Reason,
+		RevokedBy: sql.NullString{String: session.UserID, Valid: session.UserID != ""},
+		RequestID: nullableString(params.RequestID),
+		RevokedAt: revokedAt,
+	}); err != nil {
+		return service.Session{}, fmt.Errorf("create session revocation: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return service.Session{}, fmt.Errorf("commit revoke session transaction: %w", err)
+	}
+	return mapSession(session), nil
+}
+
+func (r *PostgresRepository) RecordSecurityEvent(ctx context.Context, params service.SecurityEventParams) error {
+	createdAt := params.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
+	metadata := params.MetadataJSON
+	if metadata == "" {
+		metadata = "{}"
+	}
+	if err := r.queries.CreateSecurityEvent(ctx, sqlc.CreateSecurityEventParams{
+		ID:               params.ID,
+		EventType:        params.EventType,
+		UserID:           nullableString(params.UserID),
+		SessionID:        nullableString(params.SessionID),
+		UsernameSnapshot: nullableString(params.UsernameSnapshot),
+		RequestID:        nullableString(params.RequestID),
+		ClientIp:         nullableString(params.ClientIP),
+		UserAgent:        nullableString(params.UserAgent),
+		CallerService:    nullableString(params.CallerService),
+		Status:           params.Status,
+		ReasonCode:       nullableString(params.ReasonCode),
+		Column12:         jsonbFromString(metadata),
+		CreatedAt:        createdAt,
+	}); err != nil {
+		if isUniqueViolation(err) {
+			return service.ErrConflict
+		}
+		return fmt.Errorf("create security event: %w", err)
+	}
+	return nil
 }
 
 func (r *PostgresRepository) userRecord(ctx context.Context, user service.User) (service.UserRecord, error) {

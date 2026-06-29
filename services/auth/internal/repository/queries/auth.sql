@@ -186,6 +186,38 @@ RETURNING
     created_at,
     updated_at;
 
+-- name: AssignRoleByCode :one
+INSERT INTO user_roles (
+    id,
+    user_id,
+    role_id,
+    assigned_by,
+    assigned_at,
+    expires_at,
+    created_at
+)
+SELECT
+    $1,
+    $2,
+    r.id,
+    $4,
+    $5,
+    NULL,
+    $6
+FROM auth_roles r
+WHERE r.code = $3
+    AND r.enabled = TRUE
+ON CONFLICT (user_id, role_id) DO UPDATE
+SET assigned_by = EXCLUDED.assigned_by
+RETURNING
+    id,
+    user_id,
+    role_id,
+    assigned_by,
+    assigned_at,
+    expires_at,
+    created_at;
+
 -- name: CreateSession :one
 INSERT INTO auth_sessions (
     id,
@@ -228,6 +260,13 @@ RETURNING
     created_at,
     updated_at;
 
+-- name: UpdateUserLastLoginAt :exec
+UPDATE auth_users
+SET last_login_at = $2,
+    updated_at = $2
+WHERE id = $1
+    AND deleted_at IS NULL;
+
 -- name: RevokeSession :one
 UPDATE auth_sessions
 SET status = 'revoked',
@@ -256,3 +295,34 @@ RETURNING
     revoked_request_id,
     created_at,
     updated_at;
+
+-- name: CreateSessionRevocation :exec
+INSERT INTO session_revocations (
+    id,
+    session_id,
+    user_id,
+    reason,
+    revoked_by,
+    request_id,
+    revoked_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (session_id) DO NOTHING;
+
+-- name: CreateSecurityEvent :exec
+INSERT INTO auth_security_events (
+    id,
+    event_type,
+    user_id,
+    session_id,
+    username_snapshot,
+    request_id,
+    client_ip,
+    user_agent,
+    caller_service,
+    status,
+    reason_code,
+    metadata_json,
+    created_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13);

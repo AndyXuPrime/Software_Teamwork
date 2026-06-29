@@ -16,7 +16,32 @@ const (
 
 	CredentialTypePassword = "password"
 	TokenTypeBearer        = "Bearer"
+
+	PasswordHashAlg           = "argon2id"
+	PasswordHashParamsVersion = "argon2id-v1"
+	TokenHashAlg              = "hmac-sha256"
+	TokenHashKeyVersionV1     = "v1"
+
+	DefaultRoleCode = "standard"
+
+	SecurityEventUserCreated         = "user.created"
+	SecurityEventSessionCreated      = "session.created"
+	SecurityEventSessionCreateFailed = "session.create_failed"
+	SecurityEventSessionRevoked      = "session.revoked"
+	SecurityEventRoleAssigned        = "role.assigned"
+
+	SecurityEventStatusSuccess = "success"
+	SecurityEventStatusFailed  = "failed"
 )
+
+type RequestContext struct {
+	RequestID      string
+	CallerService  string
+	ClientIP       string
+	UserAgent      string
+	ForwardedFor   string
+	ForwardedProto string
+}
 
 type User struct {
 	ID          string
@@ -95,6 +120,28 @@ type UserPermissions struct {
 	UpdatedAt   time.Time
 }
 
+type SessionSummary struct {
+	SessionID   string
+	AccessToken string
+	TokenType   string
+	ExpiresAt   time.Time
+}
+
+type SessionResponse struct {
+	User    UserSummary
+	Session SessionSummary
+}
+
+type CreateUserInput struct {
+	Username string
+	Password string
+}
+
+type CreateSessionInput struct {
+	Username string
+	Password string
+}
+
 type CreateUserParams struct {
 	ID                        string
 	Username                  string
@@ -108,6 +155,9 @@ type CreateUserParams struct {
 	PasswordHashAlg           string
 	PasswordHashParamsVersion string
 	PasswordHashParamsJSON    string
+	DefaultRoleCode           string
+	RoleAssignmentID          string
+	AssignedBy                string
 }
 
 type CreateSessionParams struct {
@@ -130,6 +180,22 @@ type RevokeSessionParams struct {
 	RevokedAt time.Time
 }
 
+type SecurityEventParams struct {
+	ID               string
+	EventType        string
+	UserID           *string
+	SessionID        *string
+	UsernameSnapshot *string
+	RequestID        *string
+	ClientIP         *string
+	UserAgent        *string
+	CallerService    *string
+	Status           string
+	ReasonCode       *string
+	MetadataJSON     string
+	CreatedAt        time.Time
+}
+
 type Repository interface {
 	FindUserByID(ctx context.Context, id string) (UserRecord, error)
 	FindUserByUsername(ctx context.Context, username string) (UserRecord, error)
@@ -139,4 +205,5 @@ type Repository interface {
 	CreateUserWithCredential(ctx context.Context, params CreateUserParams) (UserRecord, error)
 	CreateSession(ctx context.Context, params CreateSessionParams) (SessionIdentity, error)
 	RevokeSession(ctx context.Context, params RevokeSessionParams) (Session, error)
+	RecordSecurityEvent(ctx context.Context, params SecurityEventParams) error
 }

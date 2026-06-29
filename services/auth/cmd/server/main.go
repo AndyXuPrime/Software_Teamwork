@@ -14,6 +14,7 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/auth/internal/config"
 	authhttp "github.com/Sakayori-Iroha-168/Software_Teamwork/services/auth/internal/http"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/auth/internal/repository"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/auth/internal/service"
 )
 
 func main() {
@@ -30,6 +31,7 @@ func main() {
 
 	var pool *pgxpool.Pool
 	var readinessChecker authhttp.ReadinessChecker
+	var authService authhttp.AuthService
 	if cfg.DatabaseURL != "" {
 		pool, err = pgxpool.Connect(ctx, cfg.DatabaseURL)
 		if err != nil {
@@ -38,6 +40,13 @@ func main() {
 		}
 		defer pool.Close()
 		readinessChecker = repository.NewReadinessChecker(pool)
+		authRepo := repository.NewPostgresRepositoryFromPool(pool)
+		authService = service.New(authRepo,
+			service.WithTokenHashSecret([]byte(cfg.TokenHashSecret)),
+			service.WithTokenHashKeyVersion(cfg.TokenKeyVersion),
+			service.WithSessionTTL(cfg.SessionTTL),
+			service.WithDefaultRoleCode(cfg.DefaultRoleCode),
+		)
 	}
 
 	handler := authhttp.NewServer(authhttp.Config{
@@ -45,6 +54,8 @@ func main() {
 		Environment:      cfg.Environment,
 		ReadinessTimeout: cfg.ReadinessTimeout,
 		ReadinessChecker: readinessChecker,
+		Auth:             authService,
+		ServiceToken:     cfg.ServiceToken,
 		Logger:           logger,
 	})
 
