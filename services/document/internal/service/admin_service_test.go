@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -120,6 +121,37 @@ func TestUpdateReportSettingsPreservesProfileWhenProfileIDIsOmitted(t *testing.T
 	}
 }
 
+func TestUpdateReportSettingsPreservesFileStyleProfileWhenOmitted(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeAdminRepository()
+	repo.settings.File = ReportSettingsFileDefaults{
+		DefaultFormat:         DefaultReportSettingsFormat,
+		DefaultNumberingMode:  DefaultReportNumberingMode,
+		DefaultStyleProfileID: "style-current",
+	}
+	svc := NewAdminService(repo, nil)
+
+	updated, err := svc.UpdateReportSettings(ctx, RequestContext{UserID: "admin-1", Roles: []string{"admin"}}, UpdateReportSettingsInput{
+		File: &ReportSettingsFileDefaults{DefaultNumberingMode: ReportNumberingModeByChapter},
+	})
+	if err != nil {
+		t.Fatalf("UpdateReportSettings() error = %v", err)
+	}
+	if updated.File.DefaultStyleProfileID != "style-current" {
+		t.Fatalf("DefaultStyleProfileID = %q, want preserved style-current", updated.File.DefaultStyleProfileID)
+	}
+
+	cleared, err := svc.UpdateReportSettings(ctx, RequestContext{UserID: "admin-1", Roles: []string{"admin"}}, UpdateReportSettingsInput{
+		File: &ReportSettingsFileDefaults{DefaultStyleProfileIDSet: true},
+	})
+	if err != nil {
+		t.Fatalf("UpdateReportSettings(clear style profile) error = %v", err)
+	}
+	if cleared.File.DefaultStyleProfileID != "" {
+		t.Fatalf("cleared DefaultStyleProfileID = %q, want empty", cleared.File.DefaultStyleProfileID)
+	}
+}
+
 func TestListOperationLogsHonorsFiltersAndSanitizesSummary(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeAdminRepository()
@@ -182,6 +214,44 @@ func TestListOperationLogsHonorsFiltersAndSanitizesSummary(t *testing.T) {
 	}
 }
 
+func TestListOperationLogsSanitizesSensitiveStringValues(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeAdminRepository()
+	rawReason := "retry because prompt=secret https://minio.local/bucket/object?X-Amz-Signature=abc"
+	repo.logs = []OperationLog{{
+		ID:              "log-sensitive",
+		OperationType:   OperationRetryReportJob,
+		TargetType:      "job",
+		TargetID:        "job-1",
+		OperationResult: OperationResultSucceeded,
+		ParameterSummary: map[string]any{
+			"reason": rawReason,
+			"notes":  "safe short note",
+			"nested": []any{map[string]any{"detail": "Bearer token-secret"}},
+		},
+		CreatedAt: time.Date(2026, 6, 30, 9, 7, 0, 0, time.UTC),
+	}}
+	svc := NewAdminService(repo, nil)
+
+	result, err := svc.ListOperationLogs(ctx, RequestContext{UserID: "admin-1", Roles: []string{"admin"}}, OperationLogListFilter{
+		Page: 1, PageSize: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListOperationLogs() error = %v", err)
+	}
+	summary := result.Items[0].ParameterSummary
+	if got := summary["reason"]; got == rawReason || strings.Contains(toString(got), "prompt=") || strings.Contains(toString(got), "X-Amz-Signature") {
+		t.Fatalf("reason value was not sanitized: %+v", summary)
+	}
+	if got := summary["notes"]; got != "safe short note" {
+		t.Fatalf("safe note = %v, want preserved", got)
+	}
+	nested := summary["nested"].([]any)[0].(map[string]any)
+	if strings.Contains(toString(nested["detail"]), "token-secret") {
+		t.Fatalf("nested detail leaked bearer token: %+v", nested)
+	}
+}
+
 func TestStatisticsOverviewAndDailyAreBounded(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeAdminRepository()
@@ -218,6 +288,13 @@ func TestStatisticsOverviewAndDailyAreBounded(t *testing.T) {
 	if repo.lastDailyDays != 7 || len(daily) != 1 {
 		t.Fatalf("daily days/items = %d/%d, want 7/1", repo.lastDailyDays, len(daily))
 	}
+}
+
+func toString(value any) string {
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return ""
 }
 
 type fakeAdminRepository struct {

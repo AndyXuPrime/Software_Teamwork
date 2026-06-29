@@ -124,7 +124,7 @@ type reportSettingsModelRequest struct {
 type reportSettingsFileRequest struct {
 	DefaultFormat         string         `json:"defaultFormat"`
 	DefaultNumberingMode  string         `json:"defaultNumberingMode"`
-	DefaultStyleProfileID string         `json:"defaultStyleProfileId"`
+	DefaultStyleProfileID *string        `json:"defaultStyleProfileId"`
 	Extra                 map[string]any `json:"-"`
 }
 
@@ -201,10 +201,13 @@ func updateSettingsInputFromRequest(payload reportSettingsPatchRequest) service.
 	}
 	if payload.File != nil {
 		input.File = &service.ReportSettingsFileDefaults{
-			DefaultFormat:         payload.File.DefaultFormat,
-			DefaultNumberingMode:  payload.File.DefaultNumberingMode,
-			DefaultStyleProfileID: payload.File.DefaultStyleProfileID,
-			Extra:                 payload.File.Extra,
+			DefaultFormat:        payload.File.DefaultFormat,
+			DefaultNumberingMode: payload.File.DefaultNumberingMode,
+			Extra:                payload.File.Extra,
+		}
+		if payload.File.DefaultStyleProfileID != nil {
+			input.File.DefaultStyleProfileID = *payload.File.DefaultStyleProfileID
+			input.File.DefaultStyleProfileIDSet = true
 		}
 	}
 	return input

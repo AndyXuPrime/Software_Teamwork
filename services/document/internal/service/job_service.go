@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -188,8 +189,8 @@ func (s *JobService) RetryJob(ctx context.Context, rctx RequestContext, id, reas
 		RequestSource:   requestSource(rctx, "api"),
 		OperationResult: OperationResultSucceeded,
 		ParameterSummary: map[string]any{
-			"jobType": job.JobType,
-			"reason":  reason,
+			"jobType":        job.JobType,
+			"reasonProvided": strings.TrimSpace(reason) != "",
 		},
 		Metadata: map[string]any{
 			"attemptId": attempt.ID,

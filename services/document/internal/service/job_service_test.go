@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -104,8 +105,39 @@ func TestJobServiceCreateJobRecordsFailedOperationLogWhenEnqueueFails(t *testing
 	}
 }
 
+func TestJobServiceRetryJobDoesNotPersistRawReason(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeJobRepository{
+		report: Report{ID: "report-1", CreatorID: "user-1"},
+		job: ReportJob{
+			ID:        "job-1",
+			ReportID:  "report-1",
+			JobType:   JobTypeContentGeneration,
+			RequestID: "req-retry",
+		},
+	}
+	svc := NewJobService(repo, &fakeTaskEnqueuer{})
+
+	rawReason := "retry with prompt=secret https://minio.local/bucket/object?X-Amz-Signature=abc"
+	_, err := svc.RetryJob(ctx, RequestContext{UserID: "user-1"}, "job-1", rawReason)
+	if err != nil {
+		t.Fatalf("RetryJob() error = %v", err)
+	}
+	if len(repo.operationLogs) != 1 {
+		t.Fatalf("operation log count = %d, want 1", len(repo.operationLogs))
+	}
+	summary := repo.operationLogs[0].ParameterSummary
+	if got := summary["reason"]; got == rawReason || strings.Contains(jobTestString(got), "prompt=") || strings.Contains(jobTestString(got), "X-Amz-Signature") {
+		t.Fatalf("retry operation log leaked raw reason: %+v", summary)
+	}
+	if summary["reasonProvided"] != true {
+		t.Fatalf("reasonProvided = %v, want true", summary["reasonProvided"])
+	}
+}
+
 type fakeJobRepository struct {
 	report        Report
+	job           ReportJob
 	operationLogs []OperationLog
 }
 
@@ -114,7 +146,7 @@ func (f *fakeJobRepository) GetReportByID(context.Context, string) (Report, erro
 }
 
 func (f *fakeJobRepository) FindReportJobByID(context.Context, string) (ReportJob, error) {
-	return ReportJob{}, nil
+	return f.job, nil
 }
 
 func (f *fakeJobRepository) ListReportJobsByReportID(context.Context, string) ([]ReportJob, error) {
@@ -149,7 +181,7 @@ func (f *fakeJobRepository) SetAttemptFailed(context.Context, string, string, st
 }
 
 func (f *fakeJobRepository) ClaimRetry(context.Context, string, string, string, string) (ReportJobAttempt, error) {
-	return ReportJobAttempt{}, nil
+	return ReportJobAttempt{ID: "attempt-1", JobID: "job-1"}, nil
 }
 
 func (f *fakeJobRepository) ListReportJobAttemptsByJobID(context.Context, string) ([]ReportJobAttempt, error) {
@@ -176,4 +208,11 @@ func (f *fakeTaskEnqueuer) EnqueueReportJob(_ context.Context, jobType JobType, 
 	}
 	f.jobType = jobType
 	return "task-1", nil
+}
+
+func jobTestString(value any) string {
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return ""
 }

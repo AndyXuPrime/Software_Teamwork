@@ -349,7 +349,9 @@ type ReportSettingsFileDefaults struct {
 	DefaultFormat         string
 	DefaultNumberingMode  string
 	DefaultStyleProfileID string
-	Extra                 map[string]any
+	// DefaultStyleProfileIDSet distinguishes omitted style profile from an explicit clear.
+	DefaultStyleProfileIDSet bool
+	Extra                    map[string]any
 }
 
 type ReportSettings struct {

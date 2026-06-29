@@ -306,7 +306,9 @@ func mergeFileDefaults(current, patch ReportSettingsFileDefaults) (ReportSetting
 	if strings.TrimSpace(patch.DefaultNumberingMode) != "" {
 		current.DefaultNumberingMode = strings.TrimSpace(patch.DefaultNumberingMode)
 	}
-	current.DefaultStyleProfileID = strings.TrimSpace(patch.DefaultStyleProfileID)
+	if patch.DefaultStyleProfileIDSet {
+		current.DefaultStyleProfileID = strings.TrimSpace(patch.DefaultStyleProfileID)
+	}
 	if patch.Extra != nil {
 		current.Extra = cloneMap(patch.Extra)
 	}
@@ -386,6 +388,8 @@ func sanitizeMap(input map[string]any) map[string]any {
 
 func sanitizeValue(value any) any {
 	switch typed := value.(type) {
+	case string:
+		return sanitizeStringValue(typed)
 	case map[string]any:
 		return sanitizeMap(typed)
 	case map[string]string:
@@ -394,7 +398,7 @@ func sanitizeValue(value any) any {
 			if isSensitiveLogKey(key) {
 				continue
 			}
-			output[key] = item
+			output[key] = sanitizeValue(item)
 		}
 		return output
 	case []any:
@@ -406,6 +410,50 @@ func sanitizeValue(value any) any {
 	default:
 		return value
 	}
+}
+
+func sanitizeStringValue(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	lower := strings.ToLower(trimmed)
+	if len(trimmed) > 256 || containsAny(lower, sensitiveLogValueMarkers) {
+		return "[redacted]"
+	}
+	return trimmed
+}
+
+func containsAny(value string, markers []string) bool {
+	for _, marker := range markers {
+		if strings.Contains(value, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+var sensitiveLogValueMarkers = []string{
+	"api_key",
+	"apikey",
+	"authorization:",
+	"bearer ",
+	"database_url",
+	"file_ref",
+	"fileref",
+	"http://",
+	"https://",
+	"internalurl",
+	"minio",
+	"objectkey",
+	"password",
+	"prompt",
+	"s3://",
+	"secret",
+	"signedurl",
+	"storageurl",
+	"token",
+	"x-amz-",
 }
 
 func isSensitiveLogKey(key string) bool {

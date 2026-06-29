@@ -899,6 +899,8 @@ Database and integration signatures:
 - `PATCH /report-settings` may update only the supplied sections. Omitted
   `llm.profileId` preserves the current profile/model; explicit empty
   `profileId` clears the profile/model.
+- Omitted `file.defaultStyleProfileId` preserves the current style profile;
+  explicit empty `file.defaultStyleProfileId` clears it.
 - Statistics overview includes `reportCount`, `templateCount`,
   `materialCount`, optional `jobStatusCounts`, and `recentDays`; daily
   statistics is bounded by `days`.
@@ -908,7 +910,9 @@ Database and integration signatures:
 - Operation logs may store sanitized summaries only. They must not include
   prompt text, raw document content, File Service IDs/file refs, object keys,
   buckets, signed URLs, internal URLs, provider tokens, API keys, database URLs,
-  or full request/response bodies.
+  or full request/response bodies. Sanitization must inspect string values, not
+  only sensitive field names, and mutation paths must not write user-provided
+  free text such as retry reasons into operation-log summaries.
 
 ### 4. Validation & Error Matrix
 

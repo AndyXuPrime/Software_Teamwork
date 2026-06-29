@@ -114,6 +114,26 @@ func TestUpdateSettingsInputDistinguishesProfileIDPresence(t *testing.T) {
 	}
 }
 
+func TestUpdateSettingsInputDistinguishesFileStyleProfileIDPresence(t *testing.T) {
+	var omitted reportSettingsPatchRequest
+	if err := json.Unmarshal([]byte(`{"file":{"defaultNumberingMode":"by_chapter"}}`), &omitted); err != nil {
+		t.Fatalf("decode omitted style profile patch: %v", err)
+	}
+	omittedInput := updateSettingsInputFromRequest(omitted)
+	if omittedInput.File == nil || omittedInput.File.DefaultStyleProfileIDSet {
+		t.Fatalf("omitted file input = %+v, want defaultStyleProfileId not set", omittedInput.File)
+	}
+
+	var cleared reportSettingsPatchRequest
+	if err := json.Unmarshal([]byte(`{"file":{"defaultStyleProfileId":""}}`), &cleared); err != nil {
+		t.Fatalf("decode clear style profile patch: %v", err)
+	}
+	clearedInput := updateSettingsInputFromRequest(cleared)
+	if clearedInput.File == nil || !clearedInput.File.DefaultStyleProfileIDSet || clearedInput.File.DefaultStyleProfileID != "" {
+		t.Fatalf("cleared file input = %+v, want explicit empty defaultStyleProfileId", clearedInput.File)
+	}
+}
+
 func TestStatisticsAndOperationLogHandlers(t *testing.T) {
 	admin := &fakeAdminService{
 		getOverview: func(_ context.Context, reqCtx service.RequestContext, recentDays int) (service.ReportStatisticsOverview, error) {
