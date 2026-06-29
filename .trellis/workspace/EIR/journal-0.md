@@ -135,3 +135,36 @@ Aligned landed Go services, Docker build image, Go service CI, and backend CI sp
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Issue 148 goose migration CI
+
+**Date**: 2026-06-29
+**Task**: Issue 148 goose migration CI
+**Branch**: `Special/chore/goose-migration-ci`
+
+### Summary
+
+Added goose v3.27.1 migration apply workflow, synchronized service README migration commands, and documented backend migration CI contracts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `abb2c9f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

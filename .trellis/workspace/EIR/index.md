@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 4
+- **Total Sessions**: 5
 - **Last Active**: 2026-06-29
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~137 | Active |
+| `journal-0.md` | ~170 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-06-29 | Issue 148 goose migration CI | `abb2c9f` | `Special/chore/goose-migration-ci` |
 | 4 | 2026-06-29 | Issue 147 Go 1.25 baseline | `a8399d9` | `Special/chore/go-125-baseline` |
 | 3 | 2026-06-29 | Issue 108 Gateway OpenAPI Client | `f686d4d`, `2aa23ca`, `285572b` | `EIRTeam/fix/issue-108` |
 | 2 | 2026-06-29 | File service issues 79 and 80 | `dca07d7` | `EIRTeam/feat/file-service-module` |
