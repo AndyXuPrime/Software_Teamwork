@@ -20,16 +20,15 @@ jobs:
           PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
         with:
           script: |
+            const { getOctokit } = require('@actions/github');
+
             const projectOwner = 'Sakayori-Iroha-168';
             const projectNumber = 1;
             const projectName = 'Software Teamwork';
-            const projectGraphql = process.env.PROJECTS_TOKEN
-              ? github.graphql.defaults({
-                  headers: {
-                    authorization: `bearer ${process.env.PROJECTS_TOKEN}`,
-                  },
-                })
-              : github.graphql;
+            const projectOctokit = process.env.PROJECTS_TOKEN
+              ? getOctokit(process.env.PROJECTS_TOKEN)
+              : github;
+            const projectGraphql = projectOctokit.graphql;
             const issue = context.payload.issue;
             const body = issue.body || '';
 
@@ -89,7 +88,11 @@ jobs:
             };
 
             const issueStatus = readField('状态') || 'Draft';
-            const group = readField('主责小组') || defaultGroupByPrefix[prefix];
+            const group = defaultGroupByPrefix[prefix];
+            const bodyGroup = readField('主责小组');
+            if (bodyGroup && bodyGroup !== group) {
+              core.warning(`Issue body group '${bodyGroup}' does not match task prefix '${prefix}'; using '${group}'.`);
+            }
             const priority = readField('优先级') || 'P1';
             const batch = readField('批次') || 'Batch 4';
             const moduleName = readField('模块') || 'ci';
@@ -286,7 +289,7 @@ jobs:
               );
             }
 
-            const syncLinePattern = /^- Project sync：`?(pending|synced|blocked)`?$/imu;
+            const syncLinePattern = /^- Project sync：`?(pending|synced|blocked)`?`?$/imu;
             const nextSyncLine = `- Project sync：\`${syncState}\``;
             let nextBody = body;
 

@@ -23,6 +23,7 @@ service:qa
 service:knowledge
 service:document
 service:ai-gateway
+blocked
 ```
 
 检查现有 label：
@@ -63,11 +64,20 @@ check 名称补入 `contexts`。
 
 - 识别标题形如 `[S-20260629-01] ...` 或 `[A-01] ...` 且正文写明
   `GitHub Project：Software Teamwork` 的任务 issue。
-- 根据任务正文的 `主责小组`、`优先级`、`批次`、`模块`、`Risk`、`依赖任务`
-  同步 GitHub Project 字段。
+- 根据 issue 标题前缀强制同步 `Group`，并根据任务正文的 `优先级`、
+  `批次`、`模块`、`Risk`、`依赖任务` 同步 GitHub Project 字段。
 - 根据主责小组和模块自动补 label；仓库不存在的 label 会跳过并在日志中提示。
 - 同步成功后把正文中的 `Project sync` 改为 `synced`；同步失败则改为
   `blocked`。
+
+[.github/workflows/task-project-bootstrap.yml](../../.github/workflows/task-project-bootstrap.yml)
+提供手动迁移和视图初始化：
+
+- 创建缺失的 `All Tasks`、`Platform View`、`QA View`、`Report View`、
+  `Frontend View`、`Special View`、`Dependency View`。
+- 扫描现有 `[A/B/C/F/S-...]` issue，加入 `Software Teamwork` Project 并填充
+  Project 字段。
+- 需要仓库 secret `PROJECTS_TOKEN`，建议使用带 `project` scope 的 classic PAT。
 
 新任务 issue 默认使用 [.github/ISSUE_TEMPLATE/issue.md](../../.github/ISSUE_TEMPLATE/issue.md)。
 模板标题采用 `[F-YYYYMMDD-01] English task title` 格式，并内置任务前缀和模块枚举，
@@ -141,6 +151,20 @@ Issue label、Assignee 和正文更新仍使用默认 `GITHUB_TOKEN`，`PROJECTS
 - `accountLabels`: GitHub 账号 login 或数字 ID 到 label 的映射，匹配 PR
   发起人以及 PR commit 的 GitHub author/committer
 - `pathLabels`: 文件路径 glob 到 label 的映射
+
+此外，workflow 会把 PR 的 `blocked` label 同步为关联 issue 的阻塞状态：
+
+- 关联 issue 以 GitHub 的 PR closing issue references 为准，也就是 PR 描述中的
+  `Closes #118`、`Fixes #119`、`Resolves #120` 等自动关闭关键字。GraphQL 查询失败时，
+  workflow 才退回解析 `关联 Issue` 区块。
+- PR 至少有一个关联 issue，且所有关联 issue 都处于阻塞状态时，才会添加
+  `blocked` label。
+- 只要任意关联 issue 不阻塞、已关闭、不可读取，或 PR 没有关联 issue，就会移除
+  PR 上的 `blocked` label。
+- 任务 issue 的阻塞状态以正文 `状态：Blocked` 或 `Risk：Blocked` 为准；如果正文已经改成
+  非阻塞，即使遗留了 `blocked` label，也不会继续阻塞 PR。非任务 issue 没有这些正文
+  字段时，才用 issue 自身的 `blocked` label 兜底。修改 issue 正文、label、关闭或重新
+  打开 issue 时，会自动反查打开的关联 PR 并重新同步。
 
 示例：
 

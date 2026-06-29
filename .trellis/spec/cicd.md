@@ -32,7 +32,7 @@ These workflows already exist and must remain separate from product build jobs:
 
 | Workflow | File | Purpose |
 |----------|------|---------|
-| Auto Label | `.github/workflows/auto-label.yml` | Applies team/path labels when configured labels exist |
+| Auto Label | `.github/workflows/auto-label.yml` | Applies team/path labels and syncs PR `blocked` label from linked issues |
 | PR Guard | `.github/workflows/pr-guard.yml` | Enforces fork + PR collaboration rules and allowed base branches |
 | Commitlint | `.github/workflows/commitlint.yml` | Enforces Conventional Commits on PR commits |
 
@@ -115,6 +115,88 @@ local changes must verify remote label existence when adding a new label name.
   "paths": ["services/knowledge/**", "docs/services/knowledge/**"],
   "labels": ["service:knowledge"]
 }
+```
+
+---
+
+## Auto Label Blocked PR Contract
+
+### 1. Scope / Trigger
+
+Update this contract when changing PR issue-link requirements, task issue
+blocked semantics, or `.github/workflows/auto-label.yml` blocked-label logic.
+
+### 2. Signatures
+
+- Workflow file: `.github/workflows/auto-label.yml`
+- PR events: `pull_request_target` opened, edited, synchronize, reopened,
+  ready_for_review, labeled, unlabeled
+- Issue events: `issues` edited, labeled, unlabeled, closed, reopened
+- Primary PR link source: GitHub `closingIssuesReferences`
+- Fallback PR link syntax: GitHub closing keywords in the `关联 Issue` section,
+  for example `Closes #118`, `Fixes #119`, or `Resolves #120`
+- Synced label: `blocked`
+
+### 3. Contracts
+
+- The workflow only treats GitHub closing issue references as linked issues.
+- A PR receives `blocked` only when it has at least one linked issue and every
+  linked issue is blocked.
+- A managed task issue with body fields is blocked only when it is open and has
+  task body field `状态：Blocked` or `Risk：Blocked`.
+- A non-task linked issue without those body fields may use issue label
+  `blocked` as the blocked signal.
+- Closed issues, pull request pseudo-issues, unreadable issues, and issues
+  without blocked state count as not blocked.
+- On issue changes, the workflow finds open pull requests that reference that
+  issue through timeline cross-references and PR search, then recomputes the PR
+  `blocked` label.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required handling |
+|-----------|-------------------|
+| PR has no linked issues | Remove `blocked` from the PR if present. |
+| PR has mixed blocked and not-blocked linked issues | Remove `blocked` from the PR. |
+| All linked issues are blocked | Add `blocked` to the PR when the label exists. |
+| Linked issue changes from blocked to not blocked | Recompute open linked PRs and remove `blocked` where needed. |
+| A linked issue cannot be read | Treat it as not blocked and log a warning. |
+| `blocked` label does not exist remotely | Skip adding it and log a warning rather than failing unrelated PR labeling. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: PR body contains `Closes #118` and `Fixes #119`; both issues are open
+  with `Risk：Blocked`; PR gets `blocked`.
+- Base: PR body contains `Closes #118`; issue #118 is open with
+  `状态：In Progress`; PR does not get `blocked`.
+- Bad: PR body says `关联 Issue: #118` without a closing keyword and expects
+  blocked sync.
+
+### 6. Tests Required
+
+- Parse `.github/workflows/auto-label.yml` as YAML.
+- Run `actionlint`.
+- Extract the embedded `github-script` body and run `node --check` inside an
+  async wrapper.
+- Before relying on a new synced label name, verify it exists with
+  `gh label list`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```markdown
+## 关联 Issue
+
+- #118
+```
+
+#### Correct
+
+```markdown
+## 关联 Issue
+
+- Closes #118
 ```
 
 ---

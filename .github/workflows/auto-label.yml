@@ -2,7 +2,9 @@ name: Auto Label
 
 on:
   pull_request_target:
-    types: [opened, edited, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  issues:
+    types: [edited, labeled, unlabeled, closed, reopened]
 
 permissions:
   contents: read
@@ -13,25 +15,31 @@ jobs:
   label:
     runs-on: ubuntu-latest
     steps:
-      - name: Apply configured labels
+      - name: Apply configured labels and blocked state
         uses: actions/github-script@v7
         with:
           script: |
             const configPath = '.github/labeler.json';
-            const pr = context.payload.pull_request;
-            const labelsToAdd = new Set();
+            const blockedLabel = 'blocked';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
 
             const asArray = (value) => Array.isArray(value) ? value : [];
 
-            const addConfiguredLabels = (labels) => {
+            const escapeRegex = (value) => value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+
+            const hasLabel = (issue, labelName) => asArray(issue.labels).some((label) => {
+              const name = typeof label === 'string' ? label : label.name;
+              return name === labelName;
+            });
+
+            const addConfiguredLabels = (target, labels) => {
               for (const label of asArray(labels)) {
                 if (typeof label === 'string' && label.trim()) {
-                  labelsToAdd.add(label.trim());
+                  target.add(label.trim());
                 }
               }
             };
-
-            const escapeRegex = (value) => value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
 
             const globToRegExp = (pattern) => {
               let source = '^';
@@ -53,114 +61,428 @@ jobs:
               return new RegExp(`${source}$`);
             };
 
-            let configFile;
-            try {
-              const response = await github.rest.repos.getContent({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                path: configPath,
-                ref: pr.base.sha,
+            const sectionValue = (body, heading) => {
+              const pattern = new RegExp(`##\\s*${escapeRegex(heading)}\\s*\\n([\\s\\S]*?)(?=\\n##\\s+|$)`, 'u');
+              const match = (body || '').match(pattern);
+              return match ? match[1].trim() : '';
+            };
+
+            const readIssueField = (body, fieldName) => {
+              const pattern = new RegExp(`^-\\s*${escapeRegex(fieldName)}\\s*[:：]\\s*` + '`?' + `([^\\n\`]+)` + '`?' + `\\s*$`, 'imu');
+              const match = (body || '').match(pattern);
+              return match ? match[1].trim() : '';
+            };
+
+            const isSameRepoRef = (refOwner, refRepo) => {
+              if (!refOwner && !refRepo) {
+                return true;
+              }
+              return (
+                String(refOwner).toLowerCase() === owner.toLowerCase() &&
+                String(refRepo).toLowerCase() === repo.toLowerCase()
+              );
+            };
+
+            const extractLinkedIssueNumbers = (body) => {
+              const issueSection = sectionValue(body, '关联 Issue');
+              const normalizedSection = issueSection.replace(/^[-*]\s*/u, '').trim();
+              if (/^无。原因[:：]/u.test(normalizedSection)) {
+                return [];
+              }
+
+              const searchText = issueSection || (body || '');
+              const linkedIssueNumbers = new Set();
+              const closingRefPattern =
+                /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?::)?\s+(?:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)#|https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/issues\/|#)(\d+)\b/giu;
+
+              for (const match of searchText.matchAll(closingRefPattern)) {
+                const refOwner = match[1] || match[3] || '';
+                const refRepo = match[2] || match[4] || '';
+                const issueNumber = Number(match[5]);
+                if (Number.isInteger(issueNumber) && isSameRepoRef(refOwner, refRepo)) {
+                  linkedIssueNumbers.add(issueNumber);
+                }
+              }
+
+              return [...linkedIssueNumbers];
+            };
+
+            const issueIsBlocked = (issue) => {
+              if (issue.state !== 'open' || issue.pull_request) {
+                return false;
+              }
+              const status = readIssueField(issue.body, '状态');
+              const risk = readIssueField(issue.body, 'Risk');
+              if (status || risk) {
+                return status === 'Blocked' || risk === 'Blocked';
+              }
+              return hasLabel(issue, blockedLabel);
+            };
+
+            let existingLabelNames;
+            const getExistingLabelNames = async () => {
+              if (existingLabelNames) {
+                return existingLabelNames;
+              }
+              const labels = await github.paginate(github.rest.issues.listLabelsForRepo, {
+                owner,
+                repo,
+                per_page: 100,
               });
-              configFile = response.data;
-            } catch (error) {
-              if (error.status === 404) {
-                core.warning(`${configPath} does not exist on the base branch yet; skipping labels.`);
-                return;
-              }
-              throw error;
-            }
+              existingLabelNames = new Set(labels.map((label) => label.name));
+              return existingLabelNames;
+            };
 
-            const configText = Buffer.from(configFile.content, configFile.encoding).toString('utf8');
-            const config = JSON.parse(configText);
+            const addLabels = async (issueNumber, labels) => {
+              const existingLabels = await getExistingLabelNames();
+              const validLabels = labels.filter((label) => existingLabels.has(label));
+              const missingLabels = labels.filter((label) => !existingLabels.has(label));
 
-            const accountIds = new Set();
-            const collectAccountIds = (user) => {
-              if (!user) {
-                return;
+              if (missingLabels.length > 0) {
+                core.warning(`Skipping labels that do not exist: ${missingLabels.join(', ')}`);
               }
-              if (user.login) {
-                accountIds.add(user.login.toLowerCase());
+
+              if (validLabels.length === 0) {
+                return [];
               }
-              if (user.id) {
-                accountIds.add(String(user.id));
+
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                labels: validLabels,
+              });
+              return validLabels;
+            };
+
+            const removeLabel = async (issueNumber, label) => {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner,
+                  repo,
+                  issue_number: issueNumber,
+                  name: label,
+                });
+                return true;
+              } catch (error) {
+                if (error.status === 404) {
+                  core.info(`Label '${label}' was already absent from #${issueNumber}.`);
+                  return false;
+                }
+                throw error;
               }
             };
 
-            collectAccountIds(pr.user);
+            const getIssue = async (issueNumber) => {
+              const response = await github.rest.issues.get({
+                owner,
+                repo,
+                issue_number: issueNumber,
+              });
+              return response.data;
+            };
 
-            const commits = await github.paginate(github.rest.pulls.listCommits, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pr.number,
-              per_page: 100,
-            });
+            const getPullRequest = async (pullNumber) => {
+              const response = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: pullNumber,
+              });
+              return response.data;
+            };
 
-            for (const commit of commits) {
-              collectAccountIds(commit.author);
-              collectAccountIds(commit.committer);
-            }
+            const getClosingIssueNumbers = async (pullNumber) => {
+              const linkedIssueNumbers = new Set();
+              let after = null;
 
-            for (const rule of asArray(config.accountLabels)) {
-              const accounts = asArray(rule.accounts).map((account) => String(account).toLowerCase());
-              if (accounts.some((account) => accountIds.has(account))) {
-                addConfiguredLabels(rule.labels);
+              do {
+                const response = await github.graphql(
+                  `query($owner: String!, $repo: String!, $pullNumber: Int!, $after: String) {
+                    repository(owner: $owner, name: $repo) {
+                      pullRequest(number: $pullNumber) {
+                        closingIssuesReferences(first: 100, after: $after) {
+                          nodes {
+                            number
+                            repository {
+                              name
+                              owner {
+                                login
+                              }
+                            }
+                          }
+                          pageInfo {
+                            hasNextPage
+                            endCursor
+                          }
+                        }
+                      }
+                    }
+                  }`,
+                  { owner, repo, pullNumber, after }
+                );
+
+                const connection = response.repository.pullRequest.closingIssuesReferences;
+                for (const issue of connection.nodes) {
+                  if (isSameRepoRef(issue.repository.owner.login, issue.repository.name)) {
+                    linkedIssueNumbers.add(issue.number);
+                  }
+                }
+
+                after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null;
+              } while (after);
+
+              return [...linkedIssueNumbers];
+            };
+
+            const syncBlockedLabelForPr = async (pullNumber, pullRequest = null) => {
+              const pr = pullRequest || await getPullRequest(pullNumber);
+              const prIssue = await getIssue(pullNumber);
+              let linkedIssueNumbers;
+
+              try {
+                linkedIssueNumbers = await getClosingIssueNumbers(pullNumber);
+              } catch (error) {
+                core.warning(`Could not read closing issue references for PR #${pullNumber}; falling back to PR body parsing: ${error.message}`);
+                linkedIssueNumbers = extractLinkedIssueNumbers(pr.body || '');
               }
-            }
 
-            const files = await github.paginate(github.rest.pulls.listFiles, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pr.number,
-              per_page: 100,
-            });
+              let shouldBeBlocked = false;
+              const nonBlockedIssues = [];
+              const blockedIssues = [];
 
-            for (const file of files) {
-              for (const rule of asArray(config.pathLabels)) {
-                for (const pattern of asArray(rule.paths)) {
-                  if (globToRegExp(pattern).test(file.filename)) {
-                    addConfiguredLabels(rule.labels);
-                    break;
+              if (linkedIssueNumbers.length > 0) {
+                for (const issueNumber of linkedIssueNumbers) {
+                  try {
+                    const issue = await getIssue(issueNumber);
+                    if (issueIsBlocked(issue)) {
+                      blockedIssues.push(issueNumber);
+                    } else {
+                      nonBlockedIssues.push(issueNumber);
+                    }
+                  } catch (error) {
+                    nonBlockedIssues.push(issueNumber);
+                    core.warning(`Could not read linked issue #${issueNumber}; treating it as not blocked: ${error.message}`);
+                  }
+                }
+
+                shouldBeBlocked =
+                  blockedIssues.length === linkedIssueNumbers.length &&
+                  nonBlockedIssues.length === 0;
+              }
+
+              const prHasBlockedLabel = hasLabel(prIssue, blockedLabel);
+
+              if (shouldBeBlocked && !prHasBlockedLabel) {
+                const added = await addLabels(pullNumber, [blockedLabel]);
+                if (added.length > 0) {
+                  core.info(`Added '${blockedLabel}' to PR #${pullNumber}; all linked issues are blocked: ${blockedIssues.map((number) => `#${number}`).join(', ')}.`);
+                }
+                return;
+              }
+
+              if (!shouldBeBlocked && prHasBlockedLabel) {
+                const removed = await removeLabel(pullNumber, blockedLabel);
+                if (removed) {
+                  if (linkedIssueNumbers.length === 0) {
+                    core.info(`Removed '${blockedLabel}' from PR #${pullNumber}; no linked issues were found.`);
+                  } else {
+                    core.info(`Removed '${blockedLabel}' from PR #${pullNumber}; not blocked issues: ${nonBlockedIssues.map((number) => `#${number}`).join(', ')}.`);
+                  }
+                }
+                return;
+              }
+
+              if (linkedIssueNumbers.length === 0) {
+                core.info(`PR #${pullNumber} has no linked issues; '${blockedLabel}' is not needed.`);
+              } else if (shouldBeBlocked) {
+                core.info(`PR #${pullNumber} already has '${blockedLabel}'; all linked issues are blocked.`);
+              } else {
+                core.info(`PR #${pullNumber} is not blocked; linked issues include non-blocked issues: ${nonBlockedIssues.map((number) => `#${number}`).join(', ')}.`);
+              }
+            };
+
+            const loadLabelConfig = async (baseSha) => {
+              let configFile;
+              try {
+                const response = await github.rest.repos.getContent({
+                  owner,
+                  repo,
+                  path: configPath,
+                  ref: baseSha,
+                });
+                configFile = response.data;
+              } catch (error) {
+                if (error.status === 404) {
+                  core.warning(`${configPath} does not exist on the base branch yet; skipping configured labels.`);
+                  return null;
+                }
+                throw error;
+              }
+
+              const configText = Buffer.from(configFile.content, configFile.encoding).toString('utf8');
+              return JSON.parse(configText);
+            };
+
+            const applyConfiguredPrLabels = async (pr) => {
+              const config = await loadLabelConfig(pr.base.sha);
+              if (!config) {
+                return;
+              }
+
+              const labelsToAdd = new Set();
+              const accountIds = new Set();
+              const collectAccountIds = (user) => {
+                if (!user) {
+                  return;
+                }
+                if (user.login) {
+                  accountIds.add(user.login.toLowerCase());
+                }
+                if (user.id) {
+                  accountIds.add(String(user.id));
+                }
+              };
+
+              collectAccountIds(pr.user);
+
+              const commits = await github.paginate(github.rest.pulls.listCommits, {
+                owner,
+                repo,
+                pull_number: pr.number,
+                per_page: 100,
+              });
+
+              for (const commit of commits) {
+                collectAccountIds(commit.author);
+                collectAccountIds(commit.committer);
+              }
+
+              for (const rule of asArray(config.accountLabels)) {
+                const accounts = asArray(rule.accounts).map((account) => String(account).toLowerCase());
+                if (accounts.some((account) => accountIds.has(account))) {
+                  addConfiguredLabels(labelsToAdd, rule.labels);
+                }
+              }
+
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner,
+                repo,
+                pull_number: pr.number,
+                per_page: 100,
+              });
+
+              for (const file of files) {
+                for (const rule of asArray(config.pathLabels)) {
+                  for (const pattern of asArray(rule.paths)) {
+                    if (globToRegExp(pattern).test(file.filename)) {
+                      addConfiguredLabels(labelsToAdd, rule.labels);
+                      break;
+                    }
                   }
                 }
               }
-            }
 
-            if (labelsToAdd.size === 0) {
-              core.info('No labels matched this PR.');
-              return;
-            }
+              if (labelsToAdd.size === 0) {
+                core.info('No configured labels matched this PR.');
+                return;
+              }
 
-            const existingLabels = await github.paginate(github.rest.issues.listLabelsForRepo, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100,
-            });
-            const existingLabelNames = new Set(existingLabels.map((label) => label.name));
-            const validLabels = [...labelsToAdd].filter((label) => existingLabelNames.has(label));
-            const missingLabels = [...labelsToAdd].filter((label) => !existingLabelNames.has(label));
+              const prIssue = await getIssue(pr.number);
+              const labelsNotAlreadyPresent = [...labelsToAdd].filter((label) => !hasLabel(prIssue, label));
+              if (labelsNotAlreadyPresent.length === 0) {
+                core.info('Configured labels are already present on this PR.');
+                return;
+              }
 
-            if (missingLabels.length > 0) {
-              core.warning(`Skipping labels that do not exist: ${missingLabels.join(', ')}`);
-            }
+              const validLabels = await addLabels(pr.number, labelsNotAlreadyPresent);
+              if (validLabels.length === 0) {
+                core.info('Matched labels are not present in the repository; nothing to add.');
+                return;
+              }
 
-            if (validLabels.length === 0) {
-              core.info('Matched labels are not present in the repository; nothing to add.');
-              return;
-            }
+              core.info(`Added configured labels: ${validLabels.join(', ')}`);
+            };
+
+            const linkedPullRequestsForIssue = async (issueNumber) => {
+              const pullNumbers = new Set();
+
+              try {
+                const timelineEvents = await github.paginate(github.rest.issues.listEventsForTimeline, {
+                  owner,
+                  repo,
+                  issue_number: issueNumber,
+                  per_page: 100,
+                });
+
+                for (const event of timelineEvents) {
+                  if (event.event !== 'cross-referenced') {
+                    continue;
+                  }
+                  const sourceIssue = event.source && event.source.issue;
+                  if (sourceIssue && sourceIssue.pull_request && sourceIssue.state === 'open') {
+                    pullNumbers.add(sourceIssue.number);
+                  }
+                }
+              } catch (error) {
+                core.warning(`Could not read issue #${issueNumber} timeline: ${error.message}`);
+              }
+
+              const queries = [
+                `repo:${owner}/${repo} is:pr is:open "#${issueNumber}"`,
+                `repo:${owner}/${repo} is:pr is:open "issues/${issueNumber}"`,
+              ];
+
+              for (const q of queries) {
+                try {
+                  const response = await github.rest.search.issuesAndPullRequests({
+                    q,
+                    per_page: 100,
+                  });
+                  for (const result of response.data.items) {
+                    if (result.pull_request) {
+                      pullNumbers.add(result.number);
+                    }
+                  }
+                } catch (error) {
+                  core.warning(`Could not search pull requests for issue #${issueNumber}: ${error.message}`);
+                }
+              }
+
+              return [...pullNumbers];
+            };
 
             try {
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pr.number,
-                labels: validLabels,
-              });
+              if (context.eventName === 'pull_request_target') {
+                const pr = context.payload.pull_request;
+                await applyConfiguredPrLabels(pr);
+                await syncBlockedLabelForPr(pr.number, pr);
+                return;
+              }
+
+              if (context.eventName === 'issues') {
+                const issue = context.payload.issue;
+                if (issue.pull_request) {
+                  core.info(`Skipping issue event for pull request #${issue.number}.`);
+                  return;
+                }
+
+                const pullNumbers = await linkedPullRequestsForIssue(issue.number);
+                if (pullNumbers.length === 0) {
+                  core.info(`No open pull requests reference issue #${issue.number}.`);
+                  return;
+                }
+
+                for (const pullNumber of pullNumbers) {
+                  await syncBlockedLabelForPr(pullNumber);
+                }
+                return;
+              }
+
+              core.info(`Unsupported event '${context.eventName}'; nothing to do.`);
             } catch (error) {
               if (error.status === 403) {
-                core.warning(`Could not add labels because the token has insufficient permission: ${error.message}`);
+                core.warning(`Could not update labels because the token has insufficient permission: ${error.message}`);
                 return;
               }
               throw error;
             }
-
-            core.info(`Added labels: ${validLabels.join(', ')}`);
