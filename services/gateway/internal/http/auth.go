@@ -218,7 +218,7 @@ func (s *Server) writeAuthClientError(w http.ResponseWriter, r *http.Request, er
 		}
 		response.WriteError(w, remote.Status, response.ErrorDetail{
 			Code:      downstreamErrorCode(remote.Status),
-			Message:   authClientErrorMessage(remote.Status),
+			Message:   sanitizedErrorMessage(remote.Status),
 			RequestID: middleware.RequestIDFromContext(r.Context()),
 		})
 		return
@@ -226,7 +226,7 @@ func (s *Server) writeAuthClientError(w http.ResponseWriter, r *http.Request, er
 	s.writeDependencyError(w, r, "auth service is unavailable")
 }
 
-func authClientErrorMessage(status int) string {
+func sanitizedErrorMessage(status int) string {
 	switch status {
 	case http.StatusBadRequest:
 		return "request validation failed"

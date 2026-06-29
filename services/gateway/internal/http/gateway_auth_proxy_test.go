@@ -511,9 +511,9 @@ func TestProxyStreamsBinaryContentWithoutJSONEnvelope(t *testing.T) {
 	server := newGatewayTestServer(t, gatewayDeps{
 		store:         store,
 		hasher:        hasher,
-		ownerBaseURLs: map[string]string{"knowledge": downstream.URL},
+		ownerBaseURLs: map[string]string{"document": downstream.URL},
 	})
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/documents/doc_1/content", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/report-files/file_1/content", nil)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	res := httptest.NewRecorder()
 
@@ -524,6 +524,96 @@ func TestProxyStreamsBinaryContentWithoutJSONEnvelope(t *testing.T) {
 	}
 	if got := res.Body.Bytes(); !bytes.Equal(got, []byte{0, 1, 2, 3}) {
 		t.Fatalf("body = %#v", got)
+	}
+}
+
+func TestProxyStreamsSSEWithoutFixedTimeout(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_1",
+		UserID:      "usr_1",
+		Username:    "alice",
+		Roles:       []string{},
+		Permissions: []string{"qa:write"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/v1/qa-sessions/sess_1/messages" {
+			t.Fatalf("downstream path = %q", r.URL.Path)
+		}
+		time.Sleep(50 * time.Millisecond)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: message\ndata: ok\n\n"))
+	}))
+	defer downstream.Close()
+
+	server := gatewayhttp.NewServer(gatewayhttp.Config{
+		Logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ServiceVersion:     "test",
+		Environment:        "test",
+		RequestTimeout:     10 * time.Millisecond,
+		MaxBodyBytes:       1024 * 1024,
+		CORSAllowedOrigins: []string{"*"},
+		DownstreamTimeout:  10 * time.Millisecond,
+		SessionStore:       store,
+		TokenHasher:        hasher,
+		OwnerBaseURLs:      map[string]string{"qa": downstream.URL},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/qa-sessions/sess_1/messages", strings.NewReader(`{"message":"hello"}`))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "text/event-stream")
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	if got := res.Body.String(); !strings.Contains(got, "data: ok") {
+		t.Fatalf("body = %q", got)
+	}
+}
+
+func TestUnimplementedKnowledgeRouteReturnsNotImplemented(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_1",
+		UserID:      "usr_1",
+		Username:    "alice",
+		Roles:       []string{},
+		Permissions: []string{"knowledge:read"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("unimplemented route should not call downstream")
+	}))
+	defer downstream.Close()
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		store:         store,
+		hasher:        hasher,
+		ownerBaseURLs: map[string]string{"knowledge": downstream.URL},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/documents/doc_1/content", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("X-Request-Id", "req_not_implemented")
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	var body errorBody
+	decodeJSON(t, res.Body, &body)
+	if body.Error.Code != "not_implemented" || body.Error.RequestID != "req_not_implemented" {
+		t.Fatalf("error = %+v", body.Error)
 	}
 }
 
@@ -568,6 +658,55 @@ func TestProxyNormalizesDownstreamErrorBody(t *testing.T) {
 	var body errorBody
 	decodeJSON(t, res.Body, &body)
 	if body.Error.Code != "not_found" || body.Error.RequestID != "req_downstream_404" {
+		t.Fatalf("error = %+v", body.Error)
+	}
+}
+
+func TestProxySanitizesDownstreamErrorEnvelope(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_1",
+		UserID:      "usr_1",
+		Username:    "alice",
+		Roles:       []string{},
+		Permissions: []string{"knowledge:write"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"code":"validation_error","message":"select * from private_table","requestId":"downstream","fields":{"password_hash":"secret","internalUrl":"http://knowledge.internal"}}}`))
+	}))
+	defer downstream.Close()
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		store:         store,
+		hasher:        hasher,
+		ownerBaseURLs: map[string]string{"knowledge": downstream.URL},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/knowledge-bases", strings.NewReader(`{"name":""}`))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("X-Request-Id", "req_downstream_400")
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	raw := res.Body.String()
+	for _, sensitive := range []string{"private_table", "password_hash", "knowledge.internal", "select *", "fields"} {
+		if strings.Contains(raw, sensitive) {
+			t.Fatalf("downstream detail leaked: %s", raw)
+		}
+	}
+	var body errorBody
+	decodeJSON(t, res.Body, &body)
+	if body.Error.Code != "validation_error" ||
+		body.Error.Message != "request validation failed" ||
+		body.Error.RequestID != "req_downstream_400" {
 		t.Fatalf("error = %+v", body.Error)
 	}
 }

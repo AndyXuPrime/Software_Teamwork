@@ -6,6 +6,8 @@ type routeSpec struct {
 	Owner             string
 	OperationID       string
 	DownstreamPattern string
+	NotImplemented    bool
+	StreamResponse    bool
 }
 
 var activeProxyRoutes = []routeSpec{
@@ -17,21 +19,21 @@ var activeProxyRoutes = []routeSpec{
 	{Method: "GET", Pattern: "/api/v1/knowledge-bases/{knowledgeBaseId}/documents", Owner: "knowledge", OperationID: "listKnowledgeBaseDocuments"},
 	{Method: "POST", Pattern: "/api/v1/knowledge-bases/{knowledgeBaseId}/documents", Owner: "knowledge", OperationID: "uploadKnowledgeBaseDocument"},
 	{Method: "GET", Pattern: "/api/v1/documents/{documentId}", Owner: "knowledge", OperationID: "getDocument"},
-	{Method: "PATCH", Pattern: "/api/v1/documents/{documentId}", Owner: "knowledge", OperationID: "updateDocument"},
-	{Method: "DELETE", Pattern: "/api/v1/documents/{documentId}", Owner: "knowledge", OperationID: "deleteDocument"},
-	{Method: "GET", Pattern: "/api/v1/documents/{documentId}/chunks", Owner: "knowledge", OperationID: "listDocumentChunks"},
-	{Method: "GET", Pattern: "/api/v1/documents/{documentId}/content", Owner: "knowledge", OperationID: "getDocumentContent"},
-	{Method: "POST", Pattern: "/api/v1/knowledge-queries", Owner: "knowledge", OperationID: "createKnowledgeQuery"},
+	{Method: "PATCH", Pattern: "/api/v1/documents/{documentId}", Owner: "knowledge", OperationID: "updateDocument", NotImplemented: true},
+	{Method: "DELETE", Pattern: "/api/v1/documents/{documentId}", Owner: "knowledge", OperationID: "deleteDocument", NotImplemented: true},
+	{Method: "GET", Pattern: "/api/v1/documents/{documentId}/chunks", Owner: "knowledge", OperationID: "listDocumentChunks", NotImplemented: true},
+	{Method: "GET", Pattern: "/api/v1/documents/{documentId}/content", Owner: "knowledge", OperationID: "getDocumentContent", NotImplemented: true},
+	{Method: "POST", Pattern: "/api/v1/knowledge-queries", Owner: "knowledge", OperationID: "createKnowledgeQuery", NotImplemented: true},
 	{Method: "GET", Pattern: "/api/v1/admin/model-profiles", Owner: "ai-gateway", OperationID: "listAdminModelProfiles", DownstreamPattern: "/internal/v1/model-profiles"},
 	{Method: "POST", Pattern: "/api/v1/admin/model-profiles", Owner: "ai-gateway", OperationID: "createAdminModelProfile", DownstreamPattern: "/internal/v1/model-profiles"},
 	{Method: "GET", Pattern: "/api/v1/admin/model-profiles/{profileId}", Owner: "ai-gateway", OperationID: "getAdminModelProfile", DownstreamPattern: "/internal/v1/model-profiles/{profileId}"},
 	{Method: "PATCH", Pattern: "/api/v1/admin/model-profiles/{profileId}", Owner: "ai-gateway", OperationID: "updateAdminModelProfile", DownstreamPattern: "/internal/v1/model-profiles/{profileId}"},
 	{Method: "DELETE", Pattern: "/api/v1/admin/model-profiles/{profileId}", Owner: "ai-gateway", OperationID: "deleteAdminModelProfile", DownstreamPattern: "/internal/v1/model-profiles/{profileId}"},
-	{Method: "GET", Pattern: "/api/v1/admin/parser-configs", Owner: "knowledge", OperationID: "listAdminParserConfigs"},
-	{Method: "POST", Pattern: "/api/v1/admin/parser-configs", Owner: "knowledge", OperationID: "createAdminParserConfig"},
-	{Method: "GET", Pattern: "/api/v1/admin/parser-configs/{parserConfigId}", Owner: "knowledge", OperationID: "getAdminParserConfig"},
-	{Method: "PATCH", Pattern: "/api/v1/admin/parser-configs/{parserConfigId}", Owner: "knowledge", OperationID: "updateAdminParserConfig"},
-	{Method: "DELETE", Pattern: "/api/v1/admin/parser-configs/{parserConfigId}", Owner: "knowledge", OperationID: "deleteAdminParserConfig"},
+	{Method: "GET", Pattern: "/api/v1/admin/parser-configs", Owner: "knowledge", OperationID: "listAdminParserConfigs", NotImplemented: true},
+	{Method: "POST", Pattern: "/api/v1/admin/parser-configs", Owner: "knowledge", OperationID: "createAdminParserConfig", NotImplemented: true},
+	{Method: "GET", Pattern: "/api/v1/admin/parser-configs/{parserConfigId}", Owner: "knowledge", OperationID: "getAdminParserConfig", NotImplemented: true},
+	{Method: "PATCH", Pattern: "/api/v1/admin/parser-configs/{parserConfigId}", Owner: "knowledge", OperationID: "updateAdminParserConfig", NotImplemented: true},
+	{Method: "DELETE", Pattern: "/api/v1/admin/parser-configs/{parserConfigId}", Owner: "knowledge", OperationID: "deleteAdminParserConfig", NotImplemented: true},
 	{Method: "GET", Pattern: "/api/v1/report-types", Owner: "document", OperationID: "listReportTypes"},
 	{Method: "GET", Pattern: "/api/v1/report-templates", Owner: "document", OperationID: "listReportTemplates"},
 	{Method: "POST", Pattern: "/api/v1/report-templates", Owner: "document", OperationID: "createReportTemplate"},
@@ -81,7 +83,7 @@ var activeProxyRoutes = []routeSpec{
 	{Method: "PATCH", Pattern: "/api/v1/qa-sessions/{sessionId}", Owner: "qa", OperationID: "updateQASession"},
 	{Method: "DELETE", Pattern: "/api/v1/qa-sessions/{sessionId}", Owner: "qa", OperationID: "deleteQASession"},
 	{Method: "GET", Pattern: "/api/v1/qa-sessions/{sessionId}/messages", Owner: "qa", OperationID: "listQAMessages"},
-	{Method: "POST", Pattern: "/api/v1/qa-sessions/{sessionId}/messages", Owner: "qa", OperationID: "createQAMessage"},
+	{Method: "POST", Pattern: "/api/v1/qa-sessions/{sessionId}/messages", Owner: "qa", OperationID: "createQAMessage", StreamResponse: true},
 	{Method: "GET", Pattern: "/api/v1/qa-sessions/{sessionId}/events", Owner: "qa", OperationID: "listQAStreamEvents"},
 	{Method: "GET", Pattern: "/api/v1/response-runs/{responseRunId}", Owner: "qa", OperationID: "getQAResponseRun"},
 	{Method: "PATCH", Pattern: "/api/v1/response-runs/{responseRunId}", Owner: "qa", OperationID: "updateQAResponseRun"},
