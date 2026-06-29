@@ -98,10 +98,6 @@ function formToCreateRequest(form: FormData) {
       .map((s) => s.trim())
       .filter(Boolean)
   }
-  if (Object.keys(defaultParams).length > 0) {
-    params.defaultParameters = defaultParams
-  }
-
   return params
 }
 
@@ -110,32 +106,24 @@ function formToUpdateRequest(form: FormData) {
     name: form.name,
     backend: form.backend,
     concurrency: form.concurrency,
+    endpointUrl: form.backend === 'remote_compatible' ? form.endpointUrl.trim() || null : null,
+    supportedContentTypes: form.fileTypes.trim()
+      ? form.fileTypes
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [],
+    defaultParameters: {
+      chunk_size: form.chunkSize,
+      chunk_overlap: form.chunkOverlap,
+      separators: form.separators.trim()
+        ? form.separators
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [],
+    },
   }
-
-  if (form.backend === 'remote_compatible' && form.endpointUrl.trim()) {
-    params.endpointUrl = form.endpointUrl.trim()
-  }
-
-  if (form.fileTypes.trim()) {
-    params.supportedContentTypes = form.fileTypes
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-  }
-
-  const defaultParams: Record<string, unknown> = {}
-  if (form.chunkSize > 0) defaultParams.chunk_size = form.chunkSize
-  if (form.chunkOverlap > 0) defaultParams.chunk_overlap = form.chunkOverlap
-  if (form.separators.trim()) {
-    defaultParams.separators = form.separators
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-  }
-  if (Object.keys(defaultParams).length > 0) {
-    params.defaultParameters = defaultParams
-  }
-
   return params
 }
 

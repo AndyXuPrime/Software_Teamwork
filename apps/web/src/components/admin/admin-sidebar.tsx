@@ -54,6 +54,7 @@ const menuItems: AdminNavigationItem[] = [
     label: 'RAG 知识库',
     requirement: {
       any: [
+        'system:admin',
         'knowledge:read',
         'knowledge:write',
         'document:upload',
@@ -116,6 +117,12 @@ const menuItems: AdminNavigationItem[] = [
     key: 'stats',
     label: 'QA 统计',
     path: '/admin/stats',
+    requirement: { any: ['system:admin'] },
+  },
+  {
+    key: 'settings',
+    label: '系统设置',
+    path: '/admin/settings',
     requirement: { any: ['system:admin'] },
   },
 ]
