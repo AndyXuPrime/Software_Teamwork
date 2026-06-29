@@ -92,6 +92,8 @@
 | Redis / queue | 使用 `asynq` client 投递 ingestion | worker 未实现。 |
 | Parser / object storage / vector store / AI provider | 通过 File Service 保存 raw file；Parser 契约已补 | Parser runtime、Qdrant adapter 尚未落地；Knowledge 尚未接入 Parser 或 AI Gateway embedding/rerank 调用。 |
 
+当 `EMBEDDING_PROVIDER=ai_gateway` 时，`EMBEDDING_MODEL` 必须匹配解析出的 AI Gateway embedding profile `model`。`AI_GATEWAY_EMBEDDING_PROFILE_ID` 可留空以使用 AI Gateway 默认启用的 embedding profile，但 provider 调用前仍会强制校验 model 匹配。
+
 ## 8. 测试与验证
 
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |

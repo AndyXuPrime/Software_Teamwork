@@ -47,6 +47,8 @@ RAG MCP server work.
 | `QDRANT_API_KEY` | no | - | Optional Qdrant API key. |
 | `QDRANT_COLLECTION` | no | `knowledge_chunks` | Qdrant collection name. |
 
+When `EMBEDDING_PROVIDER=ai_gateway`, `EMBEDDING_MODEL` must match the resolved AI Gateway embedding profile `model`. If `AI_GATEWAY_EMBEDDING_PROFILE_ID` is unset, AI Gateway uses its default enabled embedding profile and still validates the `model` value before calling the provider.
+
 ## Implemented Routes
 
 Operational routes:
