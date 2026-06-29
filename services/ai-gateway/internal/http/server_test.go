@@ -231,6 +231,47 @@ func TestCreateChatCompletionStreamWithFakeProvider(t *testing.T) {
 	}
 }
 
+func TestCreateChatCompletionStreamWithoutDoneRecordsFailure(t *testing.T) {
+	fakeProvider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_chunk\",\"object\":\"chat.completion.chunk\",\"created\":1782631200,\"model\":\"provider-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\n"))
+	}))
+	defer fakeProvider.Close()
+
+	server, repo := newTestServerWithChatProviderAndRepo(t, provider.NewHTTPChatClient(fakeProvider.Client()))
+	createBody := `{"name":"default-chat","purpose":"chat","provider":"openai_compatible","baseUrl":"` + fakeProvider.URL + `/v1","model":"provider-model","apiKey":"sk-stream-secret","enabled":true,"isDefault":true,"supportsStreaming":true}`
+	createReq := authedRequest(http.MethodPost, "/internal/v1/model-profiles", strings.NewReader(createBody))
+	createRec := httptest.NewRecorder()
+	server.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create profile status = %d, body = %s", createRec.Code, createRec.Body.String())
+	}
+
+	body := `{"model":"alias","stream":true,"messages":[{"role":"user","content":"secret prompt text"}]}`
+	req := authedRequest(http.MethodPost, "/internal/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("X-Caller-Service", "qa")
+	req.Header.Set("Accept", "text/event-stream")
+	rec := httptest.NewRecorder()
+
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "[DONE]") {
+		t.Fatalf("stream body synthesized DONE for incomplete provider stream: %s", rec.Body.String())
+	}
+	if len(repo.invocations) != 1 || len(repo.attempts) != 1 {
+		t.Fatalf("recorded invocations=%d attempts=%d, want 1/1", len(repo.invocations), len(repo.attempts))
+	}
+	if repo.invocations[0].Status != service.InvocationFailed || repo.attempts[0].Status != service.InvocationFailed {
+		t.Fatalf("stream status invocation=%s attempt=%s, want failed", repo.invocations[0].Status, repo.attempts[0].Status)
+	}
+	if repo.invocations[0].NormalizedErrorCode != "dependency_error" {
+		t.Fatalf("NormalizedErrorCode = %q, want dependency_error", repo.invocations[0].NormalizedErrorCode)
+	}
+}
+
 func TestModelInvocationRoutesRejectUnknownCallerService(t *testing.T) {
 	server := newTestServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/internal/v1/chat/completions", strings.NewReader(`{}`))
@@ -271,6 +312,12 @@ func newTestServer(t *testing.T) *Server {
 
 func newTestServerWithChatProvider(t *testing.T, chatProvider service.ChatProvider) *Server {
 	t.Helper()
+	server, _ := newTestServerWithChatProviderAndRepo(t, chatProvider)
+	return server
+}
+
+func newTestServerWithChatProviderAndRepo(t *testing.T, chatProvider service.ChatProvider) (*Server, *memoryRepository) {
+	t.Helper()
 	tokenHash := sha256.Sum256([]byte("service-token"))
 	auth, err := middleware.NewServiceTokenAuthenticator([]string{"sha256:" + hex.EncodeToString(tokenHash[:])})
 	if err != nil {
@@ -280,11 +327,13 @@ func newTestServerWithChatProvider(t *testing.T, chatProvider service.ChatProvid
 	if err != nil {
 		t.Fatalf("NewCredentialEncryptor() error = %v", err)
 	}
-	return NewServer(Config{
+	repo := newMemoryRepository()
+	server := NewServer(Config{
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Profiles:      service.NewWithChatProvider(newMemoryRepository(), encryptor, 60000, chatProvider),
+		Profiles:      service.NewWithChatProvider(repo, encryptor, 60000, chatProvider),
 		Authenticator: auth,
 	})
+	return server, repo
 }
 
 func authedRequest(method, target string, body io.Reader) *http.Request {

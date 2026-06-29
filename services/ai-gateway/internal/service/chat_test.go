@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -115,6 +116,55 @@ func TestCreateChatCompletionRecordsOnlySafeInvocationSummary(t *testing.T) {
 	}
 	if repo.attempts[0].BaseURLHost != "provider.example" {
 		t.Fatalf("BaseURLHost = %q", repo.attempts[0].BaseURLHost)
+	}
+}
+
+func TestCreateChatCompletionRecordsProviderStatusOnOpenAIError(t *testing.T) {
+	repo := newMemoryRepository()
+	statusCode := http.StatusTooManyRequests
+	svc := NewWithChatProvider(repo, mustEncryptor(t), 60000, fakeChatProvider{
+		complete: func(context.Context, ProviderChatRequest) (ProviderChatResult, error) {
+			return ProviderChatResult{}, &OpenAIError{
+				HTTPStatus:         http.StatusTooManyRequests,
+				Message:            "provider rate limited request",
+				Type:               "rate_limit_error",
+				Code:               "rate_limit_error",
+				ProviderStatusCode: &statusCode,
+			}
+		},
+	})
+	isDefault := true
+	if _, err := svc.CreateModelProfile(context.Background(), RequestContext{UserID: "user_1"}, CreateModelProfileInput{
+		Name:              "default-chat",
+		Purpose:           PurposeChat,
+		Provider:          ProviderOpenAICompatible,
+		BaseURL:           "https://provider.example/v1",
+		Model:             "provider-model",
+		APIKey:            "sk-secret-value",
+		IsDefault:         &isDefault,
+		SupportsStreaming: &isDefault,
+	}); err != nil {
+		t.Fatalf("CreateModelProfile() error = %v", err)
+	}
+
+	_, err := svc.CreateChatCompletion(context.Background(), ChatCompletionInput{
+		RequestContext: RequestContext{RequestID: "req_rate_limited", CallerService: "qa", UserID: "user_1"},
+		Payload: map[string]json.RawMessage{
+			"model":    json.RawMessage(`"alias"`),
+			"messages": json.RawMessage(`[{"role":"user","content":"full prompt text"}]`),
+		},
+	})
+	if err == nil {
+		t.Fatal("CreateChatCompletion() error = nil, want provider error")
+	}
+	if len(repo.invocations) != 1 || len(repo.attempts) != 1 {
+		t.Fatalf("recorded invocations=%d attempts=%d, want 1/1", len(repo.invocations), len(repo.attempts))
+	}
+	if repo.invocations[0].ProviderStatusCode == nil || *repo.invocations[0].ProviderStatusCode != statusCode {
+		t.Fatalf("invocation provider status = %v, want %d", repo.invocations[0].ProviderStatusCode, statusCode)
+	}
+	if repo.attempts[0].ProviderStatusCode == nil || *repo.attempts[0].ProviderStatusCode != statusCode {
+		t.Fatalf("attempt provider status = %v, want %d", repo.attempts[0].ProviderStatusCode, statusCode)
 	}
 }
 

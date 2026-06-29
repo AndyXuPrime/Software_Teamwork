@@ -286,10 +286,8 @@ func (s *Server) handleCreateChatCompletionStream(w http.ResponseWriter, r *http
 		break
 	}
 	if status == service.InvocationSucceeded && !sawDone {
-		_, _ = w.Write([]byte("data: [DONE]\n\n"))
-		if flusher != nil {
-			flusher.Flush()
-		}
+		status = service.InvocationFailed
+		streamErr = &service.OpenAIError{HTTPStatus: http.StatusBadGateway, Message: "provider stream ended without completion marker", Type: "upstream_error", Code: "dependency_error"}
 	}
 	if err := stream.Finalize(service.StreamFinalizeInput{Status: status, Error: streamErr, Usage: usage}); err != nil {
 		s.logger.WarnContext(r.Context(), "record provider stream invocation failed", "service", "ai-gateway", "request_id", requestIDFromContext(r.Context()), "operation", "chat_completion")

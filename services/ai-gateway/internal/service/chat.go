@@ -38,7 +38,7 @@ func (s *Service) CreateChatCompletion(ctx context.Context, input ChatCompletion
 		status:             status,
 		startedAt:          startedAt,
 		finishedAt:         finishedAt,
-		providerStatusCode: intPtrFromValue(result.ProviderStatusCode),
+		providerStatusCode: providerStatusFromResultOrError(result.ProviderStatusCode, normalized),
 		usage:              result.Usage,
 		normalized:         normalized,
 	}); recordErr != nil && err == nil {
@@ -388,6 +388,13 @@ func providerStatusFromError(err *OpenAIError) *int {
 		return nil
 	}
 	return err.ProviderStatusCode
+}
+
+func providerStatusFromResultOrError(resultStatus int, err *OpenAIError) *int {
+	if status := intPtrFromValue(resultStatus); status != nil {
+		return status
+	}
+	return providerStatusFromError(err)
 }
 
 func clonePayload(payload map[string]json.RawMessage) map[string]json.RawMessage {
