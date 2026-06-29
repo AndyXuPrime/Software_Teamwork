@@ -6,6 +6,7 @@
 
 - [Gateway 数据模型文档](docs/data-models.md)
 - [Gateway OpenAPI 契约](api/openapi.yaml)
+- [Gateway Active API Owner Map](docs/active-api-owner-map.md)
 - [技术选型基线](../../architecture/technology-decisions.md)
 
 ## 设计原则
@@ -70,6 +71,10 @@ Gateway 后续实现必须遵循 [技术选型基线](../../architecture/technol
 /healthz
 /readyz
 ```
+
+逐项 active operation、owner service、tag、operationId 和认证要求见
+[Gateway Active API Owner Map](docs/active-api-owner-map.md)。该清单从
+[`api/openapi.yaml`](api/openapi.yaml) 审计生成；若两者冲突，以 OpenAPI 为准并同步更新清单。
 
 当前已确定路径分组：
 

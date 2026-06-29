@@ -19,6 +19,7 @@ AI Gateway 是内部模型服务，只提供 `/internal/v1/**` 给 `qa`、`knowl
 ## OpenAPI 作为协作源
 
 - `docs/services/gateway/api/openapi.yaml` 是前端与 gateway 的第一版契约源。
+- [`docs/services/gateway/docs/active-api-owner-map.md`](../services/gateway/docs/active-api-owner-map.md) 是从 gateway OpenAPI 审计得到的 active operation 与 owner service 清单，便于各组按路径分工。
 - `docs/services/ai-gateway/api/openapi.yaml` 是 AI Gateway 内部服务契约源，不生成前端 API client。
 - 前端统一使用 `openapi-typescript` 从 gateway OpenAPI 生成类型，并通过项目封装的 typed fetch wrapper 调用 gateway；不得继续扩展旧的手写 `{ code, message, data }` API client。
 - 后端实现 endpoint 前，应先更新 OpenAPI。
