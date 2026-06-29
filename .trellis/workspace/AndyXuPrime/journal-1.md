@@ -166,3 +166,36 @@ Resolved the latest Codex PR Review finding by requiring knowledge:write for the
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Fix PR 212 read-only report navigation
+
+**Date**: 2026-06-29
+**Task**: Fix PR 212 read-only report navigation
+**Branch**: `fix/frontend-post-206-polish`
+
+### Summary
+
+Resolved the latest Codex PR Review finding by exposing the top report navigation to report:read users and routing it through /reports so existing route guards send write users to generation and read-only users to records; frontend checks passed.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e2ea01c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
