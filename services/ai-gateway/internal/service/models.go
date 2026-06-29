@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"time"
 )
 
@@ -148,11 +149,128 @@ type Readiness struct {
 	Checks []ReadinessCheck `json:"checks"`
 }
 
+type ChatCompletionInput struct {
+	RequestContext RequestContext
+	Payload        map[string]json.RawMessage
+}
+
+type ChatCompletionResult struct {
+	Body json.RawMessage
+}
+
+type ChatCompletionStream struct {
+	Body     io.ReadCloser
+	Finalize func(StreamFinalizeInput) error
+}
+
+type StreamFinalizeInput struct {
+	Status             InvocationStatus
+	ProviderStatusCode *int
+	Error              *OpenAIError
+	Usage              *TokenUsage
+}
+
+type ProviderChatRequest struct {
+	Profile   ModelProfile
+	APIKey    string
+	Payload   map[string]json.RawMessage
+	Stream    bool
+	RequestID string
+}
+
+type ProviderChatResult struct {
+	Body               json.RawMessage
+	Usage              *TokenUsage
+	ProviderStatusCode int
+}
+
+type ProviderChatStream struct {
+	Body               io.ReadCloser
+	ProviderStatusCode int
+}
+
+type ChatProvider interface {
+	CompleteChat(context.Context, ProviderChatRequest) (ProviderChatResult, error)
+	StreamChat(context.Context, ProviderChatRequest) (ProviderChatStream, error)
+}
+
+type TokenUsage struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+}
+
+type InvocationStatus string
+
+const (
+	InvocationSucceeded InvocationStatus = "succeeded"
+	InvocationFailed    InvocationStatus = "failed"
+	InvocationCancelled InvocationStatus = "cancelled"
+	InvocationTimeout   InvocationStatus = "timeout"
+)
+
+type ProviderInvocation struct {
+	ID                  string
+	RequestID           string
+	CallerService       string
+	ExternalUserID      string
+	Operation           string
+	ProfileID           string
+	Provider            Provider
+	Model               string
+	Stream              bool
+	Status              InvocationStatus
+	ProviderStatusCode  *int
+	PromptTokens        *int
+	CompletionTokens    *int
+	TotalTokens         *int
+	DurationMS          int64
+	AttemptCount        int
+	NormalizedErrorCode string
+	NormalizedErrorType string
+	ErrorMessage        string
+	CreatedAt           time.Time
+	FinishedAt          time.Time
+}
+
+type ProviderInvocationAttempt struct {
+	ID                 string
+	InvocationID       string
+	AttemptNo          int
+	Provider           Provider
+	BaseURLHost        string
+	Model              string
+	Status             InvocationStatus
+	ProviderStatusCode *int
+	DurationMS         int64
+	ErrorCode          string
+	ErrorMessage       string
+	StartedAt          time.Time
+	FinishedAt         time.Time
+}
+
+type OpenAIError struct {
+	HTTPStatus         int
+	Message            string
+	Type               string
+	Param              string
+	Code               string
+	ProviderStatusCode *int
+	Err                error
+}
+
+func (e *OpenAIError) Error() string { return e.Message }
+
+func (e *OpenAIError) Unwrap() error { return e.Err }
+
 type Repository interface {
 	CheckReady(context.Context) error
 	ListModelProfiles(context.Context, ListModelProfilesFilter) ([]ModelProfile, error)
 	GetModelProfile(context.Context, string) (ModelProfile, error)
+	GetDefaultModelProfile(context.Context, Purpose) (ModelProfile, error)
+	GetActiveCredential(context.Context, string) (ProviderCredential, error)
 	CreateModelProfile(context.Context, ModelProfile, ProviderCredential, ModelProfileRevision) (ModelProfile, error)
 	UpdateModelProfile(context.Context, ModelProfile, *ProviderCredential, ModelProfileRevision) (ModelProfile, error)
 	SoftDeleteModelProfile(context.Context, string, time.Time, ModelProfileRevision) error
+	RecordProviderInvocation(context.Context, ProviderInvocation, []ProviderInvocationAttempt) error
 }

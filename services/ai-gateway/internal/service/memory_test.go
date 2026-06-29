@@ -12,6 +12,8 @@ type memoryRepository struct {
 	profiles    map[string]ModelProfile
 	credentials map[string]ProviderCredential
 	revisions   []ModelProfileRevision
+	invocations []ProviderInvocation
+	attempts    []ProviderInvocationAttempt
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -56,6 +58,34 @@ func (r *memoryRepository) GetModelProfile(ctx context.Context, id string) (Mode
 		return ModelProfile{}, ErrNotFound
 	}
 	return cloneProfile(profile), nil
+}
+
+func (r *memoryRepository) GetDefaultModelProfile(ctx context.Context, purpose Purpose) (ModelProfile, error) {
+	if err := ctx.Err(); err != nil {
+		return ModelProfile{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, profile := range r.profiles {
+		if profile.Purpose == purpose && profile.Enabled && profile.IsDefault && profile.DeletedAt == nil {
+			return cloneProfile(profile), nil
+		}
+	}
+	return ModelProfile{}, ErrNotFound
+}
+
+func (r *memoryRepository) GetActiveCredential(ctx context.Context, profileID string) (ProviderCredential, error) {
+	if err := ctx.Err(); err != nil {
+		return ProviderCredential{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, credential := range r.credentials {
+		if credential.ProfileID == profileID && credential.Status == CredentialActive && credential.DeletedAt == nil {
+			return credential, nil
+		}
+	}
+	return ProviderCredential{}, ErrNotFound
 }
 
 func (r *memoryRepository) CreateModelProfile(ctx context.Context, profile ModelProfile, credential ProviderCredential, revision ModelProfileRevision) (ModelProfile, error) {
@@ -124,6 +154,17 @@ func (r *memoryRepository) SoftDeleteModelProfile(ctx context.Context, id string
 	profile.UpdatedAt = deletedAt
 	r.profiles[id] = profile
 	r.revisions = append(r.revisions, revision)
+	return nil
+}
+
+func (r *memoryRepository) RecordProviderInvocation(ctx context.Context, invocation ProviderInvocation, attempts []ProviderInvocationAttempt) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.invocations = append(r.invocations, invocation)
+	r.attempts = append(r.attempts, attempts...)
 	return nil
 }
 

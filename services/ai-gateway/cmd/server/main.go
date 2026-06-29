@@ -13,6 +13,7 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/ai-gateway/internal/config"
 	httpapi "github.com/Sakayori-Iroha-168/Software_Teamwork/services/ai-gateway/internal/http"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/ai-gateway/internal/middleware"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/ai-gateway/internal/provider"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/ai-gateway/internal/repository"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/ai-gateway/internal/service"
 )
@@ -46,7 +47,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	profiles := service.New(repo, encryptor, cfg.DefaultTimeoutMS)
+	profiles := service.NewWithChatProvider(repo, encryptor, cfg.DefaultTimeoutMS, provider.NewHTTPChatClient(nil))
 	handler := httpapi.NewServer(httpapi.Config{
 		Logger:          logger,
 		Profiles:        profiles,
