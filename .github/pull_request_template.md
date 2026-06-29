@@ -7,6 +7,10 @@
 
 请用中文简要说明本 PR 做了什么。
 
+## 关联 Issue
+
+如果本 PR 解决或完成某个 issue，请填写 GitHub 自动关闭关键字，例如 `Closes #118`。注意关键字和 `#` 之间要有空格；如果没有关联 issue，请填写“无”。
+
 ## 验证
 
 请用中文说明已经运行的检查，例如 lint、type-check、test、build。
@@ -21,6 +25,7 @@
 - [ ] PR 来源是个人 fork 的独立分支
 - [ ] PR 标题使用英文
 - [ ] PR 描述使用中文
+- [ ] 如果 PR 解决或完成 issue，PR 描述已包含自动关闭关键字，例如 `Closes #118`
 - [ ] 分支已经基于最新 `develop`
 - [ ] Commit message 符合 Conventional Commits
 - [ ] 已运行必要检查
