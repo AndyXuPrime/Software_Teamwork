@@ -1674,10 +1674,6 @@ paths:
           - active
           - archived
           default: active
-      - name: q
-        in: query
-        schema:
-          type: string
       - name: sort
         in: query
         schema:
@@ -1729,6 +1725,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/QASessionResponse'
+        '403':
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
     patch:
@@ -1752,6 +1750,8 @@ paths:
                 $ref: '#/components/schemas/QASessionResponse'
         '400':
           $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
     delete:
@@ -1764,6 +1764,8 @@ paths:
       responses:
         '204':
           description: QA session deleted.
+        '403':
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
   /api/v1/qa-sessions/{sessionId}/messages:

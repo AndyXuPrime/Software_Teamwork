@@ -1,0 +1,2 @@
+{"ts":"2026-06-29T10:55:00+08:00","actor":"JerryTeam","check":"pending","detail":"Run gofmt, git diff --check, go test ./..., and go build -buildvcs=false ./cmd/server from services/qa before finalizing."}
+{"ts":"2026-06-29T11:13:00+08:00","actor":"JerryTeam","check":"passed","detail":"Ran gofmt on changed Go files, git diff --check, GOPROXY=https://goproxy.cn,direct go test ./..., and go build -buildvcs=false ./cmd/server under services/qa."}

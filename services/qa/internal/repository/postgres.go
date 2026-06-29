@@ -56,22 +56,21 @@ func (r *Postgres) CreateConversation(ctx context.Context, conversation service.
 	return conversation, nil
 }
 
-func (r *Postgres) ListConversations(ctx context.Context, userID string, page, pageSize int, query string) (service.Page[service.Conversation], error) {
-	query = strings.TrimSpace(query)
+func (r *Postgres) ListConversations(ctx context.Context, userID string, options service.ConversationListOptions) (service.Page[service.Conversation], error) {
 	var total int
 	if err := r.pool.QueryRow(ctx, `
 		SELECT count(*) FROM conversations
-		WHERE external_user_id = $1 AND deleted_at IS NULL AND ($2 = '' OR title ILIKE '%' || $2 || '%')`, userID, query).Scan(&total); err != nil {
+		WHERE external_user_id = $1 AND deleted_at IS NULL AND status = $2`, userID, options.Status).Scan(&total); err != nil {
 		return service.Page[service.Conversation]{}, fmt.Errorf("count conversations: %w", err)
 	}
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.pool.Query(ctx, fmt.Sprintf(`
 		SELECT c.id::text, c.title, c.external_user_id, c.status, c.created_at, c.updated_at, c.last_message_at,
 		       (SELECT count(*) FROM messages m WHERE m.conversation_id=c.id),
 		       COALESCE((SELECT left(b.content,200) FROM messages m JOIN message_content_blocks b ON b.message_id=m.id AND b.block_order=0 WHERE m.conversation_id=c.id ORDER BY m.sequence_no DESC LIMIT 1),'')
 		FROM conversations c
-		WHERE c.external_user_id = $1 AND c.deleted_at IS NULL AND ($2 = '' OR c.title ILIKE '%' || $2 || '%')
-		ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
-		LIMIT $3 OFFSET $4`, userID, query, pageSize, (page-1)*pageSize)
+		WHERE c.external_user_id = $1 AND c.deleted_at IS NULL AND c.status = $2
+		ORDER BY %s, c.id DESC
+		LIMIT $3 OFFSET $4`, conversationOrderBy(options.Sort)), userID, options.Status, options.PageSize, (options.Page-1)*options.PageSize)
 	if err != nil {
 		return service.Page[service.Conversation]{}, fmt.Errorf("list conversations: %w", err)
 	}
@@ -87,18 +86,18 @@ func (r *Postgres) ListConversations(ctx context.Context, userID string, page, p
 	if err := rows.Err(); err != nil {
 		return service.Page[service.Conversation]{}, fmt.Errorf("iterate conversations: %w", err)
 	}
-	return service.Page[service.Conversation]{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
+	return service.Page[service.Conversation]{Items: items, Page: options.Page, PageSize: options.PageSize, Total: total}, nil
 }
 
 func (r *Postgres) GetConversation(ctx context.Context, userID, id string) (service.Conversation, error) {
 	row := r.pool.QueryRow(ctx, `
 		SELECT c.id::text, c.title, c.external_user_id, c.status, c.created_at, c.updated_at, c.last_message_at,
-		       (SELECT count(*) FROM messages m WHERE m.conversation_id=c.id),
-		       COALESCE((SELECT left(b.content,200) FROM messages m JOIN message_content_blocks b ON b.message_id=m.id AND b.block_order=0 WHERE m.conversation_id=c.id ORDER BY m.sequence_no DESC LIMIT 1),'')
+	       (SELECT count(*) FROM messages m WHERE m.conversation_id=c.id),
+	       COALESCE((SELECT left(b.content,200) FROM messages m JOIN message_content_blocks b ON b.message_id=m.id AND b.block_order=0 WHERE m.conversation_id=c.id ORDER BY m.sequence_no DESC LIMIT 1),'')
 		FROM conversations c WHERE c.id::text = $1 AND c.external_user_id = $2 AND c.deleted_at IS NULL`, id, userID)
 	conversation, err := scanConversation(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return service.Conversation{}, service.NewError(service.CodeNotFound, "conversation not found", err)
+		return service.Conversation{}, r.conversationAccessError(ctx, userID, id)
 	}
 	if err != nil {
 		return service.Conversation{}, fmt.Errorf("get conversation: %w", err)
@@ -115,7 +114,7 @@ func (r *Postgres) UpdateConversation(ctx context.Context, userID string, conver
 		return service.Conversation{}, fmt.Errorf("update conversation: %w", err)
 	}
 	if command.RowsAffected() == 0 {
-		return service.Conversation{}, service.NewError(service.CodeNotFound, "conversation not found", nil)
+		return service.Conversation{}, r.conversationAccessError(ctx, userID, conversation.ID)
 	}
 	return conversation, nil
 }
@@ -128,7 +127,7 @@ func (r *Postgres) DeleteConversation(ctx context.Context, userID, id string) er
 		return fmt.Errorf("delete conversation: %w", err)
 	}
 	if command.RowsAffected() == 0 {
-		return service.NewError(service.CodeNotFound, "conversation not found", nil)
+		return r.conversationAccessError(ctx, userID, id)
 	}
 	return nil
 }
@@ -449,6 +448,41 @@ func scanConversation(scanner conversationScanner) (service.Conversation, error)
 		conversation.LastMessageAt = &lastMessageAt.Time
 	}
 	return conversation, nil
+}
+
+func conversationOrderBy(sort string) string {
+	switch sort {
+	case "updatedAt":
+		return "c.updated_at ASC"
+	case "-createdAt":
+		return "c.created_at DESC"
+	case "createdAt":
+		return "c.created_at ASC"
+	default:
+		return "c.updated_at DESC"
+	}
+}
+
+func (r *Postgres) conversationAccessError(ctx context.Context, userID, id string) error {
+	var ownerID string
+	var deletedAt sql.NullTime
+	err := r.pool.QueryRow(ctx, `
+		SELECT external_user_id, deleted_at
+		FROM conversations
+		WHERE id::text = $1`, id).Scan(&ownerID, &deletedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return service.NewError(service.CodeNotFound, "conversation not found", err)
+	}
+	if err != nil {
+		return fmt.Errorf("authorize conversation access: %w", err)
+	}
+	if deletedAt.Valid {
+		return service.NewError(service.CodeNotFound, "conversation not found", nil)
+	}
+	if ownerID != userID {
+		return service.NewError(service.CodeForbidden, "conversation access denied", nil)
+	}
+	return service.NewError(service.CodeNotFound, "conversation not found", nil)
 }
 
 func blockStatus(messageStatus string) string {

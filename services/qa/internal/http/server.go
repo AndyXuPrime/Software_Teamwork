@@ -19,7 +19,7 @@ import (
 
 type QAService interface {
 	CreateConversation(context.Context, string, string) (service.Conversation, error)
-	ListConversations(context.Context, string, int, int, string) (service.Page[service.Conversation], error)
+	ListConversations(context.Context, string, service.ConversationListOptions) (service.Page[service.Conversation], error)
 	GetConversation(context.Context, string, string) (service.Conversation, error)
 	UpdateConversation(context.Context, string, string, string, string) (service.Conversation, error)
 	DeleteConversation(context.Context, string, string) error
@@ -206,12 +206,12 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	page, pageSize, err := pagination(r, 20)
+	options, err := conversationListOptions(r)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	result, err := s.qa.ListConversations(r.Context(), userID, page, pageSize, r.URL.Query().Get("q"))
+	result, err := s.qa.ListConversations(r.Context(), userID, options)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -394,6 +394,19 @@ func pagination(r *http.Request, defaultPageSize int) (int, int, error) {
 		}
 	}
 	return page, pageSize, nil
+}
+
+func conversationListOptions(r *http.Request) (service.ConversationListOptions, error) {
+	page, pageSize, err := pagination(r, 20)
+	if err != nil {
+		return service.ConversationListOptions{}, err
+	}
+	return service.ConversationListOptions{
+		Page:     page,
+		PageSize: pageSize,
+		Status:   r.URL.Query().Get("status"),
+		Sort:     r.URL.Query().Get("sort"),
+	}, nil
 }
 
 type requestIDKey struct{}

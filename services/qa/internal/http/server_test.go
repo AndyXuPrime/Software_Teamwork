@@ -14,6 +14,7 @@ import (
 
 type fakeQAService struct {
 	create func(context.Context, string, string) (service.Conversation, error)
+	list   func(context.Context, string, service.ConversationListOptions) (service.Page[service.Conversation], error)
 	ask    func(context.Context, string, string, service.AskInput, service.ProgressObserver) (service.AskResult, error)
 }
 
@@ -48,7 +49,10 @@ func (fakeSettingsService) TestMCPConnection(context.Context, service.MCPConnect
 func (f fakeQAService) CreateConversation(ctx context.Context, userID, title string) (service.Conversation, error) {
 	return f.create(ctx, userID, title)
 }
-func (fakeQAService) ListConversations(context.Context, string, int, int, string) (service.Page[service.Conversation], error) {
+func (f fakeQAService) ListConversations(ctx context.Context, userID string, options service.ConversationListOptions) (service.Page[service.Conversation], error) {
+	if f.list != nil {
+		return f.list(ctx, userID, options)
+	}
 	return service.Page[service.Conversation]{Items: []service.Conversation{}, Page: 1, PageSize: 20}, nil
 }
 func (fakeQAService) GetConversation(context.Context, string, string) (service.Conversation, error) {
@@ -193,6 +197,30 @@ func TestCreateConversationAllowsEmptyBody(t *testing.T) {
 	server.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestListConversationUsesDocumentedQueryParameters(t *testing.T) {
+	server := newTestServer(t, fakeQAService{list: func(_ context.Context, userID string, options service.ConversationListOptions) (service.Page[service.Conversation], error) {
+		if userID != "user-1" {
+			t.Fatalf("userID=%q", userID)
+		}
+		want := service.ConversationListOptions{Page: 2, PageSize: 5, Status: "archived", Sort: "createdAt"}
+		if options != want {
+			t.Fatalf("options=%+v want %+v", options, want)
+		}
+		return service.Page[service.Conversation]{Items: []service.Conversation{{ID: "conversation-id", Status: "archived"}}, Page: options.Page, PageSize: options.PageSize, Total: 1}, nil
+	}})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-sessions?page=2&pageSize=5&status=archived&sort=createdAt", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"pageSize":5`) {
+		t.Fatalf("unexpected page response: %s", recorder.Body.String())
 	}
 }
 
