@@ -100,6 +100,100 @@ func (r *UserRepository) FindByID(ctx context.Context, id UserID) (User, error) 
 - CI should validate migrations when migration tooling is introduced.
 - Schema changes must be backward-compatible when multiple services or deployments may overlap.
 
+## Scenario: AI Gateway Provider Invocation Logging
+
+### 1. Scope / Trigger
+
+- Trigger: adding or changing AI Gateway model invocation persistence, provider
+  attempts, chat/embedding/rerank usage summaries, or provider error recording.
+- Applies to `services/ai-gateway/internal/service`,
+  `services/ai-gateway/internal/repository`,
+  `services/ai-gateway/internal/provider`, and
+  `services/ai-gateway/migrations`.
+
+### 2. Signatures
+
+- Internal model route:
+  - `POST /internal/v1/chat/completions`.
+- Database tables:
+  - `provider_invocations`.
+  - `provider_invocation_attempts`.
+- Repository boundary:
+  - `RecordProviderInvocation(ctx, invocation, attempts)`.
+  - Active credential reads must use a dedicated method such as
+    `GetActiveCredential(ctx, profileID)`.
+
+### 3. Contracts
+
+- Provider HTTP calls must happen outside PostgreSQL transactions.
+- `provider_invocations` may store request id, caller service, external user id,
+  operation, profile id, provider, model, stream flag, status, provider status,
+  token usage, duration, attempt count, and normalized error summary.
+- `provider_invocation_attempts` may store invocation id, attempt number,
+  provider, base URL host only, model, status, provider status, duration, and
+  normalized error summary.
+- Do not store full request bodies, `messages`, prompt text, generated answer
+  text, tool schemas, full tool arguments, tool results, provider bearer tokens,
+  API keys, full provider URLs, or raw provider response bodies.
+- For streaming calls, use a cancellation-independent short context when writing
+  the final invocation summary so caller cancellation can still be recorded.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required handling |
+| --- | --- |
+| Missing/default chat profile | OpenAI-style `not_found_error` or `invalid_request_error` |
+| Disabled or wrong-purpose profile | OpenAI-style `invalid_request_error` |
+| Missing active credential | OpenAI-style `invalid_request_error` |
+| Credential decrypt failure | OpenAI-style `upstream_error` without secret details |
+| Provider `401` | OpenAI-style authentication category; no raw body |
+| Provider `403` | OpenAI-style permission category; no raw body |
+| Provider `429` | OpenAI-style rate limit category; no raw body |
+| Provider `5xx` or non-contract response | OpenAI-style upstream error; no raw body |
+| Provider timeout | record status `timeout` |
+| Caller stream cancellation | record status `cancelled` when observable |
+| Invocation record write failure after provider success | return an upstream/internal dependency error without leaking payloads |
+
+### 5. Good/Base/Bad Cases
+
+- Good: service selects a safe chat profile, decrypts the credential only for
+  the provider request, calls provider outside a transaction, then persists a
+  sanitized invocation plus one attempt.
+- Base: first slice records one attempt per call; retry/fallback can add more
+  attempts later without changing the public model invocation contract.
+- Bad: storing `messages`, tool arguments, provider raw error bodies, full base
+  URLs with path/query, API keys, bearer tokens, or prompt hashes as metrics or
+  database fields.
+
+### 6. Tests Required
+
+- Provider tests with fake HTTP servers for success, `401`, `403`, `429`, `5xx`,
+  timeout, malformed/non-contract response, and stream cancellation.
+- Handler tests asserting chat success is OpenAI-compatible and not wrapped in
+  `{ data, requestId }`.
+- Function-calling tests asserting `tools`, `tool_choice`,
+  `parallel_tool_calls`, `assistant.tool_calls`, `tool_call_id`, and streaming
+  `delta.tool_calls` are passed through without AI Gateway executing tools.
+- Safety tests asserting responses and invocation summaries do not contain API
+  keys, bearer tokens, prompt text, full tool arguments, tool schemas, tool
+  results, or raw provider bodies.
+- Migration validation with `goose@v3.27.1`; run a real PostgreSQL apply when a
+  local or CI database URL is available.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+chat handler -> provider HTTP call inside DB transaction -> store messages and raw provider error body for debugging
+```
+
+#### Correct
+
+```text
+chat handler -> service selects profile and decrypts credential -> provider HTTP call outside transaction -> repository stores sanitized invocation and attempt summary
+```
+
 ---
 
 ## Naming Conventions

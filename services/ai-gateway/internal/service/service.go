@@ -21,6 +21,7 @@ const (
 type Service struct {
 	repo             Repository
 	encryptor        *CredentialEncryptor
+	chatProvider     ChatProvider
 	defaultTimeoutMS int
 }
 

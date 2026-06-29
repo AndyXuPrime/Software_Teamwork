@@ -118,6 +118,47 @@ func (r *PostgresRepository) GetModelProfile(ctx context.Context, id string) (se
 	return profile, nil
 }
 
+func (r *PostgresRepository) GetDefaultModelProfile(ctx context.Context, purpose service.Purpose) (service.ModelProfile, error) {
+	row := r.db.QueryRow(ctx, `
+		SELECT
+			id, name, purpose, provider, base_url, model, enabled, is_default,
+			timeout_ms, api_key_configured, supports_streaming, dimensions, top_n,
+			default_parameters_json, COALESCE(credential_id, ''), COALESCE(created_by_user_id, ''),
+			COALESCE(updated_by_user_id, ''), created_at, updated_at, deleted_at
+		FROM model_profiles
+		WHERE purpose = $1 AND enabled = true AND is_default = true AND deleted_at IS NULL
+		ORDER BY updated_at DESC
+		LIMIT 1`, string(purpose))
+	profile, err := scanModelProfile(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return service.ModelProfile{}, service.ErrNotFound
+		}
+		return service.ModelProfile{}, fmt.Errorf("get default model profile: %w", err)
+	}
+	return profile, nil
+}
+
+func (r *PostgresRepository) GetActiveCredential(ctx context.Context, profileID string) (service.ProviderCredential, error) {
+	row := r.db.QueryRow(ctx, `
+		SELECT
+			id, profile_id, storage_mode, ciphertext, nonce, encryption_key_version,
+			fingerprint_sha256, COALESCE(key_last4, ''), status, COALESCE(created_by_user_id, ''),
+			created_at, rotated_at, disabled_at, deleted_at
+		FROM provider_credentials
+		WHERE profile_id = $1 AND status = 'active' AND deleted_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT 1`, profileID)
+	credential, err := scanProviderCredential(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return service.ProviderCredential{}, service.ErrNotFound
+		}
+		return service.ProviderCredential{}, fmt.Errorf("get active provider credential: %w", err)
+	}
+	return credential, nil
+}
+
 func (r *PostgresRepository) CreateModelProfile(ctx context.Context, profile service.ModelProfile, credential service.ProviderCredential, revision service.ModelProfileRevision) (service.ModelProfile, error) {
 	var created service.ModelProfile
 	err := r.withTx(ctx, func(tx *PostgresRepository) error {
@@ -191,6 +232,55 @@ func (r *PostgresRepository) SoftDeleteModelProfile(ctx context.Context, id stri
 			return fmt.Errorf("disable provider credential: %w", err)
 		}
 		return tx.insertRevision(ctx, revision)
+	})
+}
+
+func (r *PostgresRepository) RecordProviderInvocation(ctx context.Context, invocation service.ProviderInvocation, attempts []service.ProviderInvocationAttempt) error {
+	return r.withTx(ctx, func(tx *PostgresRepository) error {
+		if _, err := tx.db.Exec(ctx, `
+			INSERT INTO provider_invocations (
+				id, request_id, caller_service, external_user_id, operation,
+				profile_id, provider, model, stream, status, provider_status_code,
+				prompt_tokens, completion_tokens, total_tokens, duration_ms,
+				attempt_count, normalized_error_code, normalized_error_type,
+				error_message, created_at, finished_at
+			)
+			VALUES (
+				$1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), $5,
+				$6, $7, $8, $9, $10, $11,
+				$12, $13, $14, $15,
+				$16, NULLIF($17, ''), NULLIF($18, ''),
+				NULLIF($19, ''), $20, $21
+			)`,
+			invocation.ID, invocation.RequestID, invocation.CallerService, invocation.ExternalUserID,
+			invocation.Operation, invocation.ProfileID, string(invocation.Provider), invocation.Model,
+			invocation.Stream, string(invocation.Status), invocation.ProviderStatusCode,
+			invocation.PromptTokens, invocation.CompletionTokens, invocation.TotalTokens,
+			invocation.DurationMS, invocation.AttemptCount, invocation.NormalizedErrorCode,
+			invocation.NormalizedErrorType, invocation.ErrorMessage, invocation.CreatedAt,
+			invocation.FinishedAt); err != nil {
+			return fmt.Errorf("insert provider invocation: %w", err)
+		}
+		for _, attempt := range attempts {
+			if _, err := tx.db.Exec(ctx, `
+				INSERT INTO provider_invocation_attempts (
+					id, invocation_id, attempt_no, provider, base_url_host, model,
+					status, provider_status_code, duration_ms, error_code,
+					error_message, started_at, finished_at
+				)
+				VALUES (
+					$1, $2, $3, $4, NULLIF($5, ''), $6,
+					$7, $8, $9, NULLIF($10, ''),
+					NULLIF($11, ''), $12, $13
+				)`,
+				attempt.ID, attempt.InvocationID, attempt.AttemptNo, string(attempt.Provider),
+				attempt.BaseURLHost, attempt.Model, string(attempt.Status),
+				attempt.ProviderStatusCode, attempt.DurationMS, attempt.ErrorCode,
+				attempt.ErrorMessage, attempt.StartedAt, attempt.FinishedAt); err != nil {
+				return fmt.Errorf("insert provider invocation attempt: %w", err)
+			}
+		}
+		return nil
 	})
 }
 
@@ -362,6 +452,30 @@ func scanModelProfile(row scanner) (service.ModelProfile, error) {
 	if topN.Valid {
 		n := int(topN.Int32)
 		value.TopN = &n
+	}
+	if deletedAt.Valid {
+		value.DeletedAt = &deletedAt.Time
+	}
+	return value, nil
+}
+
+func scanProviderCredential(row scanner) (service.ProviderCredential, error) {
+	var value service.ProviderCredential
+	var status string
+	var rotatedAt, disabledAt, deletedAt pgtype.Timestamptz
+	if err := row.Scan(
+		&value.ID, &value.ProfileID, &value.StorageMode, &value.Ciphertext, &value.Nonce,
+		&value.EncryptionKeyVersion, &value.FingerprintSHA256, &value.KeyLast4, &status,
+		&value.CreatedByUserID, &value.CreatedAt, &rotatedAt, &disabledAt, &deletedAt,
+	); err != nil {
+		return service.ProviderCredential{}, err
+	}
+	value.Status = service.CredentialStatus(status)
+	if rotatedAt.Valid {
+		value.RotatedAt = &rotatedAt.Time
+	}
+	if disabledAt.Valid {
+		value.DisabledAt = &disabledAt.Time
 	}
 	if deletedAt.Valid {
 		value.DeletedAt = &deletedAt.Time
