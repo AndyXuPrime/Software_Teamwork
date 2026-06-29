@@ -17,14 +17,14 @@ const pathLabels: Record<string, string> = {
 
 const navItems: Array<{
   label: string
-  to: '/chat' | '/reports/generate' | '/admin'
+  to: '/chat' | '/reports' | '/admin'
   requirement?: PermissionRequirement
 }> = [
   { label: '问答', to: '/chat', requirement: { any: ['qa:use'] } },
   {
     label: '报告',
-    to: '/reports/generate',
-    requirement: { any: ['report:write', 'reports:write'] },
+    to: '/reports',
+    requirement: { any: ['report:read', 'report:write', 'reports:write'] },
   },
   {
     label: '管理',
