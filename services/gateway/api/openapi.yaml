@@ -1,0 +1,73 @@
+openapi: 3.0.3
+info:
+  title: Gateway Service API
+  version: 0.1.0
+  description: >
+    Service-local API contract for the runnable gateway skeleton. The stable
+    frontend-facing gateway contract remains docs/services/gateway/api/openapi.yaml.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: operations
+paths:
+  /healthz:
+    get:
+      tags: [operations]
+      summary: Liveness check
+      operationId: getGatewayHealth
+      responses:
+        '200':
+          description: Gateway process is alive.
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /readyz:
+    get:
+      tags: [operations]
+      summary: Readiness check
+      operationId: getGatewayReadiness
+      responses:
+        '200':
+          description: Gateway is ready to serve traffic.
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - data
+        - requestId
+      properties:
+        data:
+          type: object
+          required:
+            - status
+            - service
+          properties:
+            status:
+              type: string
+              enum: [ok, ready]
+            service:
+              type: string
+              example: gateway
+            version:
+              type: string
+              example: 0.1.0
+            environment:
+              type: string
+              example: local
+        requestId:
+          type: string
+          example: req_123
