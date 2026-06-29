@@ -48,13 +48,13 @@
 
 | 缺口 | 文档来源 | 影响范围 | 建议任务 |
 | --- | --- | --- | --- |
-| 文档处理 worker 未实现 | `docs/services/knowledge/README.md`、`docs/requirements-analysis/overall-requirements-analysis.md` | worker / DB / Redis | 待确认：实现 parsing/chunking/embedding 状态流转。 |
-| chunks API 未实现 | `docs/services/gateway/api/openapi.yaml` | API / frontend / QA | 待确认：实现 `GET /internal/v1/documents/{documentId}/chunks` 并开放 gateway route。 |
-| 原文 content API 未实现 | `docs/services/gateway/api/openapi.yaml` | API / file integration | 待确认：通过 file reference 读取原文件内容。 |
-| `knowledge-queries` 检索未实现 | `docs/services/gateway/api/openapi.yaml`、`docs/services/knowledge/api/public.openapi.yaml` | API / QA / document | 待确认：实现 retrieval response，接入 Qdrant 或阶段性检索 adapter。 |
-| Qdrant adapter / embedding / rerank 未实现 | `docs/architecture/service-boundaries.md`、`docs/services/knowledge/docs/data-models.md` | vector store / AI provider | 待确认：接入 AI Gateway embeddings/rerank 和 Qdrant。 |
-| admin parser-configs 未实现 | `docs/services/gateway/api/openapi.yaml` | API / admin | 待确认：实现解析器配置资源或回写 active contract 状态。 |
-| document PATCH/DELETE 未实现 | `docs/services/gateway/api/openapi.yaml` | API / frontend | 待确认：实现标签更新、删除和 file/index cleanup。 |
+| 文档处理 worker 未实现 | `docs/services/knowledge/README.md`、`docs/requirements-analysis/overall-requirements-analysis.md` | worker / DB / Redis | 实现 parsing/chunking/embedding 状态流转；上传入队不能被写成入库闭环完成。 |
+| chunks API 未实现 | `docs/services/gateway/api/openapi.yaml` | API / frontend / QA | 实现 `GET /internal/v1/documents/{documentId}/chunks` 并开放 gateway route。 |
+| 原文 content API 未实现 | `docs/services/gateway/api/openapi.yaml` | API / file integration | 通过 file reference 读取原文件内容。 |
+| `knowledge-queries` 检索未实现 | `docs/services/gateway/api/openapi.yaml`、`docs/services/knowledge/api/public.openapi.yaml` | API / QA / document | 实现 retrieval response，接入 Qdrant 和 AI Gateway embedding/rerank；阶段性 adapter 需明确标 pending。 |
+| Qdrant adapter / embedding / rerank 未实现 | `docs/architecture/service-boundaries.md`、`docs/services/knowledge/docs/data-models.md` | vector store / AI provider | 接入 AI Gateway embeddings/rerank 和 Qdrant；AI Gateway endpoint 已有不等于 Knowledge RAG 可用。 |
+| admin parser-configs 未实现 | `docs/services/gateway/api/openapi.yaml` | API / admin | 实现解析器配置资源或由管理组决策契约阶段状态。 |
+| document PATCH/DELETE 未实现 | `docs/services/gateway/api/openapi.yaml` | API / frontend | 实现标签更新、删除和 file/index cleanup。 |
 
 ## 5. 文档与实现出入
 
@@ -62,6 +62,7 @@
 | --- | --- | --- | --- | --- |
 | Gateway active Knowledge paths | Gateway OpenAPI 将 18 个 knowledge operation 设为 active | `services/gateway/internal/http/routes.go` 中 `PATCH/DELETE /documents`、chunks、content、knowledge-queries、parser-configs 标为 `NotImplemented` | 前端生成 client 后调用会得到 501 | 要么补实现并取消 `NotImplemented`，要么把阶段性未实现状态回写到契约说明。 |
 | 旧实现说明提到 Qdrant/local hashing | 早期文档描述 Qdrant HTTP adapter 和 local hashing embedding | 当前 `services/knowledge/` 无 Qdrant/embedding platform 代码 | 文档高估实现成熟度 | 已在本文改为未实现；同步更新技术选型状态。 |
+| AI Gateway embedding/rerank 状态 | AI Gateway 已实现 embeddings/rerankings endpoint | Knowledge 尚未调用 AI Gateway，也没有 Qdrant adapter 或 ingestion worker 闭环 | 容易误读为 Knowledge RAG 已可用 | 维持 Knowledge 未闭环表述，并拆 Knowledge ingestion worker + Qdrant + embedding/rerank 接入任务。 |
 | 公开 Knowledge 草案范围 | `docs/services/knowledge/api/public.openapi.yaml` 覆盖 deletion jobs、processing jobs、query tests、support materials、settings、statistics | runtime 只实现 KB CRUD 和文档 upload/list/detail | 公开草案可能被误读为已落地 | 保留为设计草案，在 implementation 中明确缺口。 |
 | File handoff 边界 | Knowledge 拥有文档资源，File 只保存基础 file object | 当前已按 `/internal/v1/files` 保存 raw file，但 content/delete cleanup 未闭环 | 删除或内容读取时 file reference 可能残留 | 实现 document lifecycle cleanup。 |
 | asynq 任务状态权威 | PostgreSQL 为 job 状态权威，Redis 只排队 | 已创建 job 并投递任务，但无 worker 更新状态 | 文档状态可能长期停留在 uploaded | 补 worker 或阶段性标记为 pending implementation。 |
@@ -70,9 +71,9 @@
 
 | 项目 | 当前用途 | 退出条件 | 关联任务 |
 | --- | --- | --- | --- |
-| memory repository | 单元测试 | PostgreSQL integration tests 覆盖关键 CRUD 后仍可保留测试用 | 待确认 |
-| fake file client / fake queue | 上传补偿和入队测试 | 真实 file/Redis 集成测试补齐 | 待确认 |
-| gateway `NotImplemented` Knowledge routes | 暂时占住 active contract | 对应服务实现或契约降级 | 待确认 |
+| memory repository | 单元测试 | PostgreSQL integration tests 覆盖关键 CRUD 后仍可保留测试用 | 保留测试用 |
+| fake file client / fake queue | 上传补偿和入队测试 | 真实 file/Redis 集成测试补齐 | File/Redis integration smoke |
+| gateway `NotImplemented` Knowledge routes | 暂时占住 active contract | 对应服务实现或契约阶段状态经管理组确认 | Knowledge active paths follow-up |
 
 ## 7. 运行与配置
 
@@ -99,7 +100,8 @@
 | --- | --- | --- | --- | --- |
 | 实现 Knowledge 文档内容、删除和 chunks API | 新任务 | P0 | Gateway active contract | 解除 `/documents/**` 相关 501。 |
 | 实现 ingestion worker 与状态流转 | 新任务 | P0 | 上传后必须进入处理闭环 | 处理 parsing/chunking/embedding/ready/failed。 |
-| 实现 knowledge-queries 检索 | 新任务 | P0 | QA/Document 依赖检索 | 返回 chunk/document/source/score。 |
+| 实现 Qdrant + AI Gateway embedding/rerank 接入 | 新任务 | P0 | 文档/代码出入评审结论 | 上传入队 -> chunk/content -> embedding -> Qdrant -> retrieval/rerank 最小闭环。 |
+| 实现 knowledge-queries 检索 | 新任务 | P0 | QA/Document 依赖检索 | 返回 chunk/document/source/score，并可选 rerank 摘要。 |
 | 实现 parser configs 或回写契约状态 | 新任务 | P1 | Gateway active admin paths | 避免 active path 长期 501。 |
 
 ## 10. 最近检查记录

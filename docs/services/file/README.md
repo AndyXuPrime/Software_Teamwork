@@ -17,7 +17,8 @@ RESTful 路径、统一响应和错误 envelope 以 [前后端集成契约](../.
 File Service 必须遵循 [技术选型基线](../../architecture/technology-decisions.md)。本服务只补充文件域特有约束：
 
 - 上传大小限制必须在 HTTP 层和 multipart 解析层同时生效。
-- 使用官方 MinIO Go SDK 或符合 `ObjectStore` 接口的本地存储 adapter；`file` 服务封装 bucket、object key、etag、version id 和对象 URL，owner service 与前端都不得直接依赖这些内部字段。
+- 目标对象存储使用官方 MinIO Go SDK；当前 runtime 只有 memory/local `ObjectStore` adapter，MinIO adapter 尚未落地。`file` 服务封装 bucket、object key、etag、version id 和对象 URL，owner service 与前端都不得直接依赖这些内部字段。
+- 当前 `cmd/server` 的 metadata runtime 仍使用 memory repository；PostgreSQL migration/repository 文件存在但尚未接入运行时。具体状态以 [实现说明](docs/implementation.md) 为准。
 - 对象物理清理可由 `asynq` worker 执行，任务类型使用 `file:object:purge`。PostgreSQL 中的文件状态、失败摘要、重试次数和最终结果仍是权威来源。
 - handler 测试重点覆盖 envelope、错误码、request id、multipart 边界和内容流响应；repository 测试覆盖 migration 后的 SQL 行为。
 - File Service 不使用 ORM，不把 MinIO SDK 泄露到 handler 或 owner service client，不把缓存或队列作为基础文件元数据的事实来源。

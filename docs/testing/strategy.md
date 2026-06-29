@@ -4,6 +4,12 @@
 
 本文把当前仓库已经可执行的检查、CI 覆盖和仍缺的测试能力放在一起，作为 PR 前验证基线。具体服务实现状态仍以各服务 `docs/implementation.md` 为准。
 
+本文中的检查分为三类：
+
+- 当前 CI 覆盖：已经由 GitHub Actions 执行，可作为 required checks 候选。
+- PR 前建议：本地应按改动范围尽量执行，并在 PR body 写明结果。
+- 缺口：当前缺少稳定环境或脚本，不能写成 required，落地后再升级。
+
 ## 总体原则
 
 - 改什么跑什么，但跨契约、跨服务或共享文档变更要扩大检查范围。
@@ -11,6 +17,7 @@
 - 数据库 migration 必须能从空库 apply。
 - env-gated integration tests 默认可能跳过；如果本次改动触碰 repository、SQL 或 migration，应尽量提供本地数据库执行记录。
 - 当前没有完整 E2E smoke；不要用单服务测试替代跨服务验收。
+- open PR、未合入 issue 和草案不能写成当前 `develop` 已实现；测试记录也不能把未稳定依赖的检查写成 required。
 
 ## 当前 CI 覆盖
 
@@ -22,7 +29,7 @@
 | `check-api-types.yml` | 前端 Gateway 类型漂移 | 执行 `bun run api:generate` 并要求 generated diff 干净。 |
 | `commitlint.yml` / `pr-guard.yml` | 协作规则 | 检查提交格式、PR body、issue 关联和 base 更新要求。 |
 
-缺口：完整前端 `check/build` CI、Vitest/React Testing Library/Playwright、路径过滤矩阵和跨服务 E2E smoke 仍未落地。
+当前可作为 required checks 的优先候选是 Go service tests、goose migration apply、Gateway contract/API drift 和 API type drift。完整前端 `check/build` CI、Vitest/React Testing Library/Playwright、路径过滤矩阵和跨服务 E2E smoke 仍未落地；在 CI 提供稳定依赖前只能作为 PR 前建议或缺口登记。
 
 ## 本地命令矩阵
 
@@ -81,6 +88,15 @@ DOCUMENT_TEST_DATABASE_URL='postgres://document_app:document_app_dev@localhost:5
 | 技术选型基线 | 引入新运行时依赖、镜像、CLI、SDK、队列、数据库或工具链。 |
 | 本地联调手册 | 新增 Compose、env template、seed data、跨服务 smoke 或端口约定。 |
 | 测试策略 | 新增 CI workflow、测试框架、E2E smoke 或 required check。 |
+
+文档同步检查：
+
+| 改动类型 | 必须同步考虑 |
+| --- | --- |
+| 服务能力、stub/501 状态、worker、provider adapter 或 migration 变化 | 对应服务 `docs/implementation.md`。 |
+| OpenAPI / Gateway active path / 数据模型变化 | OpenAPI、owner map、README、service boundaries 或相关契约文档；契约语义变化需先交管理组决策。 |
+| runtime dependency / Compose / CI 变化 | `technology-decisions.md`、runbook 或本文。 |
+| open PR 或未合入能力 | 只能写 pending、待合入或 follow-up，不得写成已实现。 |
 
 ## 跨服务 smoke 目标
 
