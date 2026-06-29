@@ -103,6 +103,16 @@ func (r blockingAgentRunner) RunWithObserver(ctx context.Context, _ []agent.Mess
 	return agent.Result{}, ctx.Err()
 }
 
+type completedThenCancelledRunner struct{ completed chan struct{} }
+
+func (r completedThenCancelledRunner) RunWithObserver(ctx context.Context, _ []agent.Message, observer agent.Observer) (agent.Result, error) {
+	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
+	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1, Usage: agent.TokenUsage{PromptTokens: 5, CompletionTokens: 3, TotalTokens: 8}})
+	close(r.completed)
+	<-ctx.Done()
+	return agent.Result{}, ctx.Err()
+}
+
 func (r *fakeAgentRunner) RunWithObserver(_ context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
 	r.input = append([]agent.Message(nil), input...)
 	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
@@ -259,6 +269,32 @@ func TestCancelActiveRunCancelsAgentAndPersistsCancelledMessage(t *testing.T) {
 	if repository.finalization.TerminationReason != "cancelled" || repository.finalization.Status != "cancelled" {
 		t.Fatalf("finalization=%+v", repository.finalization)
 	}
+	if len(repository.invocations) != 0 {
+		t.Fatalf("invocations=%+v", repository.invocations)
+	}
+}
+
+func TestCancelAfterCompletedModelCallDoesNotCreateFailedInvocation(t *testing.T) {
+	now := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active", CreatedAt: now, UpdatedAt: now}}
+	runner := completedThenCancelledRunner{completed: make(chan struct{})}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{runner: runner, prompt: "system"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "cancel after completion"}, nil)
+		done <- err
+	}()
+	<-runner.completed
+	qa.CancelActiveRun("run-id")
+	if err := <-done; err == nil {
+		t.Fatal("expected cancelled ask to fail")
+	}
+	if len(repository.invocations) != 1 || repository.invocations[0].Status != "completed" {
+		t.Fatalf("invocations=%+v", repository.invocations)
+	}
 }
 
 func TestAskPersistsModelFailureReason(t *testing.T) {
@@ -311,7 +347,7 @@ func TestAskPersistsMaxIterationsReason(t *testing.T) {
 	if repository.finalization.Status != "failed" || repository.finalization.TerminationReason != "max_iterations" || repository.finalization.CurrentIteration != 2 {
 		t.Fatalf("finalization=%+v", repository.finalization)
 	}
-	if len(repository.invocations) == 0 || repository.invocations[0].TotalTokens != 5 {
+	if len(repository.invocations) != 1 || repository.invocations[0].Status != "completed" || repository.invocations[0].TotalTokens != 5 {
 		t.Fatalf("invocations=%+v", repository.invocations)
 	}
 }

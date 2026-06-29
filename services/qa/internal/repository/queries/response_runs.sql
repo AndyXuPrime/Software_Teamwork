@@ -104,6 +104,7 @@ WHERE rr.id::text = sqlc.arg(id)::text
     AND c.id = rr.conversation_id
     AND c.external_user_id = sqlc.arg(external_user_id)
     AND c.deleted_at IS NULL
+    AND rr.status = 'running'
 RETURNING
     rr.id::text,
     rr.conversation_id::text,

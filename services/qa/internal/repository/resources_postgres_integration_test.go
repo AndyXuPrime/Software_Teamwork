@@ -63,6 +63,31 @@ func TestDocumentedResourceRoundTrip(t *testing.T) {
 	if err != nil || cancelled.Status != "cancelled" {
 		t.Fatalf("run=%+v err=%v", cancelled, err)
 	}
+	_, err = repo.FinalizeResponseRun(ctx, "integration-user", service.ResponseRunFinalization{
+		RunID: run.ID,
+		AssistantMessage: service.Message{
+			ID:             assistantMessageID,
+			ConversationID: conversationID,
+			Role:           "assistant",
+			Content:        "late answer should not win",
+			Status:         "completed",
+			CreatedAt:      now,
+		},
+		Status:            "completed",
+		TerminationReason: "completed",
+		CurrentIteration:  1,
+		CompletedAt:       now.Add(2 * time.Millisecond),
+	})
+	if appErr, ok := service.Classify(err); !ok || appErr.Code != service.CodeConflict {
+		t.Fatalf("finalize cancelled run err=%v, want conflict", err)
+	}
+	messages, err := repo.ListMessages(ctx, "integration-user", conversationID, service.MessageListOptions{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages.Items) != 2 || messages.Items[1].Status != "cancelled" || messages.Items[1].Content == "late answer should not win" {
+		t.Fatalf("cancelled assistant message was overwritten: %+v", messages.Items)
+	}
 	qaConfig, err := repo.CreateQAConfigVersionResource(ctx, "integration-user", service.CreateQAConfigVersionInput{TopK: 7, MaxIterations: 6, KnowledgeBases: []service.ConfigKnowledgeBase{{ID: "kb-1"}}})
 	if err != nil || qaConfig.Retrieval.TopK != 7 || qaConfig.MaxIterations != 6 || qaConfig.Agent.MaxIterations != 6 {
 		t.Fatalf("qa config=%+v err=%v", qaConfig, err)

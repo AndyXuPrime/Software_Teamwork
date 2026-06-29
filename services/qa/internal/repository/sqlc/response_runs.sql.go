@@ -215,6 +215,7 @@ WHERE rr.id::text = $8::text
     AND c.id = rr.conversation_id
     AND c.external_user_id = $9
     AND c.deleted_at IS NULL
+    AND rr.status = 'running'
 RETURNING
     rr.id::text,
     rr.conversation_id::text,

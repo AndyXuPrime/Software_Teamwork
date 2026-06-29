@@ -395,6 +395,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 
 	steps := make([]ReasoningStep, 0, 4)
 	iterationStartedAt := map[int]time.Time{}
+	completedIterations := map[int]struct{}{}
 	usage := agent.TokenUsage{}
 	var invocationErr error
 	profileID := runtime.LLMProfileID
@@ -413,6 +414,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 			}
 			finishedAt := s.now().UTC()
 			accumulateUsage(&usage, event.Usage)
+			completedIterations[event.Iteration] = struct{}{}
 			_, err := s.repository.SaveModelInvocation(ctx, userID, ModelInvocation{
 				ResponseRunID:    run.ID,
 				IterationNo:      event.Iteration,
@@ -456,7 +458,9 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 		}
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
-		s.saveFailedModelInvocation(cleanupCtx, userID, run.ID, runtime, profileID, reason, iterationStartedAt, usage)
+		if shouldRecordFailedModelInvocation(reason, iterationStartedAt, completedIterations) {
+			s.saveFailedModelInvocation(cleanupCtx, userID, run.ID, runtime, profileID, reason, iterationStartedAt)
+		}
 		emit("error", map[string]any{"responseRunId": run.ID, "code": "dependency_error", "message": publicMessage})
 		finalized, finalizeErr := s.repository.FinalizeResponseRun(cleanupCtx, userID, ResponseRunFinalization{
 			RunID: run.ID, AssistantMessage: assistantMessage, ReasoningSteps: steps, StreamEvents: events,
@@ -487,7 +491,19 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	return AskResult{UserMessage: userMessage, AssistantMessage: assistantMessage, ResponseRun: run, Citations: []any{}, ReasoningSteps: steps}, nil
 }
 
-func (s *QAService) saveFailedModelInvocation(ctx context.Context, userID, runID string, runtime RuntimeSnapshot, profileID string, reason string, started map[int]time.Time, usage agent.TokenUsage) {
+func shouldRecordFailedModelInvocation(reason string, started map[int]time.Time, completed map[int]struct{}) bool {
+	if reason == "max_iterations" {
+		return false
+	}
+	iteration := maxStartedIteration(started)
+	if iteration == 0 {
+		return false
+	}
+	_, done := completed[iteration]
+	return !done
+}
+
+func (s *QAService) saveFailedModelInvocation(ctx context.Context, userID, runID string, runtime RuntimeSnapshot, profileID string, reason string, started map[int]time.Time) {
 	iteration := maxStartedIteration(started)
 	if iteration == 0 {
 		iteration = 1
@@ -504,8 +520,6 @@ func (s *QAService) saveFailedModelInvocation(ctx context.Context, userID, runID
 	_, _ = s.repository.SaveModelInvocation(ctx, userID, ModelInvocation{
 		ResponseRunID: runID, IterationNo: iteration, Provider: "ai-gateway",
 		ProfileID: profileID, ModelName: runtime.LLMModel, Status: status,
-		PromptTokens: usage.PromptTokens, CompletionTokens: usage.CompletionTokens,
-		ReasoningTokens: usage.ReasoningTokens, TotalTokens: usage.TotalTokens,
 		ErrorCode: "dependency_error", ErrorMessage: publicRunErrorMessage(reason),
 		StartedAt: startedAt, FinishedAt: &finishedAt, LatencyMS: finishedAt.Sub(startedAt).Milliseconds(),
 	})

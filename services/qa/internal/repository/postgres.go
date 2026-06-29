@@ -286,6 +286,26 @@ func (r *Postgres) FinalizeResponseRun(ctx context.Context, userID string, final
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := r.queries.WithTx(tx)
+	row, err := q.FinalizeResponseRun(ctx, sqlc.FinalizeResponseRunParams{
+		Status: final.Status, TerminationReason: final.TerminationReason,
+		CurrentIteration: int32(final.CurrentIteration),
+		PromptTokens:     int32(final.PromptTokens), CompletionTokens: int32(final.CompletionTokens),
+		ReasoningTokens: int32(final.ReasoningTokens), CompletedAt: final.CompletedAt,
+		ID: final.RunID, ExternalUserID: userID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		existing, loadErr := q.GetResponseRunForUser(ctx, final.RunID, userID)
+		if errors.Is(loadErr, pgx.ErrNoRows) {
+			return service.ResponseRun{}, service.NewError(service.CodeNotFound, "response run not found", err)
+		}
+		if loadErr != nil {
+			return service.ResponseRun{}, fmt.Errorf("load response run finalization state: %w", loadErr)
+		}
+		return responseRunFromRow(existing), service.NewError(service.CodeConflict, "response run already finalized", err)
+	}
+	if err != nil {
+		return service.ResponseRun{}, fmt.Errorf("finalize response run: %w", err)
+	}
 	rowsAffected, err := q.UpdateMessageStatus(ctx, sqlc.UpdateMessageStatusParams{
 		Status: final.AssistantMessage.Status, Intent: final.AssistantMessage.Intent,
 		ID: final.AssistantMessage.ID, ExternalUserID: userID,
@@ -304,19 +324,6 @@ func (r *Postgres) FinalizeResponseRun(ctx context.Context, userID string, final
 	}
 	if err := replaceStreamEvents(ctx, q, final.RunID, final.StreamEvents); err != nil {
 		return service.ResponseRun{}, err
-	}
-	row, err := q.FinalizeResponseRun(ctx, sqlc.FinalizeResponseRunParams{
-		Status: final.Status, TerminationReason: final.TerminationReason,
-		CurrentIteration: int32(final.CurrentIteration),
-		PromptTokens:     int32(final.PromptTokens), CompletionTokens: int32(final.CompletionTokens),
-		ReasoningTokens: int32(final.ReasoningTokens), CompletedAt: final.CompletedAt,
-		ID: final.RunID, ExternalUserID: userID,
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return service.ResponseRun{}, service.NewError(service.CodeNotFound, "response run not found", err)
-	}
-	if err != nil {
-		return service.ResponseRun{}, fmt.Errorf("finalize response run: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return service.ResponseRun{}, fmt.Errorf("commit finalize response run: %w", err)
