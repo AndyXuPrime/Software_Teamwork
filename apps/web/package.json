@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "api:generate": "openapi-typescript ../../docs/services/gateway/api/openapi.yaml -o src/api/generated/gateway.ts",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -47,6 +48,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-simple-import-sort": "^13.0.0",
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.62.0",

@@ -4483,7 +4483,6 @@ export interface operations {
         page?: components['parameters']['Page']
         pageSize?: components['parameters']['PageSize']
         status?: 'active' | 'archived'
-        q?: string
         sort?: string
       }
       header?: never
@@ -4549,6 +4548,7 @@ export interface operations {
           'application/json': components['schemas']['QASessionResponse']
         }
       }
+      403: components['responses']['Error']
       404: components['responses']['Error']
     }
   }
@@ -4570,6 +4570,7 @@ export interface operations {
         }
         content?: never
       }
+      403: components['responses']['Error']
       404: components['responses']['Error']
     }
   }
@@ -4598,6 +4599,7 @@ export interface operations {
         }
       }
       400: components['responses']['Error']
+      403: components['responses']['Error']
       404: components['responses']['Error']
     }
   }

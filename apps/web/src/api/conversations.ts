@@ -1,29 +1,73 @@
-/**
- * Session (qa-sessions) CRUD — API doc section 2.
- *
- * All functions use the doRequest helper for unified { code, message, data }
- * error handling.  File name kept as conversations.ts for compatibility;
- * internal naming uses "session" / "sessions".
- */
+﻿import type { Conversation, ConversationListItem, Message } from '@/lib/types'
 
-import type { Conversation, ConversationListItem, Message } from '@/lib/types'
+import { requestJson, requestPaginated, requestVoid } from './client'
+import type { components } from './generated/gateway'
 
-import { doRequest } from './client'
+type QASession = components['schemas']['QASession']
+type QAMessage = components['schemas']['QAMessage']
 
-// ---------------------------------------------------------------------------
-// 2.1  Create session
-// ---------------------------------------------------------------------------
+type Citation = components['schemas']['QACitation']
 
-export async function createSession(title = '新对话'): Promise<Conversation> {
-  return doRequest<Conversation>('/qa-sessions', {
-    method: 'POST',
-    body: JSON.stringify({ title }),
-  })
+type ThinkingStep = components['schemas']['QAThinkingStep']
+
+function toMessage(message: QAMessage): Message {
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    timestamp: message.createdAt,
+    status:
+      message.status === 'cancelled'
+        ? 'stopped'
+        : message.status === 'queued'
+          ? 'streaming'
+          : message.status,
+    thinking: message.thinking?.map((step: ThinkingStep) => ({
+      type:
+        step.type === 'verify' ? 'verify' : step.type === 'generation' ? 'generation' : 'retrieval',
+      label: step.label ?? '处理步骤',
+      status: step.status === 'failed' ? 'pending' : step.status,
+      detail: step.detail,
+    })),
+    citations: message.citations?.map((citation: Citation) => ({
+      id: citation.id,
+      doc_id: citation.documentId ?? citation.docId ?? '',
+      doc_name: citation.documentName ?? citation.docName ?? '',
+      chunk_id: citation.chunkId ?? '',
+      text: citation.text ?? citation.contentPreview ?? '',
+      score: citation.score ?? 0,
+    })),
+  }
 }
 
-// ---------------------------------------------------------------------------
-// 2.2  List sessions (paginated)
-// ---------------------------------------------------------------------------
+function toConversation(session: QASession, messages: Message[] = []): Conversation {
+  return {
+    id: session.id,
+    title: session.title ?? '新对话',
+    messages,
+    created_at: session.createdAt,
+    updated_at: session.updatedAt,
+  }
+}
+
+function toConversationListItem(session: QASession): ConversationListItem {
+  return {
+    id: session.id,
+    title: session.title ?? '新对话',
+    message_count: session.messageCount ?? 0,
+    last_message_preview: session.lastMessagePreview ?? '',
+    created_at: session.createdAt,
+    updated_at: session.updatedAt,
+  }
+}
+
+export async function createSession(title = '新对话'): Promise<Conversation> {
+  const session = await requestJson<QASession>('/qa-sessions', {
+    method: 'POST',
+    body: { title },
+  })
+  return toConversation(session)
+}
 
 export async function listSessions(
   page = 1,
@@ -31,43 +75,39 @@ export async function listSessions(
 ): Promise<{ items: ConversationListItem[]; total: number }> {
   const params = new URLSearchParams({
     page: String(page),
-    page_size: String(pageSize),
-    sort: 'updated_at_desc',
+    pageSize: String(pageSize),
+    sort: '-updatedAt',
   })
-  return doRequest<{ items: ConversationListItem[]; total: number }>(`/qa-sessions?${params}`)
+  const envelope = await requestPaginated<QASession>(`/qa-sessions?${params}`)
+  return {
+    items: envelope.data.map(toConversationListItem),
+    total: envelope.page.total,
+  }
 }
-
-// ---------------------------------------------------------------------------
-// 2.3  Get session detail
-// ---------------------------------------------------------------------------
 
 export async function getSession(id: string): Promise<Conversation> {
-  return doRequest<Conversation>(`/qa-sessions/${encodeURIComponent(id)}`)
+  const [session, messages] = await Promise.all([
+    requestJson<QASession>(`/qa-sessions/${encodeURIComponent(id)}`),
+    getSessionMessages(id),
+  ])
+  return toConversation(session, messages)
 }
-
-// ---------------------------------------------------------------------------
-// 2.4  Rename session (PATCH)
-// ---------------------------------------------------------------------------
 
 export async function renameSession(sessionId: string, title: string): Promise<Conversation> {
-  return doRequest<Conversation>(`/qa-sessions/${encodeURIComponent(sessionId)}`, {
+  const session = await requestJson<QASession>(`/qa-sessions/${encodeURIComponent(sessionId)}`, {
     method: 'PATCH',
-    body: JSON.stringify({ title }),
+    body: { title },
   })
+  return toConversation(session)
 }
-
-// ---------------------------------------------------------------------------
-// 2.5  Delete session
-// ---------------------------------------------------------------------------
 
 export async function deleteSession(id: string): Promise<void> {
-  await doRequest<void>(`/qa-sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  await requestVoid(`/qa-sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
-// ---------------------------------------------------------------------------
-// 2.6  Get session messages
-// ---------------------------------------------------------------------------
-
 export async function getSessionMessages(sessionId: string): Promise<Message[]> {
-  return doRequest<Message[]>(`/qa-sessions/${encodeURIComponent(sessionId)}/messages`)
+  const envelope = await requestPaginated<QAMessage>(
+    `/qa-sessions/${encodeURIComponent(sessionId)}/messages?page=1&pageSize=100&includeThinking=true&includeCitations=true`,
+  )
+  return envelope.data.map(toMessage)
 }
