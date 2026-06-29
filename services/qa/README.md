@@ -254,7 +254,14 @@ sqlc generate
 ```
 
 Generated query code lives in `internal/repository/sqlc/`; SQL sources live in
-`internal/repository/queries/`.
+`internal/repository/queries/` (sessions/messages/runs plus `settings.sql` for
+runtime settings, MCP servers, and config versions). Generated types stay in the
+repository adapter layer only; handlers, services, and MCP client code must not
+import `internal/repository/sqlc`.
+
+QA uses `pgx/v5` via `sqlc.yaml`; this matches the service `go.mod` baseline
+while the monorepo-wide pgx version decision is tracked separately in
+`docs/architecture/technology-decisions.md`.
 
 ## HTTP API
 
