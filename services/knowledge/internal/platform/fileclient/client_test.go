@@ -192,6 +192,43 @@ func TestReadSourceMapsDownstreamFailuresToSanitizedDependencyError(t *testing.T
 	}
 }
 
+func TestReadSourceDoesNotFollowRedirects(t *testing.T) {
+	redirectedHeaders := make(chan http.Header, 1)
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirectedHeaders <- r.Header.Clone()
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("redirected content"))
+	}))
+	defer redirectTarget.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirectTarget.URL+"/object/file_001", http.StatusTemporaryRedirect)
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "svc-token", server.Client())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = client.ReadSource(context.Background(), service.RequestContext{
+		RequestID: "req_redirect",
+		UserID:    "usr_test",
+	}, "file_001")
+	if err == nil {
+		t.Fatal("ReadSource() error = nil, want redirect response error")
+	}
+	appErr, ok := service.Classify(err)
+	if !ok || appErr.Code != service.CodeDependency {
+		t.Fatalf("error = %#v, want dependency", err)
+	}
+
+	select {
+	case headers := <-redirectedHeaders:
+		t.Fatalf("file client followed redirect and forwarded headers to target: X-Service-Token=%q X-User-Id=%q", headers.Get("X-Service-Token"), headers.Get("X-User-Id"))
+	default:
+	}
+}
+
 func TestDeleteFileTreatsMissingFileAsCleanedUp(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete || r.URL.Path != "/internal/v1/files/file_001" {

@@ -32,14 +32,27 @@ func New(baseURL string, serviceToken string, httpClient *http.Client) (*Client,
 	if parsed.User != nil {
 		return nil, fmt.Errorf("file service URL must not contain credentials")
 	}
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: defaultTimeout}
-	}
 	return &Client{
 		baseURL:      strings.TrimRight(parsed.String(), "/"),
 		serviceToken: strings.TrimSpace(serviceToken),
-		httpClient:   httpClient,
+		httpClient:   noRedirectHTTPClient(httpClient),
 	}, nil
+}
+
+func noRedirectHTTPClient(client *http.Client) *http.Client {
+	if client == nil {
+		client = &http.Client{Timeout: defaultTimeout}
+	} else {
+		copied := *client
+		client = &copied
+	}
+	// File Service requests carry service credentials and user context. Treat
+	// redirects as dependency responses so those headers are never replayed to
+	// an object-store URL or any unexpected host.
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return client
 }
 
 func (c *Client) CreateFile(ctx context.Context, reqCtx service.RequestContext, file service.UploadedFile) (service.FileObject, error) {
