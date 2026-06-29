@@ -34,51 +34,47 @@ export function useStreamChat(handlers: ChatStreamHandlers) {
 
     setIsStreaming(true)
 
-    const { abort } = streamChat(
-      sessionId,
-      message,
-      {
-        onMessageCreated: (data) => {
-          handlersRef.current.onMessageCreated?.(data)
-        },
-        onAgentIterationStarted: (data) => {
-          handlersRef.current.onAgentIterationStarted?.(data)
-        },
-        onReasoningStep: (data) => {
-          handlersRef.current.onReasoningStep?.(data)
-        },
-        onToolStarted: (data) => {
-          handlersRef.current.onToolStarted?.(data)
-        },
-        onToolCompleted: (data) => {
-          handlersRef.current.onToolCompleted?.(data)
-        },
-        onToolFailed: (data) => {
-          handlersRef.current.onToolFailed?.(data)
-        },
-        onAnswerDelta: (data) => {
-          handlersRef.current.onAnswerDelta?.(data)
-        },
-        onCitationDelta: (data) => {
-          handlersRef.current.onCitationDelta?.(data)
-        },
-        onAnswerCompleted: (data) => {
+    const { abort } = streamChat(sessionId, message, {
+      onMessageCreated: (data) => {
+        handlersRef.current.onMessageCreated?.(data)
+      },
+      onAgentIterationStarted: (data) => {
+        handlersRef.current.onAgentIterationStarted?.(data)
+      },
+      onReasoningStep: (data) => {
+        handlersRef.current.onReasoningStep?.(data)
+      },
+      onToolStarted: (data) => {
+        handlersRef.current.onToolStarted?.(data)
+      },
+      onToolCompleted: (data) => {
+        handlersRef.current.onToolCompleted?.(data)
+      },
+      onToolFailed: (data) => {
+        handlersRef.current.onToolFailed?.(data)
+      },
+      onAnswerDelta: (data) => {
+        handlersRef.current.onAnswerDelta?.(data)
+      },
+      onCitationDelta: (data) => {
+        handlersRef.current.onCitationDelta?.(data)
+      },
+      onAnswerCompleted: (data) => {
+        setIsStreaming(false)
+        abortRef.current = null
+        handlersRef.current.onAnswerCompleted?.(data)
+      },
+      onError: (data) => {
+        if (data.fatal) {
           setIsStreaming(false)
           abortRef.current = null
-          handlersRef.current.onAnswerCompleted?.(data)
-        },
-        onError: (data) => {
-          if (data.fatal) {
-            setIsStreaming(false)
-            abortRef.current = null
-          }
-          handlersRef.current.onError?.(data)
-        },
-        onAbort: () => {
-          setIsStreaming(false)
-          abortRef.current = null
-          handlersRef.current.onAbort?.()
-        },
+        }
+        handlersRef.current.onError?.(data)
+      },
+      onAbort: () => {
+        setIsStreaming(false)
+        abortRef.current = null
+        handlersRef.current.onAbort?.()
       },
     })
 
