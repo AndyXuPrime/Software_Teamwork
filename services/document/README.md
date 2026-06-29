@@ -52,11 +52,10 @@ The service-local operational contract is documented in [`api/openapi.yaml`](api
 
 ## Migrations
 
-Migration files live in `migrations/` and are intended for `goose`.
+Migration files live in `migrations/` and are applied with the project-pinned `goose@v3.27.1` command.
 
 ```powershell
-go install github.com/pressly/goose/v3/cmd/goose@v3.27.1
-goose -dir migrations postgres "$env:DOCUMENT_DATABASE_URL" up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$env:DOCUMENT_DATABASE_URL" up
 ```
 
 The first migration creates the report generation tables and seeds the initial

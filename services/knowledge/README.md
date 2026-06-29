@@ -89,6 +89,14 @@ Knowledge base deletion is soft-delete-first:
 - leave chunk/index cleanup for a future lifecycle job instead of hard-deleting
   chunks or vectors in this metadata route.
 
+
+## Migrations
+
+Apply the service-owned migration with the project-pinned `goose@v3.27.1` command:
+
+```bash
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up
+```
 ## Development
 
 ```bash

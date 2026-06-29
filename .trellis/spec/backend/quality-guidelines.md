@@ -84,6 +84,63 @@ with:
 
 ---
 
+## Go Migration CI Baseline
+
+### 1. Scope / Trigger
+
+- Trigger: adding or changing repository CI for service-owned PostgreSQL migrations under `services/*/migrations`.
+
+### 2. Signatures
+
+- Workflow: `.github/workflows/go-migrations.yml`.
+- Events: `pull_request` and `push` to `develop` with path filters for service migrations, service README files, the workflow file, and technology decisions.
+- Matrix key: `service`, with one entry for each landed Go service that owns SQL migration files.
+
+### 3. Contracts
+
+- PostgreSQL CI image: `postgres:16-alpine`.
+- Goose command: `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up`.
+- Working directory: `services/${{ matrix.service }}`.
+- Migration filenames must match ordered snake_case names such as `0001_create_users.sql`.
+- SQL migrations must include `-- +goose Up`; `-- +goose Down` is optional only for forward-only slices.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required response |
+|-----------|-------------------|
+| Service has `migrations/*.sql` but no matrix entry | Add the service to migration CI before merging. |
+| SQL migration has no `-- +goose Up` annotation | Add the annotation so goose can parse it. |
+| Migration filename lacks an ordered prefix | Rename to `0001_<snake_case_summary>.sql` or the next ordered prefix. |
+| README goose command version differs from CI | Update both to `v3.27.1`. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: `services/auth` migration applies against an empty PostgreSQL database with `goose@v3.27.1`.
+- Base: a forward-only migration has `-- +goose Up` and no down section.
+- Bad: a service relies only on PostgreSQL Docker init scripts, or README says `goose` without a pinned version.
+
+### 6. Tests Required
+
+- Run migration apply validation for every matrix service or rely on the PR workflow when local PostgreSQL is unavailable.
+- Run `git diff --check` before commit.
+- Run service-local Go tests when migration files or repository code changed.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```bash
+goose -dir migrations postgres "$DATABASE_URL" up
+```
+
+Correct:
+
+```bash
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up
+```
+
+---
+
 ## Forbidden Patterns
 
 - Root-level Go module used to build all microservices together.

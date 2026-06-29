@@ -130,12 +130,12 @@ docker compose -f docker-compose.db.yml down -v
 .\scripts\docker-db-up.ps1
 ```
 
-Apply or inspect migrations on the host when goose is installed locally:
+Apply or inspect migrations on the host with the project-pinned `goose@v3.27.1` command:
 
 ```powershell
 $env:QA_DATABASE_URL = "postgres://qa_app:qa_app_dev@localhost:5433/qa_system?sslmode=disable"
-goose -dir migrations postgres $env:QA_DATABASE_URL up
-goose -dir migrations postgres $env:QA_DATABASE_URL status
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres $env:QA_DATABASE_URL up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres $env:QA_DATABASE_URL status
 ```
 
 Integration tests against the Docker database:

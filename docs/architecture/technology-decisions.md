@@ -38,7 +38,7 @@
 | `services/knowledge` | 已落地 Go 服务、memory/PostgreSQL repository、Qdrant HTTP adapter、local hashing embedding、migration、Dockerfile 和本地 Compose。 | `services/knowledge/go.mod`、`services/knowledge/Dockerfile`、`services/knowledge/docker-compose.yml` |
 | `services/file` | 已落地 Go 服务骨架、memory repository 和 memory object store；生产 PostgreSQL/MinIO 适配器未落地。 | `services/file/go.mod` |
 | `gateway`、`auth`、`qa`、`document`、`ai-gateway` | 当前主要是架构、README 和 OpenAPI 契约；服务代码尚未落地。 | `docs/services/**` |
-| CI | 已有 PR guard、commitlint、auto-label；前端/Go 服务构建测试流水线尚未落地。 | `.github/workflows/*.yml` |
+| CI | 已有 PR guard、commitlint、auto-label、Go service build/test workflow 和 goose migration apply workflow；前端流水线尚未落地。 | `.github/workflows/*.yml` |
 
 ## 已确认选型总览
 
@@ -82,7 +82,7 @@
 | OpenAPI | OpenAPI | `3.0.3` | 已固定 | Gateway、Auth、Knowledge、QA、Document、AI Gateway 契约均使用 3.0.3。 |
 | API 版本前缀 | `/api/v1` / `/internal/v1` | `v1` | 已固定 | 公开入口以 gateway OpenAPI 为准；内部服务使用服务级契约。 |
 | 后端测试 | Go `testing` + `httptest` | Go `1.25` 标准库 | 已固定 | 默认不引入 BDD 测试框架。 |
-| CI | GitHub Actions | `actions/github-script@v7`；runner `ubuntu-latest` | 部分已固定 | 已有协作类 workflow；构建测试 workflow 尚待落地。 |
+| CI | GitHub Actions | `actions/github-script@v7`；runner `ubuntu-latest` | 部分已固定 | 已有协作类 workflow、Go service build/test workflow 和 goose migration apply workflow；前端 workflow 尚待落地。 |
 | 观测 | `slog` + Prometheus metrics；关键链路 OpenTelemetry tracing | Prometheus/OTel 依赖待固定 | 已选型，待固定 | 第一阶段先保证结构化日志和指标。 |
 | DOCX 生成 | Document worker 调用 Pandoc/LibreOffice 类工具链 | 待固定 | 已选型，待固定 | 落地时必须固定工具链镜像或 CLI 版本。 |
 | MCP 集成 | 成熟 SDK 或独立 MCP sidecar | 待固定 | 已选型，待固定 | QA 负责工具白名单、权限、参数校验和脱敏记录。 |
@@ -203,7 +203,7 @@ services/<service>/
 - 迁移文件继续放在 `services/<service>/migrations/`。
 - 文件名使用有序前缀，例如 `0001_create_users.sql`。
 - 首期允许 forward-only migration；如果写 down migration，必须能在本地和 CI 验证。
-- CI 后续应对变更服务执行迁移 apply 校验。
+- CI 对有 SQL migration 的已落地 Go 服务执行迁移 apply 校验。
 - `goose` 固定使用 `github.com/pressly/goose/v3@v3.27.1`；服务可按需要使用 CLI 或库方式接入，但 CI 和 README 必须引用同一版本。
 
 ### Redis 和 asynq
@@ -263,14 +263,14 @@ services/<service>/
 - 当前 GitHub Actions 已固定 `actions/github-script@v7`，用于 PR guard、commitlint 和 auto-label。
 - 当前 runner 使用 `ubuntu-latest`，这是 GitHub 托管滚动版本；如需完全可复现 CI，后续应改为团队认可的固定 runner 镜像或自托管 runner。
 - Frontend CI 后续应执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`bun run --cwd apps/web build`。
-- Go Service CI 后续应按服务路径执行 `go test ./...` 和 `go build ./cmd/server`。
-- 有 PostgreSQL 的服务后续应在 CI 中执行 `goose` migration apply 校验。
+- Go Service CI 按服务路径执行 `go test ./...` 和 `go build ./cmd/server`。
+- Goose migration CI 对有 SQL migration 的服务执行 `goose@v3.27.1` apply 校验。
 - Docker 构建和部署流水线应按服务路径拆分，避免无关变更触发全量检查。
 
 ## 后续需要同步的实现任务
 
 - 为每个 Go 服务补充或迁移 `sqlc.yaml`、query 文件和 `pgx` repository。
-- 为每个有数据库的服务接入 `goose@v3.27.1` 迁移命令和 CI 校验。
+- 为后续新增的数据库服务同步 `goose@v3.27.1` 迁移命令和 CI 校验。
 - 为需要异步任务的服务接入 `asynq` client/worker，并固定 `asynq` 和 `go-redis` 版本。
 - 前端接入 `openapi-typescript`，生成 gateway 类型，并固定生成器版本。
 - 前端测试接入 Vitest、React Testing Library 和 Playwright，并固定版本。

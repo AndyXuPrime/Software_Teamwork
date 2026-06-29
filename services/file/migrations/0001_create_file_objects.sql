@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE IF NOT EXISTS file_objects (
     id TEXT PRIMARY KEY,
     filename TEXT NOT NULL,

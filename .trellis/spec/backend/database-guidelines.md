@@ -89,6 +89,7 @@ func (r *UserRepository) FindByID(ctx context.Context, id UserID) (User, error) 
 - Store `goose` migrations in `services/<service>/migrations/`.
 - Use forward-only migrations for the first implementation slice unless rollback
   is explicitly supported and verified by the service.
+- SQL migrations executed by goose must include `-- +goose Up`; include `-- +goose Down` only when the down path is supported and verified by the service.
 - Name migrations with an ordered prefix and action summary:
 
 ```text

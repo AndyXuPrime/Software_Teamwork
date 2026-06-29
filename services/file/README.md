@@ -73,6 +73,16 @@ A future MinIO adapter should be added under `internal/platform/storage/minio` a
 
 File metadata is behind the service repository port. The current memory repository supports handler tests and local smoke testing. A future PostgreSQL implementation should live under `internal/repository` and add real migrations under `migrations/`. It must store only base file metadata such as file id, display filename, content type, size, checksum, storage reference, created timestamp, and deleted timestamp. Knowledge-base IDs, report IDs, template IDs, material IDs, business tags, processing status, and ACLs belong to their owner services.
 
+
+## Migrations
+
+The contract migration under `migrations/` is applied with the project-pinned `goose@v3.27.1` command. The PostgreSQL repository adapter is still out of scope for this service slice, but CI validates that the migration remains applyable against an empty PostgreSQL database.
+
+```powershell
+cd services/file
+$env:FILE_DATABASE_URL = "postgres://file:file@localhost:5432/file?sslmode=disable"
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$env:FILE_DATABASE_URL" up
+```
 ## Multipart Upload Shape
 
 Upload uses `multipart/form-data`:

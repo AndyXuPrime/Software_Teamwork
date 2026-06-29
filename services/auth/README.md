@@ -61,18 +61,17 @@ Do not log `AUTH_DATABASE_URL` because it may contain credentials.
 
 ## Migration
 
-Install or run goose with the version selected by the project, then apply the
-service-owned migrations:
+Run the project-pinned goose version, then apply the service-owned migrations:
 
 ```bash
 cd services/auth
-goose -dir migrations postgres "$AUTH_DATABASE_URL" up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$AUTH_DATABASE_URL" up
 ```
 
 The first migration is forward and down capable:
 
 ```bash
-goose -dir migrations postgres "$AUTH_DATABASE_URL" down
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$AUTH_DATABASE_URL" down
 ```
 
 ## sqlc
