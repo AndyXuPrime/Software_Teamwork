@@ -3,9 +3,9 @@
 Knowledge owns knowledge-base metadata, knowledge document metadata/status,
 processing trace state, and future chunk/vector lifecycle coordination.
 
-This implementation is the A-09 foundation slice. It intentionally rebuilds the
-service from a cleared directory and implements only the metadata/status APIs
-required by the active gateway contract.
+This implementation includes the A-09 foundation slice plus the A-10 document
+upload handoff: Knowledge accepts the document upload, stores raw bytes through
+File Service, creates durable document/job state, and enqueues ingestion work.
 
 ## Runtime
 
@@ -24,9 +24,13 @@ RAG MCP server work.
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes | - | PostgreSQL connection string. |
+| `FILE_SERVICE_BASE_URL` | yes | - | Internal File Service base URL for `/internal/v1/files`. |
+| `KNOWLEDGE_REDIS_ADDR` | yes | - | Redis/asynq endpoint for ingestion task handoff. |
 | `KNOWLEDGE_HTTP_ADDR` | no | `:8083` | HTTP listen address. |
 | `KNOWLEDGE_SERVICE_VERSION` | no | `dev` | Version returned by readiness checks. |
 | `KNOWLEDGE_ENV` | no | `local` | Runtime environment label. |
+| `KNOWLEDGE_MAX_UPLOAD_BYTES` | no | `33554432` | Multipart upload limit in bytes. |
+| `KNOWLEDGE_SERVICE_TOKEN` | no | - | Optional internal service token forwarded to File Service. |
 | `KNOWLEDGE_SHUTDOWN_TIMEOUT` | no | `10s` | Graceful shutdown timeout. |
 
 ## Implemented Routes
@@ -44,6 +48,7 @@ Internal service routes:
 - `PATCH /internal/v1/knowledge-bases/{knowledgeBaseId}`
 - `DELETE /internal/v1/knowledge-bases/{knowledgeBaseId}`
 - `GET /internal/v1/knowledge-bases/{knowledgeBaseId}/documents`
+- `POST /internal/v1/knowledge-bases/{knowledgeBaseId}/documents`
 - `GET /internal/v1/documents/{documentId}`
 
 Public gateway equivalents are documented in
@@ -76,6 +81,11 @@ The first migration creates:
 - `knowledge_documents`
 - `processing_jobs`
 - `document_chunks`
+
+Document upload stores the File Service object ID only in
+`knowledge_documents.file_ref`. Public document responses expose `jobId` and
+document status, but never `fileRef`, File Service internal IDs, object keys, or
+internal URLs.
 
 `document_chunks` is included now as a provenance and cleanup anchor. This task
 does not implement parser/chunker writes, embedding generation, Qdrant indexing,

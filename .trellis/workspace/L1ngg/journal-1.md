@@ -471,3 +471,36 @@ Updated Auto Label config so service documentation paths receive matching servic
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Knowledge document upload ingestion job
+
+**Date**: 2026-06-29
+**Task**: Knowledge document upload ingestion job
+**Branch**: `L1nggTeam/feat/knowledge-upload-ingestion-job`
+
+### Summary
+
+Implemented Knowledge document multipart upload, File Service persistence, durable processing job creation, asynq handoff, tests, and contract documentation updates for issue #82.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2a6774c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

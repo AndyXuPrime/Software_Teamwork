@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -15,6 +16,8 @@ const (
 	defaultPageSize = 20
 	maxPageSize     = 200
 	defaultDocType  = "GENERAL"
+	maxTags         = 32
+	maxTagLength    = 64
 )
 
 var (
@@ -28,6 +31,8 @@ type IDGenerator func(prefix string) string
 
 type Service struct {
 	repo  Repository
+	files FileClient
+	queue IngestionQueue
 	now   Clock
 	newID IDGenerator
 }
@@ -43,13 +48,23 @@ func New(repo Repository) *Service {
 }
 
 func NewWithOptions(repo Repository, now Clock, idGenerator IDGenerator) *Service {
+	return NewWithDependencies(repo, nil, nil, now, idGenerator)
+}
+
+func NewWithDependencies(repo Repository, files FileClient, queue IngestionQueue, now Clock, idGenerator IDGenerator) *Service {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
 	if idGenerator == nil {
 		idGenerator = newID
 	}
-	return &Service{repo: repo, now: now, newID: idGenerator}
+	return &Service{
+		repo:  repo,
+		files: files,
+		queue: queue,
+		now:   now,
+		newID: idGenerator,
+	}
 }
 
 func (s *Service) CreateKnowledgeBase(ctx context.Context, reqCtx RequestContext, input CreateKnowledgeBaseInput) (KnowledgeBase, error) {
@@ -233,6 +248,104 @@ func (s *Service) DeleteKnowledgeBase(ctx context.Context, reqCtx RequestContext
 	return nil
 }
 
+func (s *Service) UploadDocument(ctx context.Context, reqCtx RequestContext, input UploadDocumentInput) (KnowledgeDocument, error) {
+	scope, err := mutationScope(reqCtx)
+	if err != nil {
+		return KnowledgeDocument{}, err
+	}
+	if s.files == nil {
+		return KnowledgeDocument{}, DependencyError("file service client is not configured", nil)
+	}
+	if s.queue == nil {
+		return KnowledgeDocument{}, DependencyError("ingestion queue is not configured", nil)
+	}
+
+	knowledgeBaseID := strings.TrimSpace(input.KnowledgeBaseID)
+	fields := map[string]string{}
+	if knowledgeBaseID == "" {
+		fields["knowledgeBaseId"] = "is required"
+	}
+	file := input.File
+	filename := normalizeDocumentName(file.Filename)
+	if filename == "" {
+		fields["file"] = "filename is required"
+	}
+	if file.Content == nil {
+		fields["file"] = "is required"
+	} else if file.SizeBytes == 0 {
+		fields["file"] = "must not be empty"
+	}
+	tags, tagFields := normalizeTags(input.Tags)
+	for key, value := range tagFields {
+		fields[key] = value
+	}
+	if len(fields) > 0 {
+		return KnowledgeDocument{}, ValidationError("request validation failed", fields)
+	}
+	if _, err := s.repo.GetKnowledgeBase(ctx, knowledgeBaseID, scope); err != nil {
+		return KnowledgeDocument{}, repositoryError(err)
+	}
+
+	file.Filename = filename
+	createdFile, err := s.files.CreateFile(ctx, reqCtx, file)
+	if err != nil {
+		return KnowledgeDocument{}, normalizeFileClientError(err)
+	}
+	fileID := strings.TrimSpace(createdFile.ID)
+	if fileID == "" {
+		return KnowledgeDocument{}, DependencyError("file service returned invalid response", nil)
+	}
+
+	now := s.now()
+	documentID := s.newID("doc")
+	jobID := s.newID("job")
+	contentType := strings.TrimSpace(createdFile.ContentType)
+	if contentType == "" {
+		contentType = strings.TrimSpace(file.ContentType)
+	}
+	sizeBytes := createdFile.SizeBytes
+	if sizeBytes == 0 {
+		sizeBytes = file.SizeBytes
+	}
+	doc, job, err := s.repo.CreateDocumentWithJob(ctx, CreateDocumentWithJobRecord{
+		DocumentID:      documentID,
+		KnowledgeBaseID: knowledgeBaseID,
+		FileRef:         fileID,
+		Name:            displayName(createdFile.Filename, filename),
+		ContentType:     contentType,
+		SizeBytes:       sizeBytes,
+		Status:          DocumentStatusUploaded,
+		Tags:            tags,
+		CurrentJobID:    jobID,
+		CreatedBy:       scope.UserID,
+		JobID:           jobID,
+		JobType:         JobTypeDocumentIngestion,
+		JobStatus:       JobStatusQueued,
+		JobStage:        "uploaded",
+		JobMessage:      "document uploaded and queued for ingestion",
+		MaxAttempts:     3,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}, scope)
+	if err != nil {
+		_ = s.files.DeleteFile(ctx, reqCtx, fileID)
+		return KnowledgeDocument{}, repositoryError(err)
+	}
+
+	if err := s.queue.EnqueueDocumentIngestion(ctx, DocumentIngestionTask{
+		RequestID:       strings.TrimSpace(reqCtx.RequestID),
+		JobID:           job.ID,
+		DocumentID:      doc.ID,
+		KnowledgeBaseID: doc.KnowledgeBaseID,
+		UserID:          scope.UserID,
+	}); err != nil {
+		_ = s.repo.MarkDocumentJobFailed(ctx, doc.ID, job.ID, string(CodeDependency), "ingestion queue handoff failed", s.now())
+		return KnowledgeDocument{}, DependencyError("ingestion queue handoff failed", err)
+	}
+
+	return doc, nil
+}
+
 func (s *Service) ListDocuments(ctx context.Context, reqCtx RequestContext, input ListDocumentsInput) (DocumentList, error) {
 	scope, err := readScope(reqCtx)
 	if err != nil {
@@ -270,6 +383,80 @@ func (s *Service) GetDocument(ctx context.Context, reqCtx RequestContext, id str
 		return KnowledgeDocument{}, repositoryError(err)
 	}
 	return doc, nil
+}
+
+func normalizeDocumentName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	name = strings.ReplaceAll(name, "\\", "/")
+	base := filepath.Base(name)
+	base = strings.TrimSpace(base)
+	if base == "." || base == "/" {
+		return ""
+	}
+	if len(base) > 255 {
+		base = base[:255]
+	}
+	return base
+}
+
+func displayName(primary string, fallback string) string {
+	if normalized := normalizeDocumentName(primary); normalized != "" {
+		return normalized
+	}
+	return fallback
+}
+
+func normalizeTags(input []string) ([]string, map[string]string) {
+	fields := map[string]string{}
+	seen := map[string]struct{}{}
+	tags := make([]string, 0, len(input))
+	for _, raw := range input {
+		tag := strings.TrimSpace(raw)
+		if tag == "" {
+			continue
+		}
+		if len(tag) > maxTagLength {
+			fields["tags"] = "each tag must be at most 64 characters"
+			continue
+		}
+		if _, exists := seen[tag]; exists {
+			continue
+		}
+		seen[tag] = struct{}{}
+		tags = append(tags, tag)
+	}
+	if len(tags) > maxTags {
+		fields["tags"] = "must contain at most 32 tags"
+		tags = tags[:maxTags]
+	}
+	if len(fields) == 0 {
+		return tags, nil
+	}
+	return tags, fields
+}
+
+func normalizeFileClientError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if appErr, ok := Classify(err); ok {
+		switch appErr.Code {
+		case CodeValidation:
+			return ValidationError("request validation failed", map[string]string{"file": "is invalid"})
+		case CodeUnauthorized, CodeForbidden:
+			return DependencyError("file service rejected knowledge request", err)
+		case CodeNotFound:
+			return DependencyError("file service resource not found", err)
+		case CodeDependency, CodeInternal, CodeConflict, CodeRateLimited:
+			return err
+		default:
+			return DependencyError("file service failed", err)
+		}
+	}
+	return DependencyError("file service failed", err)
 }
 
 func readScope(reqCtx RequestContext) (AccessScope, error) {

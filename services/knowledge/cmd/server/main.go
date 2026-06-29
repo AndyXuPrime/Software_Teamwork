@@ -9,10 +9,13 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/config"
 	knowledgehttp "github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/http"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/platform/fileclient"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/platform/queue"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/repository"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
 )
@@ -36,12 +39,23 @@ func main() {
 	}
 	defer pool.Close()
 
+	fileClient, err := fileclient.New(cfg.FileServiceURL, cfg.ServiceToken, nil)
+	if err != nil {
+		logger.Error("file client configuration failed", "service", "knowledge", "dependency", "file", "error", err)
+		os.Exit(1)
+	}
+
+	asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr})
+	defer asynqClient.Close()
+	ingestionQueue := queue.NewAsynqQueue(asynqClient)
+
 	repo := repository.NewPostgresRepository(pool)
-	knowledgeService := service.New(repo)
+	knowledgeService := service.NewWithDependencies(repo, fileClient, ingestionQueue, nil, nil)
 	handler := knowledgehttp.NewServer(knowledgeService, knowledgehttp.Config{
 		ServiceVersion: cfg.ServiceVersion,
 		Environment:    cfg.Environment,
 		Logger:         logger,
+		MaxUploadBytes: cfg.MaxUploadBytes,
 	})
 
 	server := &http.Server{

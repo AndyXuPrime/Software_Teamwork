@@ -60,6 +60,133 @@ func (q *Queries) CountKnowledgeBases(ctx context.Context, arg CountKnowledgeBas
 	return column_1, err
 }
 
+const createDocument = `-- name: CreateDocument :one
+INSERT INTO knowledge_documents (
+  id,
+  knowledge_base_id,
+  file_ref,
+  name,
+  content_type,
+  size_bytes,
+  status,
+  error_code,
+  error_message,
+  tags,
+  parser_backend,
+  current_job_id,
+  created_by,
+  created_at,
+  updated_at
+) VALUES (
+  $1,
+  $2,
+  NULLIF($3, ''),
+  $4,
+  NULLIF($5, ''),
+  $6,
+  $7,
+  NULL,
+  NULL,
+  $8,
+  NULL,
+  NULLIF($9, ''),
+  $10,
+  $11,
+  $12
+)
+RETURNING
+  id,
+  knowledge_base_id,
+  file_ref,
+  name,
+  content_type,
+  size_bytes,
+  status,
+  error_code,
+  error_message,
+  0::bigint AS chunk_count,
+  tags,
+  parser_backend,
+  current_job_id,
+  created_by,
+  created_at,
+  updated_at,
+  deleted_at
+`
+
+type CreateDocumentParams struct {
+	ID              string             `json:"id"`
+	KnowledgeBaseID string             `json:"knowledge_base_id"`
+	FileRef         interface{}        `json:"file_ref"`
+	Name            string             `json:"name"`
+	ContentType     interface{}        `json:"content_type"`
+	SizeBytes       pgtype.Int8        `json:"size_bytes"`
+	Status          string             `json:"status"`
+	Tags            []byte             `json:"tags"`
+	CurrentJobID    interface{}        `json:"current_job_id"`
+	CreatedBy       string             `json:"created_by"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type CreateDocumentRow struct {
+	ID              string             `json:"id"`
+	KnowledgeBaseID string             `json:"knowledge_base_id"`
+	FileRef         pgtype.Text        `json:"file_ref"`
+	Name            string             `json:"name"`
+	ContentType     pgtype.Text        `json:"content_type"`
+	SizeBytes       pgtype.Int8        `json:"size_bytes"`
+	Status          string             `json:"status"`
+	ErrorCode       pgtype.Text        `json:"error_code"`
+	ErrorMessage    pgtype.Text        `json:"error_message"`
+	ChunkCount      int64              `json:"chunk_count"`
+	Tags            []byte             `json:"tags"`
+	ParserBackend   pgtype.Text        `json:"parser_backend"`
+	CurrentJobID    pgtype.Text        `json:"current_job_id"`
+	CreatedBy       string             `json:"created_by"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) (CreateDocumentRow, error) {
+	row := q.db.QueryRow(ctx, createDocument,
+		arg.ID,
+		arg.KnowledgeBaseID,
+		arg.FileRef,
+		arg.Name,
+		arg.ContentType,
+		arg.SizeBytes,
+		arg.Status,
+		arg.Tags,
+		arg.CurrentJobID,
+		arg.CreatedBy,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	var i CreateDocumentRow
+	err := row.Scan(
+		&i.ID,
+		&i.KnowledgeBaseID,
+		&i.FileRef,
+		&i.Name,
+		&i.ContentType,
+		&i.SizeBytes,
+		&i.Status,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.ChunkCount,
+		&i.Tags,
+		&i.ParserBackend,
+		&i.CurrentJobID,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const createKnowledgeBase = `-- name: CreateKnowledgeBase :one
 INSERT INTO knowledge_bases (
   id,
@@ -150,6 +277,109 @@ func (q *Queries) CreateKnowledgeBase(ctx context.Context, arg CreateKnowledgeBa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const createProcessingJob = `-- name: CreateProcessingJob :one
+INSERT INTO processing_jobs (
+  id,
+  knowledge_base_id,
+  document_id,
+  job_type,
+  status,
+  current_stage,
+  progress_percent,
+  message,
+  error_code,
+  error_message,
+  attempts,
+  max_attempts,
+  started_at,
+  finished_at,
+  created_at,
+  updated_at
+) VALUES (
+  $1,
+  $2,
+  NULLIF($3, ''),
+  $4,
+  $5,
+  NULLIF($6, ''),
+  0,
+  NULLIF($7, ''),
+  NULL,
+  NULL,
+  0,
+  $8,
+  NULL,
+  NULL,
+  $9,
+  $10
+)
+RETURNING
+  id,
+  knowledge_base_id,
+  document_id,
+  job_type,
+  status,
+  current_stage,
+  progress_percent,
+  message,
+  error_code,
+  error_message,
+  attempts,
+  max_attempts,
+  started_at,
+  finished_at,
+  created_at,
+  updated_at
+`
+
+type CreateProcessingJobParams struct {
+	ID              string             `json:"id"`
+	KnowledgeBaseID string             `json:"knowledge_base_id"`
+	DocumentID      interface{}        `json:"document_id"`
+	JobType         string             `json:"job_type"`
+	Status          string             `json:"status"`
+	CurrentStage    interface{}        `json:"current_stage"`
+	Message         interface{}        `json:"message"`
+	MaxAttempts     int32              `json:"max_attempts"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateProcessingJob(ctx context.Context, arg CreateProcessingJobParams) (ProcessingJob, error) {
+	row := q.db.QueryRow(ctx, createProcessingJob,
+		arg.ID,
+		arg.KnowledgeBaseID,
+		arg.DocumentID,
+		arg.JobType,
+		arg.Status,
+		arg.CurrentStage,
+		arg.Message,
+		arg.MaxAttempts,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	var i ProcessingJob
+	err := row.Scan(
+		&i.ID,
+		&i.KnowledgeBaseID,
+		&i.DocumentID,
+		&i.JobType,
+		&i.Status,
+		&i.CurrentStage,
+		&i.ProgressPercent,
+		&i.Message,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.Attempts,
+		&i.MaxAttempts,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -514,6 +744,37 @@ func (q *Queries) ListKnowledgeBases(ctx context.Context, arg ListKnowledgeBases
 	return items, nil
 }
 
+const markDocumentFailed = `-- name: MarkDocumentFailed :execrows
+UPDATE knowledge_documents
+SET
+  status = 'failed',
+  error_code = NULLIF($1, ''),
+  error_message = NULLIF($2, ''),
+  updated_at = $3
+WHERE id = $4
+  AND deleted_at IS NULL
+`
+
+type MarkDocumentFailedParams struct {
+	ErrorCode    interface{}        `json:"error_code"`
+	ErrorMessage interface{}        `json:"error_message"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           string             `json:"id"`
+}
+
+func (q *Queries) MarkDocumentFailed(ctx context.Context, arg MarkDocumentFailedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markDocumentFailed,
+		arg.ErrorCode,
+		arg.ErrorMessage,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const markDocumentsDeletedByKnowledgeBase = `-- name: MarkDocumentsDeletedByKnowledgeBase :exec
 UPDATE knowledge_documents
 SET deleted_at = $1, updated_at = $1
@@ -552,6 +813,37 @@ func (q *Queries) MarkKnowledgeBaseDeleted(ctx context.Context, arg MarkKnowledg
 		arg.ID,
 		arg.CanReadAll,
 		arg.UserID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markProcessingJobFailed = `-- name: MarkProcessingJobFailed :execrows
+UPDATE processing_jobs
+SET
+  status = 'failed',
+  error_code = NULLIF($1, ''),
+  error_message = NULLIF($2, ''),
+  finished_at = $3,
+  updated_at = $3
+WHERE id = $4
+`
+
+type MarkProcessingJobFailedParams struct {
+	ErrorCode    interface{}        `json:"error_code"`
+	ErrorMessage interface{}        `json:"error_message"`
+	FinishedAt   pgtype.Timestamptz `json:"finished_at"`
+	ID           string             `json:"id"`
+}
+
+func (q *Queries) MarkProcessingJobFailed(ctx context.Context, arg MarkProcessingJobFailedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markProcessingJobFailed,
+		arg.ErrorCode,
+		arg.ErrorMessage,
+		arg.FinishedAt,
+		arg.ID,
 	)
 	if err != nil {
 		return 0, err

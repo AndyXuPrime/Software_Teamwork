@@ -2,7 +2,10 @@ package httpapi_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -197,6 +200,123 @@ func TestInvalidBodyAndPagination(t *testing.T) {
 	}
 }
 
+func TestUploadDocumentReturnsPublicSummaryOnly(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	now := time.Date(2026, 6, 29, 13, 0, 0, 0, time.UTC)
+	repo.SeedKnowledgeBase(service.KnowledgeBase{
+		ID:                "kb_1",
+		Name:              "规程库",
+		Description:       "",
+		DocType:           "GENERAL",
+		ChunkStrategy:     json.RawMessage(`{}`),
+		RetrievalStrategy: json.RawMessage(`{}`),
+		CreatedBy:         "usr_test",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	svc := service.NewWithDependencies(repo, &httpUploadFileClient{}, &httpUploadQueue{}, func() time.Time { return now }, func(prefix string) string {
+		return prefix + "_test"
+	})
+	server := knowledgehttp.NewServer(svc, knowledgehttp.Config{ServiceVersion: "test", Environment: "test"})
+
+	body, contentType := multipartBody(t, "knowledge-guide.pdf", "pdf-bytes", []string{"锅炉", "规程"})
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases/kb_1/documents", body)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("X-Request-Id", "req_upload")
+	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-User-Permissions", service.PermissionKnowledgeWrite)
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	decodeJSON(t, res.Body, &payload)
+	data, ok := payload["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("data = %#v", payload["data"])
+	}
+	if _, exists := data["fileRef"]; exists {
+		t.Fatal("fileRef must not be exposed")
+	}
+	if _, exists := data["fileId"]; exists {
+		t.Fatal("fileId must not be exposed")
+	}
+	if data["id"] != "doc_test" || data["jobId"] != "job_test" || data["status"] != string(service.DocumentStatusUploaded) {
+		t.Fatalf("data = %#v", data)
+	}
+	if got := data["name"]; got != "knowledge-guide.pdf" {
+		t.Fatalf("name = %v", got)
+	}
+	gotTags, ok := data["tags"].([]any)
+	if !ok || len(gotTags) != 2 || gotTags[0] != "锅炉" || gotTags[1] != "规程" {
+		t.Fatalf("tags = %#v", data["tags"])
+	}
+}
+
+func TestUploadDocumentRejectsMissingFile(t *testing.T) {
+	server := newHTTPTestServer(t)
+	body, contentType := multipartBodyWithoutFile(t)
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases/kb_1/documents", body)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-User-Permissions", service.PermissionKnowledgeWrite)
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	var errBody errorResponseBody
+	decodeJSON(t, res.Body, &errBody)
+	if errBody.Error.Code != "validation_error" || errBody.Error.Fields["file"] == "" {
+		t.Fatalf("error = %+v", errBody.Error)
+	}
+}
+
+func TestUploadDocumentAcceptsJSONTagsField(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	now := time.Date(2026, 6, 29, 13, 30, 0, 0, time.UTC)
+	repo.SeedKnowledgeBase(service.KnowledgeBase{
+		ID:                "kb_1",
+		Name:              "规程库",
+		Description:       "",
+		DocType:           "GENERAL",
+		ChunkStrategy:     json.RawMessage(`{}`),
+		RetrievalStrategy: json.RawMessage(`{}`),
+		CreatedBy:         "usr_test",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	svc := service.NewWithDependencies(repo, &httpUploadFileClient{}, &httpUploadQueue{}, func() time.Time { return now }, func(prefix string) string {
+		return prefix + "_test"
+	})
+	server := knowledgehttp.NewServer(svc, knowledgehttp.Config{ServiceVersion: "test", Environment: "test"})
+
+	body, contentType := multipartBodyWithJSONTags(t, "knowledge-guide.pdf", "pdf-bytes", `["锅炉","规程"]`)
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases/kb_1/documents", body)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-User-Permissions", service.PermissionKnowledgeWrite)
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	decodeJSON(t, res.Body, &payload)
+	data := payload["data"].(map[string]any)
+	gotTags := data["tags"].([]any)
+	if len(gotTags) != 2 || gotTags[0] != "锅炉" || gotTags[1] != "规程" {
+		t.Fatalf("tags = %#v", data["tags"])
+	}
+}
+
 func newHTTPTestServer(t *testing.T) http.Handler {
 	t.Helper()
 	repo := repository.NewMemoryRepository()
@@ -232,6 +352,61 @@ func decodeJSON(t *testing.T, body *bytes.Buffer, target any) {
 	if err := json.NewDecoder(body).Decode(target); err != nil {
 		t.Fatalf("Decode() error = %v, body = %s", err, body.String())
 	}
+}
+
+func multipartBody(t *testing.T, filename string, content string, tags []string) (*bytes.Buffer, string) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for _, tag := range tags {
+		if err := writer.WriteField("tags", tag); err != nil {
+			t.Fatalf("WriteField(tags) error = %v", err)
+		}
+	}
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatalf("CreateFormFile() error = %v", err)
+	}
+	if _, err := io.WriteString(part, content); err != nil {
+		t.Fatalf("write file body = %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	return &body, writer.FormDataContentType()
+}
+
+func multipartBodyWithoutFile(t *testing.T) (*bytes.Buffer, string) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("tags", "锅炉"); err != nil {
+		t.Fatalf("WriteField(tags) error = %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	return &body, writer.FormDataContentType()
+}
+
+func multipartBodyWithJSONTags(t *testing.T, filename string, content string, tags string) (*bytes.Buffer, string) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("tags", tags); err != nil {
+		t.Fatalf("WriteField(tags) error = %v", err)
+	}
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatalf("CreateFormFile() error = %v", err)
+	}
+	if _, err := io.WriteString(part, content); err != nil {
+		t.Fatalf("write file body = %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	return &body, writer.FormDataContentType()
 }
 
 type successBody struct {
@@ -287,4 +462,27 @@ type errorResponseBody struct {
 		RequestID string            `json:"requestId"`
 		Fields    map[string]string `json:"fields"`
 	} `json:"error"`
+}
+
+type httpUploadFileClient struct{}
+
+func (c *httpUploadFileClient) CreateFile(context.Context, service.RequestContext, service.UploadedFile) (service.FileObject, error) {
+	return service.FileObject{
+		ID:             "file_test",
+		Filename:       "knowledge-guide.pdf",
+		ContentType:    "application/pdf",
+		SizeBytes:      9,
+		ChecksumSHA256: "abc123",
+		CreatedAt:      time.Date(2026, 6, 29, 13, 0, 0, 0, time.UTC),
+	}, nil
+}
+
+func (c *httpUploadFileClient) DeleteFile(context.Context, service.RequestContext, string) error {
+	return nil
+}
+
+type httpUploadQueue struct{}
+
+func (q *httpUploadQueue) EnqueueDocumentIngestion(context.Context, service.DocumentIngestionTask) error {
+	return nil
 }

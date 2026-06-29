@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"time"
 )
 
@@ -22,9 +23,21 @@ const (
 	DocumentStatusFailed    DocumentStatus = "failed"
 )
 
+const (
+	JobTypeDocumentIngestion = "document_ingestion"
+
+	JobStatusQueued    = "queued"
+	JobStatusRunning   = "running"
+	JobStatusSucceeded = "succeeded"
+	JobStatusFailed    = "failed"
+	JobStatusCancelled = "cancelled"
+)
+
 type RequestContext struct {
 	RequestID      string
 	UserID         string
+	CallerService  string
+	ServiceToken   string
 	Roles          []string
 	Permissions    []string
 	ForwardedFor   string
@@ -134,6 +147,46 @@ type ListKnowledgeBasesInput struct {
 	Page PageInput
 }
 
+type UploadedFile struct {
+	Filename       string
+	ContentType    string
+	SizeBytes      int64
+	ChecksumSHA256 string
+	Content        io.Reader
+}
+
+type FileObject struct {
+	ID             string
+	Filename       string
+	ContentType    string
+	SizeBytes      int64
+	ChecksumSHA256 string
+	CreatedAt      time.Time
+}
+
+type FileClient interface {
+	CreateFile(ctx context.Context, reqCtx RequestContext, file UploadedFile) (FileObject, error)
+	DeleteFile(ctx context.Context, reqCtx RequestContext, fileID string) error
+}
+
+type DocumentIngestionTask struct {
+	RequestID       string `json:"requestId"`
+	JobID           string `json:"jobId"`
+	DocumentID      string `json:"documentId"`
+	KnowledgeBaseID string `json:"knowledgeBaseId"`
+	UserID          string `json:"userId"`
+}
+
+type IngestionQueue interface {
+	EnqueueDocumentIngestion(ctx context.Context, task DocumentIngestionTask) error
+}
+
+type UploadDocumentInput struct {
+	KnowledgeBaseID string
+	File            UploadedFile
+	Tags            []string
+}
+
 type ListDocumentsInput struct {
 	KnowledgeBaseID string
 	Status          *DocumentStatus
@@ -146,6 +199,8 @@ type Repository interface {
 	GetKnowledgeBase(ctx context.Context, id string, scope AccessScope) (KnowledgeBase, error)
 	UpdateKnowledgeBase(ctx context.Context, input UpdateKnowledgeBaseRecord, scope AccessScope) (KnowledgeBase, error)
 	SoftDeleteKnowledgeBase(ctx context.Context, id string, deletedAt time.Time, scope AccessScope) error
+	CreateDocumentWithJob(ctx context.Context, input CreateDocumentWithJobRecord, scope AccessScope) (KnowledgeDocument, ProcessingJob, error)
+	MarkDocumentJobFailed(ctx context.Context, documentID string, jobID string, code string, message string, failedAt time.Time) error
 	ListDocumentsByKnowledgeBase(ctx context.Context, knowledgeBaseID string, status *DocumentStatus, scope AccessScope, page PageInput) (DocumentList, error)
 	GetDocument(ctx context.Context, id string, scope AccessScope) (KnowledgeDocument, error)
 }
@@ -170,4 +225,25 @@ type UpdateKnowledgeBaseRecord struct {
 	ChunkStrategy     *json.RawMessage
 	RetrievalStrategy *json.RawMessage
 	UpdatedAt         time.Time
+}
+
+type CreateDocumentWithJobRecord struct {
+	DocumentID      string
+	KnowledgeBaseID string
+	FileRef         string
+	Name            string
+	ContentType     string
+	SizeBytes       int64
+	Status          DocumentStatus
+	Tags            []string
+	CurrentJobID    string
+	CreatedBy       string
+	JobID           string
+	JobType         string
+	JobStatus       string
+	JobStage        string
+	JobMessage      string
+	MaxAttempts     int32
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }

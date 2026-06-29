@@ -254,6 +254,107 @@ HTTP handler receives upload -> writes object directly to MinIO -> returns objec
 HTTP handler parses multipart -> service validates checksum and creates FileObject -> repository stores metadata -> ObjectStore stores bytes -> response returns safe FileObject fields only
 ```
 
+## Scenario: Knowledge Document Upload And Ingestion Job
+
+### 1. Scope / Trigger
+
+- Trigger: adding or changing Knowledge document upload, File Service
+  integration, `knowledge_documents.file_ref`, processing job creation, or
+  Redis/asynq ingestion handoff.
+- Applies to `services/knowledge/internal/http`,
+  `services/knowledge/internal/service`, `services/knowledge/internal/repository`,
+  `services/knowledge/internal/platform/fileclient`,
+  `services/knowledge/internal/platform/queue`, `services/knowledge/api/openapi.yaml`,
+  and Knowledge runtime configuration.
+
+### 2. Signatures
+
+- Internal Knowledge route:
+  - `POST /internal/v1/knowledge-bases/{knowledgeBaseId}/documents`
+    with multipart field `file` and optional `tags`.
+- File Service call:
+  - `POST /internal/v1/files` with only base file-object multipart fields.
+  - Best-effort compensation uses `DELETE /internal/v1/files/{fileId}`.
+- Queue task:
+  - asynq task type `knowledge:document:ingest`.
+  - JSON payload fields: `requestId`, `jobId`, `documentId`,
+    `knowledgeBaseId`, `userId`.
+- Required runtime environment keys for upload:
+  - `FILE_SERVICE_BASE_URL`.
+  - `KNOWLEDGE_REDIS_ADDR`.
+  - Optional: `KNOWLEDGE_SERVICE_TOKEN`, `KNOWLEDGE_MAX_UPLOAD_BYTES`.
+
+### 3. Contracts
+
+- Knowledge owns document resources, document status, and `processing_jobs`.
+- File Service owns raw bytes and base file-object metadata. Knowledge persists
+  only the returned file ID as internal `knowledge_documents.file_ref`.
+- Public or service-local document responses may expose `jobId`, status, display
+  filename, content type, size, and tags, but must not expose `fileRef`,
+  File Service internal IDs, object keys, buckets, MinIO/internal URLs, raw text,
+  vectors, prompts, or tokens.
+- PostgreSQL is the durable source for document and processing job state.
+  Redis/asynq is only a queue delivery mechanism.
+- External HTTP calls must not run inside a PostgreSQL transaction. Validate the
+  knowledge base first, call File Service, then create document and job state in
+  one short repository transaction, then enqueue the asynq task.
+
+### 4. Validation & Error Matrix
+
+| Condition | Response/error |
+| --- | --- |
+| Missing user context | `401 unauthorized` |
+| Missing `knowledge:write` permission | `403 forbidden` |
+| Missing or empty multipart `file` | `400 validation_error` |
+| Malformed or oversized multipart body | `400 validation_error` |
+| Invalid `knowledgeBaseId` or hidden knowledge base | `404 not_found` |
+| Invalid `tags` shape or value | `400 validation_error` |
+| File Service validation failure | `400 validation_error` owned by Knowledge |
+| File Service dependency/internal failure | `502 dependency_error` |
+| Document/job repository failure after file creation | attempt `DELETE /internal/v1/files/{fileId}`, then return classified repository error |
+| Queue handoff failure after durable job creation | mark document/job failed in PostgreSQL, then return `502 dependency_error` |
+
+### 5. Good/Base/Bad Cases
+
+- Good: handler parses multipart, service validates KB visibility before file
+  write, File Service receives only raw file data, repository creates document
+  and job atomically, queue payload contains only IDs, and response returns a
+  `DocumentSummary` with `jobId`.
+- Base: queue failure is reported as dependency failure only after PostgreSQL
+  document/job state is durably marked failed.
+- Bad: Knowledge stores raw file bytes directly, sends `knowledgeBaseId` or tags
+  to File Service, returns `fileRef`/`fileId` publicly, or treats Redis/asynq as
+  the authoritative job status store.
+
+### 6. Tests Required
+
+- HTTP handler tests for success, missing file, malformed multipart, JSON-array
+  tags, repeated tags, permission failure, and no public file ID leakage.
+- Service tests for success orchestration, File Service validation/dependency
+  error mapping, repository failure compensation delete, queue failure job mark,
+  and pre-file-write knowledge-base visibility validation.
+- Repository tests for document/job creation and failed-state marking.
+- File client tests with mocked HTTP server asserting multipart shape, context
+  headers, safe downstream error mapping, and delete idempotency for `404`.
+- Queue adapter tests or code review must confirm payload contains only
+  `requestId`, `jobId`, `documentId`, `knowledgeBaseId`, and `userId`.
+- Service-local checks from `services/knowledge`: `go test ./...`,
+  `go build ./cmd/server`, and `git diff --check`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+Knowledge upload -> File Service stores business metadata -> Redis stores final ingestion status -> response exposes fileId
+```
+
+#### Correct
+
+```text
+Knowledge upload -> File Service stores raw bytes -> Knowledge transaction creates document + processing_job -> asynq task carries IDs only -> response exposes document summary + jobId
+```
+
 ## Scenario: Document Service Report Baseline
 
 ### 1. Scope / Trigger

@@ -141,6 +141,28 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [knowledge]
+      summary: Upload a knowledge-base document
+      operationId: internalUploadKnowledgeBaseDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UploadDocumentRequest"
+      responses:
+        "201":
+          description: Document uploaded and ingestion job queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentResponse"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
   /internal/v1/documents/{documentId}:
     parameters:
       - $ref: "#/components/parameters/DocumentId"
@@ -213,6 +235,19 @@ components:
         docType: { type: string }
         chunkStrategy: { type: object, additionalProperties: true }
         retrievalStrategy: { type: object, additionalProperties: true }
+    UploadDocumentRequest:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+        tags:
+          description: Optional repeated tag fields, or a JSON string array in one field.
+          oneOf:
+            - type: array
+              items: { type: string }
+            - type: string
     KnowledgeBaseSummary:
       type: object
       required: [id, name, description, docType, chunkStrategy, retrievalStrategy, documentCount, chunkCount, createdAt, updatedAt]

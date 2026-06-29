@@ -13,12 +13,14 @@ type MemoryRepository struct {
 	mu             sync.RWMutex
 	knowledgeBases map[string]service.KnowledgeBase
 	documents      map[string]service.KnowledgeDocument
+	jobs           map[string]service.ProcessingJob
 }
 
 func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{
 		knowledgeBases: map[string]service.KnowledgeBase{},
 		documents:      map[string]service.KnowledgeDocument{},
+		jobs:           map[string]service.ProcessingJob{},
 	}
 }
 
@@ -144,6 +146,90 @@ func (r *MemoryRepository) SoftDeleteKnowledgeBase(ctx context.Context, id strin
 			r.documents[docID] = doc
 		}
 	}
+	return nil
+}
+
+func (r *MemoryRepository) CreateDocumentWithJob(ctx context.Context, input service.CreateDocumentWithJobRecord, scope service.AccessScope) (service.KnowledgeDocument, service.ProcessingJob, error) {
+	if err := ctx.Err(); err != nil {
+		return service.KnowledgeDocument{}, service.ProcessingJob{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	kb, exists := r.knowledgeBases[input.KnowledgeBaseID]
+	if !exists || kb.DeletedAt != nil || !canRead(kb.CreatedBy, scope) {
+		return service.KnowledgeDocument{}, service.ProcessingJob{}, service.ErrNotFound
+	}
+	if _, exists := r.documents[input.DocumentID]; exists {
+		return service.KnowledgeDocument{}, service.ProcessingJob{}, service.ErrConflict
+	}
+	if _, exists := r.jobs[input.JobID]; exists {
+		return service.KnowledgeDocument{}, service.ProcessingJob{}, service.ErrConflict
+	}
+
+	fileRef := input.FileRef
+	contentType := input.ContentType
+	sizeBytes := input.SizeBytes
+	jobID := input.CurrentJobID
+	stage := input.JobStage
+	message := input.JobMessage
+	doc := service.KnowledgeDocument{
+		ID:              input.DocumentID,
+		KnowledgeBaseID: input.KnowledgeBaseID,
+		FileRef:         &fileRef,
+		Name:            input.Name,
+		ContentType:     &contentType,
+		SizeBytes:       &sizeBytes,
+		Status:          input.Status,
+		Tags:            append([]string(nil), input.Tags...),
+		CurrentJobID:    &jobID,
+		CreatedBy:       input.CreatedBy,
+		CreatedAt:       input.CreatedAt,
+		UpdatedAt:       input.UpdatedAt,
+	}
+	documentID := input.DocumentID
+	job := service.ProcessingJob{
+		ID:              input.JobID,
+		KnowledgeBaseID: input.KnowledgeBaseID,
+		DocumentID:      &documentID,
+		JobType:         input.JobType,
+		Status:          input.JobStatus,
+		CurrentStage:    &stage,
+		ProgressPercent: 0,
+		Message:         &message,
+		Attempts:        0,
+		MaxAttempts:     input.MaxAttempts,
+		CreatedAt:       input.CreatedAt,
+		UpdatedAt:       input.UpdatedAt,
+	}
+	r.documents[doc.ID] = doc
+	r.jobs[job.ID] = job
+	return cloneDocument(r.hydrateDocumentLocked(doc)), cloneJob(job), nil
+}
+
+func (r *MemoryRepository) MarkDocumentJobFailed(ctx context.Context, documentID string, jobID string, code string, message string, failedAt time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	doc, docExists := r.documents[documentID]
+	job, jobExists := r.jobs[jobID]
+	if !docExists || !jobExists {
+		return service.ErrNotFound
+	}
+	doc.Status = service.DocumentStatusFailed
+	doc.ErrorCode = cloneStringPtr(&code)
+	doc.ErrorMessage = cloneStringPtr(&message)
+	doc.UpdatedAt = failedAt
+	job.Status = service.JobStatusFailed
+	job.ErrorCode = cloneStringPtr(&code)
+	job.ErrorMessage = cloneStringPtr(&message)
+	job.FinishedAt = &failedAt
+	job.UpdatedAt = failedAt
+	r.documents[documentID] = doc
+	r.jobs[jobID] = job
 	return nil
 }
 
@@ -292,6 +378,23 @@ func cloneDocument(doc service.KnowledgeDocument) service.KnowledgeDocument {
 		doc.DeletedAt = &value
 	}
 	return doc
+}
+
+func cloneJob(job service.ProcessingJob) service.ProcessingJob {
+	job.DocumentID = cloneStringPtr(job.DocumentID)
+	job.CurrentStage = cloneStringPtr(job.CurrentStage)
+	job.Message = cloneStringPtr(job.Message)
+	job.ErrorCode = cloneStringPtr(job.ErrorCode)
+	job.ErrorMessage = cloneStringPtr(job.ErrorMessage)
+	if job.StartedAt != nil {
+		value := *job.StartedAt
+		job.StartedAt = &value
+	}
+	if job.FinishedAt != nil {
+		value := *job.FinishedAt
+		job.FinishedAt = &value
+	}
+	return job
 }
 
 func cloneRaw(value []byte) []byte {

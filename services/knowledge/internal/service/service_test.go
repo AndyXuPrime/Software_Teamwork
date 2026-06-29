@@ -1,9 +1,11 @@
 package service_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -184,6 +186,313 @@ func TestInvalidDocumentStatus(t *testing.T) {
 	if !hasCode(err, service.CodeValidation) {
 		t.Fatalf("ListDocuments() error = %v", err)
 	}
+}
+
+func TestUploadDocumentCreatesDocumentJobAndQueuesIngestion(t *testing.T) {
+	now := time.Date(2026, 6, 29, 11, 0, 0, 0, time.UTC)
+	repo := repository.NewMemoryRepository()
+	repo.SeedKnowledgeBase(service.KnowledgeBase{
+		ID:                "kb_1",
+		Name:              "规程库",
+		Description:       "",
+		DocType:           "GENERAL",
+		ChunkStrategy:     json.RawMessage(`{}`),
+		RetrievalStrategy: json.RawMessage(`{}`),
+		CreatedBy:         "usr_1",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+
+	files := &uploadFileClient{
+		createFn: func(ctx context.Context, reqCtx service.RequestContext, file service.UploadedFile) (service.FileObject, error) {
+			if reqCtx.RequestID != "req_upload" || reqCtx.UserID != "usr_1" {
+				t.Fatalf("request context = %+v", reqCtx)
+			}
+			if file.Filename != "knowledge-guide.pdf" {
+				t.Fatalf("file filename = %q", file.Filename)
+			}
+			body, err := io.ReadAll(file.Content)
+			if err != nil {
+				t.Fatalf("read file content: %v", err)
+			}
+			if string(body) != "pdf-bytes" {
+				t.Fatalf("file content = %q", string(body))
+			}
+			return service.FileObject{
+				ID:             "file_1",
+				Filename:       "knowledge-guide.pdf",
+				ContentType:    "application/pdf",
+				SizeBytes:      9,
+				ChecksumSHA256: "abc123",
+				CreatedAt:      now,
+			}, nil
+		},
+	}
+	queue := &uploadQueue{}
+	svc := service.NewWithDependencies(repo, files, queue, func() time.Time { return now }, func(prefix string) string {
+		return prefix + "_test"
+	})
+
+	doc, err := svc.UploadDocument(context.Background(), service.RequestContext{
+		RequestID:     "req_upload",
+		UserID:        "usr_1",
+		Permissions:   []string{service.PermissionKnowledgeWrite},
+		CallerService: "gateway",
+	}, service.UploadDocumentInput{
+		KnowledgeBaseID: "kb_1",
+		File: service.UploadedFile{
+			Filename:    "reports/knowledge-guide.pdf",
+			ContentType: "application/pdf",
+			SizeBytes:   9,
+			Content:     bytes.NewReader([]byte("pdf-bytes")),
+		},
+		Tags: []string{"锅炉", " 锅炉 ", "规程"},
+	})
+	if err != nil {
+		t.Fatalf("UploadDocument() error = %v", err)
+	}
+	if doc.ID != "doc_test" || doc.KnowledgeBaseID != "kb_1" || doc.Status != service.DocumentStatusUploaded {
+		t.Fatalf("uploaded doc = %+v", doc)
+	}
+	if doc.Name != "knowledge-guide.pdf" {
+		t.Fatalf("document name = %q", doc.Name)
+	}
+	if doc.FileRef == nil || *doc.FileRef != "file_1" {
+		t.Fatalf("file ref = %+v", doc.FileRef)
+	}
+	if doc.CurrentJobID == nil || *doc.CurrentJobID != "job_test" {
+		t.Fatalf("current job id = %+v", doc.CurrentJobID)
+	}
+	if len(doc.Tags) != 2 {
+		t.Fatalf("tags = %+v", doc.Tags)
+	}
+	if queue.calls != 1 {
+		t.Fatalf("queue calls = %d", queue.calls)
+	}
+	if queue.task.JobID != "job_test" || queue.task.DocumentID != "doc_test" || queue.task.KnowledgeBaseID != "kb_1" || queue.task.RequestID != "req_upload" || queue.task.UserID != "usr_1" {
+		t.Fatalf("queue task = %+v", queue.task)
+	}
+}
+
+func TestUploadDocumentCompensatesWhenRepositoryFails(t *testing.T) {
+	now := time.Date(2026, 6, 29, 11, 30, 0, 0, time.UTC)
+	repo := &uploadRepository{
+		MemoryRepository: repository.NewMemoryRepository(),
+		createErr:        service.ErrConflict,
+	}
+	repo.SeedKnowledgeBase(service.KnowledgeBase{
+		ID:                "kb_1",
+		Name:              "规程库",
+		Description:       "",
+		DocType:           "GENERAL",
+		ChunkStrategy:     json.RawMessage(`{}`),
+		RetrievalStrategy: json.RawMessage(`{}`),
+		CreatedBy:         "usr_1",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	files := &uploadFileClient{
+		createFn: func(context.Context, service.RequestContext, service.UploadedFile) (service.FileObject, error) {
+			return service.FileObject{
+				ID:             "file_1",
+				Filename:       "knowledge-guide.pdf",
+				ContentType:    "application/pdf",
+				SizeBytes:      9,
+				ChecksumSHA256: "abc123",
+				CreatedAt:      now,
+			}, nil
+		},
+	}
+	queue := &uploadQueue{}
+	svc := service.NewWithDependencies(repo, files, queue, func() time.Time { return now }, func(prefix string) string {
+		return prefix + "_test"
+	})
+
+	_, err := svc.UploadDocument(context.Background(), service.RequestContext{
+		RequestID:     "req_upload",
+		UserID:        "usr_1",
+		Permissions:   []string{service.PermissionKnowledgeWrite},
+		CallerService: "gateway",
+	}, service.UploadDocumentInput{
+		KnowledgeBaseID: "kb_1",
+		File: service.UploadedFile{
+			Filename:    "knowledge-guide.pdf",
+			ContentType: "application/pdf",
+			SizeBytes:   9,
+			Content:     bytes.NewReader([]byte("pdf-bytes")),
+		},
+	})
+	if !hasCode(err, service.CodeConflict) {
+		t.Fatalf("UploadDocument() error = %v", err)
+	}
+	if len(files.deleted) != 1 || files.deleted[0] != "file_1" {
+		t.Fatalf("delete calls = %+v", files.deleted)
+	}
+	if queue.calls != 0 {
+		t.Fatalf("queue calls = %d", queue.calls)
+	}
+}
+
+func TestUploadDocumentValidatesKnowledgeBaseBeforeFileWrite(t *testing.T) {
+	files := &uploadFileClient{
+		createFn: func(context.Context, service.RequestContext, service.UploadedFile) (service.FileObject, error) {
+			t.Fatal("file service should not be called when knowledge base is not visible")
+			return service.FileObject{}, nil
+		},
+	}
+	queue := &uploadQueue{}
+	svc := service.NewWithDependencies(repository.NewMemoryRepository(), files, queue, fixedClock(), func(prefix string) string {
+		return prefix + "_test"
+	})
+
+	_, err := svc.UploadDocument(context.Background(), service.RequestContext{
+		RequestID:     "req_upload",
+		UserID:        "usr_1",
+		Permissions:   []string{service.PermissionKnowledgeWrite},
+		CallerService: "gateway",
+	}, service.UploadDocumentInput{
+		KnowledgeBaseID: "kb_missing",
+		File: service.UploadedFile{
+			Filename:    "knowledge-guide.pdf",
+			ContentType: "application/pdf",
+			SizeBytes:   9,
+			Content:     bytes.NewReader([]byte("pdf-bytes")),
+		},
+	})
+	if !hasCode(err, service.CodeNotFound) {
+		t.Fatalf("UploadDocument() error = %v", err)
+	}
+	if queue.calls != 0 {
+		t.Fatalf("queue calls = %d", queue.calls)
+	}
+}
+
+func TestUploadDocumentMarksFailureWhenQueueHandoffFails(t *testing.T) {
+	now := time.Date(2026, 6, 29, 12, 0, 0, 0, time.UTC)
+	repo := &uploadRepository{
+		MemoryRepository: repository.NewMemoryRepository(),
+	}
+	repo.SeedKnowledgeBase(service.KnowledgeBase{
+		ID:                "kb_1",
+		Name:              "规程库",
+		Description:       "",
+		DocType:           "GENERAL",
+		ChunkStrategy:     json.RawMessage(`{}`),
+		RetrievalStrategy: json.RawMessage(`{}`),
+		CreatedBy:         "usr_1",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	files := &uploadFileClient{
+		createFn: func(context.Context, service.RequestContext, service.UploadedFile) (service.FileObject, error) {
+			return service.FileObject{
+				ID:             "file_1",
+				Filename:       "knowledge-guide.pdf",
+				ContentType:    "application/pdf",
+				SizeBytes:      9,
+				ChecksumSHA256: "abc123",
+				CreatedAt:      now,
+			}, nil
+		},
+	}
+	queue := &uploadQueue{err: errors.New("redis unavailable")}
+	svc := service.NewWithDependencies(repo, files, queue, func() time.Time { return now }, func(prefix string) string {
+		return prefix + "_test"
+	})
+
+	_, err := svc.UploadDocument(context.Background(), service.RequestContext{
+		RequestID:     "req_upload",
+		UserID:        "usr_1",
+		Permissions:   []string{service.PermissionKnowledgeWrite},
+		CallerService: "gateway",
+	}, service.UploadDocumentInput{
+		KnowledgeBaseID: "kb_1",
+		File: service.UploadedFile{
+			Filename:    "knowledge-guide.pdf",
+			ContentType: "application/pdf",
+			SizeBytes:   9,
+			Content:     bytes.NewReader([]byte("pdf-bytes")),
+		},
+	})
+	if !hasCode(err, service.CodeDependency) {
+		t.Fatalf("UploadDocument() error = %v", err)
+	}
+	if len(repo.markFailedCalls) != 1 {
+		t.Fatalf("mark failed calls = %+v", repo.markFailedCalls)
+	}
+	if repo.markFailedCalls[0].DocumentID != "doc_test" || repo.markFailedCalls[0].JobID != "job_test" {
+		t.Fatalf("mark failed call = %+v", repo.markFailedCalls[0])
+	}
+	doc, err := repo.GetDocument(context.Background(), "doc_test", service.AccessScope{UserID: "usr_1", CanWrite: true})
+	if err != nil {
+		t.Fatalf("GetDocument() error = %v", err)
+	}
+	if doc.Status != service.DocumentStatusFailed || doc.ErrorCode == nil || *doc.ErrorCode != string(service.CodeDependency) {
+		t.Fatalf("failed doc = %+v", doc)
+	}
+}
+
+type uploadFileClient struct {
+	createFn func(context.Context, service.RequestContext, service.UploadedFile) (service.FileObject, error)
+	deleteFn func(context.Context, service.RequestContext, string) error
+	deleted  []string
+}
+
+func (f *uploadFileClient) CreateFile(ctx context.Context, reqCtx service.RequestContext, file service.UploadedFile) (service.FileObject, error) {
+	if f.createFn != nil {
+		return f.createFn(ctx, reqCtx, file)
+	}
+	return service.FileObject{}, nil
+}
+
+func (f *uploadFileClient) DeleteFile(ctx context.Context, reqCtx service.RequestContext, fileID string) error {
+	f.deleted = append(f.deleted, fileID)
+	if f.deleteFn != nil {
+		return f.deleteFn(ctx, reqCtx, fileID)
+	}
+	return nil
+}
+
+type uploadQueue struct {
+	task  service.DocumentIngestionTask
+	calls int
+	err   error
+}
+
+func (q *uploadQueue) EnqueueDocumentIngestion(ctx context.Context, task service.DocumentIngestionTask) error {
+	q.calls++
+	q.task = task
+	return q.err
+}
+
+type uploadRepository struct {
+	*repository.MemoryRepository
+	createErr       error
+	markFailedCalls []markFailedCall
+}
+
+type markFailedCall struct {
+	DocumentID string
+	JobID      string
+	Code       string
+	Message    string
+}
+
+func (r *uploadRepository) CreateDocumentWithJob(ctx context.Context, input service.CreateDocumentWithJobRecord, scope service.AccessScope) (service.KnowledgeDocument, service.ProcessingJob, error) {
+	if r.createErr != nil {
+		return service.KnowledgeDocument{}, service.ProcessingJob{}, r.createErr
+	}
+	return r.MemoryRepository.CreateDocumentWithJob(ctx, input, scope)
+}
+
+func (r *uploadRepository) MarkDocumentJobFailed(ctx context.Context, documentID string, jobID string, code string, message string, failedAt time.Time) error {
+	r.markFailedCalls = append(r.markFailedCalls, markFailedCall{
+		DocumentID: documentID,
+		JobID:      jobID,
+		Code:       code,
+		Message:    message,
+	})
+	return r.MemoryRepository.MarkDocumentJobFailed(ctx, documentID, jobID, code, message, failedAt)
 }
 
 func writeContext(userID string) service.RequestContext {
