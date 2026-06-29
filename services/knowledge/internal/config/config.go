@@ -114,7 +114,7 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("KNOWLEDGE_SERVICE_TOKEN is required")
 	}
 	for name, value := range map[string]string{
-		"AI_GATEWAY_BASE_URL": cfg.AIGatewayBaseURL,
+		"AI_GATEWAY_BASE_URL":  cfg.AIGatewayBaseURL,
 		"OCR_SERVICE_BASE_URL": cfg.OCRServiceBaseURL,
 		"QDRANT_URL":           cfg.QdrantURL,
 	} {

@@ -124,6 +124,74 @@ func TestCreateFileClassifiesDownstreamErrors(t *testing.T) {
 	}
 }
 
+func TestReadSourceSendsContextHeadersAndReturnsContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/internal/v1/files/file_001/content" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("X-Request-Id"); got != "req_read" {
+			t.Fatalf("X-Request-Id = %q", got)
+		}
+		if got := r.Header.Get("X-User-Id"); got != "usr_test" {
+			t.Fatalf("X-User-Id = %q", got)
+		}
+		if got := r.Header.Get("X-Caller-Service"); got != "knowledge" {
+			t.Fatalf("X-Caller-Service = %q", got)
+		}
+		if got := r.Header.Get("X-Service-Token"); got != "svc-token" {
+			t.Fatalf("X-Service-Token = %q", got)
+		}
+		w.Header().Set("Content-Type", "text/markdown")
+		_, _ = w.Write([]byte("# Intro"))
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "svc-token", server.Client())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	source, err := client.ReadSource(context.Background(), service.RequestContext{
+		RequestID: "req_read",
+		UserID:    "usr_test",
+	}, "file_001")
+	if err != nil {
+		t.Fatalf("ReadSource() error = %v", err)
+	}
+	defer source.Body.Close()
+	body, err := io.ReadAll(source.Body)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	if string(body) != "# Intro" || !strings.HasPrefix(source.ContentType, "text/markdown") {
+		t.Fatalf("source = %q %q", string(body), source.ContentType)
+	}
+}
+
+func TestReadSourceMapsDownstreamFailuresToSanitizedDependencyError(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusNotFound, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"objectKey":"secret/object","url":"http://internal/files"}`))
+			}))
+			defer server.Close()
+
+			client, err := New(server.URL, "svc-token", server.Client())
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			_, err = client.ReadSource(context.Background(), service.RequestContext{RequestID: "req", UserID: "usr"}, "file_001")
+			appErr, ok := service.Classify(err)
+			if !ok || appErr.Code != service.CodeDependency {
+				t.Fatalf("error = %#v, want dependency", err)
+			}
+			if strings.Contains(appErr.Message, "secret") || strings.Contains(appErr.Message, "internal/files") {
+				t.Fatalf("error leaked downstream detail: %q", appErr.Message)
+			}
+		})
+	}
+}
+
 func TestDeleteFileTreatsMissingFileAsCleanedUp(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete || r.URL.Path != "/internal/v1/files/file_001" {

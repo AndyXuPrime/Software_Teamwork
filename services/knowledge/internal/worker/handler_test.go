@@ -1,11 +1,11 @@
 package worker_test
 
 import (
-	"archive/zip"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,31 +13,26 @@ import (
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/platform/embedding"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/platform/parser"
-	sourceplatform "github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/platform/source"
-	vectorplatform "github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/platform/vector"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/repository"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/worker"
 )
 
-func TestIngestionHandlerRejectsInvalidPayloadWithoutTouchingState(t *testing.T) {
-	handler, knowledge, repo, _ := newWorkerTestHarness(t, missingSourceReader{})
-	seedKnowledgeBase(t, repo, "kb_jobs", "usr_123")
-	handoff := createIngestionJob(t, knowledge, "kb_jobs", "file_123")
+func TestIngestionHandlerRejectsInvalidA10PayloadWithoutTouchingState(t *testing.T) {
+	handler, svc, repo, _ := newWorkerHarness(t, newSourceStore())
+	handoff := seedIngestionJob(t, repo, "file_123")
 
 	err := handler.HandleIngestionPayload(context.Background(), mustJSON(t, map[string]string{
 		"requestId": "req_worker",
-		"jobId":     handoff.JobID,
+		"jobId":     handoff.jobID,
+		"userId":    "usr_123",
 	}))
 
-	var appErr *service.AppError
-	if !errors.As(err, &appErr) {
-		t.Fatalf("error = %v, want AppError", err)
+	appErr := requireAppError(t, err, service.CodeValidation)
+	if appErr.Fields["documentId"] == "" || appErr.Fields["knowledgeBaseId"] == "" {
+		t.Fatalf("fields = %+v", appErr.Fields)
 	}
-	if appErr.Code != service.CodeValidation || appErr.Fields["userId"] == "" {
-		t.Fatalf("appErr = %+v", appErr)
-	}
-	job, err := knowledge.GetJob(context.Background(), actorContext(), handoff.JobID)
+	job, err := svc.GetJob(context.Background(), actorContext(), handoff.jobID)
 	if err != nil {
 		t.Fatalf("GetJob() error = %v", err)
 	}
@@ -46,409 +41,280 @@ func TestIngestionHandlerRejectsInvalidPayloadWithoutTouchingState(t *testing.T)
 	}
 }
 
-func TestIngestionHandlerProcessesQueuedJobToReady(t *testing.T) {
-	sourceReader := sourceplatform.NewMemorySourceReader()
-	sourceReader.Put("file_123", "# Intro\n\nThis is enough content for a text chunk.", "text/markdown")
-	handler, knowledge, repo, _ := newWorkerTestHarness(t, sourceReader)
-	seedKnowledgeBase(t, repo, "kb_jobs", "usr_123")
-	handoff := createIngestionJob(t, knowledge, "kb_jobs", "file_123")
+func TestIngestionHandlerProcessesA10PayloadFromFileServiceToReady(t *testing.T) {
+	source := newSourceStore()
+	source.Put("file_123", "# Intro\n\nThis is enough content for a text chunk.", "text/markdown")
+	handler, svc, repo, vectors := newWorkerHarness(t, source)
+	handoff := seedIngestionJob(t, repo, "file_123")
 
 	if err := handler.HandleIngestionPayload(context.Background(), mustJSON(t, worker.IngestionPayload{
-		RequestID: "req_worker",
-		JobID:     handoff.JobID,
-		UserID:    "usr_123",
+		RequestID:       "req_worker",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
 	})); err != nil {
 		t.Fatalf("HandleIngestionPayload() error = %v", err)
 	}
 
-	job, err := knowledge.GetJob(context.Background(), actorContext(), handoff.JobID)
+	if source.lastRequest.UserID != "usr_123" || source.lastRequest.RequestID != "req_worker" || source.lastRequest.CallerService != "knowledge" {
+		t.Fatalf("source request context = %+v", source.lastRequest)
+	}
+	job, err := svc.GetJob(context.Background(), actorContext(), handoff.jobID)
 	if err != nil {
 		t.Fatalf("GetJob() error = %v", err)
 	}
 	if job.Status != service.JobStatusSucceeded || job.ProgressPercent != 100 {
 		t.Fatalf("job = %+v", job)
 	}
-	doc, err := knowledge.GetDocument(context.Background(), actorContext(), handoff.DocumentID)
+	doc, err := svc.GetDocument(context.Background(), actorContext(), handoff.documentID)
 	if err != nil {
 		t.Fatalf("GetDocument() error = %v", err)
 	}
-	if doc.Status != service.DocumentStatusReady || doc.ChunkCount == 0 {
+	if doc.Status != service.DocumentStatusReady || doc.ChunkCount != 1 {
 		t.Fatalf("doc = %+v", doc)
 	}
-	chunks, err := knowledge.ListChunks(context.Background(), actorContext(), service.ListChunksInput{DocumentID: handoff.DocumentID})
+	chunks, err := svc.ListChunks(context.Background(), actorContext(), service.ListChunksInput{DocumentID: handoff.documentID})
 	if err != nil {
 		t.Fatalf("ListChunks() error = %v", err)
 	}
-	if chunks.Page.Total == 0 || chunks.Items[0].QdrantPointID == nil {
+	if chunks.Page.Total != 1 || chunks.Items[0].QdrantPointID == nil {
 		t.Fatalf("chunks = %+v", chunks)
 	}
+	if len(vectors.points) != 1 {
+		t.Fatalf("vector points = %+v", vectors.points)
+	}
+	assertMinimalVectorPayload(t, vectors.points[0].Payload)
 }
 
-func TestIngestionHandlerProcessesOfficeDocumentsToReady(t *testing.T) {
-	sourceReader := sourceplatform.NewMemorySourceReader()
-	handler, knowledge, repo, _ := newWorkerTestHarness(t, sourceReader)
-	seedKnowledgeBase(t, repo, "kb_jobs", "usr_123")
-
-	tests := []struct {
-		name        string
-		fileID      string
-		contentType string
-		body        []byte
-	}{
-		{
-			name:        "docx",
-			fileID:      "file_docx",
-			contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-			body: workerOfficeZip(t, map[string]string{
-				"word/document.xml": `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Safety Manual</w:t></w:r></w:p><w:p><w:r><w:t>Breaker checklist</w:t></w:r></w:p></w:body></w:document>`,
-			}),
-		},
-		{
-			name:        "pptx",
-			fileID:      "file_pptx",
-			contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-			body: workerOfficeZip(t, map[string]string{
-				"ppt/presentation.xml":  `<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>`,
-				"ppt/slides/slide1.xml": `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Intro slide</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`,
-			}),
-		},
-		{
-			name:        "xlsx",
-			fileID:      "file_xlsx",
-			contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-			body: workerOfficeZip(t, map[string]string{
-				"xl/workbook.xml":          `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>`,
-				"xl/sharedStrings.xml":     `<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>Asset</t></si><si><t>Status</t></si></sst>`,
-				"xl/worksheets/sheet1.xml": `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row><row r="2"><c r="A2"><is><t>Transformer</t></is></c><c r="B2"><is><t>Ready</t></is></c></row></sheetData></worksheet>`,
-			}),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sourceReader.Put(tt.fileID, string(tt.body), tt.contentType)
-			handoff := createIngestionJob(t, knowledge, "kb_jobs", tt.fileID)
-
-			if err := handler.HandleIngestionPayload(context.Background(), mustJSON(t, worker.IngestionPayload{
-				RequestID: "req_worker",
-				JobID:     handoff.JobID,
-				UserID:    "usr_123",
-			})); err != nil {
-				t.Fatalf("HandleIngestionPayload() error = %v", err)
-			}
-			job, err := knowledge.GetJob(context.Background(), actorContext(), handoff.JobID)
-			if err != nil {
-				t.Fatalf("GetJob() error = %v", err)
-			}
-			if job.Status != service.JobStatusSucceeded {
-				t.Fatalf("job = %+v", job)
-			}
-			doc, err := knowledge.GetDocument(context.Background(), actorContext(), handoff.DocumentID)
-			if err != nil {
-				t.Fatalf("GetDocument() error = %v", err)
-			}
-			if doc.Status != service.DocumentStatusReady || doc.ChunkCount == 0 {
-				t.Fatalf("doc = %+v", doc)
-			}
-			chunks, err := knowledge.ListChunks(context.Background(), actorContext(), service.ListChunksInput{DocumentID: handoff.DocumentID})
-			if err != nil {
-				t.Fatalf("ListChunks() error = %v", err)
-			}
-			if chunks.Page.Total == 0 || chunks.Items[0].Content == "" || chunks.Items[0].QdrantPointID == nil {
-				t.Fatalf("chunks = %+v", chunks)
-			}
-		})
-	}
-}
-
-func TestIngestionHandlerFailsUnsupportedDocumentsWithoutChunks(t *testing.T) {
-	sourceReader := sourceplatform.NewMemorySourceReader()
-	handler, knowledge, repo, vectorIndex := newWorkerTestHarness(t, sourceReader)
-	seedKnowledgeBase(t, repo, "kb_jobs", "usr_123")
-
-	tests := []struct {
-		name        string
-		fileID      string
-		fileName    string
-		contentType string
-		body        string
-	}{
-		{name: "pdf", fileID: "file_pdf", fileName: "scan.pdf", contentType: "application/pdf", body: "%PDF-1.7\nsecret document text"},
-		{name: "image", fileID: "file_png", fileName: "photo.png", contentType: "image/png", body: string([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 's', 'e', 'c', 'r', 'e', 't'})},
-		{name: "damaged docx", fileID: "file_bad_docx", fileName: "broken.docx", contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", body: "not a zip but contains secret"},
-		{name: "unknown utf8", fileID: "file_unknown", fileName: "blob.bin", contentType: "", body: "secret but not declared text"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sourceReader.Put(tt.fileID, tt.body, tt.contentType)
-			handoff := createIngestionJobWithName(t, knowledge, "kb_jobs", tt.fileID, tt.fileName)
-
-			err := handler.HandleIngestionPayload(context.Background(), mustJSON(t, worker.IngestionPayload{
-				RequestID: "req_worker",
-				JobID:     handoff.JobID,
-				UserID:    "usr_123",
-			}))
-			var appErr *service.AppError
-			if !errors.As(err, &appErr) || appErr.Code != service.CodeValidation {
-				t.Fatalf("HandleIngestionPayload() error = %v, want validation AppError", err)
-			}
-			if appErr.Error() == "" || bytes.Contains([]byte(appErr.Error()), []byte("secret")) {
-				t.Fatalf("appErr leaked source content: %+v", appErr)
-			}
-			job, err := knowledge.GetJob(context.Background(), actorContext(), handoff.JobID)
-			if err != nil {
-				t.Fatalf("GetJob() error = %v", err)
-			}
-			if job.Status != service.JobStatusFailed || job.ErrorCode == nil || *job.ErrorCode != "parse_failed" {
-				t.Fatalf("job = %+v", job)
-			}
-			doc, err := knowledge.GetDocument(context.Background(), actorContext(), handoff.DocumentID)
-			if err != nil {
-				t.Fatalf("GetDocument() error = %v", err)
-			}
-			if doc.Status != service.DocumentStatusFailed || doc.ErrorCode == nil || *doc.ErrorCode != "parse_failed" || doc.ChunkCount != 0 {
-				t.Fatalf("doc = %+v", doc)
-			}
-			if vectorIndex.UpsertCount() != 0 {
-				t.Fatalf("vector upsert count = %d, want 0", vectorIndex.UpsertCount())
-			}
-		})
-	}
-}
-
-func TestIngestionHandlerProcessesPDFAndPPTXImageOCRToReady(t *testing.T) {
-	sourceReader := sourceplatform.NewMemorySourceReader()
-	ocr := &fakeWorkerOCRClient{textByName: map[string]string{
-		"scan.pdf":             "Breaker cabinet warning",
-		"ppt/media/image1.png": "Pump Station 3",
-	}}
-	handler, knowledge, repo, _ := newWorkerTestHarnessWithParser(t, sourceReader, parser.NewRouterWithOCR(ocr))
-	seedKnowledgeBase(t, repo, "kb_jobs", "usr_123")
-
-	pptx := workerOfficeZip(t, map[string]string{
-		"ppt/presentation.xml":             `<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>`,
-		"ppt/_rels/presentation.xml.rels":  `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="slides/slide1.xml"/></Relationships>`,
-		"ppt/slides/slide1.xml":            `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:cSld><p:spTree><p:pic><p:blipFill><a:blip r:embed="rId2"/></p:blipFill></p:pic></p:spTree></p:cSld></p:sld>`,
-		"ppt/slides/_rels/slide1.xml.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Target="../media/image1.png" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"/></Relationships>`,
-		"ppt/media/image1.png":             string([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 'l', 'a', 'b', 'e', 'l'}),
-	})
-
-	tests := []struct {
-		name        string
-		fileID      string
-		fileName    string
-		contentType string
-		body        string
-		wantText    string
-	}{
-		{name: "pdf", fileID: "file_pdf", fileName: "scan.pdf", contentType: "application/pdf", body: "%PDF-1.7\npage image", wantText: "Breaker cabinet warning"},
-		{name: "pptx image", fileID: "file_pptx_image", fileName: "training.pptx", contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", body: string(pptx), wantText: "Pump Station 3"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sourceReader.Put(tt.fileID, tt.body, tt.contentType)
-			handoff := createIngestionJobWithName(t, knowledge, "kb_jobs", tt.fileID, tt.fileName)
-
-			if err := handler.HandleIngestionPayload(context.Background(), mustJSON(t, worker.IngestionPayload{
-				RequestID: "req_worker",
-				JobID:     handoff.JobID,
-				UserID:    "usr_123",
-			})); err != nil {
-				t.Fatalf("HandleIngestionPayload() error = %v", err)
-			}
-			doc, err := knowledge.GetDocument(context.Background(), actorContext(), handoff.DocumentID)
-			if err != nil {
-				t.Fatalf("GetDocument() error = %v", err)
-			}
-			if doc.Status != service.DocumentStatusReady || doc.ChunkCount == 0 {
-				t.Fatalf("doc = %+v", doc)
-			}
-			chunks, err := knowledge.ListChunks(context.Background(), actorContext(), service.ListChunksInput{DocumentID: handoff.DocumentID})
-			if err != nil {
-				t.Fatalf("ListChunks() error = %v", err)
-			}
-			if chunks.Page.Total == 0 || !strings.Contains(chunks.Items[0].Content, tt.wantText) || chunks.Items[0].QdrantPointID == nil {
-				t.Fatalf("chunks = %+v", chunks)
-			}
-		})
-	}
-}
-
-func TestIngestionHandlerFailsDependencyWhenOCRFails(t *testing.T) {
-	sourceReader := sourceplatform.NewMemorySourceReader()
-	sourceReader.Put("file_pdf", "%PDF-1.7\nsecret page", "application/pdf")
-	ocr := &fakeWorkerOCRClient{err: errors.New("ocr unavailable with secret")}
-	handler, knowledge, repo, vectorIndex := newWorkerTestHarnessWithParser(t, sourceReader, parser.NewRouterWithOCR(ocr))
-	seedKnowledgeBase(t, repo, "kb_jobs", "usr_123")
-	handoff := createIngestionJobWithName(t, knowledge, "kb_jobs", "file_pdf", "scan.pdf")
+func TestIngestionHandlerFailsSourceReadSafely(t *testing.T) {
+	source := newSourceStore()
+	source.err = service.NewError(service.CodeDependency, "file service content read failed", errors.New("secret object key"))
+	handler, svc, repo, vectors := newWorkerHarness(t, source)
+	handoff := seedIngestionJob(t, repo, "file_missing")
 
 	err := handler.HandleIngestionPayload(context.Background(), mustJSON(t, worker.IngestionPayload{
-		RequestID: "req_worker",
-		JobID:     handoff.JobID,
-		UserID:    "usr_123",
+		RequestID:       "req_worker",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
 	}))
-	var appErr *service.AppError
-	if !errors.As(err, &appErr) || appErr.Code != service.CodeDependency {
-		t.Fatalf("HandleIngestionPayload() error = %v, want dependency AppError", err)
+
+	appErr := requireAppError(t, err, service.CodeDependency)
+	if strings.Contains(appErr.Error(), "secret") {
+		t.Fatalf("error leaked sensitive detail: %v", appErr)
 	}
-	if bytes.Contains([]byte(appErr.Error()), []byte("secret")) {
-		t.Fatalf("appErr leaked source content: %+v", appErr)
-	}
-	job, err := knowledge.GetJob(context.Background(), actorContext(), handoff.JobID)
+	job, err := svc.GetJob(context.Background(), actorContext(), handoff.jobID)
 	if err != nil {
 		t.Fatalf("GetJob() error = %v", err)
 	}
-	if job.Status != service.JobStatusFailed || job.ErrorCode == nil || *job.ErrorCode != "dependency_error" {
+	if job.Status != service.JobStatusFailed || job.ErrorCode == nil || *job.ErrorCode != string(service.CodeDependency) {
 		t.Fatalf("job = %+v", job)
 	}
-	doc, err := knowledge.GetDocument(context.Background(), actorContext(), handoff.DocumentID)
+	doc, err := svc.GetDocument(context.Background(), actorContext(), handoff.documentID)
 	if err != nil {
 		t.Fatalf("GetDocument() error = %v", err)
 	}
-	if doc.Status != service.DocumentStatusFailed || doc.ErrorCode == nil || *doc.ErrorCode != "dependency_error" || doc.ChunkCount != 0 {
+	if doc.Status != service.DocumentStatusFailed || doc.ErrorMessage == nil || strings.Contains(*doc.ErrorMessage, "secret") {
 		t.Fatalf("doc = %+v", doc)
 	}
-	if vectorIndex.UpsertCount() != 0 {
-		t.Fatalf("vector upsert count = %d, want 0", vectorIndex.UpsertCount())
+	if len(vectors.points) != 0 {
+		t.Fatalf("vector points = %+v", vectors.points)
 	}
 }
 
 func TestIngestionHandlerDoesNotReprocessSucceededJob(t *testing.T) {
-	sourceReader := sourceplatform.NewMemorySourceReader()
-	sourceReader.Put("file_123", "content for exactly one processing run", "text/plain")
-	handler, knowledge, repo, _ := newWorkerTestHarness(t, sourceReader)
-	seedKnowledgeBase(t, repo, "kb_jobs", "usr_123")
-	handoff := createIngestionJob(t, knowledge, "kb_jobs", "file_123")
-	payload := mustJSON(t, worker.IngestionPayload{RequestID: "req_worker", JobID: handoff.JobID, UserID: "usr_123"})
+	source := newSourceStore()
+	source.Put("file_123", "content for exactly one processing run", "text/plain")
+	handler, svc, repo, vectors := newWorkerHarness(t, source)
+	handoff := seedIngestionJob(t, repo, "file_123")
+	payload := mustJSON(t, worker.IngestionPayload{
+		RequestID:       "req_worker",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	})
 
 	if err := handler.HandleIngestionPayload(context.Background(), payload); err != nil {
 		t.Fatalf("first HandleIngestionPayload() error = %v", err)
 	}
 	err := handler.HandleIngestionPayload(context.Background(), payload)
 
-	var appErr *service.AppError
-	if !errors.As(err, &appErr) || appErr.Code != service.CodeConflict {
-		t.Fatalf("second error = %v, want conflict", err)
-	}
-	chunks, err := knowledge.ListChunks(context.Background(), actorContext(), service.ListChunksInput{DocumentID: handoff.DocumentID})
+	requireAppError(t, err, service.CodeConflict)
+	chunks, err := svc.ListChunks(context.Background(), actorContext(), service.ListChunksInput{DocumentID: handoff.documentID})
 	if err != nil {
 		t.Fatalf("ListChunks() error = %v", err)
 	}
-	if chunks.Page.Total != 1 {
-		t.Fatalf("chunk total = %d, want 1", chunks.Page.Total)
+	if chunks.Page.Total != 1 || len(vectors.points) != 1 {
+		t.Fatalf("chunks = %+v, vectors = %+v", chunks, vectors.points)
 	}
 }
 
-func newWorkerTestHarness(t *testing.T, sourceReader service.SourceReader) (*worker.IngestionHandler, *service.KnowledgeService, *repository.MemoryRepository, *recordingWorkerVectorIndex) {
-	t.Helper()
-	return newWorkerTestHarnessWithParser(t, sourceReader, parser.NewRouter())
+func TestDecodeIngestionPayloadRejectsUnknownFields(t *testing.T) {
+	_, err := worker.DecodeIngestionPayload([]byte(`{"requestId":"req","jobId":"job","documentId":"doc","knowledgeBaseId":"kb","userId":"usr","fileRef":"secret"}`))
+	requireAppError(t, err, service.CodeValidation)
 }
 
-func newWorkerTestHarnessWithParser(t *testing.T, sourceReader service.SourceReader, documentParser service.Parser) (*worker.IngestionHandler, *service.KnowledgeService, *repository.MemoryRepository, *recordingWorkerVectorIndex) {
+func newWorkerHarness(t *testing.T, source service.SourceReader) (*worker.IngestionHandler, *service.Service, *repository.MemoryRepository, *recordingVectorIndex) {
 	t.Helper()
 	repo := repository.NewMemoryRepository()
-	vectorIndex := newRecordingWorkerVectorIndex()
-	knowledge := service.NewKnowledgeService(
+	seedKnowledgeBase(t, repo)
+	vectors := &recordingVectorIndex{}
+	svc := service.NewWithDependencies(
 		repo,
-		service.WithClock(func() time.Time { return fixedNow() }),
-		service.WithIDGenerator(sequenceIDs()),
-		service.WithPipeline(missingSourceReader{}, documentParser, parser.NewFixedChunker()),
-		service.WithVectorIndex(embedding.NewLocalHasher("local_hashing", "local_hashing", 16), vectorIndex),
+		nil,
+		nil,
+		fixedClock(),
+		sequenceIDs(),
+		service.WithProcessingPipeline(source, parser.NewRouter(), parser.NewFixedChunker()),
+		service.WithVectorIndex(embedding.NewLocalHasher("local_hashing", "local_hashing", 16), vectors),
 	)
-	if sourceReader != nil {
-		vectorIndex = newRecordingWorkerVectorIndex()
-		knowledge = service.NewKnowledgeService(
-			repo,
-			service.WithClock(func() time.Time { return fixedNow() }),
-			service.WithIDGenerator(sequenceIDs()),
-			service.WithPipeline(sourceReader, documentParser, parser.NewFixedChunker()),
-			service.WithVectorIndex(embedding.NewLocalHasher("local_hashing", "local_hashing", 16), vectorIndex),
-		)
-	}
-	return worker.NewIngestionHandler(knowledge), knowledge, repo, vectorIndex
+	return worker.NewIngestionHandler(svc), svc, repo, vectors
 }
 
-type missingSourceReader struct{}
-
-func (missingSourceReader) ReadSource(ctx context.Context, fileID string) (service.SourceDocument, error) {
-	return service.SourceDocument{}, errors.New("missing source")
+type ingestionHandoff struct {
+	knowledgeBaseID string
+	documentID      string
+	jobID           string
 }
 
-func seedKnowledgeBase(t *testing.T, repo *repository.MemoryRepository, id string, owner string) {
+func seedIngestionJob(t *testing.T, repo *repository.MemoryRepository, fileID string) ingestionHandoff {
 	t.Helper()
-	_, err := repo.CreateKnowledgeBase(context.Background(), service.KnowledgeBase{
-		ID:                id,
+	now := fixedNow()
+	doc, job, err := repo.CreateDocumentWithJob(context.Background(), service.CreateDocumentWithJobRecord{
+		DocumentID:      "doc_1",
+		KnowledgeBaseID: "kb_1",
+		FileRef:         fileID,
+		Name:            "manual.md",
+		ContentType:     "text/markdown",
+		SizeBytes:       48,
+		Status:          service.DocumentStatusUploaded,
+		CurrentJobID:    "job_1",
+		CreatedBy:       "usr_123",
+		JobID:           "job_1",
+		JobType:         service.JobTypeDocumentIngestion,
+		JobStatus:       service.JobStatusQueued,
+		JobStage:        "uploaded",
+		JobMessage:      "document uploaded and queued for ingestion",
+		MaxAttempts:     3,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}, service.AccessScope{UserID: "usr_123", CanWrite: true})
+	if err != nil {
+		t.Fatalf("CreateDocumentWithJob() error = %v", err)
+	}
+	return ingestionHandoff{knowledgeBaseID: doc.KnowledgeBaseID, documentID: doc.ID, jobID: job.ID}
+}
+
+func seedKnowledgeBase(t *testing.T, repo *repository.MemoryRepository) {
+	t.Helper()
+	repo.SeedKnowledgeBase(service.KnowledgeBase{
+		ID:                "kb_1",
 		Name:              "Jobs",
+		Description:       "",
 		DocType:           "GENERAL",
-		ChunkStrategy:     service.ChunkStrategy{"type": "SEMANTIC_TEXT", "chunkSize": 64, "overlap": 0},
-		RetrievalStrategy: service.RetrievalStrategy{"mode": "VECTOR"},
-		CreatedBy:         owner,
+		ChunkStrategy:     json.RawMessage(`{"size":64,"overlap":0}`),
+		RetrievalStrategy: json.RawMessage(`{"mode":"VECTOR"}`),
+		CreatedBy:         "usr_123",
 		CreatedAt:         fixedNow(),
 		UpdatedAt:         fixedNow(),
 	})
-	if err != nil {
-		t.Fatalf("CreateKnowledgeBase() error = %v", err)
-	}
 }
 
-func createIngestionJob(t *testing.T, knowledge *service.KnowledgeService, kbID string, fileID string) service.HandoffResult {
+type sourceStore struct {
+	docs        map[string]sourceDoc
+	err         error
+	lastRequest service.RequestContext
+}
+
+type sourceDoc struct {
+	body        string
+	contentType string
+}
+
+func newSourceStore() *sourceStore {
+	return &sourceStore{docs: map[string]sourceDoc{}}
+}
+
+func (s *sourceStore) Put(fileID string, body string, contentType string) {
+	s.docs[fileID] = sourceDoc{body: body, contentType: contentType}
+}
+
+func (s *sourceStore) ReadSource(ctx context.Context, reqCtx service.RequestContext, fileID string) (service.SourceDocument, error) {
+	if err := ctx.Err(); err != nil {
+		return service.SourceDocument{}, err
+	}
+	s.lastRequest = reqCtx
+	if s.err != nil {
+		return service.SourceDocument{}, s.err
+	}
+	doc, exists := s.docs[fileID]
+	if !exists {
+		return service.SourceDocument{}, service.NewError(service.CodeDependency, "file service content read failed", nil)
+	}
+	return service.SourceDocument{
+		Body:        io.NopCloser(strings.NewReader(doc.body)),
+		ContentType: doc.contentType,
+		SizeBytes:   int64(len(doc.body)),
+	}, nil
+}
+
+type recordingVectorIndex struct {
+	points []service.VectorPoint
+}
+
+func (i *recordingVectorIndex) Upsert(ctx context.Context, points []service.VectorPoint) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	i.points = append(i.points, points...)
+	return nil
+}
+
+func (i *recordingVectorIndex) DeleteByDocument(ctx context.Context, documentID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	filtered := i.points[:0]
+	for _, point := range i.points {
+		if point.Payload["document_id"] != documentID {
+			filtered = append(filtered, point)
+		}
+	}
+	i.points = filtered
+	return nil
+}
+
+func assertMinimalVectorPayload(t *testing.T, payload map[string]any) {
 	t.Helper()
-	return createIngestionJobWithName(t, knowledge, kbID, fileID, "manual.md")
+	keys := make([]string, 0, len(payload))
+	for key := range payload {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	want := []string{"chunk_id", "chunk_index", "chunk_type", "document_id", "knowledge_base_id", "metadata", "section_path", "tags"}
+	if strings.Join(keys, ",") != strings.Join(want, ",") {
+		t.Fatalf("payload keys = %v", keys)
+	}
+	for _, forbidden := range []string{"content", "file_ref", "fileId", "object_key", "url", "token", "prompt", "provider_body"} {
+		if _, exists := payload[forbidden]; exists {
+			t.Fatalf("payload leaked %q: %+v", forbidden, payload)
+		}
+	}
 }
 
-func createIngestionJobWithName(t *testing.T, knowledge *service.KnowledgeService, kbID string, fileID string, name string) service.HandoffResult {
+func requireAppError(t *testing.T, err error, code service.Code) *service.AppError {
 	t.Helper()
-	handoff, err := knowledge.CreateIngestionJob(context.Background(), actorContext(), service.HandoffInput{
-		KnowledgeBaseID: kbID,
-		FileID:          fileID,
-		Name:            name,
-	})
-	if err != nil {
-		t.Fatalf("CreateIngestionJob() error = %v", err)
+	var appErr *service.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("error = %v, want AppError", err)
 	}
-	return handoff
-}
-
-type recordingWorkerVectorIndex struct {
-	inner    *vectorplatform.MemoryIndex
-	upserted []service.VectorPoint
-}
-
-func newRecordingWorkerVectorIndex() *recordingWorkerVectorIndex {
-	return &recordingWorkerVectorIndex{inner: vectorplatform.NewMemoryIndex()}
-}
-
-func (i *recordingWorkerVectorIndex) Upsert(ctx context.Context, points []service.VectorPoint) error {
-	i.upserted = append(i.upserted, points...)
-	return i.inner.Upsert(ctx, points)
-}
-
-func (i *recordingWorkerVectorIndex) DeleteByDocument(ctx context.Context, documentID string) error {
-	return i.inner.DeleteByDocument(ctx, documentID)
-}
-
-func (i *recordingWorkerVectorIndex) Search(ctx context.Context, request service.VectorSearchRequest) ([]service.VectorSearchHit, error) {
-	return i.inner.Search(ctx, request)
-}
-
-func (i *recordingWorkerVectorIndex) UpsertCount() int {
-	return len(i.upserted)
-}
-
-type fakeWorkerOCRClient struct {
-	textByName map[string]string
-	err        error
-	requests   []parser.OCRRequest
-}
-
-func (c *fakeWorkerOCRClient) ExtractText(ctx context.Context, request parser.OCRRequest) (parser.OCRResult, error) {
-	c.requests = append(c.requests, request)
-	if c.err != nil {
-		return parser.OCRResult{}, c.err
+	if appErr.Code != code {
+		t.Fatalf("error code = %s, want %s; error = %v", appErr.Code, code, err)
 	}
-	return parser.OCRResult{Text: c.textByName[request.DocumentName]}, nil
+	return appErr
 }
 
 func mustJSON(t *testing.T, value any) []byte {
@@ -460,37 +326,22 @@ func mustJSON(t *testing.T, value any) []byte {
 	return data
 }
 
-func workerOfficeZip(t *testing.T, files map[string]string) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	for name, content := range files {
-		w, err := zw.Create(name)
-		if err != nil {
-			t.Fatalf("Create(%q) error = %v", name, err)
-		}
-		if _, err := w.Write([]byte(content)); err != nil {
-			t.Fatalf("Write(%q) error = %v", name, err)
-		}
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatalf("zip Close() error = %v", err)
-	}
-	return buf.Bytes()
-}
-
 func fixedNow() time.Time {
 	return time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
+}
+
+func fixedClock() func() time.Time {
+	return fixedNow
 }
 
 func actorContext() service.RequestContext {
 	return service.RequestContext{RequestID: "req_test", UserID: "usr_123"}
 }
 
-func sequenceIDs() func(prefix string) (string, error) {
+func sequenceIDs() func(prefix string) string {
 	counter := 0
-	return func(prefix string) (string, error) {
+	return func(prefix string) string {
 		counter++
-		return prefix + "_" + strconv.Itoa(counter), nil
+		return prefix + "_" + strconv.Itoa(counter)
 	}
 }

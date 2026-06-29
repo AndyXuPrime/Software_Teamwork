@@ -141,6 +141,33 @@ func (c *Client) DeleteFile(ctx context.Context, reqCtx service.RequestContext, 
 	return nil
 }
 
+func (c *Client) ReadSource(ctx context.Context, reqCtx service.RequestContext, fileID string) (service.SourceDocument, error) {
+	fileID = strings.TrimSpace(fileID)
+	if fileID == "" {
+		return service.SourceDocument{}, service.NewError(service.CodeDependency, "file source is not configured", nil)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/internal/v1/files/"+url.PathEscape(fileID)+"/content", nil)
+	if err != nil {
+		return service.SourceDocument{}, service.NewError(service.CodeDependency, "file service request failed", err)
+	}
+	c.setContextHeaders(req, reqCtx)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return service.SourceDocument{}, service.NewError(service.CodeDependency, "file service unavailable", err)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return service.SourceDocument{}, service.NewError(service.CodeDependency, "file service content read failed", nil)
+	}
+	return service.SourceDocument{
+		Body:        resp.Body,
+		ContentType: strings.TrimSpace(resp.Header.Get("Content-Type")),
+		SizeBytes:   resp.ContentLength,
+	}, nil
+}
+
 func writeMultipartFile(writer *multipart.Writer, file service.UploadedFile) error {
 	if strings.TrimSpace(file.ChecksumSHA256) != "" {
 		if err := writer.WriteField("checksumSha256", strings.TrimSpace(file.ChecksumSHA256)); err != nil {

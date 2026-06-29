@@ -3,9 +3,11 @@
 Knowledge owns knowledge-base metadata, knowledge document metadata/status,
 processing trace state, and future chunk/vector lifecycle coordination.
 
-This implementation includes the A-09 foundation slice plus the A-10 document
-upload handoff: Knowledge accepts the document upload, stores raw bytes through
-File Service, creates durable document/job state, and enqueues ingestion work.
+This implementation includes the A-09 foundation slice, the A-10 document
+upload handoff, and the A-11 ingestion worker path: Knowledge accepts the
+document upload, stores raw bytes through File Service, creates durable
+document/job state, enqueues ingestion work, then consumes the A10 task payload
+to read source bytes, parse, chunk, embed, and index chunks.
 
 ## Runtime
 
@@ -30,8 +32,20 @@ RAG MCP server work.
 | `KNOWLEDGE_SERVICE_VERSION` | no | `dev` | Version returned by readiness checks. |
 | `KNOWLEDGE_ENV` | no | `local` | Runtime environment label. |
 | `KNOWLEDGE_MAX_UPLOAD_BYTES` | no | `33554432` | Multipart upload limit in bytes. |
-| `KNOWLEDGE_SERVICE_TOKEN` | no | - | Optional internal service token forwarded to File Service. |
+| `KNOWLEDGE_SERVICE_TOKEN` | yes | - | Internal service token forwarded to File Service. |
 | `KNOWLEDGE_SHUTDOWN_TIMEOUT` | no | `10s` | Graceful shutdown timeout. |
+| `OCR_SERVICE_BASE_URL` | no | - | Optional OCR service base URL for PDF/image text extraction. |
+| `OCR_SERVICE_TOKEN` | no | - | Optional OCR service token. |
+| `OCR_SERVICE_TIMEOUT` | no | `30s` | OCR request timeout. |
+| `EMBEDDING_PROVIDER` | no | `local_hashing` | Embedding provider; `ai_gateway` uses AI Gateway. |
+| `EMBEDDING_MODEL` | no | `local_hashing` | Embedding model/profile label. |
+| `EMBEDDING_DIMENSION` | no | `384` | Embedding vector dimension. |
+| `AI_GATEWAY_BASE_URL` | no | - | AI Gateway base URL when `EMBEDDING_PROVIDER=ai_gateway`. |
+| `AI_GATEWAY_SERVICE_TOKEN` | no | - | Optional AI Gateway service token. |
+| `AI_GATEWAY_EMBEDDING_PROFILE_ID` | no | - | Optional AI Gateway embedding profile ID. |
+| `QDRANT_URL` | no | - | Optional Qdrant REST base URL; unset uses in-memory index. |
+| `QDRANT_API_KEY` | no | - | Optional Qdrant API key. |
+| `QDRANT_COLLECTION` | no | `knowledge_chunks` | Qdrant collection name. |
 
 ## Implemented Routes
 
@@ -87,9 +101,10 @@ Document upload stores the File Service object ID only in
 document status, but never `fileRef`, File Service internal IDs, object keys, or
 internal URLs.
 
-`document_chunks` is included now as a provenance and cleanup anchor. This task
-does not implement parser/chunker writes, embedding generation, Qdrant indexing,
-or retrieval execution.
+`document_chunks` is now written by the ingestion worker. Qdrant payloads are
+limited to `knowledge_base_id`, `document_id`, `chunk_id`, `chunk_index`,
+`chunk_type`, `section_path`, `tags`, and `metadata`. Retrieval execution and
+gateway chunk/query routes remain separate follow-up work.
 
 Knowledge base deletion is soft-delete-first:
 

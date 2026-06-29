@@ -17,6 +17,7 @@ type MemoryRepository struct {
 	jobs           map[string]service.ProcessingJob
 	parserConfigs  map[string]service.ParserConfig
 	parserAudits   []service.ParserConfigAudit
+	chunks         map[string]service.DocumentChunk
 }
 
 func NewMemoryRepository() *MemoryRepository {
@@ -25,6 +26,7 @@ func NewMemoryRepository() *MemoryRepository {
 		documents:      map[string]service.KnowledgeDocument{},
 		jobs:           map[string]service.ProcessingJob{},
 		parserConfigs:  map[string]service.ParserConfig{},
+		chunks:         map[string]service.DocumentChunk{},
 	}
 }
 
@@ -433,6 +435,152 @@ func (r *MemoryRepository) MarkDocumentJobFailed(ctx context.Context, documentID
 	return nil
 }
 
+func (r *MemoryRepository) GetProcessingJob(ctx context.Context, id string) (service.ProcessingJob, error) {
+	if err := ctx.Err(); err != nil {
+		return service.ProcessingJob{}, err
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	job, exists := r.jobs[id]
+	if !exists {
+		return service.ProcessingJob{}, service.ErrNotFound
+	}
+	return cloneJob(job), nil
+}
+
+func (r *MemoryRepository) UpdateJobState(ctx context.Context, id string, update service.JobStateUpdate) (service.ProcessingJob, error) {
+	if err := ctx.Err(); err != nil {
+		return service.ProcessingJob{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	job, exists := r.jobs[id]
+	if !exists {
+		return service.ProcessingJob{}, service.ErrNotFound
+	}
+	job.Status = update.Status
+	job.ProgressPercent = update.ProgressPercent
+	job.CurrentStage = cloneStringPtr(update.CurrentStage)
+	job.Message = cloneStringPtr(update.Message)
+	job.ErrorCode = cloneStringPtr(update.ErrorCode)
+	job.ErrorMessage = cloneStringPtr(update.ErrorMessage)
+	if update.Attempts != nil {
+		job.Attempts = *update.Attempts
+	}
+	if update.StartedAt != nil {
+		job.StartedAt = cloneTimePtr(update.StartedAt)
+	}
+	if update.FinishedAt != nil {
+		job.FinishedAt = cloneTimePtr(update.FinishedAt)
+	}
+	job.UpdatedAt = update.UpdatedAt
+	r.jobs[id] = job
+	return cloneJob(job), nil
+}
+
+func (r *MemoryRepository) UpdateDocumentProcessingState(ctx context.Context, id string, update service.DocumentStateUpdate) (service.KnowledgeDocument, error) {
+	if err := ctx.Err(); err != nil {
+		return service.KnowledgeDocument{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	doc, exists := r.documents[id]
+	if !exists || doc.DeletedAt != nil {
+		return service.KnowledgeDocument{}, service.ErrNotFound
+	}
+	doc.Status = update.Status
+	doc.ErrorCode = cloneStringPtr(update.ErrorCode)
+	doc.ErrorMessage = cloneStringPtr(update.ErrorMessage)
+	doc.UpdatedAt = update.UpdatedAt
+	r.documents[id] = doc
+	return cloneDocument(r.hydrateDocumentLocked(doc)), nil
+}
+
+func (r *MemoryRepository) CompleteIngestion(ctx context.Context, input service.CompleteIngestionRecord) (service.ProcessingJob, error) {
+	if err := ctx.Err(); err != nil {
+		return service.ProcessingJob{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	doc, docExists := r.documents[input.DocumentID]
+	job, jobExists := r.jobs[input.JobID]
+	if !docExists || !jobExists || doc.DeletedAt != nil {
+		return service.ProcessingJob{}, service.ErrNotFound
+	}
+	for chunkID, chunk := range r.chunks {
+		if chunk.DocumentID == input.DocumentID {
+			delete(r.chunks, chunkID)
+		}
+	}
+	for _, chunk := range input.Chunks {
+		if _, exists := r.chunks[chunk.ID]; exists {
+			return service.ProcessingJob{}, service.ErrConflict
+		}
+		r.chunks[chunk.ID] = cloneChunk(chunk)
+	}
+	doc.Status = service.DocumentStatusReady
+	doc.ErrorCode = nil
+	doc.ErrorMessage = nil
+	doc.UpdatedAt = input.UpdatedAt
+	r.documents[doc.ID] = doc
+
+	stage := "completed"
+	message := "document ingestion completed"
+	job.Status = service.JobStatusSucceeded
+	job.CurrentStage = &stage
+	job.ProgressPercent = 100
+	job.Message = &message
+	job.ErrorCode = nil
+	job.ErrorMessage = nil
+	job.FinishedAt = &input.FinishedAt
+	job.UpdatedAt = input.UpdatedAt
+	r.jobs[job.ID] = job
+	return cloneJob(job), nil
+}
+
+func (r *MemoryRepository) ListChunks(ctx context.Context, documentID string, scope service.AccessScope, page service.PageInput) (service.ChunkList, error) {
+	if err := ctx.Err(); err != nil {
+		return service.ChunkList{}, err
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	doc, exists := r.documents[documentID]
+	if !exists || doc.DeletedAt != nil {
+		return service.ChunkList{}, service.ErrNotFound
+	}
+	kb, exists := r.knowledgeBases[doc.KnowledgeBaseID]
+	if !exists || kb.DeletedAt != nil || (!canRead(doc.CreatedBy, scope) && !canRead(kb.CreatedBy, scope)) {
+		return service.ChunkList{}, service.ErrNotFound
+	}
+	items := make([]service.DocumentChunk, 0)
+	for _, chunk := range r.chunks {
+		if chunk.DocumentID == documentID {
+			items = append(items, cloneChunk(chunk))
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].ChunkIndex == items[j].ChunkIndex {
+			return items[i].ID < items[j].ID
+		}
+		return items[i].ChunkIndex < items[j].ChunkIndex
+	})
+	total := int64(len(items))
+	items = paginate(items, page)
+	return service.ChunkList{
+		Items: items,
+		Page: service.Page{
+			Page:     page.Page,
+			PageSize: page.PageSize,
+			Total:    total,
+		},
+	}, nil
+}
+
 func (r *MemoryRepository) ListDocumentsByKnowledgeBase(ctx context.Context, knowledgeBaseID string, status *service.DocumentStatus, scope service.AccessScope, page service.PageInput) (service.DocumentList, error) {
 	if err := ctx.Err(); err != nil {
 		return service.DocumentList{}, err
@@ -512,14 +660,27 @@ func (r *MemoryRepository) hydrateKnowledgeBaseLocked(kb service.KnowledgeBase) 
 	for _, doc := range r.documents {
 		if doc.KnowledgeBaseID == kb.ID && doc.DeletedAt == nil {
 			kb.DocumentCount++
-			kb.ChunkCount += doc.ChunkCount
+			kb.ChunkCount += r.documentChunkCountLocked(doc.ID)
 		}
 	}
 	return cloneKnowledgeBase(kb)
 }
 
 func (r *MemoryRepository) hydrateDocumentLocked(doc service.KnowledgeDocument) service.KnowledgeDocument {
+	if count := r.documentChunkCountLocked(doc.ID); count > 0 || doc.ChunkCount == 0 {
+		doc.ChunkCount = count
+	}
 	return cloneDocument(doc)
+}
+
+func (r *MemoryRepository) documentChunkCountLocked(documentID string) int64 {
+	var count int64
+	for _, chunk := range r.chunks {
+		if chunk.DocumentID == documentID {
+			count++
+		}
+	}
+	return count
 }
 
 func canRead(createdBy string, scope service.AccessScope) bool {
@@ -599,6 +760,26 @@ func cloneJob(job service.ProcessingJob) service.ProcessingJob {
 	return job
 }
 
+func cloneChunk(chunk service.DocumentChunk) service.DocumentChunk {
+	chunk.SectionPath = cloneStringPtr(chunk.SectionPath)
+	chunk.TokenCount = cloneInt32Ptr(chunk.TokenCount)
+	chunk.ChunkType = cloneStringPtr(chunk.ChunkType)
+	chunk.QdrantPointID = cloneStringPtr(chunk.QdrantPointID)
+	chunk.EmbeddingProvider = cloneStringPtr(chunk.EmbeddingProvider)
+	chunk.EmbeddingModel = cloneStringPtr(chunk.EmbeddingModel)
+	chunk.EmbeddingDimension = cloneInt32Ptr(chunk.EmbeddingDimension)
+	if chunk.Metadata == nil {
+		chunk.Metadata = map[string]any{}
+	} else {
+		metadata := make(map[string]any, len(chunk.Metadata))
+		for key, value := range chunk.Metadata {
+			metadata[key] = value
+		}
+		chunk.Metadata = metadata
+	}
+	return chunk
+}
+
 func cloneRaw(value []byte) []byte {
 	if value == nil {
 		return nil
@@ -615,6 +796,22 @@ func cloneStringPtr(value *string) *string {
 }
 
 func cloneInt64Ptr(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneInt32Ptr(value *int32) *int32 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneTimePtr(value *time.Time) *time.Time {
 	if value == nil {
 		return nil
 	}

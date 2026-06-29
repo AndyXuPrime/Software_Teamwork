@@ -11,22 +11,18 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
 )
 
-const IngestionTaskType = "knowledge:ingestion:process"
+const IngestionTaskType = "knowledge:document:ingest"
 
-type IngestionPayload struct {
-	RequestID string `json:"requestId"`
-	JobID     string `json:"jobId"`
-	UserID    string `json:"userId"`
-}
+type IngestionPayload = service.DocumentIngestionTask
 
 type IngestionHandler struct {
-	knowledge *service.KnowledgeService
+	knowledge *service.Service
 	logger    *slog.Logger
 }
 
 type IngestionHandlerOption func(*IngestionHandler)
 
-func NewIngestionHandler(knowledge *service.KnowledgeService, opts ...IngestionHandlerOption) *IngestionHandler {
+func NewIngestionHandler(knowledge *service.Service, opts ...IngestionHandlerOption) *IngestionHandler {
 	h := &IngestionHandler{
 		knowledge: knowledge,
 		logger:    slog.Default(),
@@ -54,10 +50,11 @@ func (h *IngestionHandler) HandleIngestionPayload(ctx context.Context, payload [
 		return service.DependencyError("knowledge service is not configured", nil)
 	}
 	reqCtx := service.RequestContext{
-		RequestID: parsed.RequestID,
-		UserID:    parsed.UserID,
+		RequestID:     parsed.RequestID,
+		UserID:        parsed.UserID,
+		CallerService: "knowledge",
 	}
-	_, err = h.knowledge.ProcessIngestionJob(ctx, reqCtx, parsed.JobID)
+	_, err = h.knowledge.ProcessIngestionTask(ctx, reqCtx, parsed)
 	if err != nil && h.logger != nil {
 		code := "unknown"
 		if appErr, ok := service.Classify(err); ok {
@@ -69,6 +66,8 @@ func (h *IngestionHandler) HandleIngestionPayload(ctx context.Context, payload [
 			"request_id", parsed.RequestID,
 			"user_id", parsed.UserID,
 			"job_id", parsed.JobID,
+			"document_id", parsed.DocumentID,
+			"knowledge_base_id", parsed.KnowledgeBaseID,
 			"operation", "knowledge_ingestion_worker",
 			"status", "failed",
 			"error_code", code,
@@ -89,6 +88,8 @@ func DecodeIngestionPayload(payload []byte) (IngestionPayload, error) {
 	}
 	parsed.RequestID = strings.TrimSpace(parsed.RequestID)
 	parsed.JobID = strings.TrimSpace(parsed.JobID)
+	parsed.DocumentID = strings.TrimSpace(parsed.DocumentID)
+	parsed.KnowledgeBaseID = strings.TrimSpace(parsed.KnowledgeBaseID)
 	parsed.UserID = strings.TrimSpace(parsed.UserID)
 
 	fields := map[string]string{}
@@ -97,6 +98,12 @@ func DecodeIngestionPayload(payload []byte) (IngestionPayload, error) {
 	}
 	if parsed.JobID == "" {
 		fields["jobId"] = "is required"
+	}
+	if parsed.DocumentID == "" {
+		fields["documentId"] = "is required"
+	}
+	if parsed.KnowledgeBaseID == "" {
+		fields["knowledgeBaseId"] = "is required"
 	}
 	if parsed.UserID == "" {
 		fields["userId"] = "is required"

@@ -26,12 +26,12 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | 文档状态 | active | README、公开草案、数据模型、内部 OpenAPI 和实现说明存在。 |
-| 代码状态 | partial | Go service 已实现知识库 CRUD、文档列表/上传/详情、File Service handoff、PostgreSQL repository、asynq enqueue 和 parser-configs 运行时管理。Parser service 仅有独立契约文档，Knowledge runtime 尚未接入。 |
-| 契约对齐 | guarded / partial | Gateway OpenAPI 已声明 chunks、content、knowledge-queries、parser configs；parser-configs 已由 Knowledge 和 Gateway proxy 落地，chunks、content、knowledge-queries 等仍有 active path 标为 `NotImplemented`。 |
-| 数据持久化 | postgres / Redis queue | runtime 使用 PostgreSQL；上传后投递 asynq ingestion task。Qdrant 和 chunk/vector 写入未落地。 |
-| 测试状态 | partial | 单元和 handler tests 覆盖 CRUD、权限、上传补偿和 queue handoff；缺端到端入库、Qdrant、检索测试。 |
+| 代码状态 | partial | Go service 已实现知识库 CRUD、文档列表/上传/详情、File Service handoff、PostgreSQL repository、asynq enqueue、parser-configs 运行时管理、ingestion worker、Parser Service client、Knowledge-owned chunker、embedding、chunk 持久化和 vector index 写入。 |
+| 契约对齐 | partial | Gateway OpenAPI 已声明 chunks、content、knowledge-queries、parser configs；parser-configs 已由 Knowledge 和 Gateway proxy 落地，chunks 已有 service-local 查询能力，content 和 knowledge-queries 仍需继续补齐或回写阶段状态。 |
+| 数据持久化 | postgres / Redis queue / Qdrant | runtime 使用 PostgreSQL；Redis/asynq 负责任务投递；vector index 支持 Qdrant，未配置时使用 in-memory index。 |
+| 测试状态 | partial | 单元、handler 和 platform tests 覆盖 CRUD、权限、上传补偿、queue handoff、worker 入库、File content 读取、Parser HTTP client、chunking、embedding、vector payload 和 parser-configs 管理；缺真实依赖端到端联调。 |
 | 依赖解耦 | documented | A-12 检索和 A-14 契约测试可依赖 `docs/api-contract.md` 2.6 与 `docs/data-models.md` 6.7 的 seeded chunk/vector fixture，不再要求 A-11 worker runtime 先完成。 |
-| 建议动作 | 并行补实现 | A-11 继续补真实 ingestion worker；A-12 可先实现 retrieval contract 和 fake adapter 测试；A-14 可先收口 active operation/error/request id 契约测试。 |
+| 建议动作 | 补实现 / 人工复审 | 继续补 content、knowledge-queries 和并发/外部副作用一致性加固；人工复审任务幂等、失败状态收敛和敏感数据不泄漏。 |
 
 ## 3. 已实现
 

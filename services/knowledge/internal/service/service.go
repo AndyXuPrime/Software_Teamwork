@@ -29,12 +29,19 @@ type Clock func() time.Time
 
 type IDGenerator func(prefix string) string
 
+type Option func(*Service)
+
 type Service struct {
-	repo  Repository
-	files FileClient
-	queue IngestionQueue
-	now   Clock
-	newID IDGenerator
+	repo        Repository
+	files       FileClient
+	queue       IngestionQueue
+	source      SourceReader
+	parser      Parser
+	chunker     Chunker
+	embedder    Embedder
+	vectorIndex VectorIndex
+	now         Clock
+	newID       IDGenerator
 }
 
 func New(repo Repository) *Service {
@@ -51,19 +58,40 @@ func NewWithOptions(repo Repository, now Clock, idGenerator IDGenerator) *Servic
 	return NewWithDependencies(repo, nil, nil, now, idGenerator)
 }
 
-func NewWithDependencies(repo Repository, files FileClient, queue IngestionQueue, now Clock, idGenerator IDGenerator) *Service {
+func NewWithDependencies(repo Repository, files FileClient, queue IngestionQueue, now Clock, idGenerator IDGenerator, opts ...Option) *Service {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
 	if idGenerator == nil {
 		idGenerator = newID
 	}
-	return &Service{
+	s := &Service{
 		repo:  repo,
 		files: files,
 		queue: queue,
 		now:   now,
 		newID: idGenerator,
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(s)
+		}
+	}
+	return s
+}
+
+func WithProcessingPipeline(source SourceReader, parser Parser, chunker Chunker) Option {
+	return func(s *Service) {
+		s.source = source
+		s.parser = parser
+		s.chunker = chunker
+	}
+}
+
+func WithVectorIndex(embedder Embedder, vectorIndex VectorIndex) Option {
+	return func(s *Service) {
+		s.embedder = embedder
+		s.vectorIndex = vectorIndex
 	}
 }
 
