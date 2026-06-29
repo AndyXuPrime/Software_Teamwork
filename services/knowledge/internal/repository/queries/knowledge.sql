@@ -131,6 +131,133 @@ SET deleted_at = sqlc.arg(deleted_at), updated_at = sqlc.arg(deleted_at)
 WHERE knowledge_base_id = sqlc.arg(knowledge_base_id)
   AND deleted_at IS NULL;
 
+-- name: CreateDocument :one
+INSERT INTO knowledge_documents (
+  id,
+  knowledge_base_id,
+  file_ref,
+  name,
+  content_type,
+  size_bytes,
+  status,
+  error_code,
+  error_message,
+  tags,
+  parser_backend,
+  current_job_id,
+  created_by,
+  created_at,
+  updated_at
+) VALUES (
+  sqlc.arg(id),
+  sqlc.arg(knowledge_base_id),
+  NULLIF(sqlc.arg(file_ref), ''),
+  sqlc.arg(name),
+  NULLIF(sqlc.arg(content_type), ''),
+  sqlc.arg(size_bytes),
+  sqlc.arg(status),
+  NULL,
+  NULL,
+  sqlc.arg(tags),
+  NULL,
+  NULLIF(sqlc.arg(current_job_id), ''),
+  sqlc.arg(created_by),
+  sqlc.arg(created_at),
+  sqlc.arg(updated_at)
+)
+RETURNING
+  id,
+  knowledge_base_id,
+  file_ref,
+  name,
+  content_type,
+  size_bytes,
+  status,
+  error_code,
+  error_message,
+  0::bigint AS chunk_count,
+  tags,
+  parser_backend,
+  current_job_id,
+  created_by,
+  created_at,
+  updated_at,
+  deleted_at;
+
+-- name: CreateProcessingJob :one
+INSERT INTO processing_jobs (
+  id,
+  knowledge_base_id,
+  document_id,
+  job_type,
+  status,
+  current_stage,
+  progress_percent,
+  message,
+  error_code,
+  error_message,
+  attempts,
+  max_attempts,
+  started_at,
+  finished_at,
+  created_at,
+  updated_at
+) VALUES (
+  sqlc.arg(id),
+  sqlc.arg(knowledge_base_id),
+  NULLIF(sqlc.arg(document_id), ''),
+  sqlc.arg(job_type),
+  sqlc.arg(status),
+  NULLIF(sqlc.arg(current_stage), ''),
+  0,
+  NULLIF(sqlc.arg(message), ''),
+  NULL,
+  NULL,
+  0,
+  sqlc.arg(max_attempts),
+  NULL,
+  NULL,
+  sqlc.arg(created_at),
+  sqlc.arg(updated_at)
+)
+RETURNING
+  id,
+  knowledge_base_id,
+  document_id,
+  job_type,
+  status,
+  current_stage,
+  progress_percent,
+  message,
+  error_code,
+  error_message,
+  attempts,
+  max_attempts,
+  started_at,
+  finished_at,
+  created_at,
+  updated_at;
+
+-- name: MarkDocumentFailed :execrows
+UPDATE knowledge_documents
+SET
+  status = 'failed',
+  error_code = NULLIF(sqlc.arg(error_code), ''),
+  error_message = NULLIF(sqlc.arg(error_message), ''),
+  updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(id)
+  AND deleted_at IS NULL;
+
+-- name: MarkProcessingJobFailed :execrows
+UPDATE processing_jobs
+SET
+  status = 'failed',
+  error_code = NULLIF(sqlc.arg(error_code), ''),
+  error_message = NULLIF(sqlc.arg(error_message), ''),
+  finished_at = sqlc.arg(finished_at),
+  updated_at = sqlc.arg(finished_at)
+WHERE id = sqlc.arg(id);
+
 -- name: ListDocumentsByKnowledgeBase :many
 SELECT
   d.id,

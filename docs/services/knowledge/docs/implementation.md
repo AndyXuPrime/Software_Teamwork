@@ -51,16 +51,8 @@ GET /internal/v1/knowledge-bases/{knowledgeBaseId}
 PATCH /internal/v1/knowledge-bases/{knowledgeBaseId}
 DELETE /internal/v1/knowledge-bases/{knowledgeBaseId}
 GET /internal/v1/knowledge-bases/{knowledgeBaseId}/documents
-POST /internal/v1/knowledge-bases/{knowledgeBaseId}/ingestion-jobs
+POST /internal/v1/knowledge-bases/{knowledgeBaseId}/documents
 GET /internal/v1/documents/{documentId}
-GET /internal/v1/documents/{documentId}/chunks
-GET /internal/v1/jobs/{jobId}
-POST /internal/v1/jobs/{jobId}/processing-runs
-POST /internal/v1/knowledge-queries
-GET /internal/v1/runtime-config
-PATCH /internal/v1/runtime-config
-POST /internal/v1/knowledge-bases/{knowledgeBaseId}/jobs
-GET /internal/v1/knowledge-stats
 ```
 
 `services/knowledge/app/`、`requirements.txt` 和 `scripts/ingest_folder.sh` 已移除。旧 Python/FastAPI 原型不再作为 runtime 或接口契约来源；后续能力继续在 Go 的 `internal/` 分层内迭代。
@@ -135,7 +127,10 @@ GET /readyz
 | `KNOWLEDGE_ENV` | `local` | Runtime environment label. |
 | `KNOWLEDGE_STORAGE_BACKEND` | `memory` | Metadata backend. Supported values: `memory`, `postgres`. |
 | `DATABASE_URL` | unset | PostgreSQL connection string required when `KNOWLEDGE_STORAGE_BACKEND=postgres`. |
-| `FILE_SERVICE_BASE_URL` | unset | Optional File Service base URL used by ingestion pipeline source reads. |
+| `FILE_SERVICE_BASE_URL` | unset | File Service base URL used for document upload storage and ingestion source reads. |
+| `KNOWLEDGE_REDIS_ADDR` | unset | Redis/asynq endpoint used to enqueue ingestion tasks; PostgreSQL remains the durable job state authority. |
+| `KNOWLEDGE_MAX_UPLOAD_BYTES` | `33554432` | Multipart upload limit in bytes. |
+| `KNOWLEDGE_SERVICE_TOKEN` | unset | Optional internal service token forwarded when Knowledge calls File Service. |
 | `KNOWLEDGE_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown timeout. |
 | `EMBEDDING_PROVIDER` | `local_hashing` | Embedding provider label. |
 | `EMBEDDING_MODEL` | `local_hashing` | Embedding model label. |
@@ -156,6 +151,7 @@ GET    /api/v1/knowledge-bases/{knowledgeBaseId}
 PATCH  /api/v1/knowledge-bases/{knowledgeBaseId}
 DELETE /api/v1/knowledge-bases/{knowledgeBaseId}
 GET    /api/v1/knowledge-bases/{knowledgeBaseId}/documents
+POST   /api/v1/knowledge-bases/{knowledgeBaseId}/documents
 GET    /api/v1/documents/{documentId}
 GET    /api/v1/documents/{documentId}/chunks
 POST   /api/v1/knowledge-queries

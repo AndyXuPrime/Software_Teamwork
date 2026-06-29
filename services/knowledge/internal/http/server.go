@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ type Config struct {
 	ServiceVersion string
 	Environment    string
 	Logger         *slog.Logger
+	MaxUploadBytes int64
 }
 
 type Server struct {
@@ -26,18 +28,25 @@ type Server struct {
 	serviceVersion string
 	environment    string
 	logger         *slog.Logger
+	maxUploadBytes int64
 	mux            *http.ServeMux
 }
+
+const defaultMaxUploadBytes = int64(32 << 20)
 
 func NewServer(knowledge *service.Service, cfg Config) *Server {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
+	}
+	if cfg.MaxUploadBytes <= 0 {
+		cfg.MaxUploadBytes = defaultMaxUploadBytes
 	}
 	s := &Server{
 		knowledge:      knowledge,
 		serviceVersion: cfg.ServiceVersion,
 		environment:    cfg.Environment,
 		logger:         cfg.Logger,
+		maxUploadBytes: cfg.MaxUploadBytes,
 		mux:            http.NewServeMux(),
 	}
 	s.routes()
@@ -53,6 +62,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PATCH /internal/v1/knowledge-bases/{knowledgeBaseId}", s.handleUpdateKnowledgeBase)
 	s.mux.HandleFunc("DELETE /internal/v1/knowledge-bases/{knowledgeBaseId}", s.handleDeleteKnowledgeBase)
 	s.mux.HandleFunc("GET /internal/v1/knowledge-bases/{knowledgeBaseId}/documents", s.handleListDocuments)
+	s.mux.HandleFunc("POST /internal/v1/knowledge-bases/{knowledgeBaseId}/documents", s.handleUploadDocument)
 	s.mux.HandleFunc("GET /internal/v1/documents/{documentId}", s.handleGetDocument)
 	s.mux.HandleFunc("/", s.handleNotFound)
 }
@@ -232,6 +242,38 @@ func (s *Server) handleListDocuments(w http.ResponseWriter, r *http.Request) {
 	writePageJSON(w, http.StatusOK, documentsFromDomain(list.Items), list.Page, requestIDFromContext(r.Context()))
 }
 
+func (s *Server) handleUploadDocument(w http.ResponseWriter, r *http.Request) {
+	reqCtx, ok := s.gatewayContext(w, r)
+	if !ok {
+		return
+	}
+	file, header, tags, ok := s.parseDocumentUpload(w, r)
+	if !ok {
+		return
+	}
+	defer file.Close()
+
+	contentType := ""
+	if header != nil {
+		contentType = strings.TrimSpace(header.Header.Get("Content-Type"))
+	}
+	doc, err := s.knowledge.UploadDocument(r.Context(), reqCtx, service.UploadDocumentInput{
+		KnowledgeBaseID: r.PathValue("knowledgeBaseId"),
+		File: service.UploadedFile{
+			Filename:    header.Filename,
+			ContentType: contentType,
+			SizeBytes:   header.Size,
+			Content:     file,
+		},
+		Tags: tags,
+	})
+	if err != nil {
+		writeAppError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, documentFromDomain(doc), requestIDFromContext(r.Context()))
+}
+
 func (s *Server) handleGetDocument(w http.ResponseWriter, r *http.Request) {
 	reqCtx, ok := s.gatewayContext(w, r)
 	if !ok {
@@ -253,6 +295,8 @@ func (s *Server) gatewayContext(w http.ResponseWriter, r *http.Request) (service
 	reqCtx := service.RequestContext{
 		RequestID:      requestIDFromContext(r.Context()),
 		UserID:         strings.TrimSpace(r.Header.Get("X-User-Id")),
+		CallerService:  strings.TrimSpace(r.Header.Get("X-Caller-Service")),
+		ServiceToken:   strings.TrimSpace(r.Header.Get("X-Service-Token")),
 		Roles:          splitCSV(r.Header.Get("X-User-Roles")),
 		Permissions:    splitCSV(r.Header.Get("X-User-Permissions")),
 		ForwardedFor:   strings.TrimSpace(r.Header.Get("X-Forwarded-For")),
@@ -263,6 +307,62 @@ func (s *Server) gatewayContext(w http.ResponseWriter, r *http.Request) (service
 		return service.RequestContext{}, false
 	}
 	return reqCtx, true
+}
+
+func (s *Server) parseDocumentUpload(w http.ResponseWriter, r *http.Request) (multipart.File, *multipart.FileHeader, []string, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, s.maxUploadBytes)
+	if err := r.ParseMultipartForm(s.maxUploadBytes); err != nil {
+		fieldMessage := "multipart form is invalid"
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			fieldMessage = "exceeds maximum upload size"
+		}
+		writeAppError(w, r, service.ValidationError("request validation failed", map[string]string{"file": fieldMessage}))
+		return nil, nil, nil, false
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeAppError(w, r, service.ValidationError("request validation failed", map[string]string{"file": "is required"}))
+		return nil, nil, nil, false
+	}
+	if header == nil || header.Size == 0 {
+		_ = file.Close()
+		writeAppError(w, r, service.ValidationError("request validation failed", map[string]string{"file": "must not be empty"}))
+		return nil, nil, nil, false
+	}
+
+	tags, err := parseUploadTags(r)
+	if err != nil {
+		_ = file.Close()
+		writeAppError(w, r, service.ValidationError("request validation failed", map[string]string{"tags": "must be repeated strings or a JSON string array"}))
+		return nil, nil, nil, false
+	}
+	return file, header, tags, true
+}
+
+func parseUploadTags(r *http.Request) ([]string, error) {
+	if r.MultipartForm == nil {
+		return nil, nil
+	}
+	values := r.MultipartForm.Value["tags"]
+	tags := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") {
+			var parsed []string
+			if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+				return nil, err
+			}
+			tags = append(tags, parsed...)
+			continue
+		}
+		tags = append(tags, trimmed)
+	}
+	return tags, nil
 }
 
 func parsePage(w http.ResponseWriter, r *http.Request) (service.PageInput, bool) {

@@ -68,8 +68,8 @@
 | ORM | 不使用 ORM | N/A | 已固定 | 禁止默认引入 GORM/ent 等 ORM。 |
 | 数据库迁移 | `goose` | `v3.27.1` | 已固定 | 使用 `pressly/goose` CLI 或库执行服务内 migration；该版本要求 Go 1.25+。 |
 | 关系数据库 | PostgreSQL | `postgres:16-alpine` | 已固定 | 当前本地 Compose 固定在 16 Alpine。 |
-| Redis 队列 | `asynq` over Redis | asynq 待固定；Redis `7-alpine` | 部分已固定 | Redis 已在 Knowledge Compose 固定；asynq 尚未引入。 |
-| Redis 缓存/会话 | `go-redis` | 待固定 | 已选型，待固定 | Gateway 会话缓存、短期缓存和队列共享 Redis。 |
+| Redis 队列 | `asynq` over Redis | `asynq v0.26.0`；Redis `7-alpine` | 部分已固定 | Knowledge 已接入 asynq client；其他异步服务按需复用该队列基线。 |
+| Redis 缓存/会话 | `go-redis` | `go-redis/v9 v9.14.1` | 部分已固定 | Knowledge 通过 asynq 间接固定 go-redis；Gateway 会话缓存接入时继续复用 v9 基线。 |
 | 向量数据库 | Qdrant | Compose 当前 `qdrant/qdrant:latest` | 当前为 `latest` | Knowledge 使用手写 HTTP client；生产前必须固定镜像版本。 |
 | Qdrant 客户端 | 手写 HTTP client | Go 标准 HTTP client | 已固定 | 当前 API 使用面较窄，先不引入官方 client。 |
 | 对象存储 | MinIO | Compose 当前 `minio/minio:latest`、`minio/mc:latest` | 当前为 `latest` | File service 封装对象存储；生产前必须固定镜像和 SDK 版本。 |
@@ -222,7 +222,7 @@ services/<service>/
 
 - 业务状态、任务最终状态、失败摘要和重试次数以 PostgreSQL 为权威；asynq 只负责排队、调度和执行。
 - handler 不直接执行长任务，只创建业务 job 记录并投递 asynq task。
-- 当前 Redis 本地版本为 `redis:7-alpine`；`asynq` 和 `go-redis` 版本尚未固定。
+- 当前 Redis 本地版本为 `redis:7-alpine`；Knowledge 已固定 `asynq v0.26.0`，并通过 asynq 依赖 `go-redis/v9 v9.14.1`。
 
 ### 日志、指标和追踪
 
@@ -271,7 +271,7 @@ services/<service>/
 
 - 为每个 Go 服务补充或迁移 `sqlc.yaml`、query 文件和 `pgx` repository。
 - 为后续新增的数据库服务同步 `goose@v3.27.1` 迁移命令和 CI 校验。
-- 为需要异步任务的服务接入 `asynq` client/worker，并固定 `asynq` 和 `go-redis` 版本。
+- 为需要异步任务的服务接入 `asynq` client/worker；Knowledge 已固定首个 asynq/go-redis 版本，后续服务接入前应复核是否沿用该版本。
 - 前端接入 `openapi-typescript`，生成 gateway 类型，并固定生成器版本。
 - 前端测试接入 Vitest、React Testing Library 和 Playwright，并固定版本。
 - 本地 Compose 和生产部署移除 `latest` 镜像 tag，固定 Qdrant、MinIO、MinIO mc、Adminer 和 Redis Commander 版本。

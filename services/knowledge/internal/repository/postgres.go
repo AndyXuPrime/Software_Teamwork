@@ -221,6 +221,102 @@ func (r *PostgresRepository) GetDocument(ctx context.Context, id string, scope s
 	return documentFromGetRow(row), nil
 }
 
+func (r *PostgresRepository) CreateDocumentWithJob(ctx context.Context, input service.CreateDocumentWithJobRecord, scope service.AccessScope) (service.KnowledgeDocument, service.ProcessingJob, error) {
+	if _, err := r.GetKnowledgeBase(ctx, input.KnowledgeBaseID, scope); err != nil {
+		return service.KnowledgeDocument{}, service.ProcessingJob{}, err
+	}
+
+	tags, err := json.Marshal(input.Tags)
+	if err != nil {
+		return service.KnowledgeDocument{}, service.ProcessingJob{}, fmt.Errorf("marshal document tags: %w", err)
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return service.KnowledgeDocument{}, service.ProcessingJob{}, wrapPostgresError("begin document upload transaction", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	qtx := r.queries.WithTx(tx)
+	docRow, err := qtx.CreateDocument(ctx, sqlc.CreateDocumentParams{
+		ID:              input.DocumentID,
+		KnowledgeBaseID: input.KnowledgeBaseID,
+		FileRef:         input.FileRef,
+		Name:            input.Name,
+		ContentType:     input.ContentType,
+		SizeBytes:       pgInt8(input.SizeBytes),
+		Status:          string(input.Status),
+		Tags:            tags,
+		CurrentJobID:    input.CurrentJobID,
+		CreatedBy:       input.CreatedBy,
+		CreatedAt:       pgTime(input.CreatedAt),
+		UpdatedAt:       pgTime(input.UpdatedAt),
+	})
+	if err != nil {
+		return service.KnowledgeDocument{}, service.ProcessingJob{}, wrapPostgresError("create document", err)
+	}
+
+	jobRow, err := qtx.CreateProcessingJob(ctx, sqlc.CreateProcessingJobParams{
+		ID:              input.JobID,
+		KnowledgeBaseID: input.KnowledgeBaseID,
+		DocumentID:      input.DocumentID,
+		JobType:         input.JobType,
+		Status:          input.JobStatus,
+		CurrentStage:    input.JobStage,
+		Message:         input.JobMessage,
+		MaxAttempts:     input.MaxAttempts,
+		CreatedAt:       pgTime(input.CreatedAt),
+		UpdatedAt:       pgTime(input.UpdatedAt),
+	})
+	if err != nil {
+		return service.KnowledgeDocument{}, service.ProcessingJob{}, wrapPostgresError("create processing job", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return service.KnowledgeDocument{}, service.ProcessingJob{}, wrapPostgresError("commit document upload transaction", err)
+	}
+	return documentFromCreateRow(docRow), processingJobFromRow(jobRow), nil
+}
+
+func (r *PostgresRepository) MarkDocumentJobFailed(ctx context.Context, documentID string, jobID string, code string, message string, failedAt time.Time) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return wrapPostgresError("begin mark document job failed transaction", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	qtx := r.queries.WithTx(tx)
+	docRows, err := qtx.MarkDocumentFailed(ctx, sqlc.MarkDocumentFailedParams{
+		ID:           documentID,
+		ErrorCode:    code,
+		ErrorMessage: message,
+		UpdatedAt:    pgTime(failedAt),
+	})
+	if err != nil {
+		return wrapPostgresError("mark document failed", err)
+	}
+	jobRows, err := qtx.MarkProcessingJobFailed(ctx, sqlc.MarkProcessingJobFailedParams{
+		ID:           jobID,
+		ErrorCode:    code,
+		ErrorMessage: message,
+		FinishedAt:   pgTime(failedAt),
+	})
+	if err != nil {
+		return wrapPostgresError("mark processing job failed", err)
+	}
+	if docRows == 0 || jobRows == 0 {
+		return service.ErrNotFound
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return wrapPostgresError("commit mark document job failed transaction", err)
+	}
+	return nil
+}
+
 func limitOffset(page service.PageInput) (int32, int32) {
 	limit := page.PageSize
 	offset := (page.Page - 1) * page.PageSize
@@ -336,6 +432,53 @@ func documentFromListRow(row sqlc.ListDocumentsByKnowledgeBaseRow) service.Knowl
 	}
 }
 
+func documentFromCreateRow(row sqlc.CreateDocumentRow) service.KnowledgeDocument {
+	var tags []string
+	if len(row.Tags) > 0 {
+		_ = json.Unmarshal(row.Tags, &tags)
+	}
+	return service.KnowledgeDocument{
+		ID:              row.ID,
+		KnowledgeBaseID: row.KnowledgeBaseID,
+		FileRef:         textPtr(row.FileRef),
+		Name:            row.Name,
+		ContentType:     textPtr(row.ContentType),
+		SizeBytes:       int64Ptr(row.SizeBytes),
+		Status:          service.DocumentStatus(row.Status),
+		ErrorCode:       textPtr(row.ErrorCode),
+		ErrorMessage:    textPtr(row.ErrorMessage),
+		ChunkCount:      row.ChunkCount,
+		Tags:            tags,
+		ParserBackend:   textPtr(row.ParserBackend),
+		CurrentJobID:    textPtr(row.CurrentJobID),
+		CreatedBy:       row.CreatedBy,
+		CreatedAt:       row.CreatedAt.Time,
+		UpdatedAt:       row.UpdatedAt.Time,
+		DeletedAt:       timePtr(row.DeletedAt),
+	}
+}
+
+func processingJobFromRow(row sqlc.ProcessingJob) service.ProcessingJob {
+	return service.ProcessingJob{
+		ID:              row.ID,
+		KnowledgeBaseID: row.KnowledgeBaseID,
+		DocumentID:      textPtr(row.DocumentID),
+		JobType:         row.JobType,
+		Status:          row.Status,
+		CurrentStage:    textPtr(row.CurrentStage),
+		ProgressPercent: row.ProgressPercent,
+		Message:         textPtr(row.Message),
+		ErrorCode:       textPtr(row.ErrorCode),
+		ErrorMessage:    textPtr(row.ErrorMessage),
+		Attempts:        row.Attempts,
+		MaxAttempts:     row.MaxAttempts,
+		StartedAt:       timePtr(row.StartedAt),
+		FinishedAt:      timePtr(row.FinishedAt),
+		CreatedAt:       row.CreatedAt.Time,
+		UpdatedAt:       row.UpdatedAt.Time,
+	}
+}
+
 func wrapPostgresError(operation string, err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return service.ErrNotFound
@@ -376,4 +519,8 @@ func timePtr(value pgtype.Timestamptz) *time.Time {
 
 func pgTime(value time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: value, Valid: true}
+}
+
+func pgInt8(value int64) pgtype.Int8 {
+	return pgtype.Int8{Int64: value, Valid: value >= 0}
 }
