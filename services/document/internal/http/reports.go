@@ -1,7 +1,11 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -26,6 +30,7 @@ type ReportService interface {
 
 	ListSections(ctx context.Context, reqCtx service.RequestContext, reportID string) ([]service.ReportSection, error)
 	CreateSection(ctx context.Context, reqCtx service.RequestContext, reportID string, input service.CreateSectionInput) (service.ReportSection, error)
+	SaveSections(ctx context.Context, reqCtx service.RequestContext, reportID string, input service.SaveSectionsInput) ([]service.ReportSection, error)
 	GetSection(ctx context.Context, reqCtx service.RequestContext, reportID, sectionID string) (service.ReportSection, error)
 	UpdateSection(ctx context.Context, reqCtx service.RequestContext, reportID, sectionID string, input service.UpdateSectionInput) (service.ReportSection, error)
 
@@ -265,6 +270,36 @@ type updateSectionRequest struct {
 	Content      *string           `json:"content,omitempty"`
 	Tables       *[]map[string]any `json:"tables,omitempty"`
 	ManualEdited *bool             `json:"manualEdited,omitempty"`
+}
+
+type saveSectionRequest struct {
+	ID            string            `json:"id,omitempty"`
+	OutlineNodeID *string           `json:"outlineNodeId,omitempty"`
+	ParentID      *string           `json:"parentId,omitempty"`
+	Title         *string           `json:"title,omitempty"`
+	Level         *int              `json:"level,omitempty"`
+	Numbering     *string           `json:"numbering,omitempty"`
+	Content       *string           `json:"content,omitempty"`
+	Tables        *[]map[string]any `json:"tables,omitempty"`
+	ManualEdited  *bool             `json:"manualEdited,omitempty"`
+}
+
+type saveSectionsRequest struct {
+	Sections []saveSectionRequest `json:"sections"`
+}
+
+func (r saveSectionRequest) toService() service.SaveSectionInput {
+	return service.SaveSectionInput{
+		ID:            r.ID,
+		OutlineNodeID: r.OutlineNodeID,
+		ParentID:      r.ParentID,
+		Title:         r.Title,
+		Level:         r.Level,
+		Numbering:     r.Numbering,
+		Content:       r.Content,
+		Tables:        r.Tables,
+		ManualEdited:  r.ManualEdited,
+	}
 }
 
 type sectionVersionDTO struct {
@@ -513,11 +548,37 @@ func (s *Server) handleCreateSection(w http.ResponseWriter, r *http.Request) {
 	if !s.requireReportService(w, r) {
 		return
 	}
-	var body createSectionRequest
-	if !decodeJSON(w, r, &body) {
+	rawBody, ok := decodeJSONRaw(w, r)
+	if !ok {
 		return
 	}
 	reqCtx := s.requestContext(r)
+	if hasSectionsField(rawBody) {
+		var body saveSectionsRequest
+		if !decodeJSONBytes(w, r, rawBody, &body) {
+			return
+		}
+		input := service.SaveSectionsInput{Sections: make([]service.SaveSectionInput, len(body.Sections))}
+		for i, section := range body.Sections {
+			input.Sections[i] = section.toService()
+		}
+		sections, err := s.reportService.SaveSections(r.Context(), reqCtx, r.PathValue("reportId"), input)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		data := make([]sectionDTO, len(sections))
+		for i, section := range sections {
+			data[i] = toSectionDTO(section)
+		}
+		writeData(w, r, http.StatusOK, data)
+		return
+	}
+
+	var body createSectionRequest
+	if !decodeJSONBytes(w, r, rawBody, &body) {
+		return
+	}
 	section, err := s.reportService.CreateSection(r.Context(), reqCtx, r.PathValue("reportId"), service.CreateSectionInput{
 		OutlineNodeID: body.OutlineNodeID,
 		ParentID:      body.ParentID,
@@ -616,4 +677,43 @@ func formatTimePtr(value *time.Time) *string {
 	}
 	formatted := value.UTC().Format(time.RFC3339)
 	return &formatted
+}
+
+func decodeJSONRaw(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	defer r.Body.Close()
+	decoder := json.NewDecoder(r.Body)
+	var raw json.RawMessage
+	if err := decoder.Decode(&raw); err != nil {
+		writeError(w, r, service.ValidationError(map[string]string{"body": "must be a valid JSON object"}))
+		return nil, false
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		writeError(w, r, service.ValidationError(map[string]string{"body": "must contain only one JSON object"}))
+		return nil, false
+	}
+	return raw, true
+}
+
+func decodeJSONBytes(w http.ResponseWriter, r *http.Request, raw []byte, target any) bool {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		writeError(w, r, service.ValidationError(map[string]string{"body": "must be a valid JSON object"}))
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		writeError(w, r, service.ValidationError(map[string]string{"body": "must contain only one JSON object"}))
+		return false
+	}
+	return true
+}
+
+func hasSectionsField(raw []byte) bool {
+	var probe struct {
+		Sections json.RawMessage `json:"sections"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return false
+	}
+	return len(probe.Sections) > 0
 }

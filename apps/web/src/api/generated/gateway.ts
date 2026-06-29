@@ -574,7 +574,7 @@ export interface paths {
         /** List report sections */
         get: operations["listReportSections"];
         put?: never;
-        /** Create report section */
+        /** Create or batch save report sections */
         post: operations["createReportSection"];
         delete?: never;
         options?: never;
@@ -1860,6 +1860,24 @@ export interface components {
                 [key: string]: unknown;
             }[];
             manualEdited?: boolean;
+        };
+        SaveReportSectionRequest: {
+            /** @description Existing section id. Omit to create a new section. */
+            id?: string;
+            outlineNodeId?: string;
+            parentId?: string;
+            /** @description Required when id is omitted. */
+            title?: string;
+            level?: number;
+            numbering?: string;
+            content?: string;
+            tables?: {
+                [key: string]: unknown;
+            }[];
+            manualEdited?: boolean;
+        };
+        SaveReportSectionsRequest: {
+            sections: components["schemas"]["SaveReportSectionRequest"][];
         };
         ReportSection: {
             id: string;
@@ -3935,10 +3953,19 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateReportSectionRequest"];
+                "application/json": components["schemas"]["CreateReportSectionRequest"] | components["schemas"]["SaveReportSectionsRequest"];
             };
         };
         responses: {
+            /** @description Report sections batch saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportSectionListResponse"];
+                };
+            };
             /** @description Report section created. */
             201: {
                 headers: {
@@ -3950,6 +3977,7 @@ export interface operations {
             };
             400: components["responses"]["Error"];
             404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     getReportSection: {

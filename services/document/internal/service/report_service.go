@@ -10,6 +10,8 @@ import (
 // on. It is satisfied by repository.PostgresRepository; tests can supply a
 // fake implementation instead of standing up PostgreSQL.
 type ReportRepository interface {
+	WithinTx(ctx context.Context, fn func(ReportRepository) error) error
+
 	CreateReport(ctx context.Context, value Report) (Report, error)
 	GetReportByID(ctx context.Context, id string) (Report, error)
 	ListReports(ctx context.Context, filter ReportListFilter) ([]Report, int, error)
@@ -91,6 +93,22 @@ type UpdateSectionInput struct {
 	Content      *string
 	Tables       *[]map[string]any
 	ManualEdited *bool
+}
+
+type SaveSectionsInput struct {
+	Sections []SaveSectionInput
+}
+
+type SaveSectionInput struct {
+	ID            string
+	OutlineNodeID *string
+	ParentID      *string
+	Title         *string
+	Level         *int
+	Numbering     *string
+	Content       *string
+	Tables        *[]map[string]any
+	ManualEdited  *bool
 }
 
 type CreateSectionVersionInput struct {
@@ -411,49 +429,11 @@ func (s *ReportService) CreateSection(ctx context.Context, reqCtx RequestContext
 		return ReportSection{}, ValidationError(map[string]string{"title": "title is required"})
 	}
 
-	level := input.Level
-	if level <= 0 {
-		level = 1
-	}
 	siblings, err := s.repo.ListReportSections(ctx, reportID)
 	if err != nil {
 		return ReportSection{}, dependencyError("list report sections", err)
 	}
-	sortOrder := 0
-	for _, sibling := range siblings {
-		if sibling.ParentID == input.ParentID && sibling.SortOrder >= sortOrder {
-			sortOrder = sibling.SortOrder + 1
-		}
-	}
-
-	// content_source is NOT NULL in the database, and this endpoint only
-	// ever creates sections manually (AI generation is out of scope for
-	// C-03), so it is always "manual" regardless of whether content is
-	// provided yet.
-	manualEdited := strings.TrimSpace(input.Content) != ""
-
-	now := s.now()
-	id := newID()
-	section := ReportSection{
-		ID:               id,
-		ReportID:         reportID,
-		ParentID:         input.ParentID,
-		OutlineNodeID:    input.OutlineNodeID,
-		SectionPath:      id,
-		Title:            input.Title,
-		Level:            level,
-		SortOrder:        sortOrder,
-		Numbering:        input.Numbering,
-		SectionType:      SectionTypeText,
-		Content:          input.Content,
-		Tables:           input.Tables,
-		GenerationStatus: JobStatusPending,
-		ContentSource:    ContentSourceManual,
-		ManualEdited:     manualEdited,
-		Version:          1,
-		CreatedAt:        now,
-		UpdatedAt:        now,
-	}
+	section := buildNewSection(reportID, input, nextSectionSortOrder(siblings, input.ParentID), s.now())
 	created, err := s.repo.CreateReportSection(ctx, section)
 	if err != nil {
 		return ReportSection{}, mapRepositoryReadError(err, "create report section failed")
@@ -491,6 +471,86 @@ func (s *ReportService) UpdateSection(ctx context.Context, reqCtx RequestContext
 		return ReportSection{}, NewError(CodeConflict, "section content generation is in progress", nil)
 	}
 
+	section = applySectionUpdate(section, input, s.now())
+	updated, err := s.repo.UpdateReportSection(ctx, section)
+	if err != nil {
+		return ReportSection{}, mapRepositoryReadError(err, "report section not found")
+	}
+	return updated, nil
+}
+
+func (s *ReportService) SaveSections(ctx context.Context, reqCtx RequestContext, reportID string, input SaveSectionsInput) ([]ReportSection, error) {
+	report, err := s.GetReport(ctx, reqCtx, reportID)
+	if err != nil {
+		return nil, err
+	}
+	if report.Status == ReportStatusDeleted || report.DeletedAt != nil {
+		return nil, NewError(CodeConflict, "report has been deleted", nil)
+	}
+	if len(input.Sections) == 0 {
+		return nil, ValidationError(map[string]string{"sections": "sections must not be empty"})
+	}
+
+	saved := make([]ReportSection, 0, len(input.Sections))
+	err = s.repo.WithinTx(ctx, func(txRepo ReportRepository) error {
+		existing, err := txRepo.ListReportSections(ctx, reportID)
+		if err != nil {
+			return dependencyError("list report sections", err)
+		}
+		byID := map[string]ReportSection{}
+		for _, section := range existing {
+			byID[section.ID] = section
+		}
+
+		for _, item := range input.Sections {
+			sectionID := strings.TrimSpace(item.ID)
+			if sectionID == "" {
+				createInput, err := createInputFromSaveSection(item)
+				if err != nil {
+					return err
+				}
+				section := buildNewSection(reportID, createInput, nextSectionSortOrder(existing, createInput.ParentID), s.now())
+				created, err := txRepo.CreateReportSection(ctx, section)
+				if err != nil {
+					return mapRepositoryReadError(err, "create report section failed")
+				}
+				existing = append(existing, created)
+				byID[created.ID] = created
+				saved = append(saved, created)
+				continue
+			}
+
+			section, ok := byID[sectionID]
+			if !ok || section.ReportID != reportID {
+				return NewError(CodeNotFound, "report section not found", nil)
+			}
+			if section.GenerationStatus == JobStatusRunning {
+				return NewError(CodeConflict, "section content generation is in progress", nil)
+			}
+			section = applySectionSave(section, item, s.now())
+			updated, err := txRepo.UpdateReportSection(ctx, section)
+			if err != nil {
+				return mapRepositoryReadError(err, "report section not found")
+			}
+			byID[updated.ID] = updated
+			for i, existingSection := range existing {
+				if existingSection.ID == updated.ID {
+					existing[i] = updated
+					break
+				}
+			}
+			saved = append(saved, updated)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return saved, nil
+}
+
+func applySectionUpdate(section ReportSection, input UpdateSectionInput, updatedAt time.Time) ReportSection {
 	contentChanged := false
 	if input.Title != nil {
 		section.Title = *input.Title
@@ -518,12 +578,106 @@ func (s *ReportService) UpdateSection(ctx context.Context, reqCtx RequestContext
 	} else if input.ManualEdited != nil {
 		section.ManualEdited = *input.ManualEdited
 	}
-	section.UpdatedAt = s.now()
-	updated, err := s.repo.UpdateReportSection(ctx, section)
-	if err != nil {
-		return ReportSection{}, mapRepositoryReadError(err, "report section not found")
+	section.UpdatedAt = updatedAt
+	return section
+}
+
+func applySectionSave(section ReportSection, input SaveSectionInput, updatedAt time.Time) ReportSection {
+	if input.OutlineNodeID != nil {
+		section.OutlineNodeID = *input.OutlineNodeID
 	}
-	return updated, nil
+	if input.ParentID != nil {
+		section.ParentID = *input.ParentID
+	}
+	if input.Level != nil {
+		section.Level = *input.Level
+		if section.Level <= 0 {
+			section.Level = 1
+		}
+	}
+	if input.Numbering != nil {
+		section.Numbering = *input.Numbering
+	}
+	return applySectionUpdate(section, UpdateSectionInput{
+		Title:        input.Title,
+		Content:      input.Content,
+		Tables:       input.Tables,
+		ManualEdited: input.ManualEdited,
+	}, updatedAt)
+}
+
+func createInputFromSaveSection(input SaveSectionInput) (CreateSectionInput, error) {
+	if input.Title == nil || strings.TrimSpace(*input.Title) == "" {
+		return CreateSectionInput{}, ValidationError(map[string]string{"sections": "new sections require title"})
+	}
+	level := 0
+	if input.Level != nil {
+		level = *input.Level
+	}
+	tables := []map[string]any(nil)
+	if input.Tables != nil {
+		tables = *input.Tables
+	}
+	return CreateSectionInput{
+		OutlineNodeID: stringPtrValue(input.OutlineNodeID),
+		ParentID:      stringPtrValue(input.ParentID),
+		Title:         *input.Title,
+		Level:         level,
+		Numbering:     stringPtrValue(input.Numbering),
+		Content:       stringPtrValue(input.Content),
+		Tables:        tables,
+	}, nil
+}
+
+func buildNewSection(reportID string, input CreateSectionInput, sortOrder int, now time.Time) ReportSection {
+	level := input.Level
+	if level <= 0 {
+		level = 1
+	}
+
+	// content_source is NOT NULL in the database, and this endpoint only
+	// ever creates sections manually (AI generation is out of scope for
+	// C-03), so it is always "manual" regardless of whether content is
+	// provided yet.
+	manualEdited := strings.TrimSpace(input.Content) != "" || len(input.Tables) > 0
+	id := newID()
+	return ReportSection{
+		ID:               id,
+		ReportID:         reportID,
+		ParentID:         input.ParentID,
+		OutlineNodeID:    input.OutlineNodeID,
+		SectionPath:      id,
+		Title:            input.Title,
+		Level:            level,
+		SortOrder:        sortOrder,
+		Numbering:        input.Numbering,
+		SectionType:      SectionTypeText,
+		Content:          input.Content,
+		Tables:           input.Tables,
+		GenerationStatus: JobStatusPending,
+		ContentSource:    ContentSourceManual,
+		ManualEdited:     manualEdited,
+		Version:          1,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+}
+
+func nextSectionSortOrder(sections []ReportSection, parentID string) int {
+	sortOrder := 0
+	for _, section := range sections {
+		if section.ParentID == parentID && section.SortOrder >= sortOrder {
+			sortOrder = section.SortOrder + 1
+		}
+	}
+	return sortOrder
+}
+
+func stringPtrValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // --- Section versions ---

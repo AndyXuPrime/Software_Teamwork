@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/service"
 )
@@ -14,7 +15,8 @@ import (
 // fakeReportService implements ReportService for HTTP-layer tests so they
 // don't depend on PostgreSQL.
 type fakeReportService struct {
-	reports map[string]service.Report
+	reports       map[string]service.Report
+	savedSections []service.SaveSectionInput
 }
 
 func newFakeReportService() *fakeReportService {
@@ -100,6 +102,36 @@ func (f *fakeReportService) ListSections(context.Context, service.RequestContext
 func (f *fakeReportService) CreateSection(context.Context, service.RequestContext, string, service.CreateSectionInput) (service.ReportSection, error) {
 	return service.ReportSection{}, nil
 }
+func (f *fakeReportService) SaveSections(_ context.Context, _ service.RequestContext, reportID string, input service.SaveSectionsInput) ([]service.ReportSection, error) {
+	f.savedSections = input.Sections
+	now := time.Date(2026, 6, 29, 0, 0, 0, 0, time.UTC)
+	return []service.ReportSection{
+		{
+			ID:               input.Sections[0].ID,
+			ReportID:         reportID,
+			Title:            valueOrEmpty(input.Sections[0].Title),
+			Level:            1,
+			GenerationStatus: service.JobStatusPending,
+			ContentSource:    service.ContentSourceManual,
+			ManualEdited:     true,
+			Version:          2,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		},
+		{
+			ID:               "section-2",
+			ReportID:         reportID,
+			Title:            valueOrEmpty(input.Sections[1].Title),
+			Level:            1,
+			GenerationStatus: service.JobStatusPending,
+			ContentSource:    service.ContentSourceManual,
+			ManualEdited:     true,
+			Version:          1,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		},
+	}, nil
+}
 func (f *fakeReportService) GetSection(context.Context, service.RequestContext, string, string) (service.ReportSection, error) {
 	return service.ReportSection{}, nil
 }
@@ -111,6 +143,13 @@ func (f *fakeReportService) ListSectionVersions(context.Context, service.Request
 }
 func (f *fakeReportService) CreateSectionVersion(context.Context, service.RequestContext, string, string, service.CreateSectionVersionInput) (service.ReportSectionVersion, error) {
 	return service.ReportSectionVersion{}, nil
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func TestCreateReportThenGetByOwner(t *testing.T) {
@@ -177,6 +216,54 @@ func TestCreateReportValidationError(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPostSectionsBatchSaveUsesCollectionEndpoint(t *testing.T) {
+	fake := newFakeReportService()
+	server := NewServer(Config{ReportService: fake})
+
+	req := httptest.NewRequest(http.MethodPost, "/reports/report-1/sections", strings.NewReader(`{
+		"sections": [
+			{"id": "section-1", "parentId": "parent-1", "outlineNodeId": "outline-1", "title": "Updated intro", "level": 2, "numbering": "1.1", "content": "edited body"},
+			{"title": "New section", "content": "new body"}
+		]
+	}`))
+	req.SetPathValue("reportId", "report-1")
+	req.Header.Set("X-User-Id", "user-1")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if len(fake.savedSections) != 2 {
+		t.Fatalf("SaveSections input len = %d, want 2", len(fake.savedSections))
+	}
+	if fake.savedSections[0].ParentID == nil || *fake.savedSections[0].ParentID != "parent-1" {
+		t.Fatalf("SaveSections parentId = %v, want parent-1", fake.savedSections[0].ParentID)
+	}
+	if fake.savedSections[0].OutlineNodeID == nil || *fake.savedSections[0].OutlineNodeID != "outline-1" {
+		t.Fatalf("SaveSections outlineNodeId = %v, want outline-1", fake.savedSections[0].OutlineNodeID)
+	}
+	if fake.savedSections[0].Level == nil || *fake.savedSections[0].Level != 2 {
+		t.Fatalf("SaveSections level = %v, want 2", fake.savedSections[0].Level)
+	}
+	if fake.savedSections[0].Numbering == nil || *fake.savedSections[0].Numbering != "1.1" {
+		t.Fatalf("SaveSections numbering = %v, want 1.1", fake.savedSections[0].Numbering)
+	}
+
+	var body struct {
+		Data []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data) != 2 || body.Data[0].ID != "section-1" || body.Data[1].Title != "New section" {
+		t.Fatalf("unexpected batch response: %+v", body.Data)
 	}
 }
 

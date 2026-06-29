@@ -137,6 +137,10 @@ func (f *fakeReportRepository) UpdateReportSection(_ context.Context, value Repo
 	return value, nil
 }
 
+func (f *fakeReportRepository) WithinTx(ctx context.Context, fn func(ReportRepository) error) error {
+	return fn(f)
+}
+
 func (f *fakeReportRepository) CreateReportSectionVersion(_ context.Context, value ReportSectionVersion) (ReportSectionVersion, error) {
 	f.sectionVersion[value.SectionID] = append(f.sectionVersion[value.SectionID], value)
 	return value, nil
@@ -382,6 +386,132 @@ func TestUpdateSectionContentEditCannotBeUnmarkedAsManual(t *testing.T) {
 	}
 	if !updated.ManualEdited {
 		t.Fatalf("expected manualEdited to stay true even though the request set manualEdited:false alongside a content change")
+	}
+}
+
+func TestSaveSectionsUpdatesExistingAndCreatesNewSections(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	existing, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{
+		Title:   "Intro",
+		Content: "original body",
+		Tables:  []map[string]any{{"name": "old"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+
+	newTitle := "Updated intro"
+	newContent := "edited body"
+	newTables := []map[string]any{{"name": "updated"}}
+	createdTitle := "New section"
+	createdContent := "new body"
+	sections, err := svc.SaveSections(context.Background(), actor, report.ID, SaveSectionsInput{
+		Sections: []SaveSectionInput{
+			{
+				ID:      existing.ID,
+				Title:   &newTitle,
+				Content: &newContent,
+				Tables:  &newTables,
+			},
+			{
+				Title:   &createdTitle,
+				Content: &createdContent,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveSections() error = %v", err)
+	}
+	if len(sections) != 2 {
+		t.Fatalf("SaveSections() len = %d, want 2", len(sections))
+	}
+
+	updated := sections[0]
+	if updated.ID != existing.ID {
+		t.Fatalf("first section ID = %q, want %q", updated.ID, existing.ID)
+	}
+	if updated.Title != newTitle || updated.Content != newContent {
+		t.Fatalf("updated section did not preserve requested fields: %+v", updated)
+	}
+	if updated.Version != existing.Version+1 {
+		t.Fatalf("updated version = %d, want %d", updated.Version, existing.Version+1)
+	}
+	if !updated.ManualEdited {
+		t.Fatalf("expected updated section to be marked manual edited")
+	}
+
+	created := sections[1]
+	if created.ID == "" || created.ID == existing.ID {
+		t.Fatalf("new section ID was not generated: %+v", created)
+	}
+	if created.Title != createdTitle || created.Content != createdContent {
+		t.Fatalf("created section did not preserve requested fields: %+v", created)
+	}
+	if created.ManualEdited != true || created.Version != 1 {
+		t.Fatalf("unexpected created manual/version fields: %+v", created)
+	}
+	if repo.sections[existing.ID].Content != newContent {
+		t.Fatalf("repository did not persist updated section: %+v", repo.sections[existing.ID])
+	}
+	if _, ok := repo.sections[created.ID]; !ok {
+		t.Fatalf("repository did not persist created section %q", created.ID)
+	}
+}
+
+func TestSaveSectionsUpdatesMetadataWithoutBumpingVersion(t *testing.T) {
+	svc, _ := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	existing, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{
+		Title:         "Intro",
+		Level:         1,
+		Numbering:     "1",
+		OutlineNodeID: "outline-1",
+	})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+
+	parentID := "parent-section"
+	outlineNodeID := "outline-2"
+	title := "Updated intro"
+	level := 2
+	numbering := "1.1"
+	manualEdited := false
+	sections, err := svc.SaveSections(context.Background(), actor, report.ID, SaveSectionsInput{
+		Sections: []SaveSectionInput{{
+			ID:            existing.ID,
+			ParentID:      &parentID,
+			OutlineNodeID: &outlineNodeID,
+			Title:         &title,
+			Level:         &level,
+			Numbering:     &numbering,
+			ManualEdited:  &manualEdited,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("SaveSections() error = %v", err)
+	}
+	if len(sections) != 1 {
+		t.Fatalf("SaveSections() len = %d, want 1", len(sections))
+	}
+
+	updated := sections[0]
+	if updated.ParentID != parentID || updated.OutlineNodeID != outlineNodeID || updated.Level != level || updated.Numbering != numbering {
+		t.Fatalf("metadata fields were not saved: %+v", updated)
+	}
+	if updated.Title != title {
+		t.Fatalf("Title = %q, want %q", updated.Title, title)
+	}
+	if updated.Version != existing.Version {
+		t.Fatalf("metadata-only save bumped version to %d, want %d", updated.Version, existing.Version)
+	}
+	if updated.ManualEdited {
+		t.Fatalf("metadata-only save should respect manualEdited=false when content is unchanged")
 	}
 }
 

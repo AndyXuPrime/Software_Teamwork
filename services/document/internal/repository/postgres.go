@@ -55,7 +55,7 @@ func (r *PostgresRepository) CheckReady(ctx context.Context) error {
 	return r.pool.Ping(ctx)
 }
 
-func (r *PostgresRepository) WithinTx(ctx context.Context, fn func(*PostgresRepository) error) error {
+func (r *PostgresRepository) WithinTx(ctx context.Context, fn func(service.ReportRepository) error) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin document transaction: %w", err)
