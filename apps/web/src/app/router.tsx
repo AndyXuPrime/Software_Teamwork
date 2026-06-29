@@ -197,6 +197,7 @@ const reportRecordsRoute = createRoute({
 const reportTemplatesRoute = createRoute({
   getParentRoute: () => reportsRoute,
   path: 'templates',
+  beforeLoad: requireAuth(reportWriteAccess),
   component: ReportTemplatesPage,
 })
 
@@ -328,7 +329,7 @@ const adminReportRecordsRoute = createRoute({
 const adminReportTemplatesRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'reports/templates',
-  beforeLoad: requireAuth(reportAccess),
+  beforeLoad: requireAuth(reportWriteAccess),
   component: ReportTemplatesPage,
 })
 

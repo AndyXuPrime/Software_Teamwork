@@ -53,7 +53,12 @@ const menuItems: AdminNavigationItem[] = [
     requirement: { any: ['report:read', 'report:write', 'reports:write'] },
     children: [
       { key: 'report-records', label: '报告记录', path: '/admin/reports/records' },
-      { key: 'report-templates', label: '模板素材', path: '/admin/reports/templates' },
+      {
+        key: 'report-templates',
+        label: '模板素材',
+        path: '/admin/reports/templates',
+        requirement: { any: ['report:write', 'reports:write'] },
+      },
     ],
   },
   {
