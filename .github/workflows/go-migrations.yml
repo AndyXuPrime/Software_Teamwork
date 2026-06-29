@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [auth, document, file, knowledge, qa]
+        service: [ai-gateway, auth, document, file, knowledge, qa]
     services:
       postgres:
         image: postgres:16-alpine
