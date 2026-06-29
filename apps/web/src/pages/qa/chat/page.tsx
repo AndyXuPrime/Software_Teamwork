@@ -128,12 +128,12 @@ export function ChatPage() {
   // ══════════════════════════════════════════════════════════════════════════
 
   useEffect(() => {
-    if (serverMessages && activeId) {
+    if (serverMessages?.items && activeId) {
       const current = useChatStore.getState().messagesBySession[activeId]
       // Only overwrite if local messages are empty (don't clobber streaming data)
       if (!current || current.length === 0) {
-        if (serverMessages.length > 0) {
-          updateSessionMessages(activeId, serverMessages)
+        if (serverMessages.items.length > 0) {
+          updateSessionMessages(activeId, serverMessages.items)
         }
       }
     }
@@ -399,9 +399,9 @@ export function ChatPage() {
             if (idx >= 0) {
               steps[idx] = {
                 ...steps[idx],
-                status: 'done',
+                status: 'done' as const,
                 label: `${toolName} 完成`,
-              }
+              } as QAThinkingStep
             }
             patchAssistant({ thinking: [...steps] })
           },
@@ -414,9 +414,9 @@ export function ChatPage() {
             if (idx >= 0) {
               steps[idx] = {
                 ...steps[idx],
-                status: 'failed',
+                status: 'failed' as const,
                 label: `${toolName} 失败`,
-              }
+              } as QAThinkingStep
             }
             patchAssistant({ thinking: [...steps] })
           },

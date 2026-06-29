@@ -68,6 +68,21 @@ export class ApiError extends Error {
     this.requestId = params.requestId
     this.fields = params.fields
   }
+
+  /** Check if the error is due to missing or invalid authentication. */
+  isUnauthorized(): boolean {
+    return this.status === 401 || this.code === 'unauthorized'
+  }
+
+  /** Check if the error is due to insufficient permissions. */
+  isForbidden(): boolean {
+    return this.status === 403 || this.code === 'forbidden'
+  }
+
+  /** Check if the error is due to a missing resource. */
+  isNotFound(): boolean {
+    return this.status === 404 || this.code === 'not_found'
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +291,11 @@ async function readJsonSafely(response: Response): Promise<unknown> {
 }
 
 async function toApiError(response: Response): Promise<ApiError> {
+  // Clear stale token on 401 (unauthorized)
+  if (response.status === 401) {
+    apiClient.setToken(null)
+  }
+
   const body = await readJsonSafely(response)
   if (isGatewayErrorEnvelope(body)) {
     return new ApiError({

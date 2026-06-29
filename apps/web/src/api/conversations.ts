@@ -78,7 +78,7 @@ export async function updateSession(
 ): Promise<QASession> {
   return gatewayRequest<QASession>(`/qa-sessions/${encodeURIComponent(sessionId)}`, {
     method: 'PATCH',
-    body: params,
+    body: params as Record<string, unknown>,
   })
 }
 

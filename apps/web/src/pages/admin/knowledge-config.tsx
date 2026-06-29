@@ -50,7 +50,7 @@ export function KnowledgeConfig() {
     error: kbErr,
   } = useQuery({
     queryKey: ['admin', 'knowledge-bases'],
-    queryFn: listKnowledgeBases,
+    queryFn: () => listKnowledgeBases(),
     staleTime: 60_000,
   })
 
@@ -61,7 +61,7 @@ export function KnowledgeConfig() {
     error: configErr,
   } = useQuery({
     queryKey: ['admin', 'qa-config'],
-    queryFn: getCurrentQAConfig,
+    queryFn: () => getCurrentQAConfig(),
     staleTime: 60_000,
   })
 

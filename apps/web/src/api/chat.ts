@@ -33,27 +33,6 @@ export interface ChatStreamHandlers {
   onAbort?: () => void
 }
 
-function toRecord(value: unknown): JsonRecord {
-  return value && typeof value === 'object' ? (value as JsonRecord) : {}
-}
-
-function parsePayload(data: string): QAStreamPayload {
-  try {
-    return toRecord(JSON.parse(data)) as QAStreamPayload
-  } catch {
-    return { text: data }
-  }
-}
-
-function sequence(payload: QAStreamPayload, fallback: number): number {
-  const raw = payload.eventSeq ?? payload.seq
-  return typeof raw === 'number' ? raw : fallback
-}
-
-function textDelta(payload: QAStreamPayload): string {
-  return String(payload.delta ?? payload.text ?? payload.content ?? '')
-}
-
 function dispatch(event: QASseEventType, data: unknown, handlers: ChatStreamHandlers): void {
   switch (event) {
     case 'message.created':
@@ -91,19 +70,6 @@ function dispatch(event: QASseEventType, data: unknown, handlers: ChatStreamHand
   }
 }
 
-function toQAMessageRequest(params: ChatStreamRequest): CreateQAMessageRequest {
-  return {
-    message: params.message,
-    knowledgeBaseIds: params.knowledge_bases,
-    retrieval: params.params
-      ? {
-          topK: params.params.top_k,
-          scoreThreshold: params.params.similarity_threshold,
-        }
-      : undefined,
-  }
-}
-
 /** Build auth + request-id headers for SSE requests. */
 function buildStreamHeaders(): HeadersInit {
   const token = apiClient.getToken()
@@ -116,6 +82,17 @@ function buildStreamHeaders(): HeadersInit {
     headers.Authorization = `Bearer ${token}`
   }
   return headers
+}
+
+/** Combine two AbortSignals into one merged signal. */
+function mergeAbortSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
+  if (a.aborted) return a
+  if (b.aborted) return b
+  const controller = new AbortController()
+  const handler = () => controller.abort()
+  a.addEventListener('abort', handler, { once: true })
+  b.addEventListener('abort', handler, { once: true })
+  return controller.signal
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +115,7 @@ export function streamChat(
   signal?: AbortSignal,
 ): { abort: () => void } {
   const controller = new AbortController()
-  const combinedSignal = signal ? anyAbort(signal, controller.signal) : controller.signal
+  const combinedSignal = signal ? mergeAbortSignals(signal, controller.signal) : controller.signal
 
   // Shared across then/catch so connection-level errors can compute a seq
   // that passes the consumer-side monotonic-seq check.

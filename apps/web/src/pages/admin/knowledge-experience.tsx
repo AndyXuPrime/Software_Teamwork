@@ -12,7 +12,8 @@ export function KnowledgeExperience() {
   const [query, setQuery] = useState('')
 
   const searchMutation = useMutation({
-    mutationFn: (searchQuery: string) => queryKnowledge({ query: searchQuery }),
+    mutationFn: (searchQuery: string) =>
+      queryKnowledge({ query: searchQuery, topK: 10, scoreThreshold: 0, rerank: false }),
   })
 
   const handleSearch = () => {
