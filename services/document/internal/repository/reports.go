@@ -119,6 +119,10 @@ func (r *PostgresRepository) UpdateReport(ctx context.Context, value service.Rep
 	if err != nil {
 		return service.Report{}, service.NewError(service.CodeValidation, "invalid report id", err)
 	}
+	templateID, err := parseOptionalUUIDField(value.TemplateID, "templateId")
+	if err != nil {
+		return service.Report{}, err
+	}
 	row := r.db.QueryRow(ctx, `
 		UPDATE reports SET
 			report_name = $2,
@@ -138,7 +142,7 @@ func (r *PostgresRepository) UpdateReport(ctx context.Context, value service.Rep
 			created_at, updated_at, deleted_at`,
 		reportID,
 		value.Name,
-		value.TemplateID,
+		templateID,
 		value.Topic,
 		value.Specialty,
 		value.BusinessObject,
@@ -193,13 +197,48 @@ func (r *PostgresRepository) CreateReportOutline(ctx context.Context, value serv
 	if err != nil {
 		return service.ReportOutline{}, fmt.Errorf("marshal outline sections: %w", err)
 	}
-
-	if value.IsCurrent {
-		if _, err := r.db.Exec(ctx, `UPDATE report_outlines SET is_current = false WHERE report_id = $1`, reportID); err != nil {
-			return service.ReportOutline{}, fmt.Errorf("unset previous current outline: %w", err)
-		}
+	sourceJobID, err := parseOptionalUUIDField(value.SourceJobID, "sourceJobId")
+	if err != nil {
+		return service.ReportOutline{}, err
 	}
 
+	if !value.IsCurrent {
+		return r.insertReportOutline(ctx, reportID, sourceJobID, sectionsJSON, value)
+	}
+
+	if _, inTx := r.db.(pgx.Tx); inTx {
+		return r.insertCurrentReportOutline(ctx, reportID, sourceJobID, sectionsJSON, value)
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return service.ReportOutline{}, fmt.Errorf("begin report outline transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	txRepo := &PostgresRepository{
+		pool:    r.pool,
+		db:      tx,
+		queries: r.queries.WithTx(tx),
+	}
+	outline, err := txRepo.insertCurrentReportOutline(ctx, reportID, sourceJobID, sectionsJSON, value)
+	if err != nil {
+		return service.ReportOutline{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return service.ReportOutline{}, fmt.Errorf("commit report outline transaction: %w", err)
+	}
+	return outline, nil
+}
+
+func (r *PostgresRepository) insertCurrentReportOutline(ctx context.Context, reportID any, sourceJobID string, sectionsJSON []byte, value service.ReportOutline) (service.ReportOutline, error) {
+	if _, err := r.db.Exec(ctx, `UPDATE report_outlines SET is_current = false WHERE report_id = $1`, reportID); err != nil {
+		return service.ReportOutline{}, fmt.Errorf("unset previous current outline: %w", err)
+	}
+	return r.insertReportOutline(ctx, reportID, sourceJobID, sectionsJSON, value)
+}
+
+func (r *PostgresRepository) insertReportOutline(ctx context.Context, reportID any, sourceJobID string, sectionsJSON []byte, value service.ReportOutline) (service.ReportOutline, error) {
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO report_outlines (
 			id, report_id, outline_json, version, source, source_job_id,
@@ -214,7 +253,7 @@ func (r *PostgresRepository) CreateReportOutline(ctx context.Context, value serv
 		sectionsJSON,
 		value.Version,
 		string(value.Source),
-		value.SourceJobID,
+		sourceJobID,
 		value.IsCurrent,
 		value.ManualEdited,
 		value.CreatedAt,
@@ -322,6 +361,18 @@ func (r *PostgresRepository) CreateReportSection(ctx context.Context, value serv
 	if err != nil {
 		return service.ReportSection{}, service.NewError(service.CodeValidation, "invalid report id", err)
 	}
+	outlineID, err := parseOptionalUUIDField(value.OutlineID, "outlineId")
+	if err != nil {
+		return service.ReportSection{}, err
+	}
+	parentID, err := parseOptionalUUIDField(value.ParentID, "parentId")
+	if err != nil {
+		return service.ReportSection{}, err
+	}
+	lastJobID, err := parseOptionalUUIDField(value.LastJobID, "lastJobId")
+	if err != nil {
+		return service.ReportSection{}, err
+	}
 	tablesJSON, err := marshalTables(value.Tables)
 	if err != nil {
 		return service.ReportSection{}, err
@@ -347,8 +398,8 @@ func (r *PostgresRepository) CreateReportSection(ctx context.Context, value serv
 			COALESCE(last_job_id::text, ''), generated_at, created_at, updated_at`,
 		value.ID,
 		reportID,
-		value.OutlineID,
-		value.ParentID,
+		outlineID,
+		parentID,
 		value.OutlineNodeID,
 		value.SectionPath,
 		value.Title,
@@ -362,7 +413,7 @@ func (r *PostgresRepository) CreateReportSection(ctx context.Context, value serv
 		string(value.ContentSource),
 		value.ManualEdited,
 		value.Version,
-		value.LastJobID,
+		lastJobID,
 		value.CreatedAt,
 		value.UpdatedAt,
 	)
@@ -493,6 +544,10 @@ func (r *PostgresRepository) CreateReportSectionVersion(ctx context.Context, val
 	if err != nil {
 		return service.ReportSectionVersion{}, err
 	}
+	jobID, err := parseOptionalUUIDField(value.JobID, "jobId")
+	if err != nil {
+		return service.ReportSectionVersion{}, err
+	}
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO report_section_versions (
 			id, report_id, section_id, version, source, content, tables_json,
@@ -510,7 +565,7 @@ func (r *PostgresRepository) CreateReportSectionVersion(ctx context.Context, val
 		string(value.Source),
 		value.Content,
 		tablesJSON,
-		value.JobID,
+		jobID,
 		value.Requirements,
 		value.CreatedBy,
 		value.CreatedAt,

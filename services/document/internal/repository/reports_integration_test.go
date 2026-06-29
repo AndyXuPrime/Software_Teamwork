@@ -203,3 +203,225 @@ func TestPostgresRepositoryReportOutlineSectionLifecycle(t *testing.T) {
 		t.Fatalf("expected deleted report to be excluded from default listing, got %d", len(listAfterDelete))
 	}
 }
+
+func TestPostgresRepositoryCreateReportOutlinePreservesCurrentOnConflict(t *testing.T) {
+	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DOCUMENT_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	pool := newTestPool(t, ctx, databaseURL)
+	defer pool.Close()
+	applyMigration(t, ctx, pool)
+
+	repo := NewPostgresRepository(pool)
+	now := time.Date(2026, 6, 29, 12, 0, 0, 0, time.UTC)
+	report := createRepositoryTestReport(t, ctx, repo, "outline_conflict_report", "00000000-0000-0000-0000-000000001001", now)
+
+	current, err := repo.CreateReportOutline(ctx, service.ReportOutline{
+		ID:        "00000000-0000-0000-0000-000000001002",
+		ReportID:  report.ID,
+		Sections:  []service.ReportOutlineNode{{ID: "node-1", Title: "Current", Level: 1}},
+		Version:   1,
+		Source:    service.OutlineSourceManual,
+		IsCurrent: true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("CreateReportOutline() current error = %v", err)
+	}
+
+	_, err = repo.CreateReportOutline(ctx, service.ReportOutline{
+		ID:        "00000000-0000-0000-0000-000000001003",
+		ReportID:  report.ID,
+		Sections:  []service.ReportOutlineNode{{ID: "node-2", Title: "Duplicate", Level: 1}},
+		Version:   current.Version,
+		Source:    service.OutlineSourceManual,
+		IsCurrent: true,
+		CreatedAt: now.Add(time.Minute),
+		UpdatedAt: now.Add(time.Minute),
+	})
+	if err == nil {
+		t.Fatal("CreateReportOutline() duplicate error = nil, want conflict")
+	}
+	if appErr, ok := service.Classify(err); !ok || appErr.Code != service.CodeConflict {
+		t.Fatalf("CreateReportOutline() duplicate code = %v, want %q", err, service.CodeConflict)
+	}
+
+	outlines, err := repo.ListReportOutlines(ctx, report.ID)
+	if err != nil {
+		t.Fatalf("ListReportOutlines() error = %v", err)
+	}
+	if len(outlines) != 1 {
+		t.Fatalf("ListReportOutlines() len = %d, want 1", len(outlines))
+	}
+	if outlines[0].ID != current.ID || !outlines[0].IsCurrent {
+		t.Fatalf("current outline after conflict = %+v, want ID %s and IsCurrent true", outlines[0], current.ID)
+	}
+}
+
+func TestPostgresRepositoryRejectsInvalidOptionalUUIDs(t *testing.T) {
+	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DOCUMENT_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	pool := newTestPool(t, ctx, databaseURL)
+	defer pool.Close()
+	applyMigration(t, ctx, pool)
+
+	repo := NewPostgresRepository(pool)
+	now := time.Date(2026, 6, 29, 13, 0, 0, 0, time.UTC)
+	report := createRepositoryTestReport(t, ctx, repo, "invalid_optional_uuid_report", "00000000-0000-0000-0000-000000001101", now)
+	section := createRepositoryTestSection(t, ctx, repo, report.ID, "00000000-0000-0000-0000-000000001102", now)
+
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "create report templateId",
+			run: func() error {
+				_, err := repo.CreateReport(ctx, service.Report{
+					ID:         "00000000-0000-0000-0000-000000001103",
+					Name:       "invalid template id",
+					ReportType: "invalid_optional_uuid_report",
+					TemplateID: "not-a-uuid",
+					Topic:      "invalid uuid",
+					Status:     service.ReportStatusDraft,
+					Source:     "backend",
+					CreatedAt:  now,
+					UpdatedAt:  now,
+				})
+				return err
+			},
+		},
+		{
+			name: "update report templateId",
+			run: func() error {
+				value := report
+				value.TemplateID = "not-a-uuid"
+				value.UpdatedAt = now.Add(time.Minute)
+				_, err := repo.UpdateReport(ctx, value)
+				return err
+			},
+		},
+		{
+			name: "create outline sourceJobId",
+			run: func() error {
+				_, err := repo.CreateReportOutline(ctx, service.ReportOutline{
+					ID:          "00000000-0000-0000-0000-000000001104",
+					ReportID:    report.ID,
+					Sections:    []service.ReportOutlineNode{{ID: "node-1", Title: "Invalid", Level: 1}},
+					Version:     1,
+					Source:      service.OutlineSourceAI,
+					SourceJobID: "not-a-uuid",
+					IsCurrent:   true,
+					CreatedAt:   now,
+					UpdatedAt:   now,
+				})
+				return err
+			},
+		},
+		{
+			name: "create section parentId",
+			run: func() error {
+				_, err := repo.CreateReportSection(ctx, service.ReportSection{
+					ID:               "00000000-0000-0000-0000-000000001105",
+					ReportID:         report.ID,
+					ParentID:         "not-a-uuid",
+					SectionPath:      "00000000-0000-0000-0000-000000001105",
+					Title:            "Invalid parent",
+					Level:            1,
+					SectionType:      service.SectionTypeText,
+					GenerationStatus: service.JobStatusPending,
+					ContentSource:    service.ContentSourceManual,
+					Version:          1,
+					CreatedAt:        now,
+					UpdatedAt:        now,
+				})
+				return err
+			},
+		},
+		{
+			name: "create section version jobId",
+			run: func() error {
+				_, err := repo.CreateReportSectionVersion(ctx, service.ReportSectionVersion{
+					ID:        "00000000-0000-0000-0000-000000001106",
+					ReportID:  report.ID,
+					SectionID: section.ID,
+					Version:   1,
+					Source:    service.ContentSourceAI,
+					Content:   "snapshot",
+					JobID:     "not-a-uuid",
+					CreatedAt: now,
+				})
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run()
+			if err == nil {
+				t.Fatal("error = nil, want validation error")
+			}
+			if appErr, ok := service.Classify(err); !ok || appErr.Code != service.CodeValidation {
+				t.Fatalf("error code = %v, want %q", err, service.CodeValidation)
+			}
+		})
+	}
+}
+
+func createRepositoryTestReport(t *testing.T, ctx context.Context, repo *PostgresRepository, reportTypeCode, reportID string, now time.Time) service.Report {
+	t.Helper()
+	reportType, err := repo.UpsertReportType(ctx, service.ReportType{
+		Code:      reportTypeCode,
+		Name:      reportTypeCode,
+		Enabled:   true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("UpsertReportType() error = %v", err)
+	}
+	report, err := repo.CreateReport(ctx, service.Report{
+		ID:         reportID,
+		Name:       reportTypeCode,
+		ReportType: reportType.Code,
+		Topic:      reportTypeCode,
+		Status:     service.ReportStatusDraft,
+		Source:     "backend",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("CreateReport() error = %v", err)
+	}
+	return report
+}
+
+func createRepositoryTestSection(t *testing.T, ctx context.Context, repo *PostgresRepository, reportID, sectionID string, now time.Time) service.ReportSection {
+	t.Helper()
+	section, err := repo.CreateReportSection(ctx, service.ReportSection{
+		ID:               sectionID,
+		ReportID:         reportID,
+		SectionPath:      sectionID,
+		Title:            "Section",
+		Level:            1,
+		SectionType:      service.SectionTypeText,
+		GenerationStatus: service.JobStatusPending,
+		ContentSource:    service.ContentSourceManual,
+		Version:          1,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	if err != nil {
+		t.Fatalf("CreateReportSection() error = %v", err)
+	}
+	return section
+}
