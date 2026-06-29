@@ -80,11 +80,11 @@ Implemented Gateway-backed frontend auth shell and RBAC navigation, then fixed P
 
 | Hash | Message |
 |------|---------|
-| `013463c` | (see git log) |
-| `9003450` | (see git log) |
-| `24f6084` | (see git log) |
-| `3d92b72` | (see git log) |
-| `c663434` | (see git log) |
+| `013463c` | `feat(frontend): add auth app shell and rbac navigation` |
+| `9003450` | `fix(frontend): tighten route permission guards` |
+| `24f6084` | `fix(frontend): require write access for template routes` |
+| `3d92b72` | `fix(frontend): honor explicit permission grants` |
+| `c663434` | `fix(frontend): align admin and report record permissions` |
 
 ### Testing
 
@@ -114,17 +114,21 @@ Fixed the remaining PR #212 permission-navigation dead ends by routing login, fo
 
 ### Main Changes
 
-(Add details)
+- Changed login success, authenticated root, the Forbidden page action, and the admin back link to route through `/`.
+- Added permission-aware app-home routing so QA users land on `/chat`, report writers on `/reports/generate`, report readers on `/reports/records`, and admin-only users on `/admin`.
+- Kept `/chat` reachable only through the existing `qa:use` route/menu guard.
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
-| `c32f4ba` | (see git log) |
+| `c32f4ba` | `fix(frontend): route users to accessible home` |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `bun run --cwd apps/web check`
+- [OK] `bun run --cwd apps/web build`
+- [OK] `git diff --check`
 
 ### Status
 
@@ -147,17 +151,58 @@ Resolved the latest Codex PR Review finding by requiring knowledge:write for the
 
 ### Main Changes
 
-(Add details)
+- Required `knowledge:write` for `/admin/knowledge` and the matching admin sidebar item because the page exposes create, edit, and delete mutations.
+- Kept read-only knowledge users on view-oriented admin pages by routing `/admin` to `/admin/knowledge-config` when they have knowledge access but not write access.
+- Verified the permission names against the auth seed permissions.
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
-| `5efd3d1` | (see git log) |
+| `5efd3d1` | `fix(frontend): require write access for knowledge admin` |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `bun run --cwd apps/web check`
+- [OK] `bun run --cwd apps/web build`
+- [OK] `git diff --check`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 5: Fix PR 212 read-only report navigation
+
+**Date**: 2026-06-29
+**Task**: Fix PR 212 read-only report navigation
+**Branch**: `fix/frontend-report-read-nav`
+
+### Summary
+
+Resolved the latest Codex PR Review finding by exposing the top report navigation to report:read users and routing it through /reports so existing route guards send write users to generation and read-only users to records; frontend checks passed.
+
+### Main Changes
+
+- Changed the top-level report navigation target from `/reports/generate` to `/reports`.
+- Expanded the report nav visibility requirement to include `report:read`.
+- Reused the existing `/reports` index redirect so write users reach generation and read-only users reach records.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `71b1dff` | `fix(frontend): show report nav for read access` |
+
+### Testing
+
+- [OK] `bun run --cwd apps/web check`
+- [OK] `bun run --cwd apps/web build`
+- [OK] `git diff --check upstream/develop..HEAD`
 
 ### Status
 
