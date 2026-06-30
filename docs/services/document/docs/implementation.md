@@ -13,7 +13,8 @@
 | 类型 | 权威来源 | 本文档关系 |
 | --- | --- | --- |
 | 服务公开说明 | `docs/services/document/README.md` | 只能补充，不能覆盖 |
-| 服务 OpenAPI | `docs/services/document/api/public.openapi.yaml` | 只能跟随，不能另起契约 |
+| 服务公开 OpenAPI | `docs/services/document/api/public.openapi.yaml` | Document-owned public 设计面；前端稳定契约仍以 gateway 为准 |
+| 服务内部 OpenAPI | `docs/services/document/api/internal.openapi.yaml` | 内部运行和 report job contract；只能跟随，不能另起契约 |
 | Gateway 公开契约 | `docs/services/gateway/api/public.openapi.yaml` | 前端稳定契约以 gateway 为准 |
 | 服务边界 | `docs/architecture/service-boundaries.md` | 必须遵守 |
 | 技术基线 | `docs/architecture/technology-decisions.md` | 必须跟随 |

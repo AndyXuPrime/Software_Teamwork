@@ -106,7 +106,7 @@
 | 模型调用 | AI Gateway 统一封装 OpenAI-compatible API | API 契约 `0.1.0`；provider/model 运行时配置 | 部分已落地 | chat completions、function calling 透传、embeddings 和 rerankings 已落地；真实 provider smoke 和下游接入仍待补齐。 |
 | 本地 embedding | local hashing embedding | 待实现 | 已选型，待落地 | AI Gateway embedding endpoint 已支持 OpenAI-compatible provider；local hashing embedding provider adapter 尚未落地。 |
 | 文档解析运行时 | Python + PaddleOCR behind Parser HTTP API | 待固定 | 已选型，待落地 | Parser 通过 `/internal/v1/parsed-documents` 提供解析结果；Knowledge 不承载 PaddleOCR/PaddlePaddle/OpenCV/CUDA 依赖。 |
-| OpenAPI | OpenAPI | `3.0.3` | 已固定 | Gateway、Auth、Knowledge、QA、Document、AI Gateway 契约均使用 3.0.3。 |
+| OpenAPI | OpenAPI | `3.0.3` / `3.1.0`，以各契约文件 `openapi:` 头为准 | 已固定 | Gateway、Auth、File、Parser、AI Gateway 当前使用 3.0.3；Document、Knowledge、QA 的 internal/实现本地契约使用 3.1.0，服务级 public 设计面仍为 3.0.3。 |
 | API 版本前缀 | `/api/v1` / `/internal/v1` | `v1` | 已固定 | 公开入口以 gateway OpenAPI 为准；内部服务使用服务级契约。 |
 | 后端测试 | Go `testing` + `httptest` | Go `1.25` 标准库 | 已固定 | 默认不引入 BDD 测试框架。 |
 | CI | GitHub Actions | `actions/github-script@v7`；runner `ubuntu-latest`；Bun `1.3.12`；Go `1.25.x` | 部分已固定 | 已有协作类 workflow、前端 check/build/unit/E2E smoke、Go service path-filtered build/test、goose migration apply、Docker/Compose config、Gateway contract 和 API type drift workflow。 |
@@ -188,22 +188,28 @@
 `public.openapi.yaml` 描述该服务拥有的 public/Gateway-facing 设计面；
 只有进入 `docs/services/gateway/api/public.openapi.yaml` active paths 的内容
 才是前端稳定公开契约，未进入 Gateway active paths 的服务级 public
-内容必须标为 candidate/draft。`internal.openapi.yaml` 只描述服务间
-`/internal/v1/**` 和健康检查契约。历史 `openapi.yaml` 文件按服务后续文档整理任务逐步迁移；新建服务或新增调用面应先按
+内容必须标为 candidate/draft。`internal.openapi.yaml` 描述服务间
+`/internal/v1/**`、服务本地运行路径和健康检查契约，例如 Document report job
+内部运行合同。历史 `openapi.yaml` 文件按服务后续文档整理任务逐步迁移；新建服务或新增调用面应先按
 public/internal 命名落位。
 
 | 契约 | OpenAPI 版本 | API 文档版本 | 说明 |
 | --- | --- | --- | --- |
 | Gateway public API | `3.0.3` | `0.1.0` | 前端公开契约权威来源。 |
+| Gateway internal API | `3.0.3` | `0.1.0` | Gateway 内部操作契约。 |
 | Auth service API | `3.0.3` | `0.1.0` | 服务级身份与会话契约。 |
+| AI Gateway public API | `3.0.3` | `0.1.0` | 明确声明 AI Gateway 无直接前端公开路径；前端模型配置入口在 Gateway public API。 |
 | AI Gateway internal API | `3.0.3` | `0.1.0` | 服务间模型配置和 OpenAI-compatible 调用契约。 |
 | Parser public API | `3.0.3` | `0.1.0` | Parser 无 Gateway 公开 API；以空 `paths` 明确声明。 |
 | Parser internal API | `3.0.3` | `0.1.0` | 服务间文档解析运行时契约，只供 Knowledge ingestion 等后端服务调用。 |
 | QA service public API draft | `3.0.3` | `0.1.0` | QA Agent Host 服务级 public 设计面；稳定前端入口仍以 Gateway OpenAPI 为准。 |
+| QA service internal API / implementation copy | `3.1.0` | `1.0.0` | QA 服务本地运行契约和实现副本。 |
 | Document service public API draft | `3.0.3` | `0.1.0` | 报告生成服务级 public 设计面；稳定前端入口仍以 Gateway OpenAPI 为准。 |
-| Knowledge service internal API | `3.0.3` | `0.1.0` | 服务内 OpenAPI 只覆盖已实现的基础知识库和文档上传/详情能力；更多公开能力以 gateway OpenAPI 为准。 |
+| Document service internal API / implementation copy | `3.1.0` | `0.1.0` | Document 服务内部运行和 report job 合同。 |
+| Knowledge service internal API / implementation copy | `3.1.0` | `0.1.0` | 服务内 OpenAPI 覆盖内部知识库、文档、parser config、chunks/content 和查询能力；前端稳定入口仍以 gateway OpenAPI 为准。 |
 | Knowledge public API draft | `3.0.3` | `0.1.0` | Knowledge 公开资源设计草案；稳定公开入口仍以 gateway OpenAPI 为准。 |
-| File service API | `3.0.3` | `0.2.0` | File 服务是后端内部基础文件能力，不直接作为前端公开 API。 |
+| File service internal API / implementation copy | `3.0.3` | `0.2.0` | File 服务是后端内部基础文件能力，不直接作为前端公开 API。 |
+| File service public API draft | `3.0.3` | `0.1.0` | File 当前无前端公开 API；public 文件用于明确调用面边界。 |
 
 ## 服务级偏离
 
