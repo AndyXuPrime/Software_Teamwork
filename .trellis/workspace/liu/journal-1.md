@@ -456,3 +456,36 @@ Fixed PR #290 second review by aligning report DELETE and retry attempt API cont
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Address PR 290 job completion refresh review
+
+**Date**: 2026-06-30
+**Task**: Address PR 290 job completion refresh review
+**Branch**: `Frontend/feat/report-real-document-api`
+
+### Summary
+
+Fixed PR #290 hidden review by refreshing report outlines, sections, detail, records, and events when a polled report job reaches a terminal status.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `32a3803` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
