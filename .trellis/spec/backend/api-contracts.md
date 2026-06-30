@@ -408,6 +408,8 @@ owned message with no citations -> authorize message -> 200 []
 ### 2. Signatures
 
 - Parser internal route:
+  - `GET /healthz`
+  - `GET /readyz`
   - `POST /internal/v1/parsed-documents`
 - Knowledge environment keys:
   - `PARSER_SERVICE_BASE_URL`
@@ -439,6 +441,13 @@ Parser response body uses the project envelope:
   "requestId": "req_123"
 }
 ```
+
+Parser readiness response uses the same project envelope. `data.status` is
+`ok` for `/healthz`, `ready` for a ready parser backend, and `not_ready` for a
+backend dependency/runtime state that prevents parse requests. A not-ready
+response should include a short sanitized `data.reason`; readiness checks must
+not load PP-StructureV3/PaddleOCR models unless explicit startup warm-up is
+configured.
 
 Knowledge owns ingestion job state, chunking, embedding, Qdrant writes, and
 retrieval. Parser owns document byte parsing and backend adapter details such
@@ -475,6 +484,9 @@ ingestion state and chunks.
 - Parser service implementation tests should cover health/readiness,
   request validation, backend not-ready behavior, and normalized parsed-document
   response shape.
+- Parser OpenAPI contract tests should assert both the service-local contract
+  and `docs/services/parser/api/internal.openapi.yaml` document `ok`, `ready`,
+  `not_ready`, and the optional not-ready `reason`.
 - Parser service implementation checks are `uv run ruff check .`,
   `uv run pytest`, and `uv run python -m compileall src tests` from
   `services/parser`.

@@ -139,11 +139,14 @@ components:
               enum: [parser]
             status:
               type: string
-              enum: [ok, ready, degraded]
+              enum: [ok, ready, not_ready]
             backend:
               type: string
               nullable: true
               description: Sanitized active parser backend identifier.
+            reason:
+              type: string
+              description: Optional diagnostic for not-ready backend state.
         requestId:
           type: string
     CreateParsedDocumentRequest:

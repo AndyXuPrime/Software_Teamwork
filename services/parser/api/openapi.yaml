@@ -139,12 +139,14 @@ components:
               enum: [parser]
             status:
               type: string
-              example: ready
+              enum: [ok, ready, not_ready]
             backend:
               type: string
-              example: ppstructurev3
+              nullable: true
+              description: Sanitized active parser backend identifier.
             reason:
               type: string
+              description: Optional diagnostic for not-ready backend state.
         requestId:
           type: string
     CreateParsedDocumentRequest:
