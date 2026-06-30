@@ -1,6 +1,6 @@
 # 测试策略
 
-日期：2026-06-29
+日期：2026-06-30
 
 本文把当前仓库已经可执行的检查、CI 覆盖和仍缺的测试能力放在一起，作为 PR 前验证基线。具体服务实现状态仍以各服务 `docs/implementation.md` 为准。
 
@@ -17,6 +17,7 @@
 - 数据库 migration 必须能从空库 apply。
 - env-gated integration tests 默认可能跳过；如果本次改动触碰 repository、SQL 或 migration，应尽量提供本地数据库执行记录。
 - 当前没有完整 E2E smoke；不要用单服务测试替代跨服务验收。
+- Parser 当前只有内部契约和目录 scaffold；Python packaging、PaddleOCR runtime、Parser CI 和 Parser HTTP tests 未落地前，不能把 Parser 写成 required check。
 - open PR、未合入 issue 和草案不能写成当前 `develop` 已实现；测试记录也不能把未稳定依赖的检查写成 required。
 
 ## 当前 CI 覆盖
@@ -24,12 +25,13 @@
 | Workflow | 覆盖 | 当前说明 |
 | --- | --- | --- |
 | `go-services.yml` | `services/{ai-gateway,auth,document,file,gateway,knowledge,qa}` | 执行 `go test ./...`、`go build ./cmd/server`；QA 额外 build `./cmd/agent`；Knowledge 额外用 PostgreSQL 16 和 `KNOWLEDGE_TEST_DATABASE_URL` 执行 repository lifecycle integration test。 |
-| `go-migrations.yml` | 有 SQL migration 的后端服务 | 校验 migration 文件名并用 `goose@v3.27.1` 对 PostgreSQL 16 apply。 |
+| `go-migrations.yml` | `services/{ai-gateway,auth,document,file,knowledge,qa}` | 校验 migration 文件名并用 `goose@v3.27.1` 对 PostgreSQL 16 apply；Gateway 和 Parser 当前没有 SQL migration。 |
+| `frontend.yml` | `apps/web/**`、根前端依赖文件和 workflow | 执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`build`、`test:unit`、安装 Chromium 后执行 `test:e2e`。 |
 | `gateway-contract.yml` | Gateway OpenAPI active API | 执行 verifier unit tests 和 `python3 scripts/verify_gateway_active_api.py`。 |
 | `check-api-types.yml` | 前端 Gateway 类型漂移 | 执行 `bun run api:generate` 并要求 generated diff 干净。 |
 | `commitlint.yml` / `pr-guard.yml` | 协作规则 | 检查提交格式、PR body、issue 关联和 base 更新要求。 |
 
-当前可作为 required checks 的优先候选是 Go service tests、goose migration apply、Gateway contract/API drift 和 API type drift。完整前端 `check/build` CI、Vitest/React Testing Library/Playwright、路径过滤矩阵和跨服务 E2E smoke 仍未落地；在 CI 提供稳定依赖前只能作为 PR 前建议或缺口登记。
+当前可作为 required checks 的优先候选是 Go service tests、goose migration apply、Frontend check/build/unit/E2E、Gateway contract/API drift 和 API type drift。Parser Python/runtime CI、后端路径过滤矩阵和跨服务 E2E smoke 仍未落地；在 CI 提供稳定依赖前只能作为 PR 前建议或缺口登记。
 
 ## 本地命令矩阵
 
@@ -37,12 +39,13 @@
 | --- | --- |
 | 文档 | `git diff --check`；检查新增链接和实现事实。 |
 | Gateway OpenAPI / owner map | `python3 -m unittest scripts.tests.test_verify_gateway_active_api`；`python3 scripts/verify_gateway_active_api.py`。 |
-| 前端 | `bun install --frozen-lockfile`；`bun run --cwd apps/web check`；`bun run --cwd apps/web build`。 |
+| 前端 | `bun install --frozen-lockfile`；`bun run --cwd apps/web check`；`bun run --cwd apps/web build`；`bun run --cwd apps/web test:unit`；`bun run --cwd apps/web test:e2e`。 |
 | 前端 API 类型 | `bun run --cwd apps/web api:generate`；确认 generated diff 符合预期。 |
 | 单个 Go 服务 | `cd services/<service> && go test ./...`；`go build ./cmd/server`。 |
 | QA 服务 | `cd services/qa && go test ./...`；`go build ./cmd/server`；`go build ./cmd/agent`。 |
 | Knowledge repository / SQL | `cd services/knowledge && KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' go test ./internal/repository -count=1`。 |
 | migration | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up`。 |
+| Parser 契约 / 文档 | 检查 `services/parser/api/openapi.yaml` 与 `docs/services/parser/README.md`、Knowledge ingestion 文档一致；当前没有 `pytest`、PaddleOCR runtime smoke 或 Parser build 命令。 |
 | AI Gateway provider adapter | `cd services/ai-gateway && go test ./...`；尽量加 fake provider case 和真实 provider smoke 记录。 |
 | Document worker/job | `cd services/document && go test ./...`；如改 repository，设置 `DOCUMENT_TEST_DATABASE_URL` 跑 repository integration tests。 |
 
@@ -54,6 +57,7 @@
 | Repository tests | 部分服务有 SQL/repository tests；Knowledge/QA/Document 有 env-gated PostgreSQL integration tests；Knowledge repository lifecycle 已接入 CI PostgreSQL job。 | repository、SQL、transaction、migration 相关改动。 |
 | Migration apply | CI 使用 PostgreSQL 16 和 goose apply。 | 新增或修改 migration。 |
 | Contract tests | Gateway active API verifier、route coverage tests。 | OpenAPI、owner map、active path 和 RESTful path 规则。 |
+| Parser contract review | 当前以 OpenAPI schema review 和文档一致性检查为主。 | Parser runtime 实现前的契约变更；runtime 落地后再补 HTTP success/error/de-sensitization tests。 |
 | Cross-service smoke | 当前缺失统一脚本。 | Auth -> Gateway -> Domain、Document -> File/AI Gateway、QA -> Knowledge/AI Gateway 等链路。 |
 
 env-gated repository tests：
@@ -78,8 +82,8 @@ KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgre
 | Format check | 已落地 | `bun run --cwd apps/web format:check`。 |
 | Build | 已落地 | `bun run --cwd apps/web build`。 |
 | API type generation | 已落地 | `bun run --cwd apps/web api:generate`，以 Gateway OpenAPI 为源。 |
-| Component/unit tests | 待落地 | Vitest + React Testing Library 仍待固定和接入。 |
-| Browser/E2E tests | 待落地 | Playwright 仍待固定和接入。 |
+| Component/unit tests | 已落地 | `bun run --cwd apps/web test:unit`，使用 Vitest + React Testing Library。 |
+| Browser/E2E tests | 已落地 | `bun run --cwd apps/web test:e2e`，CI 先安装 Playwright Chromium 后执行。 |
 
 前端不得直接调用服务内部地址。涉及 QA SSE、上传、报告任务进度或 admin model/parser configuration 的改动，应同时检查 `docs/architecture/frontend-backend-contract.md` 和 Gateway OpenAPI。
 
@@ -91,6 +95,7 @@ KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgre
 | 服务 implementation 文档 | 改服务能力、stub/501 状态、runtime dependency、migration、worker 或 provider adapter。 |
 | 技术选型基线 | 引入新运行时依赖、镜像、CLI、SDK、队列、数据库或工具链。 |
 | 本地联调手册 | 新增 Compose、env template、seed data、跨服务 smoke 或端口约定。 |
+| Parser 契约一致性 | 改 `services/parser/api/openapi.yaml`、Parser README、Knowledge ingestion 对 Parser 的调用约定或 parser runtime configuration。 |
 | 测试策略 | 新增 CI workflow、测试框架、E2E smoke 或 required check。 |
 
 文档同步检查：
@@ -100,6 +105,7 @@ KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgre
 | 服务能力、stub/501 状态、worker、provider adapter 或 migration 变化 | 对应服务 `docs/implementation.md`。 |
 | OpenAPI / Gateway active path / 数据模型变化 | OpenAPI、owner map、README、service boundaries 或相关契约文档；契约语义变化需先交管理组决策。 |
 | runtime dependency / Compose / CI 变化 | `technology-decisions.md`、runbook 或本文。 |
+| Parser runtime、PaddleOCR、Python packaging、Parser Docker 或 HTTP tests 变化 | Parser README、`technology-decisions.md`、runbook 和本文。 |
 | open PR 或未合入能力 | 只能写 pending、待合入或 follow-up，不得写成已实现。 |
 
 ## 跨服务 smoke 目标
@@ -109,10 +115,11 @@ KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgre
 1. Auth 创建会话，Gateway 写入 Redis session cache。
 2. Gateway 使用认证上下文代理一个 Knowledge/QA/Document active path。
 3. File 保存并读取一个基础 file object，业务服务响应不泄露 object key。
-4. AI Gateway 创建 chat、embedding、rerank profile，并通过 fake provider 完成三类调用。
-5. QA 创建 session/message，非流式和 SSE 路径都能保存 response run 和事件摘要。
-6. Document 创建 report/job，worker 推进 attempt/event；真实生成落地后再验证 AI Gateway 和 File Service。
-7. 前端 typed client 能在 Gateway OpenAPI 更新后重新生成并通过 check/build。
+4. Knowledge 调用 Parser `/internal/v1/parsed-documents`，解析结果只返回规范化 text/page/block 和脱敏 metadata，不泄露 object key、内部 URL 或 provider debug body。
+5. AI Gateway 创建 chat、embedding、rerank profile，并通过 fake provider 完成三类调用。
+6. QA 创建 session/message，非流式和 SSE 路径都能保存 response run 和事件摘要。
+7. Document 创建 report/job，worker 推进 attempt/event；真实生成落地后再验证 AI Gateway 和 File Service。
+8. 前端 typed client 能在 Gateway OpenAPI 更新后重新生成并通过 check/build。
 
 ## PR 记录要求
 
