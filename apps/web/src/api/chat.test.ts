@@ -139,6 +139,61 @@ describe('chat stream API', () => {
     )
   })
 
+  it('does not dispatch stale stream events to handlers', async () => {
+    const onAnswerDelta = vi.fn()
+    const onAnswerCompleted = vi.fn()
+    const onError = vi.fn()
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        streamResponse(
+          [
+            'event: answer.delta',
+            'id: 2',
+            'data: {"content":"first"}',
+            '',
+            'event: answer.completed',
+            'id: 1',
+            'data: {"responseRunId":"old-run"}',
+            '',
+            'event: answer.delta',
+            'id: 3',
+            'data: {"content":" second"}',
+            '',
+            'event: answer.completed',
+            'id: 4',
+            'data: {"responseRunId":"run-1"}',
+            '',
+            '',
+          ].join('\n'),
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    streamChat('session-1', 'question', {
+      onAnswerCompleted,
+      onAnswerDelta,
+      onError,
+    })
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(onAnswerCompleted).toHaveBeenCalledTimes(1))
+
+    expect(onError).not.toHaveBeenCalled()
+    expect(onAnswerDelta).toHaveBeenCalledTimes(2)
+    expect(onAnswerDelta).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ content: 'first', seq: 2 }),
+    )
+    expect(onAnswerDelta).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ content: ' second', seq: 3 }),
+    )
+    expect(onAnswerCompleted).toHaveBeenCalledWith(
+      expect.objectContaining({ responseRunId: 'run-1', seq: 4 }),
+    )
+  })
+
   it('uses the dispatched max stream seq for fatal stream errors', async () => {
     const onAnswerDelta = vi.fn()
     const onError = vi.fn()

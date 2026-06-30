@@ -247,7 +247,8 @@ describe('ChatPage stream sequencing', () => {
       { code: 'dependency_error', fatal: false, message: 'retrieval degraded' },
       1,
     )
-    await waitFor(() => expect(useChatStore.getState().error).toContain('retrieval degraded'))
+    await waitFor(() => expect(useChatStore.getState().error).toContain('依赖服务暂不可用'))
+    expect(useChatStore.getState().error).not.toContain('retrieval degraded')
 
     expect(input).toBeDisabled()
     expect(useChatStore.getState().streaming).toBe(true)

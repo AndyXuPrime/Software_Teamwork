@@ -49,6 +49,28 @@ const BLOCKED_SUMMARY_VALUE_PATTERNS = [
   /\bhttps?:\/\//i,
   /\bminio\b/i,
 ]
+const SAFE_SUMMARY_LABELS: Record<string, string> = {
+  chunkCount: '片段数',
+  hitCount: '命中数',
+  iterationNo: '迭代',
+  knowledgeBaseCount: '知识库数',
+  queryCount: '查询数',
+  rerankTopN: '重排序 TopN',
+  resultCount: '结果数',
+  topK: 'TopK',
+}
+const SAFE_STREAM_ERROR_MESSAGES: Record<string, string> = {
+  cancelled: '请求已取消',
+  dependency_error: '依赖服务暂不可用，当前回复可能已降级',
+  internal_error: '服务暂时无法完成回复',
+  invalid_sse_event: '收到无法解析的流式事件',
+  model_error: '模型服务暂不可用',
+  network_error: '网络连接中断',
+  not_implemented: '后端工作流尚未就绪',
+  stream_ended_without_completion: '流式回复未正常完成',
+  timeout: '请求超时',
+  validation_error: '请求参数无效',
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
@@ -68,10 +90,6 @@ function getRequestIdText(requestId?: string): string {
   return requestId ? `requestId: ${requestId}` : MISSING_REQUEST_ID_TEXT
 }
 
-function getUnknownErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : '未知错误'
-}
-
 function isNotReady(error: ApiError | StreamErrorLike): boolean {
   return error.status === 501 || error.code === 'not_implemented' || error.code === 'http_501'
 }
@@ -82,16 +100,20 @@ function isDependencyFailure(error: ApiError | StreamErrorLike): boolean {
 
 function formatApiError(error: ApiError | StreamErrorLike, featureName: string): string {
   const requestIdText = getRequestIdText(error.requestId)
+  const safeMessage =
+    error.code && SAFE_STREAM_ERROR_MESSAGES[error.code]
+      ? SAFE_STREAM_ERROR_MESSAGES[error.code]
+      : '请稍后重试或联系管理员'
 
   if (isNotReady(error)) {
-    return `${featureName}暂未就绪：Gateway 已暴露契约，但后端工作流尚未就绪。${error.message}（${requestIdText}）`
+    return `${featureName}暂未就绪：Gateway 已暴露契约，但后端工作流尚未就绪。（${requestIdText}）`
   }
 
   if (isDependencyFailure(error)) {
-    return `${featureName}降级：依赖的后端服务暂不可用。${error.message}（${requestIdText}）`
+    return `${featureName}降级：${safeMessage}。（${requestIdText}）`
   }
 
-  return `${featureName}失败：${error.message}（${requestIdText}）`
+  return `${featureName}失败：${safeMessage}。（${requestIdText}）`
 }
 
 function isBlockedSummaryKey(key: string): boolean {
@@ -119,14 +141,20 @@ function formatSummaryValue(value: unknown): string | undefined {
   return formatted
 }
 
+function formatAllowedSummaryEntry(key: string, value: unknown): string | undefined {
+  const label = SAFE_SUMMARY_LABELS[key]
+  if (!label) return undefined
+  const formatted = formatSummaryValue(value)
+  return formatted ? `${label}: ${formatted}` : undefined
+}
+
 function formatSummaryObject(value: unknown): string | undefined {
   if (!isRecord(value)) return undefined
 
   const parts = Object.entries(value)
-    .filter(([key]) => !isBlockedSummaryKey(key))
     .map(([key, entryValue]) => {
-      const formatted = formatSummaryValue(entryValue)
-      return formatted ? `${key}: ${formatted}` : undefined
+      if (isBlockedSummaryKey(key)) return undefined
+      return formatAllowedSummaryEntry(key, entryValue)
     })
     .filter((part): part is string => Boolean(part))
     .slice(0, 4)
@@ -136,7 +164,7 @@ function formatSummaryObject(value: unknown): string | undefined {
 
 export function formatQAError(error: unknown, featureName: string): string {
   if (error instanceof ApiError) return formatApiError(error, featureName)
-  return `${featureName}失败：${getUnknownErrorMessage(error)}（${NON_GATEWAY_REQUEST_ID_TEXT}）`
+  return `${featureName}失败：请求未能完成。（${NON_GATEWAY_REQUEST_ID_TEXT}）`
 }
 
 export function formatQAStreamError(error: StreamErrorLike): string {
@@ -155,7 +183,9 @@ export function createSafeToolStep(kind: ToolEventKind, payload: unknown): ToolS
   const errorMessage = getString(data, 'errorMessage')
   const detailParts = [
     summary,
-    kind === 'failed' && errorCode ? `错误码: ${errorCode}` : undefined,
+    kind === 'failed' && errorCode && !isBlockedSummaryValue(errorCode)
+      ? `错误码: ${errorCode}`
+      : undefined,
     kind === 'failed' && errorMessage && !isBlockedSummaryValue(errorMessage)
       ? `错误: ${errorMessage}`
       : undefined,

@@ -35,17 +35,34 @@ describe('QA capability helpers', () => {
     ).toContain('响应未包含 requestId')
   })
 
+  it('does not expose backend raw error messages in user-visible text', () => {
+    const formatted = formatQAStreamError({
+      code: 'dependency_error',
+      message: 'provider raw error includes http://10.0.0.2/minio/private-object',
+      requestId: 'req-safe',
+      status: 502,
+    })
+
+    expect(formatted).toContain('依赖服务暂不可用')
+    expect(formatted).toContain('requestId: req-safe')
+    expect(formatted).not.toContain('provider raw')
+    expect(formatted).not.toContain('10.0.0.2')
+    expect(formatted).not.toContain('private-object')
+  })
+
   it('builds tool steps from sanitized summary fields without dumping raw payloads', () => {
     const view = createSafeToolStep('completed', {
       argumentsSummary: {
+        bucket: 'qa-prod-files',
         internalPreview: 'http://10.0.0.5/minio/private/object',
         objectKey: 'secret/minio/key',
         prompt: 'full hidden prompt',
         queryCount: 3,
+        sourcePath: 'tenant-a/private/doc.pdf',
       },
       latencyMs: 120,
       rawResult: 'provider raw response',
-      resultSummary: { hitCount: 2 },
+      resultSummary: { documentUri: 's3://qa-prod-files/private/doc.pdf', hitCount: 2 },
       toolCallId: 'tool-1',
       toolName: 'search_knowledge',
     })
@@ -56,7 +73,11 @@ describe('QA capability helpers', () => {
       status: 'done',
       type: 'tool_call',
     })
-    expect(view.step.detail).toContain('queryCount: 3')
+    expect(view.step.detail).toContain('查询数: 3')
+    expect(view.step.detail).not.toContain('queryCount')
+    expect(view.step.detail).not.toContain('qa-prod-files')
+    expect(view.step.detail).not.toContain('tenant-a/private')
+    expect(view.step.detail).not.toContain('s3://')
     expect(view.step.detail).not.toContain('secret/minio/key')
     expect(view.step.detail).not.toContain('full hidden prompt')
     expect(view.step.detail).not.toContain('http://10.0.0.5')
@@ -95,7 +116,7 @@ describe('QA capability helpers', () => {
       status: 'running',
       type: 'tool_call',
     })
-    expect(toolView.step.detail).toContain('queryCount: 2')
+    expect(toolView.step.detail).toContain('查询数: 2')
 
     expect(
       getSafeReasoningStep({

@@ -168,8 +168,9 @@ export function streamChat(
         const qaEvent = event as QASseEventType
         const payload = normalizeSsePayload(qaEvent, parseSsePayload(data, fallbackSeq, id))
         const isStaleEvent = maxDispatchedSeq !== undefined && payload.seq <= maxDispatchedSeq
+        if (isStaleEvent) return
         recordDispatchedSeq(payload.seq)
-        if (!isStaleEvent && isTerminalEvent(qaEvent, payload)) {
+        if (isTerminalEvent(qaEvent, payload)) {
           didReceiveTerminalEvent = true
         }
         dispatch(qaEvent, payload, handlers)
