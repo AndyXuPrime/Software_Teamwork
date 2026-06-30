@@ -52,6 +52,7 @@ jobs:
               'services/gateway/Dockerfile',
               'services/knowledge/Dockerfile',
               'services/qa/Dockerfile',
+              'services/qa/Dockerfile.host',
               'services/qa/Dockerfile.migrate',
             ]);
             const knownComposeFiles = new Set([
@@ -63,7 +64,7 @@ jobs:
             const composeFilePattern =
               /^(deploy|services\/[^/]+)\/.*docker-compose[^/]*\.ya?ml$/u;
             const buildableDockerfilePattern =
-              /^(apps\/web|deploy|services\/[^/]+)\/Dockerfile(?:\.migrate)?$/u;
+              /^(apps\/web|deploy|services\/[^/]+)\/Dockerfile(?:\.(?:host|migrate))?$/u;
             const rootDeployComposeFile = 'deploy/docker-compose.yml';
             const rootDeployComposeDependencyPattern =
               /^deploy\/(?:\.env\.example|postgres\/init\/.+|seeds\/.+)$/u;
@@ -165,6 +166,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Prepare host-binary Dockerfile input
+        if: matrix.dockerfile == 'services/qa/Dockerfile.host'
+        run: |
+          mkdir -p services/qa/bin
+          cd services/qa
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o bin/qa-server ./cmd/server
 
       - name: Build Dockerfile
         run: |
