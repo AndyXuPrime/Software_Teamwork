@@ -121,6 +121,8 @@ class PPStructureV3Backend:
                 status="not_ready",
                 reason="ppstructurev3 model load failed",
             )
+        if self._pipeline is not None:
+            return BackendHealth(ready=True, status="ready")
         try:
             from paddleocr import PPStructureV3  # noqa: F401
         except Exception:

@@ -223,6 +223,33 @@ def test_default_backend_uses_ppstructurev3():
     assert service.backend_name == "ppstructurev3"
 
 
+def test_ppstructurev3_startup_warmup_runs_when_enabled(monkeypatch):
+    warmed = False
+
+    class WarmupBackend:
+        name = "ppstructurev3"
+
+        def __init__(self, **kwargs):
+            pass
+
+        def health(self):
+            return BackendHealth(ready=True, status="ready")
+
+        def warm_up(self):
+            nonlocal warmed
+            warmed = True
+
+        def parse(self, request):
+            raise NotImplementedError
+
+    monkeypatch.setattr("parser_service.http.app.PPStructureV3Backend", WarmupBackend)
+
+    service = build_parser_service(Settings(load_backend_on_startup=True))
+
+    assert service.backend_name == "ppstructurev3"
+    assert warmed is True
+
+
 def test_ppstructurev3_backend_accepts_official_tuning_settings():
     service = build_parser_service(
         Settings(

@@ -198,14 +198,11 @@ components:
           type: string
     ParsedDocument:
       type: object
-      required: [content, backend, contentLength]
+      required: [content, backend]
       properties:
         content:
           type: string
           description: Normalized text used by Knowledge chunking.
-        contentLength:
-          type: integer
-          minimum: 0
         title:
           type: string
           nullable: true
