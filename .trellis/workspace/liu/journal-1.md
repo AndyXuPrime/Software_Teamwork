@@ -337,3 +337,36 @@ Updated document OpenAPI contract regression coverage to assert path-level repor
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: F-014 Report real Document API
+
+**Date**: 2026-06-30
+**Task**: F-014 Report real Document API
+**Branch**: `Frontend/feat/report-real-document-api`
+
+### Summary
+
+Removed report frontend fallback data, routed report pages through Gateway Document APIs, surfaced gateway requestId errors, and added regression tests for F-014.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4ead93e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
