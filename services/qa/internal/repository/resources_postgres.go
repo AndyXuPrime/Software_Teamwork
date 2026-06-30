@@ -389,11 +389,14 @@ func (r *Postgres) SaveRetrievalTestRun(ctx context.Context, userID string, inpu
 	}
 	overrides, _ := json.Marshal(input.Retrieval)
 	var run service.RetrievalTestRun
-	err := r.pool.QueryRow(ctx, `INSERT INTO retrieval_test_runs(external_user_id,query,overrides,status,result_count,latency_ms,error_message,completed_at) VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),now()) RETURNING id::text,query,status,created_at,completed_at`, userID, input.Question, overrides, status, len(results), duration.Milliseconds(), errorMessage).Scan(&run.ID, &run.Question, &run.Status, &run.CreatedAt, &run.FinishedAt)
+	err := r.pool.QueryRow(ctx, `INSERT INTO retrieval_test_runs(qa_config_version_id,external_user_id,query,overrides,status,result_count,latency_ms,error_message,completed_at) VALUES(NULLIF($1,'')::uuid,$2,$3,$4,$5,$6,$7,NULLIF($8,''),now()) RETURNING id::text,query,status,COALESCE(result_count,0),COALESCE(latency_ms,0),COALESCE(error_message,''),created_at,completed_at`, input.QAConfigVersionID, userID, input.Question, overrides, status, len(results), duration.Milliseconds(), errorMessage).Scan(&run.ID, &run.Question, &run.Status, &run.ResultCount, &run.LatencyMS, &run.ErrorMessage, &run.CreatedAt, &run.FinishedAt)
 	if err != nil {
 		return run, fmt.Errorf("save retrieval test run: %w", err)
 	}
+	run.Query = run.Question
 	for i, item := range results {
+		item = retrievalResultWithAliases(item)
+		results[i] = item
 		metadata, _ := json.Marshal(item.Metadata)
 		_, err = r.pool.Exec(ctx, `INSERT INTO retrieval_test_results(test_run_id,rank_no,external_kb_id,external_doc_id,external_chunk_id,doc_name,text_snapshot,vector_score,rerank_score,metadata) VALUES($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),$8,$9,$10)`, run.ID, i+1, item.KnowledgeBaseID, item.DocumentID, item.ChunkID, item.DocumentName, item.ContentPreview, item.VectorScore, item.RerankScore, metadata)
 		if err != nil {
@@ -405,13 +408,14 @@ func (r *Postgres) SaveRetrievalTestRun(ctx context.Context, userID string, inpu
 }
 func (r *Postgres) GetRetrievalTestRun(ctx context.Context, userID, id string) (service.RetrievalTestRun, error) {
 	var run service.RetrievalTestRun
-	err := r.pool.QueryRow(ctx, `SELECT id::text,query,status,created_at,completed_at FROM retrieval_test_runs WHERE id::text=$1 AND external_user_id=$2`, id, userID).Scan(&run.ID, &run.Question, &run.Status, &run.CreatedAt, &run.FinishedAt)
+	err := r.pool.QueryRow(ctx, `SELECT id::text,query,status,COALESCE(result_count,0),COALESCE(latency_ms,0),COALESCE(error_message,''),created_at,completed_at FROM retrieval_test_runs WHERE id::text=$1 AND external_user_id=$2`, id, userID).Scan(&run.ID, &run.Question, &run.Status, &run.ResultCount, &run.LatencyMS, &run.ErrorMessage, &run.CreatedAt, &run.FinishedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return run, service.NewError(service.CodeNotFound, "retrieval test run not found", err)
 	}
 	if err != nil {
 		return run, fmt.Errorf("get retrieval test run: %w", err)
 	}
+	run.Query = run.Question
 	rows, err := r.pool.Query(ctx, `SELECT rank_no,COALESCE(external_kb_id,''),COALESCE(external_doc_id,''),COALESCE(doc_name,''),COALESCE(external_chunk_id,''),COALESCE(vector_score,0),rerank_score,COALESCE(text_snapshot,''),metadata FROM retrieval_test_results WHERE test_run_id=$1 ORDER BY rank_no`, id)
 	if err != nil {
 		return run, err
@@ -426,9 +430,34 @@ func (r *Postgres) GetRetrievalTestRun(ctx context.Context, userID, id string) (
 		}
 		item.Score = item.VectorScore
 		_ = json.Unmarshal(metadata, &item.Metadata)
-		run.Results = append(run.Results, item)
+		run.Results = append(run.Results, retrievalResultWithAliases(item))
 	}
 	return run, rows.Err()
+}
+
+func retrievalResultWithAliases(item service.RetrievalTestResult) service.RetrievalTestResult {
+	if item.DocumentID == "" {
+		item.DocumentID = item.DocID
+	}
+	if item.DocID == "" {
+		item.DocID = item.DocumentID
+	}
+	if item.DocumentName == "" {
+		item.DocumentName = item.DocName
+	}
+	if item.DocName == "" {
+		item.DocName = item.DocumentName
+	}
+	if item.ContentPreview == "" {
+		item.ContentPreview = item.Text
+	}
+	if item.Text == "" {
+		item.Text = item.ContentPreview
+	}
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
+	}
+	return item
 }
 
 func (r *Postgres) GetMetricsOverview(ctx context.Context, days int) (service.MetricsOverview, error) {

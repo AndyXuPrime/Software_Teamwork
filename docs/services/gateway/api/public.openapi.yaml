@@ -5386,6 +5386,17 @@ components:
           - running
           - completed
           - failed
+        resultCount:
+          type: integer
+          minimum: 0
+          description: Number of sanitized retrieval result snapshots saved for this test run.
+        latencyMs:
+          type: integer
+          minimum: 0
+          description: End-to-end latency of the retrieval test call.
+        errorMessage:
+          type: string
+          description: Sanitized failure summary only.
         results:
           type: array
           items:

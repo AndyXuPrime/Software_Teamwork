@@ -1,0 +1,177 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"reflect"
+	"testing"
+	"time"
+)
+
+type resourceRepositoryStub struct {
+	activeQAConfig QAConfigVersion
+	savedInput     RetrievalTestInput
+	savedRunErr    error
+	saveCalled     bool
+}
+
+func (r *resourceRepositoryStub) GetResponseRun(context.Context, string, string) (ResponseRun, error) {
+	return ResponseRun{}, nil
+}
+func (r *resourceRepositoryStub) CancelResponseRun(context.Context, string, string) (ResponseRun, error) {
+	return ResponseRun{}, nil
+}
+func (r *resourceRepositoryStub) ListStreamEvents(context.Context, string, string, string, int) ([]StreamEvent, error) {
+	return nil, nil
+}
+func (r *resourceRepositoryStub) ListMessageCitations(context.Context, string, string) ([]Citation, error) {
+	return nil, nil
+}
+func (r *resourceRepositoryStub) GetCitation(context.Context, string, string) (Citation, error) {
+	return Citation{}, nil
+}
+func (r *resourceRepositoryStub) LookupCitations(context.Context, string, []string) ([]Citation, error) {
+	return nil, nil
+}
+func (r *resourceRepositoryStub) ListToolCalls(context.Context, string, string) ([]AgentToolCall, error) {
+	return nil, nil
+}
+func (r *resourceRepositoryStub) GetActiveQAConfigVersion(context.Context) (QAConfigVersion, error) {
+	return r.activeQAConfig, nil
+}
+func (r *resourceRepositoryStub) CreateQAConfigVersionResource(context.Context, string, CreateQAConfigVersionInput) (QAConfigVersion, error) {
+	return QAConfigVersion{}, nil
+}
+func (r *resourceRepositoryStub) GetActiveLLMConfigVersion(context.Context) (LLMConfigVersion, error) {
+	return LLMConfigVersion{}, nil
+}
+func (r *resourceRepositoryStub) CreateLLMConfigVersionResource(context.Context, string, CreateLLMConfigVersionInput) (LLMConfigVersion, error) {
+	return LLMConfigVersion{}, nil
+}
+func (r *resourceRepositoryStub) SaveLLMConnectionTest(context.Context, string, LLMProfileTestResult) (LLMProfileTestResult, error) {
+	return LLMProfileTestResult{}, nil
+}
+func (r *resourceRepositoryStub) SaveRetrievalTestRun(_ context.Context, _ string, input RetrievalTestInput, results []RetrievalTestResult, duration time.Duration, runErr error) (RetrievalTestRun, error) {
+	r.saveCalled = true
+	r.savedInput = input
+	r.savedRunErr = runErr
+	status := "completed"
+	errorMessage := ""
+	if runErr != nil {
+		status = "failed"
+		errorMessage = "knowledge retrieval failed"
+	}
+	return RetrievalTestRun{ID: "rt-1", Question: input.Question, Status: status, ResultCount: len(results), LatencyMS: duration.Milliseconds(), ErrorMessage: errorMessage, Results: results}, nil
+}
+func (r *resourceRepositoryStub) GetRetrievalTestRun(context.Context, string, string) (RetrievalTestRun, error) {
+	return RetrievalTestRun{}, nil
+}
+func (r *resourceRepositoryStub) GetMetricsOverview(context.Context, int) (MetricsOverview, error) {
+	return MetricsOverview{}, nil
+}
+func (r *resourceRepositoryStub) GetMetricsTrend(context.Context, int) (MetricsTrend, error) {
+	return MetricsTrend{}, nil
+}
+func (r *resourceRepositoryStub) GetTopQueries(context.Context, int, int) ([]TopQuery, error) {
+	return nil, nil
+}
+func (r *resourceRepositoryStub) GetIntentDistribution(context.Context, int) ([]IntentDistribution, error) {
+	return nil, nil
+}
+
+type knowledgeRetrieverStub struct {
+	input   RetrievalTestInput
+	results []RetrievalTestResult
+	err     error
+}
+
+func (r *knowledgeRetrieverStub) Retrieve(_ context.Context, _ string, input RetrievalTestInput) ([]RetrievalTestResult, error) {
+	r.input = input
+	return r.results, r.err
+}
+
+type llmTesterStub struct{}
+
+func (llmTesterStub) TestLLM(context.Context, RuntimeLLMConfig) (LLMConnectionTestResult, error) {
+	return LLMConnectionTestResult{}, nil
+}
+
+type runCancellerStub struct{}
+
+func (runCancellerStub) CancelActiveRun(string) {}
+
+func TestCreateRetrievalTestRunMergesActiveConfigAndOverrides(t *testing.T) {
+	repository := &resourceRepositoryStub{activeQAConfig: QAConfigVersion{
+		ID:                      "qa-config-id",
+		DefaultKnowledgeBaseIDs: []string{"kb-default"},
+		Retrieval:               RetrievalSettings{TopK: 5, ScoreThreshold: .7, EnableRerank: false},
+	}}
+	retriever := &knowledgeRetrieverStub{results: []RetrievalTestResult{{DocumentID: "doc-1", Metadata: map[string]any{}}}}
+	resources, err := NewResourceService(repository, retriever, llmTesterStub{}, RuntimeLLMConfig{}, runCancellerStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := resources.CreateRetrievalTestRun(context.Background(), "user-1", RetrievalTestInput{
+		Question:  "  what is qa  ",
+		Retrieval: RetrievalSettings{TopK: 8},
+		Overrides: RetrievalSettings{
+			SimilarityThreshold: .35,
+			UseRerank:           true,
+			RerankTopN:          4,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantRetrieval := RetrievalSettings{TopK: 8, ScoreThreshold: .35, EnableRerank: true, RerankTopN: 4}
+	if retriever.input.Question != "what is qa" || !reflect.DeepEqual(retriever.input.KnowledgeBaseIDs, []string{"kb-default"}) || retriever.input.QAConfigVersionID != "qa-config-id" || !reflect.DeepEqual(retriever.input.Retrieval, wantRetrieval) {
+		t.Fatalf("retriever input=%+v", retriever.input)
+	}
+	if !repository.saveCalled || !reflect.DeepEqual(repository.savedInput.Retrieval, wantRetrieval) {
+		t.Fatalf("saved input=%+v", repository.savedInput)
+	}
+	if run.Status != "completed" || run.ResultCount != 1 {
+		t.Fatalf("run=%+v", run)
+	}
+}
+
+func TestCreateRetrievalTestRunSavesKnowledgeFailureSummary(t *testing.T) {
+	repository := &resourceRepositoryStub{activeQAConfig: QAConfigVersion{ID: "qa-config-id", Retrieval: RetrievalSettings{TopK: 5}}}
+	retriever := &knowledgeRetrieverStub{err: errors.New("dial tcp internal.service: timeout")}
+	resources, err := NewResourceService(repository, retriever, llmTesterStub{}, RuntimeLLMConfig{}, runCancellerStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := resources.CreateRetrievalTestRun(context.Background(), "user-1", RetrievalTestInput{Question: "query"})
+	appErr, ok := Classify(err)
+	if !ok || appErr.Code != CodeDependency {
+		t.Fatalf("error=%v, want dependency_error", err)
+	}
+	if !repository.saveCalled || repository.savedRunErr == nil {
+		t.Fatalf("saveCalled=%v runErr=%v", repository.saveCalled, repository.savedRunErr)
+	}
+	if run.Status != "failed" || run.ErrorMessage != "knowledge retrieval failed" {
+		t.Fatalf("run=%+v", run)
+	}
+}
+
+func TestCreateRetrievalTestRunPreservesKnowledgeForbidden(t *testing.T) {
+	repository := &resourceRepositoryStub{activeQAConfig: QAConfigVersion{ID: "qa-config-id", Retrieval: RetrievalSettings{TopK: 5}}}
+	retriever := &knowledgeRetrieverStub{err: NewError(CodeForbidden, "knowledge base access is forbidden", nil)}
+	resources, err := NewResourceService(repository, retriever, llmTesterStub{}, RuntimeLLMConfig{}, runCancellerStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := resources.CreateRetrievalTestRun(context.Background(), "user-1", RetrievalTestInput{Question: "query"})
+	appErr, ok := Classify(err)
+	if !ok || appErr.Code != CodeForbidden {
+		t.Fatalf("error=%v, want forbidden", err)
+	}
+	if run.Status != "failed" || run.ErrorMessage != "knowledge retrieval failed" {
+		t.Fatalf("run=%+v", run)
+	}
+}

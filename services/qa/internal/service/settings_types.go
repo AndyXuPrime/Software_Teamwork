@@ -6,11 +6,13 @@ import (
 )
 
 type RetrievalSettings struct {
-	TopK            int     `json:"topK"`
-	ScoreThreshold  float64 `json:"scoreThreshold"`
-	EnableRerank    bool    `json:"enableRerank"`
-	RerankThreshold float64 `json:"rerankThreshold"`
-	RerankTopN      int     `json:"rerankTopN"`
+	TopK                int     `json:"topK"`
+	ScoreThreshold      float64 `json:"scoreThreshold"`
+	SimilarityThreshold float64 `json:"similarityThreshold,omitempty"`
+	EnableRerank        bool    `json:"enableRerank"`
+	UseRerank           bool    `json:"useRerank,omitempty"`
+	RerankThreshold     float64 `json:"rerankThreshold"`
+	RerankTopN          int     `json:"rerankTopN"`
 }
 
 type StoredLLMConfig struct {

@@ -162,34 +162,42 @@ type LLMProfileTestResult struct {
 }
 
 type RetrievalTestInput struct {
-	Question         string            `json:"question"`
-	Query            string            `json:"query,omitempty"`
-	KnowledgeBaseIDs []string          `json:"knowledgeBaseIds,omitempty"`
-	Retrieval        RetrievalSettings `json:"retrieval,omitempty"`
-	Overrides        RetrievalSettings `json:"overrides,omitempty"`
+	QAConfigVersionID string            `json:"-"`
+	Question          string            `json:"question"`
+	Query             string            `json:"query,omitempty"`
+	KnowledgeBaseIDs  []string          `json:"knowledgeBaseIds,omitempty"`
+	Retrieval         RetrievalSettings `json:"retrieval,omitempty"`
+	Overrides         RetrievalSettings `json:"overrides,omitempty"`
 }
 
 type RetrievalTestResult struct {
 	RankNo          int            `json:"rankNo"`
 	KnowledgeBaseID string         `json:"knowledgeBaseId,omitempty"`
 	DocumentID      string         `json:"documentId,omitempty"`
+	DocID           string         `json:"docId,omitempty"`
 	DocumentName    string         `json:"documentName,omitempty"`
+	DocName         string         `json:"docName,omitempty"`
 	ChunkID         string         `json:"chunkId,omitempty"`
 	SectionPath     string         `json:"sectionPath,omitempty"`
 	Score           float64        `json:"score,omitempty"`
 	VectorScore     float64        `json:"vectorScore,omitempty"`
 	RerankScore     *float64       `json:"rerankScore,omitempty"`
 	ContentPreview  string         `json:"contentPreview,omitempty"`
+	Text            string         `json:"text,omitempty"`
 	Metadata        map[string]any `json:"metadata"`
 }
 
 type RetrievalTestRun struct {
-	ID         string                `json:"id"`
-	Question   string                `json:"question"`
-	Status     string                `json:"status"`
-	Results    []RetrievalTestResult `json:"results"`
-	CreatedAt  time.Time             `json:"createdAt"`
-	FinishedAt *time.Time            `json:"finishedAt,omitempty"`
+	ID           string                `json:"id"`
+	Question     string                `json:"question"`
+	Query        string                `json:"query,omitempty"`
+	Status       string                `json:"status"`
+	ResultCount  int                   `json:"resultCount"`
+	LatencyMS    int64                 `json:"latencyMs,omitempty"`
+	ErrorMessage string                `json:"errorMessage,omitempty"`
+	Results      []RetrievalTestResult `json:"results"`
+	CreatedAt    time.Time             `json:"createdAt"`
+	FinishedAt   *time.Time            `json:"finishedAt,omitempty"`
 }
 
 type MetricsOverview struct {
@@ -354,22 +362,98 @@ func (s *ResourceService) TestLLMConnection(ctx context.Context, userID string, 
 	return s.repository.SaveLLMConnectionTest(ctx, userID, result)
 }
 func (s *ResourceService) CreateRetrievalTestRun(ctx context.Context, userID string, input RetrievalTestInput) (RetrievalTestRun, error) {
-	if strings.TrimSpace(input.Question) == "" {
+	input.Question = strings.TrimSpace(input.Question)
+	if input.Question == "" {
 		input.Question = strings.TrimSpace(input.Query)
 	}
 	if input.Question == "" {
 		return RetrievalTestRun{}, ValidationError(map[string]string{"question": "is required"})
 	}
+	prepared, err := s.prepareRetrievalTestInput(ctx, input)
+	if err != nil {
+		return RetrievalTestRun{}, err
+	}
 	started := s.now()
-	results, retrieveErr := s.retriever.Retrieve(ctx, userID, input)
-	run, saveErr := s.repository.SaveRetrievalTestRun(context.WithoutCancel(ctx), userID, input, results, s.now().Sub(started), retrieveErr)
+	results, retrieveErr := s.retriever.Retrieve(ctx, userID, prepared)
+	run, saveErr := s.repository.SaveRetrievalTestRun(context.WithoutCancel(ctx), userID, prepared, results, s.now().Sub(started), retrieveErr)
 	if saveErr != nil {
 		return RetrievalTestRun{}, saveErr
 	}
 	if retrieveErr != nil {
+		if appErr, ok := Classify(retrieveErr); ok {
+			return run, appErr
+		}
 		return run, NewError(CodeDependency, "knowledge retrieval failed", retrieveErr)
 	}
 	return run, nil
+}
+
+func (s *ResourceService) prepareRetrievalTestInput(ctx context.Context, input RetrievalTestInput) (RetrievalTestInput, error) {
+	active, err := s.repository.GetActiveQAConfigVersion(ctx)
+	if err != nil {
+		return input, err
+	}
+	input.QAConfigVersionID = active.ID
+	if len(input.KnowledgeBaseIDs) == 0 {
+		input.KnowledgeBaseIDs = append([]string(nil), active.DefaultKnowledgeBaseIDs...)
+	}
+	input.KnowledgeBaseIDs = normalizeIDs(input.KnowledgeBaseIDs)
+	if len(input.KnowledgeBaseIDs) > 50 {
+		return input, ValidationError(map[string]string{"knowledgeBaseIds": "must not contain more than 50 items"})
+	}
+	retrieval := mergeRetrievalSettings(active.Retrieval, input.Retrieval)
+	retrieval = mergeRetrievalSettings(retrieval, input.Overrides)
+	if err := validateRetrievalSettings(retrieval); err != nil {
+		return input, err
+	}
+	input.Retrieval = retrieval
+	input.Overrides = RetrievalSettings{}
+	return input, nil
+}
+
+func mergeRetrievalSettings(base, override RetrievalSettings) RetrievalSettings {
+	if override.TopK != 0 {
+		base.TopK = override.TopK
+	}
+	threshold := override.ScoreThreshold
+	if threshold == 0 {
+		threshold = override.SimilarityThreshold
+	}
+	if threshold != 0 {
+		base.ScoreThreshold = threshold
+	}
+	if override.EnableRerank || override.UseRerank {
+		base.EnableRerank = true
+	}
+	if override.RerankThreshold != 0 {
+		base.RerankThreshold = override.RerankThreshold
+	}
+	if override.RerankTopN != 0 {
+		base.RerankTopN = override.RerankTopN
+	}
+	base.SimilarityThreshold = 0
+	base.UseRerank = false
+	return base
+}
+
+func validateRetrievalSettings(value RetrievalSettings) error {
+	fields := map[string]string{}
+	if value.TopK <= 0 || value.TopK > 100 {
+		fields["retrieval.topK"] = "must be between 1 and 100"
+	}
+	if value.ScoreThreshold < 0 || value.ScoreThreshold > 1 {
+		fields["retrieval.scoreThreshold"] = "must be between 0 and 1"
+	}
+	if value.RerankThreshold < 0 || value.RerankThreshold > 1 {
+		fields["retrieval.rerankThreshold"] = "must be between 0 and 1"
+	}
+	if value.RerankTopN < 0 {
+		fields["retrieval.rerankTopN"] = "must be positive"
+	}
+	if len(fields) > 0 {
+		return ValidationError(fields)
+	}
+	return nil
 }
 func (s *ResourceService) GetRetrievalTestRun(ctx context.Context, userID, id string) (RetrievalTestRun, error) {
 	return s.repository.GetRetrievalTestRun(ctx, userID, id)
