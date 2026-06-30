@@ -287,6 +287,7 @@ export function ChatPage() {
           patchAssistant({ thinking: [...steps] })
         },
         onAnswerCompleted(data) {
+          if (!verifySeq(data.seq)) return
           setStreaming(false)
           abortRef.current = null
           const runId = typeof data.responseRunId === 'string' ? data.responseRunId : undefined
