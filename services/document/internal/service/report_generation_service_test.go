@@ -121,6 +121,96 @@ func TestReportGenerationServiceKeepsGeneratedSectionsOnPartialFailure(t *testin
 	}
 }
 
+func TestReportGenerationServiceContentGenerationUsesCurrentOutlineSections(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer peak inspection",
+		ReportType: "summer_peak_inspection",
+		Topic:      "summer power supply",
+		CreatorID:  "user-1",
+		Status:     ReportStatusOutlineGenerated,
+	}
+	repo.jobs["job-1"] = ReportJob{ID: "job-1", JobType: JobTypeContentGeneration, ReportID: "report-1"}
+	repo.outlines["outline-old"] = ReportOutline{
+		ID:        "outline-old",
+		ReportID:  "report-1",
+		Version:   1,
+		IsCurrent: false,
+	}
+	repo.outlines["outline-current"] = ReportOutline{
+		ID:        "outline-current",
+		ReportID:  "report-1",
+		Version:   2,
+		IsCurrent: true,
+	}
+	repo.sections["section-old"] = ReportSection{
+		ID:               "section-old",
+		ReportID:         "report-1",
+		OutlineID:        "outline-old",
+		Title:            "Legacy outline section",
+		SortOrder:        0,
+		Version:          1,
+		GenerationStatus: JobStatusPending,
+	}
+	repo.sections["section-current-1"] = ReportSection{
+		ID:               "section-current-1",
+		ReportID:         "report-1",
+		OutlineID:        "outline-current",
+		Title:            "Current overview",
+		SortOrder:        1,
+		Version:          1,
+		GenerationStatus: JobStatusPending,
+	}
+	repo.sections["section-current-2"] = ReportSection{
+		ID:               "section-current-2",
+		ReportID:         "report-1",
+		OutlineID:        "outline-current",
+		Title:            "Current risk",
+		SortOrder:        2,
+		Version:          1,
+		GenerationStatus: JobStatusPending,
+	}
+	chat := &fakeGenerationChatClient{
+		responses: []ChatCompletionResponse{
+			{Content: `{"content":"current overview body","tables":[]}`},
+			{Content: `{"content":"current risk body","tables":[]}`},
+			{Content: `{"content":"legacy body","tables":[]}`},
+		},
+	}
+	svc := NewReportGenerationService(repo, chat)
+	svc.clock = func() time.Time { return time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC) }
+
+	result, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-content",
+		JobType:   JobTypeContentGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteReportGeneration() error = %v", err)
+	}
+	if result.Status != JobStatusSucceeded {
+		t.Fatalf("result status = %q, want succeeded", result.Status)
+	}
+	if len(chat.requests) != 2 {
+		t.Fatalf("chat request count = %d, want 2 current outline sections", len(chat.requests))
+	}
+	if got := repo.sections["section-old"]; got.Content != "" || got.GenerationStatus != JobStatusPending {
+		t.Fatalf("old outline section was generated: %+v", got)
+	}
+	if got := repo.sections["section-current-1"]; got.Content != "current overview body" || got.Version != 2 {
+		t.Fatalf("current section 1 = %+v", got)
+	}
+	if got := repo.sections["section-current-2"]; got.Content != "current risk body" || got.Version != 2 {
+		t.Fatalf("current section 2 = %+v", got)
+	}
+	lastProgress := repo.progressUpdates[len(repo.progressUpdates)-1]
+	if lastProgress["completed"] != 2 || lastProgress["total"] != 2 {
+		t.Fatalf("last progress = %+v, want 2/2 current outline sections", lastProgress)
+	}
+}
+
 func TestReportGenerationServiceRejectsUnsupportedReportTypeForContentJobs(t *testing.T) {
 	tests := []struct {
 		name       string

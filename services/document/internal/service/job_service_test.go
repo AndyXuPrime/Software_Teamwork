@@ -288,6 +288,33 @@ func TestJobServiceCreateGenerationJobMarksReportFailedWhenEnqueueFails(t *testi
 	}
 }
 
+func TestJobServiceCreateGenerationJobRollsBackWhenInitialStateFails(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeJobRepository{
+		report:              Report{ID: "report-1", CreatorID: "user-1"},
+		generationStatusErr: NewError(CodeConflict, "report has been deleted", nil),
+	}
+	enqueuer := &fakeTaskEnqueuer{}
+	svc := NewJobService(repo, enqueuer)
+
+	_, err := svc.CreateJob(ctx, RequestContext{UserID: "user-1"}, CreateJobInput{
+		RequestID: "req-race",
+		UserID:    "user-1",
+		ReportID:  "report-1",
+		JobType:   JobTypeOutlineGeneration,
+	})
+	if err == nil {
+		t.Fatal("CreateJob() error = nil, want conflict")
+	}
+	appErr, ok := Classify(err)
+	if !ok || appErr.Code != CodeConflict {
+		t.Fatalf("CreateJob() error = %v, want conflict", err)
+	}
+	if repo.createdJob.ID != "" || repo.createdAttempt.ID != "" || repo.reportFile.ID != "" || enqueuer.jobType != "" {
+		t.Fatalf("failed initial state should not leave job/attempt/file or enqueue, job=%+v attempt=%+v file=%+v enqueued=%q", repo.createdJob, repo.createdAttempt, repo.reportFile, enqueuer.jobType)
+	}
+}
+
 func TestJobServiceCreateJobRecordsFailedOperationLogWhenEnqueueFails(t *testing.T) {
 	ctx := context.Background()
 	repo := &fakeJobRepository{
@@ -413,14 +440,32 @@ func TestRetryJobRejectsReportWithDeletedAtSet(t *testing.T) {
 }
 
 type fakeJobRepository struct {
-	report         Report
-	job            ReportJob
-	createdJob     ReportJob
-	createdAttempt ReportJobAttempt
-	reportFile     ReportFile
-	sections       map[string]ReportSection
-	operationLogs  []OperationLog
-	taskIDErr      error
+	report              Report
+	job                 ReportJob
+	createdJob          ReportJob
+	createdAttempt      ReportJobAttempt
+	reportFile          ReportFile
+	sections            map[string]ReportSection
+	operationLogs       []OperationLog
+	taskIDErr           error
+	generationStatusErr error
+}
+
+func (f *fakeJobRepository) WithinJobTx(ctx context.Context, fn func(JobRepository) error) error {
+	snapshot := *f
+	if f.sections != nil {
+		snapshot.sections = make(map[string]ReportSection, len(f.sections))
+		for id, section := range f.sections {
+			snapshot.sections[id] = section
+		}
+	}
+	snapshot.operationLogs = append([]OperationLog(nil), f.operationLogs...)
+
+	if err := fn(f); err != nil {
+		*f = snapshot
+		return err
+	}
+	return nil
 }
 
 func (f *fakeJobRepository) GetReportByID(context.Context, string) (Report, error) {
@@ -480,6 +525,9 @@ func (f *fakeJobRepository) UpdateReportJobStatus(_ context.Context, id string, 
 }
 
 func (f *fakeJobRepository) UpdateReportGenerationStatus(_ context.Context, reportID, jobID string, jobType JobType, status JobStatus, updatedAt time.Time) error {
+	if f.generationStatusErr != nil {
+		return f.generationStatusErr
+	}
 	if f.report.ID != reportID {
 		return NewError(CodeNotFound, "report not found", nil)
 	}

@@ -77,6 +77,30 @@ func (r *PostgresRepository) WithinTx(ctx context.Context, fn func(service.Repor
 	return nil
 }
 
+func (r *PostgresRepository) WithinJobTx(ctx context.Context, fn func(service.JobRepository) error) error {
+	if _, inTx := r.db.(pgx.Tx); inTx {
+		return fn(r)
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin report job transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	txRepo := &PostgresRepository{
+		pool:    r.pool,
+		db:      tx,
+		queries: r.queries.WithTx(tx),
+	}
+	if err := fn(txRepo); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit report job transaction: %w", err)
+	}
+	return nil
+}
+
 func (r *PostgresRepository) UpsertReportType(ctx context.Context, value service.ReportType) (service.ReportType, error) {
 	if value.CreatedAt.IsZero() {
 		value.CreatedAt = time.Now().UTC()

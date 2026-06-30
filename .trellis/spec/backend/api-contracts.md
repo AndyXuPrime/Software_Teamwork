@@ -1336,6 +1336,11 @@ report | section
   `report_job_attempts` row, a report file row, or an asynq task.
 - For accepted jobs, PostgreSQL remains the authority for job, attempt, event,
   report generation status, and report file state. Redis/asynq only queues work.
+- The initial durable state for an accepted job (`report_jobs`, generation
+  status snapshot, initial `report_job_attempts`, and optional `report_files`)
+  must be created atomically before enqueue. Any failure before enqueue must
+  roll back the initial rows instead of leaving a pending job without an
+  attempt or queue task.
 
 ### 4. Validation & Error Matrix
 
@@ -1346,23 +1351,28 @@ report | section
 | `section_regeneration` missing `target.sectionId` | `400 validation_error` |
 | Target section is missing or belongs to another report | `404 not_found` |
 | Report is soft-deleted by status or `deleted_at` | `409 conflict` before persistence/enqueue |
+| Report becomes invalid while creating initial durable job state | rollback job/attempt/file rows and return the typed conflict or dependency error |
 | Job accepted but enqueue fails | mark created job/attempt/file failed and return dependency error |
 | PostgreSQL query/insert/update failure | `502 dependency_error` unless a typed domain error applies |
 
 ### 5. Good/Base/Bad Cases
 
 - Good: a deleted report returns `409 conflict` before any job, attempt, file, or
-  queue side effect; target scope enums in service-local, Document public, and
-  Gateway public OpenAPI all match `report | section`.
+  queue side effect; a post-job-insert conflict before enqueue rolls back the
+  inserted job; target scope enums in service-local, Document public, and Gateway
+  public OpenAPI all match `report | section`.
 - Base: a report-level generation request omits `target`, creating a pending job
   and first pending attempt before enqueueing the asynq task.
 - Bad: OpenAPI advertises `target.scope: file` while the service returns
-  `unsupported target scope`, or a deleted report leaves an orphan pending job.
+  `unsupported target scope`, or a deleted/concurrently invalid report leaves an
+  orphan pending job.
 
 ### 6. Tests Required
 
 - Service tests must cover deleted-report rejection for every supported job type
   and assert no job, attempt, report file, or enqueue side effect occurs.
+- Service or repository tests must cover a failure after `report_jobs` insert but
+  before enqueue and assert the inserted initial job state is rolled back.
 - Service tests must cover section target existence and same-report ownership.
 - Contract checks must parse the changed OpenAPI files and verify
   `CreateReportJobRequest.target.scope` only advertises implemented values.

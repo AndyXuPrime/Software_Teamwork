@@ -164,6 +164,12 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 	if err != nil {
 		return ReportGenerationExecutionResult{}, dependencyError("list report sections", err)
 	}
+	if job.JobType != JobTypeSectionRegeneration {
+		sections, err = s.currentOutlineSections(ctx, report.ID, sections)
+		if err != nil {
+			return ReportGenerationExecutionResult{}, err
+		}
+	}
 	sections = targetGenerationSections(sections, job)
 	if len(sections) == 0 {
 		return ReportGenerationExecutionResult{}, ValidationError(map[string]string{"sections": "no report sections available for content generation"})
@@ -552,6 +558,45 @@ func nextOutlineVersion(existing []ReportOutline) int {
 		}
 	}
 	return next
+}
+
+func (s *ReportGenerationService) currentOutlineSections(ctx context.Context, reportID string, sections []ReportSection) ([]ReportSection, error) {
+	outlines, err := s.repo.ListReportOutlines(ctx, reportID)
+	if err != nil {
+		return nil, dependencyError("list report outlines", err)
+	}
+	currentOutlineID := currentReportOutlineID(outlines)
+	if currentOutlineID == "" {
+		return sections, nil
+	}
+	return sectionsForOutline(sections, currentOutlineID), nil
+}
+
+func currentReportOutlineID(outlines []ReportOutline) string {
+	var current ReportOutline
+	for _, outline := range outlines {
+		if !outline.IsCurrent || strings.TrimSpace(outline.ID) == "" {
+			continue
+		}
+		if current.ID == "" || outline.Version > current.Version {
+			current = outline
+		}
+	}
+	return current.ID
+}
+
+func sectionsForOutline(sections []ReportSection, outlineID string) []ReportSection {
+	outlineID = strings.TrimSpace(outlineID)
+	if outlineID == "" {
+		return sections
+	}
+	filtered := make([]ReportSection, 0, len(sections))
+	for _, section := range sections {
+		if strings.TrimSpace(section.OutlineID) == outlineID {
+			filtered = append(filtered, section)
+		}
+	}
+	return filtered
 }
 
 func targetGenerationSections(sections []ReportSection, job ReportJob) []ReportSection {
