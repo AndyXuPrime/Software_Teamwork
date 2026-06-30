@@ -151,15 +151,7 @@ cd services/ai-gateway
 go test ./...
 ```
 
-若需要针对真实 provider 运行 smoke 请求（env-gated），设置以下环境变量后执行：
-
-```bash
-export AI_GATEWAY_SMOKE_BASE_URL="$AI_GATEWAY_BASE_URL"
-export AI_GATEWAY_SMOKE_SERVICE_TOKEN="$SERVICE_TOKEN"
-go test ./... -run "Integration" -v
-```
-
-> 当上述环境变量未设置时，集成 smoke 测试自动跳过（`t.Skip`），不影响 CI 通过。
+若需要对真实 provider 做手动 smoke 验证，直接使用第 6 节的 curl 示例即可。
 
 ---
 
