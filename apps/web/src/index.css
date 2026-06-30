@@ -172,3 +172,31 @@ body {
 .toast-enter {
   animation: slideDown 0.3s ease-out;
 }
+
+/* ===== Page transition loading circle ===== */
+@keyframes circle_rotate {
+  0% {
+    transform: rotate(0deg);
+    stroke-dashoffset: 160;
+  }
+  100% {
+    transform: rotate(360deg);
+    stroke-dashoffset: -160;
+  }
+}
+
+/* ===== In-app page transition: slide from right ===== */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.page-enter-right {
+  animation: slideInRight 0.35s ease-out;
+}

@@ -1,12 +1,13 @@
 import { Link, useRouter, useRouterState } from '@tanstack/react-router'
 import { Loader2, LogOut, RefreshCw, ShieldAlert } from 'lucide-react'
-import type { PropsWithChildren, ReactNode } from 'react'
+import { type PropsWithChildren, type ReactNode, useEffect } from 'react'
 
 import { apiClient } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import type { PermissionRequirement } from '@/lib/permissions'
 import { canAccess } from '@/lib/permissions'
 import { useAuthStore } from '@/stores/auth-store'
+import { usePageTransitionStore } from '@/stores/page-transition-store'
 
 const pathLabels: Record<string, string> = {
   '/chat': '智能问答',
@@ -71,6 +72,11 @@ export function AppLayout({ children }: PropsWithChildren) {
   const status = useAuthStore((state) => state.status)
   const error = useAuthStore((state) => state.error)
   const restoreSession = useAuthStore((state) => state.restoreSession)
+
+  // Page transition entrance
+  useEffect(() => {
+    usePageTransitionStore.getState().reveal()
+  }, [])
 
   if (status === 'restoring' || status === 'idle') {
     return (
@@ -165,7 +171,13 @@ export function AppLayout({ children }: PropsWithChildren) {
         </div>
       </header>
 
-      <main className="flex-1 overflow-hidden">{children}</main>
+      <main
+        key={pathname}
+        className="page-enter-right flex-1 overflow-y-auto overflow-x-hidden"
+        style={{ scrollbarGutter: 'stable' }}
+      >
+        {children}
+      </main>
     </div>
   )
 }

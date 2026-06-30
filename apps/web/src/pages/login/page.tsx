@@ -1,11 +1,12 @@
 import { useRouter } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useMemo, useState } from 'react'
 import { z } from 'zod'
 
 import { apiClient, ApiError } from '@/api/client'
 import type { UserSummary } from '@/lib/types'
 import { useAuthStore } from '@/stores/auth-store'
+import { usePageTransitionStore } from '@/stores/page-transition-store'
 
 const authSchema = z.object({
   username: z.string().trim().min(1, '请输入用户名'),
@@ -41,12 +42,6 @@ export function LoginPage() {
     [mode],
   )
 
-  useEffect(() => {
-    if (status === 'authenticated') {
-      void router.navigate({ to: '/' })
-    }
-  }, [router, status])
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setFormError(null)
@@ -63,7 +58,9 @@ export function LoginPage() {
       } else {
         await register(parsed.data)
       }
-      await router.navigate({ to: '/' })
+      usePageTransitionStore.getState().cover(() => {
+        void router.navigate({ to: '/' })
+      })
     } catch (caught) {
       setFormError(toErrorMessage(caught))
     }
@@ -311,7 +308,9 @@ export function LoginPage() {
                   } as UserSummary,
                   userName: '开发者',
                 })
-                void router.navigate({ to: '/' })
+                usePageTransitionStore.getState().cover(() => {
+                  void router.navigate({ to: '/' })
+                })
               }}
             >
               跳过登录（开发模式）
