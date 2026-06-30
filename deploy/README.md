@@ -7,8 +7,8 @@ production deployment baseline.
 ## Entry Points
 
 - Browser/frontend entrypoint: `http://localhost:8080` through gateway only.
-- Do not point frontend code at `auth`, `file`, `knowledge`, `qa`, `document`,
-  `ai-gateway`, PostgreSQL, Redis, Qdrant, or MinIO directly.
+- Do not point frontend code at `auth`, `file`, `parser`, `knowledge`, `qa`,
+  `document`, `ai-gateway`, PostgreSQL, Redis, Qdrant, or MinIO directly.
 - Internal service ports are exposed for local debugging only.
 
 ## Start
@@ -74,6 +74,7 @@ The local Qdrant and MinIO images are pinned to explicit tags in
 | qa | 8084 | 8084 | Internal QA service |
 | document | 8085 | 8085 | Internal document service |
 | ai-gateway | 8086 | 8086 | Optional model/profile service |
+| parser | 8087 | 8087 | Internal parser service |
 | postgres | 5432 | 5432 | Local relational databases |
 | redis | 6379 | 6379 | Sessions, queues, coordination |
 | qdrant | 6333/6334 | 6333/6334 | Vector database |
@@ -97,7 +98,10 @@ Override host ports in `deploy/.env`.
 | `FILE_STORAGE_BACKEND` | file | no | `local` in Compose for durable local smoke tests. |
 | `DATABASE_URL` | knowledge | yes | Knowledge PostgreSQL DSN. |
 | `FILE_SERVICE_BASE_URL` | knowledge | yes | Internal File Service URL. |
+| `PARSER_SERVICE_BASE_URL` | knowledge | yes | Internal Parser Service URL. |
+| `PARSER_SERVICE_TOKEN` | knowledge/parser | yes | Local service token for Parser Service calls. |
 | `KNOWLEDGE_REDIS_ADDR` | knowledge | yes | Redis/asynq endpoint. |
+| `PARSER_BACKEND` | parser | no | `document` by default for local text/Office parsing; set `paddleocr` for OCR runtime checks. |
 | `QA_DATABASE_URL` | qa | yes | QA PostgreSQL DSN. |
 | `KNOWLEDGE_SERVICE_URL` | qa | yes | Internal Knowledge Service URL. |
 | `AI_GATEWAY_URL` | qa | yes | Internal chat completions URL; useful when `--profile ai` is running. |
@@ -131,6 +135,7 @@ Invoke-RestMethod http://localhost:8083/readyz
 Invoke-RestMethod http://localhost:8084/readyz
 Invoke-RestMethod http://localhost:8085/readyz
 Invoke-RestMethod http://localhost:8086/readyz
+Invoke-RestMethod http://localhost:8087/readyz
 ```
 
 `gateway /readyz` checks Redis and auth, and verifies owner service URLs are
@@ -175,7 +180,7 @@ same id in the owner service logs.
 | --- | --- | --- |
 | `gateway /readyz` returns `502 dependency_error` | Redis or auth is not ready | `docker compose ps`, `docker compose logs redis auth gateway` |
 | `auth /readyz` returns `postgres unavailable` | Auth migration or PostgreSQL failed | `docker compose logs postgres migrate-auth auth` |
-| Knowledge upload returns `502 dependency_error` | File Service or Redis queue unavailable | `docker compose logs file knowledge redis` |
+| Knowledge upload returns `502 dependency_error` | File Service, Parser Service, or Redis queue unavailable | `docker compose logs file parser knowledge redis` |
 | Document readyz returns dependency error | Document DB migration failed or DB is unreachable | `docker compose logs migrate-document document postgres` |
 | QA message call fails on model invocation | Optional `ai-gateway` profile not running, fake local credential still in use, or host provider is not listening on `host.docker.internal:11434` | `docker compose --profile ai ps`, `docker compose logs ai-gateway qa` |
 | MinIO bucket missing | `minio-init` did not complete | `docker compose logs minio minio-init` |

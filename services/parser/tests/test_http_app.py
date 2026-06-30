@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from parser_service.config import Settings
 from parser_service.http import create_app
+from parser_service.http.app import build_parser_service
 from parser_service.service import BackendHealth, ParsedDocument, ParsedPage, ParserService
 
 
@@ -139,6 +140,59 @@ def test_create_parsed_document_validation_uses_project_error_shape():
             "message": "request validation failed",
             "requestId": "req_123",
             "fields": {"dataBase64": "invalid"},
+        }
+    }
+
+
+def test_document_backend_mode_starts_without_paddleocr_and_parses_text():
+    service = build_parser_service(Settings(backend="document"))
+    app = create_app(settings=Settings(backend="document"), parser_service=service)
+    client = TestClient(app)
+
+    ready = client.get("/readyz", headers={"X-Request-Id": "req_ready"})
+    assert ready.status_code == 200
+    assert ready.json()["data"]["backend"] == "document"
+
+    response = client.post(
+        "/internal/v1/parsed-documents",
+        json={
+            "documentName": "notes.md",
+            "contentType": "text/markdown",
+            "dataBase64": _b64(b"# Title\n\nbody"),
+        },
+        headers={"X-Request-Id": "req_123"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "content": "# Title\nbody",
+        "title": "Title",
+        "backend": "text",
+    }
+
+
+def test_document_backend_mode_rejects_ocr_formats_without_loading_paddleocr():
+    service = build_parser_service(Settings(backend="document"))
+    app = create_app(settings=Settings(backend="document"), parser_service=service)
+    client = TestClient(app)
+
+    response = client.post(
+        "/internal/v1/parsed-documents",
+        json={
+            "documentName": "scan.pdf",
+            "contentType": "application/pdf",
+            "dataBase64": _b64(b"%PDF-1.7\n"),
+        },
+        headers={"X-Request-Id": "req_123"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": {
+            "code": "validation_error",
+            "message": "document format requires OCR backend",
+            "requestId": "req_123",
+            "fields": {"file": "pdf and image parsing require PARSER_BACKEND=paddleocr"},
         }
     }
 

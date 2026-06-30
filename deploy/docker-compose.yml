@@ -227,6 +227,22 @@ services:
       timeout: 3s
       retries: 30
 
+  parser:
+    build:
+      context: ../services/parser
+      dockerfile: Dockerfile
+    environment:
+      PARSER_PORT: 8087
+      PARSER_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
+      PARSER_BACKEND: ${PARSER_BACKEND:-document}
+    ports:
+      - "${PARSER_HTTP_PORT:-8087}:8087"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8087/readyz', timeout=2).read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
   knowledge:
     build:
       context: ../services/knowledge
@@ -237,6 +253,8 @@ services:
       KNOWLEDGE_SERVICE_VERSION: local
       DATABASE_URL: postgres://knowledge_app:knowledge_app_dev@postgres:5432/knowledge_system?sslmode=disable
       FILE_SERVICE_BASE_URL: http://file:8082
+      PARSER_SERVICE_BASE_URL: http://parser:8087
+      PARSER_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
       KNOWLEDGE_REDIS_ADDR: redis:6379
       KNOWLEDGE_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
     ports:
@@ -245,6 +263,8 @@ services:
       migrate-knowledge:
         condition: service_completed_successfully
       file:
+        condition: service_healthy
+      parser:
         condition: service_healthy
       redis:
         condition: service_healthy

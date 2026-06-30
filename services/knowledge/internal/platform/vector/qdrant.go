@@ -76,13 +76,34 @@ func (c *QdrantClient) Upsert(ctx context.Context, points []service.VectorPoint)
 	return c.postJSON(ctx, http.MethodPut, "/collections/"+url.PathEscape(c.collection)+"/points?wait=true", payload)
 }
 
-func (c *QdrantClient) DeleteByDocument(ctx context.Context, documentID string) error {
-	payload := qdrantDeleteRequest{
-		Filter: qdrantFilter{Must: []qdrantCondition{{
-			Key:   "document_id",
+func (c *QdrantClient) DeleteByDocumentIngestionAttempt(ctx context.Context, documentID string, ingestionAttempt string) error {
+	return c.deleteByFilter(ctx, qdrantFilter{Must: []qdrantCondition{
+		{
+			Key:   service.VectorPayloadDocumentID,
 			Match: qdrantMatch{Value: strings.TrimSpace(documentID)},
-		}}},
-	}
+		},
+		{
+			Key:   service.VectorPayloadIngestionAttempt,
+			Match: qdrantMatch{Value: strings.TrimSpace(ingestionAttempt)},
+		},
+	}})
+}
+
+func (c *QdrantClient) DeleteStaleDocumentPoints(ctx context.Context, documentID string, activeIngestionAttempt string) error {
+	return c.deleteByFilter(ctx, qdrantFilter{
+		Must: []qdrantCondition{{
+			Key:   service.VectorPayloadDocumentID,
+			Match: qdrantMatch{Value: strings.TrimSpace(documentID)},
+		}},
+		MustNot: []qdrantCondition{{
+			Key:   service.VectorPayloadIngestionAttempt,
+			Match: qdrantMatch{Value: strings.TrimSpace(activeIngestionAttempt)},
+		}},
+	})
+}
+
+func (c *QdrantClient) deleteByFilter(ctx context.Context, filter qdrantFilter) error {
+	payload := qdrantDeleteRequest{Filter: filter}
 	return c.postJSON(ctx, http.MethodPost, "/collections/"+url.PathEscape(c.collection)+"/points/delete?wait=true", payload)
 }
 
@@ -127,7 +148,8 @@ type qdrantDeleteRequest struct {
 }
 
 type qdrantFilter struct {
-	Must []qdrantCondition `json:"must"`
+	Must    []qdrantCondition `json:"must,omitempty"`
+	MustNot []qdrantCondition `json:"must_not,omitempty"`
 }
 
 type qdrantCondition struct {
