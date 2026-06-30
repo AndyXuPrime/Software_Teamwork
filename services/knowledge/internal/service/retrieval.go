@@ -8,9 +8,12 @@ import (
 )
 
 const (
-	maxKnowledgeQueryLength = 2000
-	maxRetrievalTopK        = 100
-	defaultContentPreview   = 500
+	maxKnowledgeQueryLength        = 2000
+	maxRetrievalTopK               = 100
+	retrievalKnowledgeBasePageSize = 200
+	retrievalCandidateMultiplier   = 5
+	maxVectorCandidateLimit        = 500
+	defaultContentPreview          = 500
 )
 
 type KnowledgeQueryInput struct {
@@ -106,11 +109,12 @@ func (s *Service) CreateKnowledgeQuery(ctx context.Context, reqCtx RequestContex
 	}
 	if len(allowedKnowledgeBaseIDs) == 0 {
 		queryID := s.newID("kq")
+		candidateLimit := retrievalCandidateLimit(topK)
 		return KnowledgeQuerySummary{
 			ID:      queryID,
 			Query:   query,
 			Results: []KnowledgeQueryResult{},
-			Trace:   s.baseKnowledgeQueryTrace(topK, scoreThreshold, input.Rerank, rerankTopN),
+			Trace:   s.baseKnowledgeQueryTrace(candidateLimit, scoreThreshold, input.Rerank, rerankTopN),
 		}, nil
 	}
 
@@ -126,12 +130,13 @@ func (s *Service) CreateKnowledgeQuery(ctx context.Context, reqCtx RequestContex
 		return KnowledgeQuerySummary{}, DependencyError("knowledge query embedding failed", nil)
 	}
 
+	candidateLimit := retrievalCandidateLimit(topK)
 	hits, err := s.vectorIndex.Search(ctx, VectorSearchRequest{
 		Vector:           embedding.Vectors[0],
 		KnowledgeBaseIDs: allowedKnowledgeBaseIDs,
 		Tags:             tags,
 		MetadataFilter:   metadataFilter,
-		Limit:            topK,
+		Limit:            candidateLimit,
 		ScoreThreshold:   scoreThreshold,
 	})
 	if err != nil {
@@ -153,7 +158,7 @@ func (s *Service) CreateKnowledgeQuery(ctx context.Context, reqCtx RequestContex
 	}
 
 	queryID := s.newID("kq")
-	trace := s.baseKnowledgeQueryTrace(topK, scoreThreshold, input.Rerank, rerankTopN)
+	trace := s.baseKnowledgeQueryTrace(candidateLimit, scoreThreshold, input.Rerank, rerankTopN)
 	trace.EmbeddingProvider = strings.TrimSpace(embedding.Provider)
 	trace.EmbeddingModel = strings.TrimSpace(embedding.Model)
 	trace.EmbeddingDimension = embedding.Dimension
@@ -180,6 +185,17 @@ func (s *Service) baseKnowledgeQueryTrace(topK int, scoreThreshold float64, rera
 		RerankTopN:         cloneIntPointer(rerankTopN),
 	}
 	return normalizeKnowledgeQueryTrace(trace)
+}
+
+func retrievalCandidateLimit(topK int) int {
+	limit := topK * retrievalCandidateMultiplier
+	if limit < topK {
+		limit = topK
+	}
+	if limit > maxVectorCandidateLimit {
+		limit = maxVectorCandidateLimit
+	}
+	return limit
 }
 
 func normalizeKnowledgeQueryTrace(trace KnowledgeQueryTrace) KnowledgeQueryTrace {
@@ -281,12 +297,24 @@ func (s *Service) resolveRetrievalKnowledgeBases(ctx context.Context, scope Acce
 		return normalized, nil
 	}
 
-	list, err := s.repo.ListKnowledgeBases(ctx, scope, PageInput{Page: 1, PageSize: 200})
-	if err != nil {
-		return nil, DependencyError("knowledge base metadata access failed", err)
-	}
-	for _, base := range list.Items {
-		normalized = append(normalized, base.ID)
+	for page := 1; ; page++ {
+		list, err := s.repo.ListKnowledgeBases(ctx, scope, PageInput{Page: page, PageSize: retrievalKnowledgeBasePageSize})
+		if err != nil {
+			return nil, DependencyError("knowledge base metadata access failed", err)
+		}
+		for _, base := range list.Items {
+			if _, exists := seen[base.ID]; exists {
+				continue
+			}
+			seen[base.ID] = struct{}{}
+			normalized = append(normalized, base.ID)
+		}
+		if len(list.Items) == 0 {
+			break
+		}
+		if len(list.Items) < retrievalKnowledgeBasePageSize {
+			break
+		}
 	}
 	return normalized, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -90,10 +91,10 @@ func TestKnowledgeQueryFiltersAndHydratesSafeResults(t *testing.T) {
 	if result.Results[0].ContentPreview == "" || result.Results[0].DocumentName != "doc_ready.md" {
 		t.Fatalf("hydrated result = %+v", result.Results[0])
 	}
-	if index.request.Limit != 3 || index.request.ScoreThreshold != threshold || strings.Join(index.request.Tags, ",") != "ops" || index.request.MetadataFilter["region"] != "east" {
+	if index.request.Limit != 15 || index.request.ScoreThreshold != threshold || strings.Join(index.request.Tags, ",") != "ops" || index.request.MetadataFilter["region"] != "east" {
 		t.Fatalf("vector request = %+v", index.request)
 	}
-	if result.Trace.HitCount != 1 || result.Trace.SearchTopK != 3 {
+	if result.Trace.HitCount != 1 || result.Trace.SearchTopK != 15 {
 		t.Fatalf("trace = %+v", result.Trace)
 	}
 	if result.Trace.EmbeddingProvider != "fake" || result.Trace.EmbeddingModel != "fake" || result.Trace.EmbeddingDimension != 2 || result.Trace.QdrantCollection != "test_chunks" {
@@ -142,10 +143,75 @@ func TestKnowledgeQueryNoAccessibleKnowledgeBasesReturnsSchemaValidTrace(t *test
 		result.Trace.EmbeddingModel == "" ||
 		result.Trace.EmbeddingDimension < 1 ||
 		result.Trace.QdrantCollection == "" ||
-		result.Trace.SearchTopK != 2 ||
+		result.Trace.SearchTopK != 10 ||
 		result.Trace.HitCount != 0 ||
 		!result.Trace.Rerank {
 		t.Fatalf("trace = %+v", result.Trace)
+	}
+}
+
+func TestKnowledgeQueryPagesAccessibleKnowledgeBasesWhenIDsAreOmitted(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	now := time.Now().UTC()
+	for i := 0; i < 205; i++ {
+		id := fmt.Sprintf("kb_owned_%03d", i)
+		repo.SeedKnowledgeBase(service.KnowledgeBase{ID: id, Name: id, DocType: "GENERAL", CreatedBy: "usr_owner", CreatedAt: now.Add(time.Duration(i) * time.Second), UpdatedAt: now.Add(time.Duration(i) * time.Second)})
+	}
+	index := &retrievalIndex{}
+	svc := service.NewKnowledgeService(repo, service.WithVectorIndex(retrievalEmbedder{}, index, "test_chunks"))
+
+	_, err := svc.CreateKnowledgeQuery(context.Background(), service.RequestContext{UserID: "usr_owner"}, service.KnowledgeQueryInput{
+		Query: "global query", TopK: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateKnowledgeQuery() error = %v", err)
+	}
+	if len(index.request.KnowledgeBaseIDs) != 205 {
+		t.Fatalf("knowledge base ids count = %d, want 205", len(index.request.KnowledgeBaseIDs))
+	}
+}
+
+func TestKnowledgeQueryPagesAllReadableKnowledgeBasesForAdmin(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	now := time.Now().UTC()
+	for i := 0; i < 205; i++ {
+		owner := "usr_owner"
+		if i%2 == 0 {
+			owner = "usr_other"
+		}
+		id := fmt.Sprintf("kb_admin_%03d", i)
+		repo.SeedKnowledgeBase(service.KnowledgeBase{ID: id, Name: id, DocType: "GENERAL", CreatedBy: owner, CreatedAt: now.Add(time.Duration(i) * time.Second), UpdatedAt: now.Add(time.Duration(i) * time.Second)})
+	}
+	index := &retrievalIndex{}
+	svc := service.NewKnowledgeService(repo, service.WithVectorIndex(retrievalEmbedder{}, index, "test_chunks"))
+
+	_, err := svc.CreateKnowledgeQuery(context.Background(), service.RequestContext{UserID: "usr_admin", Roles: []string{"admin"}}, service.KnowledgeQueryInput{
+		Query: "global query", TopK: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateKnowledgeQuery() error = %v", err)
+	}
+	if len(index.request.KnowledgeBaseIDs) != 205 {
+		t.Fatalf("knowledge base ids count = %d, want 205", len(index.request.KnowledgeBaseIDs))
+	}
+}
+
+func TestKnowledgeQueryExplicitKnowledgeBaseIDsDoNotPullAllReadableBases(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedRetrievalBase(t, repo, "kb_one", "usr_owner")
+	seedRetrievalBase(t, repo, "kb_two", "usr_owner")
+	seedRetrievalBase(t, repo, "kb_three", "usr_owner")
+	index := &retrievalIndex{}
+	svc := service.NewKnowledgeService(repo, service.WithVectorIndex(retrievalEmbedder{}, index, "test_chunks"))
+
+	_, err := svc.CreateKnowledgeQuery(context.Background(), service.RequestContext{UserID: "usr_owner"}, service.KnowledgeQueryInput{
+		Query: "scoped query", KnowledgeBaseIDs: []string{"kb_two"}, TopK: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateKnowledgeQuery() error = %v", err)
+	}
+	if len(index.request.KnowledgeBaseIDs) != 1 || index.request.KnowledgeBaseIDs[0] != "kb_two" {
+		t.Fatalf("knowledge base ids = %+v", index.request.KnowledgeBaseIDs)
 	}
 }
 
@@ -302,6 +368,35 @@ func TestKnowledgeQueryMetadataFilterMatchesNumericValue(t *testing.T) {
 	}
 }
 
+func TestKnowledgeQueryUsesExpandedCandidateLimitBeforePostFilters(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedRetrievalBase(t, repo, "kb_owned", "usr_owner")
+	seedRetrievalDocument(t, repo, "doc_pending", "kb_owned", "usr_owner", service.DocumentStatusEmbedding, nil, nil, nil)
+	seedRetrievalDocumentWithContent(t, repo, "doc_valid", "kb_owned", "usr_owner", "valid")
+	index := &retrievalIndex{hits: []service.VectorSearchHit{
+		{ID: "point_pending", Score: .99, Payload: map[string]any{"chunk_id": "chunk_doc_pending"}},
+		{ID: "point_missing", Score: .98, Payload: map[string]any{"chunk_id": "chunk_missing"}},
+		{ID: "point_valid", Score: .97, Payload: map[string]any{"chunk_id": "chunk_doc_valid"}},
+	}}
+	svc := service.NewKnowledgeService(repo, service.WithVectorIndex(retrievalEmbedder{}, index))
+
+	result, err := svc.CreateKnowledgeQuery(context.Background(), service.RequestContext{UserID: "usr_owner"}, service.KnowledgeQueryInput{
+		Query: "query", KnowledgeBaseIDs: []string{"kb_owned"}, TopK: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateKnowledgeQuery() error = %v", err)
+	}
+	if index.request.Limit <= 1 {
+		t.Fatalf("vector request limit = %d, want greater than topK", index.request.Limit)
+	}
+	if len(result.Results) != 1 || result.Results[0].ChunkID != "chunk_doc_valid" {
+		t.Fatalf("results = %+v", result.Results)
+	}
+	if result.Trace.SearchTopK != index.request.Limit {
+		t.Fatalf("trace = %+v, request = %+v", result.Trace, index.request)
+	}
+}
+
 func TestKnowledgeQueryCapsResultsAtTopK(t *testing.T) {
 	repo := repository.NewMemoryRepository()
 	seedRetrievalBase(t, repo, "kb_owned", "usr_owner")
@@ -312,7 +407,7 @@ func TestKnowledgeQueryCapsResultsAtTopK(t *testing.T) {
 	}
 	svc := service.NewKnowledgeService(repo, service.WithVectorIndex(retrievalEmbedder{}, index))
 	result, err := svc.CreateKnowledgeQuery(context.Background(), service.RequestContext{UserID: "usr_owner"}, service.KnowledgeQueryInput{Query: "query", KnowledgeBaseIDs: []string{"kb_owned"}, TopK: 2})
-	if err != nil || len(result.Results) != 2 || index.request.Limit != 2 {
+	if err != nil || len(result.Results) != 2 || index.request.Limit != 10 {
 		t.Fatalf("result = %+v, request = %+v, error = %v", result, index.request, err)
 	}
 }
