@@ -65,6 +65,7 @@ jobs:
               qa: 'service:qa',
               knowledge: 'service:knowledge',
               document: 'service:document',
+              'ai-gateway': 'service:ai-gateway',
               frontend: 'frontend',
               deploy: 'deployment',
               ci: 'ci',
