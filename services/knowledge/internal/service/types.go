@@ -317,9 +317,15 @@ type VectorPoint struct {
 	Payload map[string]any
 }
 
+const (
+	VectorPayloadDocumentID       = "document_id"
+	VectorPayloadIngestionAttempt = "ingestion_attempt"
+)
+
 type VectorIndex interface {
 	Upsert(ctx context.Context, points []VectorPoint) error
-	DeleteByDocument(ctx context.Context, documentID string) error
+	DeleteByDocumentIngestionAttempt(ctx context.Context, documentID string, ingestionAttempt string) error
+	DeleteStaleDocumentPoints(ctx context.Context, documentID string, activeIngestionAttempt string) error
 }
 
 type DocumentIngestionTask struct {

@@ -115,7 +115,7 @@ docker build -t software-teamwork-parser:local .
 | `PARSER_HOST` | `0.0.0.0` | HTTP bind host. |
 | `PARSER_PORT` | `8080` | HTTP bind port. |
 | `PARSER_SERVICE_TOKEN` | empty | Optional expected `X-Service-Token`. |
-| `PARSER_BACKEND` | `paddleocr` | Backend selector; only `paddleocr` is supported. |
+| `PARSER_BACKEND` | `paddleocr` | Backend selector. `document` parses TXT/Markdown and Office OpenXML without OCR; `paddleocr` also enables PDF/image OCR. |
 | `PARSER_MAX_DOCUMENT_BYTES` | `8388608` | Maximum decoded document bytes. |
 | `PARSER_MAX_CONCURRENCY` | `1` | Maximum concurrent parse jobs in one process. |
 | `PARSER_QUEUE_TIMEOUT_SECONDS` | `0` | Queue wait timeout; `0` waits until capacity is available. |

@@ -350,6 +350,61 @@ func TestIngestionAttemptFencingRejectsStaleCompletionAndFailure(t *testing.T) {
 	}
 }
 
+func TestIngestionHandlerCleansStaleAttemptVectorsAfterReclaim(t *testing.T) {
+	source := newSourceStore()
+	source.Put("file_123", "content for a stale vector write race", "text/plain")
+	repo := repository.NewMemoryRepository()
+	seedKnowledgeBase(t, repo)
+	vectors := &reclaimingVectorIndex{repo: repo}
+	svc := service.NewWithDependencies(
+		repo,
+		nil,
+		nil,
+		fixedClock(),
+		sequenceIDs(),
+		service.WithProcessingPipeline(source, fakeParser{}, service.NewFixedChunker()),
+		service.WithVectorIndex(embedding.NewLocalHasher("local_hashing", "local_hashing", 16), vectors),
+		service.WithIngestionRunningLease(5*time.Minute),
+	)
+	handler := worker.NewIngestionHandler(svc)
+	handoff := seedIngestionJob(t, repo, "file_123")
+	vectors.handoff = handoff
+
+	if err := handler.HandleIngestionPayload(context.Background(), mustJSON(t, worker.IngestionPayload{
+		RequestID:       "req_worker",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	})); err != nil {
+		t.Fatalf("HandleIngestionPayload() error = %v", err)
+	}
+
+	job, err := svc.GetJob(context.Background(), actorContext(), handoff.jobID)
+	if err != nil {
+		t.Fatalf("GetJob() error = %v", err)
+	}
+	if job.Status != service.JobStatusSucceeded || job.Attempts != 2 {
+		t.Fatalf("job = %+v", job)
+	}
+	chunks, err := svc.ListChunks(context.Background(), actorContext(), service.ListChunksInput{DocumentID: handoff.documentID})
+	if err != nil {
+		t.Fatalf("ListChunks() error = %v", err)
+	}
+	if chunks.Page.Total != 1 || chunks.Items[0].ID != "chunk_attempt_2" {
+		t.Fatalf("chunks = %+v", chunks)
+	}
+	if len(vectors.points) != 1 {
+		t.Fatalf("vector points = %+v", vectors.points)
+	}
+	if vectors.points[0].Payload[service.VectorPayloadIngestionAttempt] != "job_1:2" {
+		t.Fatalf("remaining vector payload = %+v, want attempt 2 only", vectors.points[0].Payload)
+	}
+	if vectors.points[0].Payload["chunk_id"] != "chunk_attempt_2" {
+		t.Fatalf("remaining vector payload = %+v, want attempt 2 chunk", vectors.points[0].Payload)
+	}
+}
+
 func TestIngestionHandlerRetriesWhenFailureStateCannotPersist(t *testing.T) {
 	source := newSourceStore()
 	source.Put("file_empty", "", "text/plain")
@@ -681,7 +736,7 @@ func (i *recordingVectorIndex) Upsert(ctx context.Context, points []service.Vect
 	return nil
 }
 
-func (i *recordingVectorIndex) DeleteByDocument(ctx context.Context, documentID string) error {
+func (i *recordingVectorIndex) DeleteByDocumentIngestionAttempt(ctx context.Context, documentID string, ingestionAttempt string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -689,11 +744,102 @@ func (i *recordingVectorIndex) DeleteByDocument(ctx context.Context, documentID 
 	defer i.mu.Unlock()
 	filtered := i.points[:0]
 	for _, point := range i.points {
-		if point.Payload["document_id"] != documentID {
+		if point.Payload[service.VectorPayloadDocumentID] != documentID ||
+			point.Payload[service.VectorPayloadIngestionAttempt] != ingestionAttempt {
 			filtered = append(filtered, point)
 		}
 	}
 	i.points = filtered
+	return nil
+}
+
+func (i *recordingVectorIndex) DeleteStaleDocumentPoints(ctx context.Context, documentID string, activeIngestionAttempt string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	filtered := i.points[:0]
+	for _, point := range i.points {
+		if point.Payload[service.VectorPayloadDocumentID] != documentID ||
+			point.Payload[service.VectorPayloadIngestionAttempt] == activeIngestionAttempt {
+			filtered = append(filtered, point)
+		}
+	}
+	i.points = filtered
+	return nil
+}
+
+type reclaimingVectorIndex struct {
+	recordingVectorIndex
+	repo      *repository.MemoryRepository
+	handoff   ingestionHandoff
+	reclaimed bool
+}
+
+func (i *reclaimingVectorIndex) Upsert(ctx context.Context, points []service.VectorPoint) error {
+	if err := i.recordingVectorIndex.Upsert(ctx, points); err != nil {
+		return err
+	}
+	if len(points) == 0 || i.reclaimed || points[0].Payload[service.VectorPayloadIngestionAttempt] != "job_1:1" {
+		return nil
+	}
+	i.reclaimed = true
+	claimAt := fixedNow().Add(time.Hour)
+	staleBefore := claimAt.Add(-5 * time.Minute)
+	stage := "embedding"
+	claimed, err := i.repo.ClaimProcessingJob(ctx, i.handoff.jobID, service.JobStateUpdate{
+		Status:             service.JobStatusRunning,
+		CurrentStage:       &stage,
+		ProgressPercent:    80,
+		StartedAt:          &claimAt,
+		UpdatedAt:          claimAt,
+		StaleRunningBefore: &staleBefore,
+	})
+	if err != nil {
+		return err
+	}
+	parserBackend := "parser-service"
+	pointID := "point_attempt_2"
+	chunk := service.DocumentChunk{
+		ID:              "chunk_attempt_2",
+		KnowledgeBaseID: i.handoff.knowledgeBaseID,
+		DocumentID:      i.handoff.documentID,
+		ChunkIndex:      0,
+		Content:         "new attempt content",
+		QdrantPointID:   &pointID,
+		CreatedAt:       claimAt,
+	}
+	if _, err := i.repo.CompleteIngestion(ctx, service.CompleteIngestionRecord{
+		DocumentID:       i.handoff.documentID,
+		JobID:            i.handoff.jobID,
+		ExpectedAttempts: &claimed.Attempts,
+		ParserBackend:    &parserBackend,
+		Chunks:           []service.DocumentChunk{chunk},
+		UpdatedAt:        claimAt,
+		FinishedAt:       claimAt,
+	}); err != nil {
+		return err
+	}
+	i.recordingVectorIndex.mu.Lock()
+	defer i.recordingVectorIndex.mu.Unlock()
+	i.recordingVectorIndex.points = append(i.recordingVectorIndex.points, service.VectorPoint{
+		ID:     pointID,
+		Vector: []float32{0.2, 0.3},
+		Payload: map[string]any{
+			"knowledge_base_id":                   i.handoff.knowledgeBaseID,
+			service.VectorPayloadDocumentID:       i.handoff.documentID,
+			"chunk_id":                            "chunk_attempt_2",
+			"chunk_index":                         int32(0),
+			"chunk_type":                          "",
+			"section_path":                        "",
+			"tags":                                []string(nil),
+			"metadata":                            map[string]any{},
+			"job_id":                              i.handoff.jobID,
+			"job_attempt":                         claimed.Attempts,
+			service.VectorPayloadIngestionAttempt: "job_1:2",
+		},
+	})
 	return nil
 }
 
@@ -704,7 +850,7 @@ func assertMinimalVectorPayload(t *testing.T, payload map[string]any) {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	want := []string{"chunk_id", "chunk_index", "chunk_type", "document_id", "knowledge_base_id", "metadata", "section_path", "tags"}
+	want := []string{"chunk_id", "chunk_index", "chunk_type", "document_id", "ingestion_attempt", "job_attempt", "job_id", "knowledge_base_id", "metadata", "section_path", "tags"}
 	if strings.Join(keys, ",") != strings.Join(want, ",") {
 		t.Fatalf("payload keys = %v", keys)
 	}

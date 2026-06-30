@@ -26,9 +26,8 @@ MAX_XML_TOTAL_BYTES = 16 * 1024 * 1024
 
 
 class DocumentParserBackend:
-    name = "paddleocr"
-
-    def __init__(self, *, ocr_backend: ParserBackend) -> None:
+    def __init__(self, *, ocr_backend: ParserBackend, name: str = "") -> None:
+        self.name = name.strip() or ocr_backend.name
         self._ocr_backend = ocr_backend
 
     def health(self) -> BackendHealth:
@@ -55,6 +54,22 @@ class DocumentParserBackend:
                 {"file": "legacy Office documents are not supported"},
             )
         raise validation_error("document format is not supported", {"file": "unsupported format"})
+
+
+class DisabledOCRBackend:
+    name = "document"
+
+    def health(self) -> BackendHealth:
+        return BackendHealth(ready=True, status="ready")
+
+    def warm_up(self) -> None:
+        return None
+
+    def parse(self, request: ParseRequest) -> ParsedDocument:
+        raise validation_error(
+            "document format requires OCR backend",
+            {"file": "pdf and image parsing require PARSER_BACKEND=paddleocr"},
+        )
 
 
 def detect_format(request: ParseRequest) -> str:

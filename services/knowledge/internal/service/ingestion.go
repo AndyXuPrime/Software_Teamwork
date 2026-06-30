@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+var errVectorCleanupFailed = errors.New("vector cleanup failed")
+
 func (s *Service) ProcessIngestionTask(ctx context.Context, reqCtx RequestContext, task DocumentIngestionTask) (ProcessingJob, error) {
 	normalized, err := normalizeIngestionTask(task)
 	if err != nil {
@@ -52,6 +54,14 @@ func (s *Service) ProcessIngestionTask(ctx context.Context, reqCtx RequestContex
 	}
 	if job.Status == JobStatusRunning && !isStaleRunningJob(job, staleRunningBefore) {
 		return job, DependencyError("job is already running", nil)
+	}
+	if job.Status == JobStatusSucceeded {
+		if s.vectorIndex != nil {
+			if err := s.vectorIndex.DeleteStaleDocumentPoints(ctx, normalized.DocumentID, ingestionAttemptID(job)); err != nil {
+				return job, DependencyError("stale vector cleanup failed", err)
+			}
+		}
+		return job, nil
 	}
 	if job.Status != JobStatusQueued && job.Status != JobStatusFailed && job.Status != JobStatusRunning {
 		return job, ConflictError("job is not ready to run", nil)
@@ -226,6 +236,9 @@ func (s *Service) ProcessIngestionTask(ctx context.Context, reqCtx RequestContex
 			if errors.Is(err, ErrConflict) {
 				return job, ConflictError("job attempt is no longer active", err)
 			}
+			if errors.Is(err, errVectorCleanupFailed) {
+				return job, DependencyError("stale vector cleanup failed", err)
+			}
 			message := sanitizeProcessingFailureMessage(err)
 			return s.failProcessingAndReturn(ctx, job, doc.ID, classifyProcessingDependencyCode(err), message,
 				DependencyError(message, err))
@@ -244,13 +257,25 @@ func (s *Service) ProcessIngestionTask(ctx context.Context, reqCtx RequestContex
 	})
 	if err != nil {
 		if errors.Is(err, ErrConflict) {
+			if s.vectorIndex != nil {
+				if cleanupErr := s.vectorIndex.DeleteByDocumentIngestionAttempt(ctx, doc.ID, ingestionAttemptID(job)); cleanupErr != nil {
+					return job, DependencyError("stale vector cleanup failed", cleanupErr)
+				}
+			}
 			return job, ConflictError("job attempt is no longer active", err)
 		}
 		if s.vectorIndex != nil {
-			_ = s.vectorIndex.DeleteByDocument(ctx, doc.ID)
+			if cleanupErr := s.vectorIndex.DeleteByDocumentIngestionAttempt(ctx, doc.ID, ingestionAttemptID(job)); cleanupErr != nil {
+				return job, DependencyError("stale vector cleanup failed", cleanupErr)
+			}
 		}
 		return s.failProcessingAndReturn(ctx, job, doc.ID, string(CodeDependency), "ingestion completion failed",
 			DependencyError("ingestion completion failed", err))
+	}
+	if s.vectorIndex != nil && len(chunks) > 0 {
+		if err := s.vectorIndex.DeleteStaleDocumentPoints(ctx, doc.ID, ingestionAttemptID(job)); err != nil {
+			return completed, DependencyError("stale vector cleanup failed", err)
+		}
 	}
 	return completed, nil
 }
@@ -337,19 +362,7 @@ func (s *Service) embedAndIndex(ctx context.Context, reqCtx RequestContext, job 
 	if len(result.Vectors) != len(chunks) {
 		return fmt.Errorf("embedding result count mismatch")
 	}
-	embeddingStage := "embedding"
-	if _, err := s.repo.UpdateJobState(ctx, job.ID, JobStateUpdate{
-		Status:           JobStatusRunning,
-		CurrentStage:     &embeddingStage,
-		ProgressPercent:  90,
-		UpdatedAt:        s.now(),
-		ExpectedAttempts: &job.Attempts,
-	}); err != nil {
-		return err
-	}
-	if err := s.vectorIndex.DeleteByDocument(ctx, doc.ID); err != nil {
-		return err
-	}
+	ingestionAttempt := ingestionAttemptID(job)
 	points := make([]VectorPoint, 0, len(chunks))
 	for index := range chunks {
 		pointID := stableVectorPointID(chunks[index].ID)
@@ -362,18 +375,45 @@ func (s *Service) embedAndIndex(ctx context.Context, reqCtx RequestContext, job 
 			ID:     pointID,
 			Vector: append([]float32(nil), result.Vectors[index]...),
 			Payload: map[string]any{
-				"knowledge_base_id": chunks[index].KnowledgeBaseID,
-				"document_id":       chunks[index].DocumentID,
-				"chunk_id":          chunks[index].ID,
-				"chunk_index":       chunks[index].ChunkIndex,
-				"chunk_type":        derefString(chunks[index].ChunkType),
-				"section_path":      derefString(chunks[index].SectionPath),
-				"tags":              append([]string(nil), doc.Tags...),
-				"metadata":          cloneMetadata(chunks[index].Metadata),
+				"knowledge_base_id":           chunks[index].KnowledgeBaseID,
+				VectorPayloadDocumentID:       chunks[index].DocumentID,
+				"chunk_id":                    chunks[index].ID,
+				"chunk_index":                 chunks[index].ChunkIndex,
+				"chunk_type":                  derefString(chunks[index].ChunkType),
+				"section_path":                derefString(chunks[index].SectionPath),
+				"tags":                        append([]string(nil), doc.Tags...),
+				"metadata":                    cloneMetadata(chunks[index].Metadata),
+				"job_id":                      job.ID,
+				"job_attempt":                 job.Attempts,
+				VectorPayloadIngestionAttempt: ingestionAttempt,
 			},
 		})
 	}
-	return s.vectorIndex.Upsert(ctx, points)
+	if err := s.fenceIngestionAttempt(ctx, job, 90); err != nil {
+		return err
+	}
+	if err := s.vectorIndex.Upsert(ctx, points); err != nil {
+		return err
+	}
+	if err := s.fenceIngestionAttempt(ctx, job, 95); err != nil {
+		if cleanupErr := s.vectorIndex.DeleteByDocumentIngestionAttempt(ctx, doc.ID, ingestionAttempt); cleanupErr != nil {
+			return fmt.Errorf("%w: %w", errVectorCleanupFailed, cleanupErr)
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *Service) fenceIngestionAttempt(ctx context.Context, job ProcessingJob, progress int32) error {
+	embeddingStage := "embedding"
+	_, err := s.repo.UpdateJobState(ctx, job.ID, JobStateUpdate{
+		Status:           JobStatusRunning,
+		CurrentStage:     &embeddingStage,
+		ProgressPercent:  progress,
+		UpdatedAt:        s.now(),
+		ExpectedAttempts: &job.Attempts,
+	})
+	return err
 }
 
 func (s *Service) failProcessingAndReturn(ctx context.Context, job ProcessingJob, documentID string, code string, message string, processingErr error) (ProcessingJob, error) {
@@ -440,6 +480,10 @@ func stableVectorPointID(chunkID string) string {
 	sum := sha256.Sum256([]byte(chunkID))
 	encoded := hex.EncodeToString(sum[:16])
 	return encoded[0:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:32]
+}
+
+func ingestionAttemptID(job ProcessingJob) string {
+	return fmt.Sprintf("%s:%d", strings.TrimSpace(job.ID), job.Attempts)
 }
 
 func cloneMetadata(metadata map[string]any) map[string]any {

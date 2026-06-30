@@ -28,14 +28,30 @@ func (i *MemoryIndex) Upsert(ctx context.Context, points []service.VectorPoint) 
 	return nil
 }
 
-func (i *MemoryIndex) DeleteByDocument(ctx context.Context, documentID string) error {
+func (i *MemoryIndex) DeleteByDocumentIngestionAttempt(ctx context.Context, documentID string, ingestionAttempt string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	for id, point := range i.points {
-		if point.Payload["document_id"] == documentID {
+		if point.Payload[service.VectorPayloadDocumentID] == documentID &&
+			point.Payload[service.VectorPayloadIngestionAttempt] == ingestionAttempt {
+			delete(i.points, id)
+		}
+	}
+	return nil
+}
+
+func (i *MemoryIndex) DeleteStaleDocumentPoints(ctx context.Context, documentID string, activeIngestionAttempt string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	for id, point := range i.points {
+		if point.Payload[service.VectorPayloadDocumentID] == documentID &&
+			point.Payload[service.VectorPayloadIngestionAttempt] != activeIngestionAttempt {
 			delete(i.points, id)
 		}
 	}

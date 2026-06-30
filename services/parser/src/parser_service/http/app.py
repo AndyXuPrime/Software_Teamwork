@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from parser_service.backends.document import DocumentParserBackend
+from parser_service.backends.document import DisabledOCRBackend, DocumentParserBackend
 from parser_service.backends.paddleocr import PaddleOCRBackend
 from parser_service.config import Settings
 from parser_service.http.schemas import CreateParsedDocumentRequest
@@ -116,18 +116,21 @@ def create_app(
 
 def build_parser_service(settings: Settings) -> ParserService:
     backend_name = settings.backend.strip().lower()
-    if backend_name != "paddleocr":
-        raise ValueError("PARSER_BACKEND must be paddleocr")
-    ocr_backend = PaddleOCRBackend(
-        lang=settings.paddleocr_lang,
-        device=settings.paddleocr_device,
-        engine=settings.paddleocr_engine,
-        paddlex_config=settings.paddleocr_config_path,
-        use_doc_orientation_classify=settings.paddleocr_use_doc_orientation_classify,
-        use_doc_unwarping=settings.paddleocr_use_doc_unwarping,
-        use_textline_orientation=settings.paddleocr_use_textline_orientation,
-    )
-    backend = DocumentParserBackend(ocr_backend=ocr_backend)
+    if backend_name == "document":
+        backend = DocumentParserBackend(ocr_backend=DisabledOCRBackend(), name="document")
+    elif backend_name == "paddleocr":
+        ocr_backend = PaddleOCRBackend(
+            lang=settings.paddleocr_lang,
+            device=settings.paddleocr_device,
+            engine=settings.paddleocr_engine,
+            paddlex_config=settings.paddleocr_config_path,
+            use_doc_orientation_classify=settings.paddleocr_use_doc_orientation_classify,
+            use_doc_unwarping=settings.paddleocr_use_doc_unwarping,
+            use_textline_orientation=settings.paddleocr_use_textline_orientation,
+        )
+        backend = DocumentParserBackend(ocr_backend=ocr_backend, name="paddleocr")
+    else:
+        raise ValueError("PARSER_BACKEND must be document or paddleocr")
     service = ParserService(
         backend=backend,
         max_document_bytes=settings.max_document_bytes,
