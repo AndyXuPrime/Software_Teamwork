@@ -283,6 +283,7 @@ func (r *Postgres) FinalizeResponseRun(ctx context.Context, userID string, final
 	if final.CompletedAt.IsZero() {
 		final.CompletedAt = time.Now().UTC()
 	}
+	useSnapshot := len(final.Citations) > 0 && r.hasCitationSnapshotColumns(ctx)
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return service.ResponseRun{}, fmt.Errorf("begin finalize response run: %w", err)
@@ -322,7 +323,7 @@ func (r *Postgres) FinalizeResponseRun(ctx context.Context, userID string, final
 	if err := q.UpdateMessageContentBlock(ctx, final.AssistantMessage.Content, blockStatus(final.AssistantMessage.Status), final.AssistantMessage.ID); err != nil {
 		return service.ResponseRun{}, fmt.Errorf("update assistant content: %w", err)
 	}
-	if err := r.replaceCitations(ctx, tx, final.RunID, final.AssistantMessage.ID, final.Citations); err != nil {
+	if err := r.replaceCitations(ctx, tx, final.RunID, final.AssistantMessage.ID, final.Citations, useSnapshot); err != nil {
 		return service.ResponseRun{}, err
 	}
 	if err := replaceReasoningSteps(ctx, q, final.RunID, final.ReasoningSteps); err != nil {
@@ -453,11 +454,10 @@ func replaceStreamEvents(ctx context.Context, q *sqlc.Queries, runID string, eve
 	return nil
 }
 
-func (r *Postgres) replaceCitations(ctx context.Context, tx pgx.Tx, runID, messageID string, citations []service.Citation) error {
+func (r *Postgres) replaceCitations(ctx context.Context, tx pgx.Tx, runID, messageID string, citations []service.Citation, useSnapshot bool) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM citations WHERE message_id=$1`, messageID); err != nil {
 		return fmt.Errorf("replace citations: %w", err)
 	}
-	useSnapshot := r.hasCitationSnapshotColumns(ctx)
 	for index, item := range citations {
 		item.MessageID = messageID
 		item.ResponseRunID = runID
