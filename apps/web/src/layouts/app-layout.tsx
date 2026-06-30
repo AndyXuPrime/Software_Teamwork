@@ -81,10 +81,17 @@ export function AppLayout({ children }: PropsWithChildren) {
   // ── Nav slider position ──
   const visibleNavItems = navItems.filter((item) => canAccess(user, item.requirement))
   const navRefs = useRef<Record<string, HTMLAnchorElement | null>>({})
-  const [sliderStyle, setSliderStyle] = useState<{ left: number; width: number }>({ left: 0, width: 0 })
+  const [sliderStyle, setSliderStyle] = useState<{ left: number; width: number }>({
+    left: 0,
+    width: 0,
+  })
 
   useEffect(() => {
-    const id = pathname.startsWith('/chat') ? '/chat' : pathname.startsWith('/reports') ? '/reports' : '/admin'
+    const id = pathname.startsWith('/chat')
+      ? '/chat'
+      : pathname.startsWith('/reports')
+        ? '/reports'
+        : '/admin'
     const raf = requestAnimationFrame(() => {
       const el = navRefs.current[id]
       if (el) {

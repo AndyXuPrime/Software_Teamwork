@@ -207,7 +207,11 @@ export function ReportGeneratePage() {
   const selectedTemplate = templates.find((template) => template.id === form.templateId)
 
   const usingFallback = useMemo(
-    () => typeQuery.isError || templateQuery.isError || materialQuery.isError || !typeQuery.data?.length,
+    () =>
+      typeQuery.isError ||
+      templateQuery.isError ||
+      materialQuery.isError ||
+      !typeQuery.data?.length,
     [typeQuery.isError, templateQuery.isError, materialQuery.isError, typeQuery.data],
   )
 
