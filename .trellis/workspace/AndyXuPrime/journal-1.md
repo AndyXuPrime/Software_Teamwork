@@ -613,3 +613,36 @@ Updated QA stream parsing to prefer SSE id as the cross-event sequence and cover
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: F-016 latest develop rebase
+
+**Date**: 2026-06-30
+**Task**: F-016 latest develop rebase
+**Branch**: `Frontend/feat/qa-capability-aligned-chat`
+
+### Summary
+
+Rebased F-016 branch onto upstream/develop@82e3c37, refreshed Trellis record hashes, and reran frontend verification.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6848deb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
