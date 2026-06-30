@@ -34,6 +34,9 @@ func TestJobServiceCreateJobAcceptsDocumentJobTypes(t *testing.T) {
 	if enqueuer.jobType != JobTypeContentGeneration {
 		t.Fatalf("enqueued job type = %q, want %q", enqueuer.jobType, JobTypeContentGeneration)
 	}
+	if repo.report.LatestJobID != job.ID || repo.report.Status != ReportStatusContentGenerating {
+		t.Fatalf("report generation metadata = %+v, want latest job and content_generating", repo.report)
+	}
 }
 
 func TestJobServiceCreateReportFileJobCreatesPendingReportFile(t *testing.T) {
@@ -123,7 +126,8 @@ func TestJobServiceCreateJobRecordsOperationLog(t *testing.T) {
 func TestJobServiceCreateSectionRegenerationTargetsSectionAndPersistsGenerationPayload(t *testing.T) {
 	ctx := context.Background()
 	repo := &fakeJobRepository{
-		report: Report{ID: "report-1", CreatorID: "user-1"},
+		report:   Report{ID: "report-1", CreatorID: "user-1"},
+		sections: map[string]ReportSection{"section-1": {ID: "section-1", ReportID: "report-1"}},
 	}
 	svc := NewJobService(repo, &fakeTaskEnqueuer{})
 
@@ -163,6 +167,55 @@ func TestJobServiceCreateSectionRegenerationTargetsSectionAndPersistsGenerationP
 	options, ok := repo.createdJob.RequestPayload["options"].(map[string]any)
 	if !ok || options["topK"] != float64(3) {
 		t.Fatalf("request payload options = %#v", repo.createdJob.RequestPayload["options"])
+	}
+}
+
+func TestJobServiceCreateSectionRegenerationRejectsSectionFromAnotherReport(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeJobRepository{
+		report:   Report{ID: "report-1", CreatorID: "user-1"},
+		sections: map[string]ReportSection{"section-2": {ID: "section-2", ReportID: "other-report"}},
+	}
+	enqueuer := &fakeTaskEnqueuer{}
+	svc := NewJobService(repo, enqueuer)
+
+	_, err := svc.CreateJob(ctx, RequestContext{UserID: "user-1"}, CreateJobInput{
+		RequestID: "req-section",
+		UserID:    "user-1",
+		ReportID:  "report-1",
+		JobType:   JobTypeSectionRegeneration,
+		SectionID: "section-2",
+	})
+	if err == nil {
+		t.Fatal("CreateJob() error = nil, want not_found")
+	}
+	appErr, ok := Classify(err)
+	if !ok || appErr.Code != CodeNotFound {
+		t.Fatalf("CreateJob() error = %v, want not_found", err)
+	}
+	if repo.createdJob.ID != "" || enqueuer.jobType != "" {
+		t.Fatalf("job should not be created or enqueued, job=%+v enqueued=%q", repo.createdJob, enqueuer.jobType)
+	}
+}
+
+func TestJobServiceCreateGenerationJobMarksReportFailedWhenEnqueueFails(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeJobRepository{
+		report: Report{ID: "report-1", CreatorID: "user-1"},
+	}
+	svc := NewJobService(repo, &fakeTaskEnqueuer{err: errors.New("redis unavailable")})
+
+	_, err := svc.CreateJob(ctx, RequestContext{UserID: "user-1"}, CreateJobInput{
+		RequestID: "req-1",
+		UserID:    "user-1",
+		ReportID:  "report-1",
+		JobType:   JobTypeOutlineGeneration,
+	})
+	if err == nil {
+		t.Fatal("CreateJob() error = nil, want enqueue error")
+	}
+	if repo.report.LatestJobID != repo.createdJob.ID || repo.report.Status != ReportStatusFailed {
+		t.Fatalf("report generation metadata = %+v, want failed latest job", repo.report)
 	}
 }
 
@@ -295,6 +348,7 @@ type fakeJobRepository struct {
 	job           ReportJob
 	createdJob    ReportJob
 	reportFile    ReportFile
+	sections      map[string]ReportSection
 	operationLogs []OperationLog
 	taskIDErr     error
 }
@@ -319,8 +373,67 @@ func (f *fakeJobRepository) CreateReportJob(_ context.Context, value ReportJob) 
 	return value, nil
 }
 
-func (f *fakeJobRepository) UpdateReportJobStatus(context.Context, string, JobStatus, string, string, *time.Time, *time.Time) (ReportJob, error) {
-	return ReportJob{}, nil
+func (f *fakeJobRepository) UpdateReportJobStatus(_ context.Context, id string, status JobStatus, errorCode, errorMessage string, startedAt, finishedAt *time.Time) (ReportJob, error) {
+	job := f.createdJob
+	if job.ID != id {
+		job = f.job
+	}
+	if job.ID == "" {
+		job = ReportJob{ID: id, ReportID: f.report.ID}
+	}
+	job.Status = status
+	job.ErrorCode = errorCode
+	job.ErrorMessage = errorMessage
+	if startedAt != nil {
+		job.StartedAt = startedAt
+	}
+	if finishedAt != nil {
+		job.FinishedAt = finishedAt
+	}
+	if isReportGenerationJobType(job.JobType) {
+		updatedAt := time.Now().UTC()
+		if finishedAt != nil {
+			updatedAt = *finishedAt
+		} else if startedAt != nil {
+			updatedAt = *startedAt
+		}
+		if err := f.UpdateReportGenerationStatus(context.Background(), job.ReportID, job.ID, job.JobType, status, updatedAt); err != nil {
+			return ReportJob{}, err
+		}
+	}
+	if f.createdJob.ID == id {
+		f.createdJob = job
+	} else {
+		f.job = job
+	}
+	return job, nil
+}
+
+func (f *fakeJobRepository) UpdateReportGenerationStatus(_ context.Context, reportID, jobID string, jobType JobType, status JobStatus, updatedAt time.Time) error {
+	if f.report.ID != reportID {
+		return NewError(CodeNotFound, "report not found", nil)
+	}
+	switch status {
+	case JobStatusPending, JobStatusRunning:
+		if jobType == JobTypeOutlineGeneration || jobType == JobTypeOutlineRegeneration {
+			f.report.Status = ReportStatusOutlineGenerating
+		} else {
+			f.report.Status = ReportStatusContentGenerating
+		}
+	case JobStatusSucceeded:
+		if jobType == JobTypeOutlineGeneration || jobType == JobTypeOutlineRegeneration {
+			f.report.Status = ReportStatusOutlineGenerated
+		} else {
+			f.report.Status = ReportStatusGenerated
+			generatedAt := updatedAt
+			f.report.GeneratedAt = &generatedAt
+		}
+	case JobStatusPartialSucceeded, JobStatusFailed, JobStatusCanceled:
+		f.report.Status = ReportStatusFailed
+	}
+	f.report.LatestJobID = jobID
+	f.report.UpdatedAt = updatedAt
+	return nil
 }
 
 func (f *fakeJobRepository) UpdateJobAsynqTaskID(context.Context, string, string) error {
@@ -350,6 +463,17 @@ func (f *fakeJobRepository) CreateReportFile(_ context.Context, value ReportFile
 func (f *fakeJobRepository) UpdateReportFile(_ context.Context, value ReportFile) (ReportFile, error) {
 	f.reportFile = value
 	return value, nil
+}
+
+func (f *fakeJobRepository) GetReportSectionByID(_ context.Context, id string) (ReportSection, error) {
+	if f.sections == nil {
+		return ReportSection{}, NewError(CodeNotFound, "report section not found", nil)
+	}
+	section, ok := f.sections[id]
+	if !ok {
+		return ReportSection{}, NewError(CodeNotFound, "report section not found", nil)
+	}
+	return section, nil
 }
 
 func (f *fakeJobRepository) ClaimRetry(context.Context, string, string, string, string) (ReportJobAttempt, error) {

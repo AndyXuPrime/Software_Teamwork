@@ -762,7 +762,11 @@ func (r *PostgresRepository) ListReportJobsByReportID(ctx context.Context, repor
 }
 
 func (r *PostgresRepository) UpdateReportJobStatus(ctx context.Context, id string, status service.JobStatus, errorCode, errorMessage string, startedAt, finishedAt *time.Time) (service.ReportJob, error) {
-	row := r.db.QueryRow(ctx, `
+	return r.updateJobStatusAndReport(ctx, id, status, errorCode, errorMessage, startedAt, finishedAt, reportStatusUpdatedAt(startedAt, finishedAt))
+}
+
+func updateReportJobStatusRow(ctx context.Context, db sqlc.DBTX, id string, status service.JobStatus, errorCode, errorMessage string, startedAt, finishedAt *time.Time) (service.ReportJob, error) {
+	row := db.QueryRow(ctx, `
 		UPDATE report_jobs SET
 			status = $2,
 			progress_json = CASE
@@ -809,6 +813,15 @@ func (r *PostgresRepository) UpdateReportJobStatus(ctx context.Context, id strin
 	return job, nil
 }
 
+func (r *PostgresRepository) UpdateReportGenerationStatus(ctx context.Context, reportID, jobID string, jobType service.JobType, status service.JobStatus, updatedAt time.Time) error {
+	job := service.ReportJob{
+		ID:       jobID,
+		ReportID: reportID,
+		JobType:  jobType,
+	}
+	return updateReportGenerationStatusForJob(ctx, r.db, job, status, updatedAt)
+}
+
 func (r *PostgresRepository) UpdateReportJobProgress(ctx context.Context, id string, completed, total int) error {
 	if completed < 0 {
 		completed = 0
@@ -847,7 +860,7 @@ func (r *PostgresRepository) UpdateJobAsynqTaskID(ctx context.Context, id, taskI
 
 func (r *PostgresRepository) SetJobRunning(ctx context.Context, id string) error {
 	now := time.Now().UTC()
-	_, err := r.UpdateReportJobStatus(ctx, id, service.JobStatusRunning, "", "", &now, nil)
+	_, err := r.updateJobStatusAndReport(ctx, id, service.JobStatusRunning, "", "", &now, nil, now)
 	if err == nil {
 		_ = r.recordJobEvent(ctx, id, "job.running", "report job started")
 	}
@@ -856,7 +869,7 @@ func (r *PostgresRepository) SetJobRunning(ctx context.Context, id string) error
 
 func (r *PostgresRepository) SetJobSucceeded(ctx context.Context, id string) error {
 	now := time.Now().UTC()
-	_, err := r.UpdateReportJobStatus(ctx, id, service.JobStatusSucceeded, "", "", nil, &now)
+	_, err := r.updateJobStatusAndReport(ctx, id, service.JobStatusSucceeded, "", "", nil, &now, now)
 	if err == nil {
 		_ = r.recordJobEvent(ctx, id, "job.succeeded", "report job succeeded")
 	}
@@ -865,7 +878,7 @@ func (r *PostgresRepository) SetJobSucceeded(ctx context.Context, id string) err
 
 func (r *PostgresRepository) SetJobPartialSucceeded(ctx context.Context, id string) error {
 	now := time.Now().UTC()
-	_, err := r.UpdateReportJobStatus(ctx, id, service.JobStatusPartialSucceeded, "", "", nil, &now)
+	_, err := r.updateJobStatusAndReport(ctx, id, service.JobStatusPartialSucceeded, "", "", nil, &now, now)
 	if err == nil {
 		_ = r.recordJobEvent(ctx, id, "job.partial_succeeded", "report job partially succeeded")
 	}
@@ -874,11 +887,130 @@ func (r *PostgresRepository) SetJobPartialSucceeded(ctx context.Context, id stri
 
 func (r *PostgresRepository) SetJobFailed(ctx context.Context, id, errCode, errMsg string) error {
 	now := time.Now().UTC()
-	_, err := r.UpdateReportJobStatus(ctx, id, service.JobStatusFailed, errCode, errMsg, nil, &now)
+	_, err := r.updateJobStatusAndReport(ctx, id, service.JobStatusFailed, errCode, errMsg, nil, &now, now)
 	if err == nil {
 		_ = r.recordJobEvent(ctx, id, "job.failed", "report job failed")
 	}
 	return err
+}
+
+func (r *PostgresRepository) updateJobStatusAndReport(ctx context.Context, id string, status service.JobStatus, errorCode, errorMessage string, startedAt, finishedAt *time.Time, updatedAt time.Time) (service.ReportJob, error) {
+	if tx, ok := r.db.(pgx.Tx); ok {
+		return updateJobStatusAndReportWithDB(ctx, tx, id, status, errorCode, errorMessage, startedAt, finishedAt, updatedAt)
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return service.ReportJob{}, fmt.Errorf("begin report job status transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	job, err := updateJobStatusAndReportWithDB(ctx, tx, id, status, errorCode, errorMessage, startedAt, finishedAt, updatedAt)
+	if err != nil {
+		return service.ReportJob{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return service.ReportJob{}, fmt.Errorf("commit report job status transaction: %w", err)
+	}
+	return job, nil
+}
+
+func updateJobStatusAndReportWithDB(ctx context.Context, db sqlc.DBTX, id string, status service.JobStatus, errorCode, errorMessage string, startedAt, finishedAt *time.Time, updatedAt time.Time) (service.ReportJob, error) {
+	job, err := updateReportJobStatusRow(ctx, db, id, status, errorCode, errorMessage, startedAt, finishedAt)
+	if err != nil {
+		return service.ReportJob{}, err
+	}
+	if err := updateReportGenerationStatusForJob(ctx, db, job, status, updatedAt); err != nil {
+		return service.ReportJob{}, err
+	}
+	return job, nil
+}
+
+func reportStatusUpdatedAt(startedAt, finishedAt *time.Time) time.Time {
+	if finishedAt != nil {
+		return finishedAt.UTC()
+	}
+	if startedAt != nil {
+		return startedAt.UTC()
+	}
+	return time.Now().UTC()
+}
+
+func updateReportGenerationStatusForJob(ctx context.Context, db sqlc.DBTX, job service.ReportJob, jobStatus service.JobStatus, updatedAt time.Time) error {
+	reportStatus, ok := reportStatusForGenerationJob(job.JobType, jobStatus)
+	if !ok {
+		return nil
+	}
+	reportID, err := parseUUID(job.ReportID)
+	if err != nil {
+		return service.NewError(service.CodeValidation, "invalid report id", err)
+	}
+	jobID, err := parseUUID(job.ID)
+	if err != nil {
+		return service.NewError(service.CodeValidation, "invalid job id", err)
+	}
+	setGeneratedAt := shouldSetReportGeneratedAt(job.JobType, jobStatus)
+	tag, err := db.Exec(ctx, `
+		UPDATE reports
+		SET
+			latest_job_id = $2,
+			status = $3,
+			generated_at = CASE WHEN $4::boolean THEN $5::timestamptz ELSE generated_at END,
+			updated_at = $5
+		WHERE id = $1
+		  AND deleted_at IS NULL
+		  AND status <> 'deleted'`,
+		reportID,
+		jobID,
+		string(reportStatus),
+		setGeneratedAt,
+		updatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("update report generation status: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return service.NewError(service.CodeConflict, "report has been deleted", nil)
+	}
+	return nil
+}
+
+func reportStatusForGenerationJob(jobType service.JobType, jobStatus service.JobStatus) (service.ReportStatus, bool) {
+	isOutline := false
+	switch jobType {
+	case service.JobTypeOutlineGeneration, service.JobTypeOutlineRegeneration:
+		isOutline = true
+	case service.JobTypeContentGeneration, service.JobTypeContentRegeneration, service.JobTypeSectionRegeneration:
+	default:
+		return "", false
+	}
+	switch jobStatus {
+	case service.JobStatusPending, service.JobStatusRunning:
+		if isOutline {
+			return service.ReportStatusOutlineGenerating, true
+		}
+		return service.ReportStatusContentGenerating, true
+	case service.JobStatusSucceeded:
+		if isOutline {
+			return service.ReportStatusOutlineGenerated, true
+		}
+		return service.ReportStatusGenerated, true
+	case service.JobStatusPartialSucceeded, service.JobStatusFailed, service.JobStatusCanceled:
+		return service.ReportStatusFailed, true
+	default:
+		return "", false
+	}
+}
+
+func shouldSetReportGeneratedAt(jobType service.JobType, jobStatus service.JobStatus) bool {
+	if jobStatus != service.JobStatusSucceeded {
+		return false
+	}
+	switch jobType {
+	case service.JobTypeContentGeneration, service.JobTypeContentRegeneration, service.JobTypeSectionRegeneration:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *PostgresRepository) recordJobEvent(ctx context.Context, jobID, eventType, message string) error {
@@ -940,11 +1072,11 @@ func (r *PostgresRepository) ClaimRetry(ctx context.Context, jobID, attemptID, t
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var status string
+	var status, reportID, jobType string
 	var retryCount, maxAttempts int
 	if err := tx.QueryRow(ctx,
-		`SELECT status, retry_count, max_attempts FROM report_jobs WHERE id = $1 FOR UPDATE`, id,
-	).Scan(&status, &retryCount, &maxAttempts); err != nil {
+		`SELECT status, retry_count, max_attempts, report_id::text, job_type FROM report_jobs WHERE id = $1 FOR UPDATE`, id,
+	).Scan(&status, &retryCount, &maxAttempts, &reportID, &jobType); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return service.ReportJobAttempt{}, service.NewError(service.CodeNotFound, "report job not found", err)
 		}
@@ -971,6 +1103,13 @@ func (r *PostgresRepository) ClaimRetry(ctx context.Context, jobID, attemptID, t
 	}
 
 	now := time.Now().UTC()
+	if err := updateReportGenerationStatusForJob(ctx, tx, service.ReportJob{
+		ID:       jobID,
+		ReportID: reportID,
+		JobType:  service.JobType(jobType),
+	}, service.JobStatusPending, now); err != nil {
+		return service.ReportJobAttempt{}, err
+	}
 	row := tx.QueryRow(ctx, `
 		INSERT INTO report_job_attempts (
 			id, job_id, attempt_number, trigger_source, reason, status, created_at
