@@ -109,4 +109,66 @@ describe('ReportGeneratePage', () => {
     expect(screen.queryByText(/local-report/)).not.toBeInTheDocument()
     expect(screen.queryByText(/已进入本地原型流程/)).not.toBeInTheDocument()
   })
+
+  it('reuses an existing draft when outline job creation fails and the user retries', async () => {
+    const reportCreatePaths: string[] = []
+    const jobCreatePaths: string[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (url.pathname.endsWith('/report-types')) {
+        return jsonResponse({ data: [reportType], requestId: 'req-types' })
+      }
+      if (url.pathname.endsWith('/report-templates')) {
+        return pageResponse([reportTemplate])
+      }
+      if (url.pathname.endsWith('/report-materials')) {
+        return pageResponse([reportMaterial])
+      }
+      if (request.method === 'POST' && url.pathname.endsWith('/reports')) {
+        reportCreatePaths.push(url.pathname)
+        return jsonResponse({
+          data: {
+            id: 'rpt-real',
+            name: '迎峰度夏报告',
+            reportType: 'summer_peak_inspection',
+            status: 'draft',
+          },
+          requestId: 'req-create-report',
+        })
+      }
+      if (request.method === 'POST' && url.pathname.endsWith('/reports/rpt-real/jobs')) {
+        jobCreatePaths.push(url.pathname)
+        return gatewayError('dependency_error', 'Outline job dependency down', 'req-job')
+      }
+      if (
+        url.pathname.endsWith('/reports/rpt-real/outlines') ||
+        url.pathname.endsWith('/reports/rpt-real/sections') ||
+        url.pathname.endsWith('/reports/rpt-real/events')
+      ) {
+        return jsonResponse({ data: [], requestId: 'req-empty' })
+      }
+
+      return jsonResponse({ data: [], requestId: 'req-default' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithProviders(<ReportGeneratePage />)
+
+    await screen.findByRole('option', { name: '真实巡检报告' })
+    await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
+
+    fireEvent.click(screen.getByRole('button', { name: /创建草稿/ }))
+
+    expect(await screen.findByText(/Outline job dependency down/)).toBeVisible()
+    expect(screen.getByText(/req-job/)).toBeVisible()
+    expect(await screen.findByText(/已保留报告草稿/)).toBeVisible()
+    expect(screen.getByRole('button', { name: /复用草稿生成大纲/ })).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: /复用草稿生成大纲/ }))
+
+    await waitFor(() => expect(jobCreatePaths).toHaveLength(2))
+    expect(reportCreatePaths).toHaveLength(1)
+  })
 })

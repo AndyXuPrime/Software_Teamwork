@@ -28,6 +28,7 @@ export function ReportTemplatesPage() {
   const [editJson, setEditJson] = useState('')
   const [jsonError, setJsonError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ReportTemplate | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const { templateQuery, materialQuery } = useReportBootstrapQueries()
   const { overviewQuery, dailyQuery } = useReportStatisticsQueries()
@@ -94,8 +95,11 @@ export function ReportTemplatesPage() {
 
   const handleDelete = () => {
     if (!deleteTarget) return
-    deleteMutation.mutate(deleteTarget.id)
-    setDeleteTarget(null)
+    setDeleteError(null)
+    deleteMutation.mutate(deleteTarget.id, {
+      onSuccess: () => setDeleteTarget(null),
+      onError: (error) => setDeleteError(formatReportGatewayError(error, '删除模板失败')),
+    })
   }
 
   const structureData = structureQuery.data
@@ -337,18 +341,36 @@ export function ReportTemplatesPage() {
       </Dialog>
 
       {/* Delete template confirmation dialog */}
-      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null)
+            setDeleteError(null)
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>确定删除此模板？</DialogTitle>
             <DialogDescription>
-              {deleteTarget?.templateName
-                ? `即将删除模板"${deleteTarget.templateName}"。此操作不可撤销。`
-                : '此操作不可撤销。'}
+              <span>
+                {deleteTarget?.templateName
+                  ? `即将删除模板"${deleteTarget.templateName}"。此操作不可撤销。`
+                  : '此操作不可撤销。'}
+              </span>
+              {deleteError && <span className="mt-2 block text-destructive">{deleteError}</span>}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteTarget(null)
+                setDeleteError(null)
+              }}
+              disabled={deleteMutation.isPending}
+            >
               取消
             </Button>
             <Button

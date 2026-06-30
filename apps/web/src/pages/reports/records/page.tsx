@@ -25,6 +25,7 @@ function formatDate(value?: string): string {
 export function ReportRecordsPage() {
   const [keyword, setKeyword] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Report | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const user = useAuthStore((state) => state.user)
   const reportsQuery = useReportsQuery(keyword)
   const deleteMutation = useDeleteReport()
@@ -34,10 +35,15 @@ export function ReportRecordsPage() {
     ? formatReportGatewayError(reportsQuery.error, '报告记录加载失败')
     : null
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!canWriteReports || !deleteTarget) return
-    deleteMutation.mutate(deleteTarget.id)
-    setDeleteTarget(null)
+    setDeleteError(null)
+    try {
+      await deleteMutation.mutateAsync(deleteTarget.id)
+      setDeleteTarget(null)
+    } catch (error) {
+      setDeleteError(formatReportGatewayError(error, '删除报告失败'))
+    }
   }
 
   return (
@@ -136,13 +142,21 @@ export function ReportRecordsPage() {
         cancelLabel="取消"
         confirmLabel="确认删除"
         description={
-          deleteTarget?.name
-            ? `即将删除报告"${deleteTarget.name}"。此操作不可撤销。`
-            : '此操作不可撤销。'
+          <>
+            <span>
+              {deleteTarget?.name
+                ? `即将删除报告"${deleteTarget.name}"。此操作不可撤销。`
+                : '此操作不可撤销。'}
+            </span>
+            {deleteError && <span className="mt-2 block text-destructive">{deleteError}</span>}
+          </>
         }
         onConfirm={handleDelete}
         onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null)
+          if (!open) {
+            setDeleteTarget(null)
+            setDeleteError(null)
+          }
         }}
         open={Boolean(deleteTarget)}
         pending={deleteMutation.isPending}

@@ -108,6 +108,7 @@ export function ReportGeneratePage() {
   const activeSection = sections.find((item) => item.id === activeSectionId) ?? sections[0]
   const effectiveJob = jobQuery.data ?? lastJob
   const selectedTemplate = templates.find((template) => template.id === form.templateId)
+  const hasDraftPendingOutlineJob = Boolean(currentReport && step === 'draft')
 
   const bootstrapErrors = useMemo(
     () =>
@@ -209,9 +210,19 @@ export function ReportGeneratePage() {
       source: 'frontend' as const,
     }
 
+    let report = currentReport
+    if (!report) {
+      try {
+        report = await createReportMutation.mutateAsync(payload)
+        setCurrentReport(report)
+      } catch (error) {
+        setActiveJobId(null)
+        setNotice(formatReportGatewayError(error, '创建报告草稿失败'))
+        return
+      }
+    }
+
     try {
-      const report = await createReportMutation.mutateAsync(payload)
-      setCurrentReport(report)
       const job = await createJobMutation.mutateAsync({
         reportId: report.id,
         payload: {
@@ -229,7 +240,12 @@ export function ReportGeneratePage() {
       )
     } catch (error) {
       setActiveJobId(null)
-      setNotice(formatReportGatewayError(error, '创建报告或大纲任务失败'))
+      setNotice(
+        `${formatReportGatewayError(
+          error,
+          '创建大纲任务失败',
+        )}；已保留服务端报告草稿"${report.name}"，再次提交将复用该草稿创建大纲任务。`,
+      )
     }
   }
 
@@ -431,6 +447,13 @@ export function ReportGeneratePage() {
                 <h2 className="text-base font-semibold">创建草稿并生成大纲</h2>
               </div>
 
+              {hasDraftPendingOutlineJob && (
+                <InlineNotice className="mb-4" title="已保留报告草稿" variant="warning">
+                  当前服务端报告草稿为"{currentReport?.name}"，再次提交只会复用该草稿创建大纲任务，
+                  不会重复创建报告记录。
+                </InlineNotice>
+              )}
+
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium">报告名称</span>
@@ -561,7 +584,7 @@ export function ReportGeneratePage() {
                   {(createReportMutation.isPending || createJobMutation.isPending) && (
                     <Loader2 className="size-4 animate-spin" />
                   )}
-                  创建草稿并生成大纲
+                  {hasDraftPendingOutlineJob ? '复用草稿生成大纲' : '创建草稿并生成大纲'}
                 </Button>
               </div>
             </form>
