@@ -472,6 +472,79 @@ func TestPostgresRepositoryClaimRetryUsesNextAttemptNumber(t *testing.T) {
 	}
 }
 
+func TestPostgresRepositoryWithinJobTxRollsBackOnGenerationStatusConflict(t *testing.T) {
+	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DOCUMENT_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	pool := newTestPool(t, ctx, databaseURL)
+	defer pool.Close()
+	applyMigration(t, ctx, pool)
+
+	repo := NewPostgresRepository(pool)
+	now := time.Date(2026, 6, 29, 10, 45, 0, 0, time.UTC)
+	reportType, err := repo.UpsertReportType(ctx, service.ReportType{
+		Code:      "job_tx_conflict_report",
+		Name:      "Job Tx Conflict Report",
+		Enabled:   true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("UpsertReportType() error = %v", err)
+	}
+	report, err := repo.CreateReport(ctx, service.Report{
+		ID:         "00000000-0000-0000-0000-000000000801",
+		Name:       "job tx conflict",
+		ReportType: reportType.Code,
+		Topic:      "job tx conflict",
+		Status:     service.ReportStatusDraft,
+		Source:     "backend",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("CreateReport() error = %v", err)
+	}
+	if _, err := repo.SoftDeleteReport(ctx, report.ID, now.Add(time.Minute)); err != nil {
+		t.Fatalf("SoftDeleteReport() error = %v", err)
+	}
+
+	err = repo.WithinJobTx(ctx, func(txRepo service.JobRepository) error {
+		job, err := txRepo.CreateReportJob(ctx, service.ReportJob{
+			ID:          "00000000-0000-0000-0000-000000000802",
+			RequestID:   "req_job_tx_conflict",
+			Source:      "api",
+			JobType:     service.JobTypeOutlineGeneration,
+			TargetType:  "report",
+			TargetID:    report.ID,
+			QueueName:   "document",
+			ReportID:    report.ID,
+			Status:      service.JobStatusPending,
+			MaxAttempts: 3,
+			CreatedAt:   now,
+		})
+		if err != nil {
+			return err
+		}
+		return txRepo.UpdateReportGenerationStatus(ctx, report.ID, job.ID, job.JobType, service.JobStatusPending, now)
+	})
+	appErr, ok := service.Classify(err)
+	if !ok || appErr.Code != service.CodeConflict {
+		t.Fatalf("WithinJobTx() error = %v, want conflict", err)
+	}
+
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM report_jobs WHERE id = '00000000-0000-0000-0000-000000000802'`).Scan(&count); err != nil {
+		t.Fatalf("count rolled back report job: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("rolled back job count = %d, want 0", count)
+	}
+}
+
 func TestPostgresRepositoryWithinTxRollsBack(t *testing.T) {
 	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
 	if databaseURL == "" {

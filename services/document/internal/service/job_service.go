@@ -8,6 +8,7 @@ import (
 )
 
 type JobRepository interface {
+	WithinJobTx(ctx context.Context, fn func(JobRepository) error) error
 	GetReportByID(ctx context.Context, id string) (Report, error)
 	FindReportJobByID(ctx context.Context, id string) (ReportJob, error)
 	ListReportJobsByReportID(ctx context.Context, reportID string) ([]ReportJob, error)
@@ -119,46 +120,54 @@ func (s *JobService) CreateJob(ctx context.Context, rctx RequestContext, input C
 		MaxAttempts:    3,
 		CreatedAt:      now,
 	}
-	created, err := s.repo.CreateReportJob(ctx, job)
-	if err != nil {
-		return ReportJob{}, fmt.Errorf("create report job: %w", err)
-	}
-	if isReportGenerationJobType(created.JobType) {
-		if err := s.repo.UpdateReportGenerationStatus(ctx, created.ReportID, created.ID, created.JobType, JobStatusPending, now); err != nil {
-			if _, ok := Classify(err); ok {
-				return ReportJob{}, err
-			}
-			return ReportJob{}, dependencyError("update report generation status", err)
-		}
-	}
-	// Create attempt #1 so the attempts list reflects every execution, including the first.
+	var created ReportJob
 	attempt := ReportJobAttempt{
 		ID:            newID(),
-		JobID:         created.ID,
+		JobID:         job.ID,
 		AttemptNumber: 1,
 		TriggerSource: "api",
 		Status:        JobStatusPending,
 		CreatedAt:     now,
 	}
-	attempt, err = s.repo.CreateReportJobAttempt(ctx, attempt)
-	if err != nil {
-		return ReportJob{}, fmt.Errorf("create initial attempt: %w", err)
-	}
 	var reportFile ReportFile
-	if input.JobType == JobTypeReportFileCreation {
-		reportFile, err = s.repo.CreateReportFile(ctx, ReportFile{
-			ID:        newID(),
-			ReportID:  report.ID,
-			JobID:     created.ID,
-			Filename:  docxFilename(report),
-			Format:    ReportFileFormatDOCX,
-			Status:    ReportFileStatusPending,
-			CreatedBy: rctx.UserID,
-			CreatedAt: now,
-		})
+	if err := s.repo.WithinJobTx(ctx, func(txRepo JobRepository) error {
+		var err error
+		created, err = txRepo.CreateReportJob(ctx, job)
 		if err != nil {
-			return ReportJob{}, fmt.Errorf("create report file: %w", err)
+			return fmt.Errorf("create report job: %w", err)
 		}
+		if isReportGenerationJobType(created.JobType) {
+			if err := txRepo.UpdateReportGenerationStatus(ctx, created.ReportID, created.ID, created.JobType, JobStatusPending, now); err != nil {
+				if _, ok := Classify(err); ok {
+					return err
+				}
+				return dependencyError("update report generation status", err)
+			}
+		}
+		// Create attempt #1 so the attempts list reflects every execution, including the first.
+		attempt.JobID = created.ID
+		attempt, err = txRepo.CreateReportJobAttempt(ctx, attempt)
+		if err != nil {
+			return fmt.Errorf("create initial attempt: %w", err)
+		}
+		if input.JobType == JobTypeReportFileCreation {
+			reportFile, err = txRepo.CreateReportFile(ctx, ReportFile{
+				ID:        newID(),
+				ReportID:  report.ID,
+				JobID:     created.ID,
+				Filename:  docxFilename(report),
+				Format:    ReportFileFormatDOCX,
+				Status:    ReportFileStatusPending,
+				CreatedBy: rctx.UserID,
+				CreatedAt: now,
+			})
+			if err != nil {
+				return fmt.Errorf("create report file: %w", err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return ReportJob{}, err
 	}
 	taskID, err := s.enqueuer.EnqueueReportJob(ctx, input.JobType, created.ID, attempt.ID, input.RequestID, input.UserID)
 	if err != nil {
