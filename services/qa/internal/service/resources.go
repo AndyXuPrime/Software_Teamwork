@@ -422,7 +422,14 @@ func mergeRetrievalSettings(base, override RetrievalSettings) RetrievalSettings 
 	if threshold != 0 {
 		base.ScoreThreshold = threshold
 	}
-	if override.EnableRerank || override.UseRerank {
+	if override.enableRerankSet {
+		base.EnableRerank = override.EnableRerank
+	} else if override.EnableRerank {
+		base.EnableRerank = true
+	}
+	if override.useRerankSet {
+		base.EnableRerank = override.UseRerank
+	} else if override.UseRerank {
 		base.EnableRerank = true
 	}
 	if override.RerankThreshold != 0 {
@@ -433,6 +440,8 @@ func mergeRetrievalSettings(base, override RetrievalSettings) RetrievalSettings 
 	}
 	base.SimilarityThreshold = 0
 	base.UseRerank = false
+	base.enableRerankSet = false
+	base.useRerankSet = false
 	return base
 }
 
@@ -449,6 +458,8 @@ func validateRetrievalSettings(value RetrievalSettings) error {
 	}
 	if value.RerankTopN < 0 {
 		fields["retrieval.rerankTopN"] = "must be positive"
+	} else if value.RerankTopN > 0 && value.RerankTopN > value.TopK {
+		fields["retrieval.rerankTopN"] = "must be between 1 and topK when provided"
 	}
 	if len(fields) > 0 {
 		return ValidationError(fields)
