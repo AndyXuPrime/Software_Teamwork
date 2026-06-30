@@ -45,10 +45,12 @@ func TestLoadRuntimeAdapters(t *testing.T) {
 	t.Setenv("EMBEDDING_DIMENSION", "1536")
 	t.Setenv("AI_GATEWAY_BASE_URL", "https://ai.internal/")
 	t.Setenv("AI_GATEWAY_SERVICE_TOKEN", "ai-token")
-	t.Setenv("AI_GATEWAY_EMBEDDING_PROFILE_ID", "profile_1")
-	t.Setenv("QDRANT_URL", "http://qdrant.local:6333/")
+	t.Setenv("EMBEDDING_PROFILE_ID", "profile_1")
+	t.Setenv("QDRANT_BASE_URL", "http://qdrant.local:6333/")
 	t.Setenv("QDRANT_API_KEY", "qdrant-key")
 	t.Setenv("QDRANT_COLLECTION", "kb_chunks")
+	t.Setenv("RERANK_MODEL", "rerank-model")
+	t.Setenv("RERANK_PROFILE_ID", "profile_rerank")
 
 	cfg, err := Load()
 	if err != nil {
@@ -72,6 +74,9 @@ func TestLoadRuntimeAdapters(t *testing.T) {
 	}
 	if cfg.QdrantAPIKey != "qdrant-key" || cfg.QdrantCollection != "kb_chunks" {
 		t.Fatalf("qdrant config = %+v", cfg)
+	}
+	if cfg.RerankModel != "rerank-model" || cfg.RerankProfileID != "profile_rerank" {
+		t.Fatalf("rerank config = %+v", cfg)
 	}
 }
 
@@ -155,6 +160,25 @@ func TestLoadRejectsInvalidAdapterConfig(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsRerankWithoutAIGatewayToken(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("DATABASE_URL", "postgres://knowledge:knowledge@localhost:5432/knowledge?sslmode=disable")
+	t.Setenv("FILE_SERVICE_BASE_URL", "http://localhost:8082")
+	t.Setenv("KNOWLEDGE_REDIS_ADDR", "localhost:6379")
+	t.Setenv("KNOWLEDGE_SERVICE_TOKEN", "knowledge-token")
+	t.Setenv("PARSER_SERVICE_BASE_URL", "http://localhost:8084")
+	t.Setenv("AI_GATEWAY_BASE_URL", "http://localhost:8086")
+	t.Setenv("RERANK_MODEL", "rerank-model")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() error = nil")
+	}
+	if !strings.Contains(err.Error(), "AI_GATEWAY_SERVICE_TOKEN") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func clearEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
@@ -172,11 +196,15 @@ func clearEnv(t *testing.T) {
 		"PARSER_SERVICE_TIMEOUT",
 		"EMBEDDING_PROVIDER",
 		"EMBEDDING_MODEL",
+		"EMBEDDING_PROFILE_ID",
 		"EMBEDDING_DIMENSION",
 		"AI_GATEWAY_BASE_URL",
 		"AI_GATEWAY_SERVICE_TOKEN",
 		"AI_GATEWAY_EMBEDDING_PROFILE_ID",
+		"RERANK_MODEL",
+		"RERANK_PROFILE_ID",
 		"QDRANT_URL",
+		"QDRANT_BASE_URL",
 		"QDRANT_API_KEY",
 		"QDRANT_COLLECTION",
 	} {

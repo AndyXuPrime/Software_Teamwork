@@ -21,13 +21,25 @@ func (retrievalEmbedder) Embed(context.Context, service.EmbeddingRequest) (servi
 	return service.EmbeddingResult{Vectors: [][]float32{{1, 0}}, Provider: "fake", Model: "fake", Dimension: 2}, nil
 }
 
+type capturingEmbedder struct {
+	request service.EmbeddingRequest
+}
+
+func (e *capturingEmbedder) Embed(_ context.Context, request service.EmbeddingRequest) (service.EmbeddingResult, error) {
+	e.request = request
+	return service.EmbeddingResult{Vectors: [][]float32{{1, 0}}, Provider: "fake", Model: "fake", Dimension: 2}, nil
+}
+
 type retrievalIndex struct {
 	hits    []service.VectorSearchHit
 	request service.VectorSearchRequest
 }
 
 func (*retrievalIndex) Upsert(context.Context, []service.VectorPoint) error { return nil }
-func (*retrievalIndex) DeleteByDocument(context.Context, string) error      { return nil }
+func (*retrievalIndex) DeleteByDocumentIngestionAttempt(context.Context, string, string) error {
+	return nil
+}
+func (*retrievalIndex) DeleteStaleDocumentPoints(context.Context, string, string) error { return nil }
 func (i *retrievalIndex) Search(_ context.Context, request service.VectorSearchRequest) ([]service.VectorSearchHit, error) {
 	i.request = request
 	return append([]service.VectorSearchHit(nil), i.hits...), nil
@@ -82,6 +94,57 @@ func TestKnowledgeQueryFiltersAndHydratesSafeResults(t *testing.T) {
 		t.Fatalf("vector request = %+v", index.request)
 	}
 	if result.Trace.HitCount != 1 || result.Trace.SearchTopK != 3 {
+		t.Fatalf("trace = %+v", result.Trace)
+	}
+	if result.Trace.EmbeddingProvider != "fake" || result.Trace.EmbeddingModel != "fake" || result.Trace.EmbeddingDimension != 2 || result.Trace.QdrantCollection != "test_chunks" {
+		t.Fatalf("trace metadata = %+v", result.Trace)
+	}
+}
+
+func TestKnowledgeQueryConfiguredPipelineCarriesEmbeddingContext(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedRetrievalBase(t, repo, "kb_owned", "usr_owner")
+	seedRetrievalDocument(t, repo, "doc_ready", "kb_owned", "usr_owner", service.DocumentStatusReady, nil, []string{"ops"}, map[string]any{"region": "east"})
+
+	embedder := &capturingEmbedder{}
+	index := &retrievalIndex{hits: []service.VectorSearchHit{{ID: "point_ready", Score: .91, Payload: map[string]any{"chunk_id": "chunk_doc_ready"}}}}
+	svc := service.NewKnowledgeService(repo, service.WithVectorIndex(embedder, index, "test_chunks"))
+
+	result, err := svc.CreateKnowledgeQuery(context.Background(), service.RequestContext{UserID: "usr_owner", RequestID: "req_query"}, service.KnowledgeQueryInput{
+		Query: "breaker policy", KnowledgeBaseIDs: []string{"kb_owned"}, TopK: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateKnowledgeQuery() error = %v", err)
+	}
+	if len(result.Results) != 1 {
+		t.Fatalf("results = %+v", result.Results)
+	}
+	if embedder.request.UserID != "usr_owner" || embedder.request.RequestID != "req_query" || strings.Join(embedder.request.Texts, ",") != "breaker policy" {
+		t.Fatalf("embedding request = %+v", embedder.request)
+	}
+}
+
+func TestKnowledgeQueryNoAccessibleKnowledgeBasesReturnsSchemaValidTrace(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedRetrievalBase(t, repo, "kb_other", "usr_other")
+	svc := service.NewKnowledgeService(repo, service.WithVectorIndex(retrievalEmbedder{}, &retrievalIndex{}, "test_chunks"))
+
+	result, err := svc.CreateKnowledgeQuery(context.Background(), service.RequestContext{UserID: "usr_owner"}, service.KnowledgeQueryInput{
+		Query: "breaker policy", TopK: 2, Rerank: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateKnowledgeQuery() error = %v", err)
+	}
+	if len(result.Results) != 0 {
+		t.Fatalf("results = %+v", result.Results)
+	}
+	if result.Trace.EmbeddingProvider == "" ||
+		result.Trace.EmbeddingModel == "" ||
+		result.Trace.EmbeddingDimension < 1 ||
+		result.Trace.QdrantCollection == "" ||
+		result.Trace.SearchTopK != 2 ||
+		result.Trace.HitCount != 0 ||
+		!result.Trace.Rerank {
 		t.Fatalf("trace = %+v", result.Trace)
 	}
 }

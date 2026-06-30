@@ -343,6 +343,7 @@ type VectorIndex interface {
 	Upsert(ctx context.Context, points []VectorPoint) error
 	DeleteByDocumentIngestionAttempt(ctx context.Context, documentID string, ingestionAttempt string) error
 	DeleteStaleDocumentPoints(ctx context.Context, documentID string, activeIngestionAttempt string) error
+	Search(ctx context.Context, request VectorSearchRequest) ([]VectorSearchHit, error)
 }
 
 type DocumentIngestionTask struct {

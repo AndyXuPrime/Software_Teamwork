@@ -157,6 +157,66 @@ func TestProxyInjectsAuthenticatedContextHeaders(t *testing.T) {
 	}
 }
 
+func TestKnowledgeQueriesRouteProxiesToKnowledge(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_1",
+		UserID:      "usr_1",
+		Username:    "alice",
+		Roles:       []string{"analyst"},
+		Permissions: []string{"knowledge:read"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+
+	var capturedPath string
+	var capturedHeader http.Header
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		capturedHeader = r.Header.Clone()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"id":"kq_1","query":"breaker policy","results":[]},"requestId":"req_query"}`))
+	}))
+	defer downstream.Close()
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		store:         store,
+		hasher:        hasher,
+		ownerBaseURLs: map[string]string{"knowledge": downstream.URL},
+		serviceToken:  "svc-token",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/knowledge-queries", strings.NewReader(`{"query":"breaker policy","topK":3}`))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-Id", "req_query")
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code == http.StatusNotImplemented {
+		t.Fatalf("status = %d, route should proxy instead of returning 501", res.Code)
+	}
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	if capturedPath != "/internal/v1/knowledge-queries" {
+		t.Fatalf("downstream path = %q", capturedPath)
+	}
+	if capturedHeader.Get("X-User-Id") != "usr_1" ||
+		capturedHeader.Get("X-User-Roles") != "analyst" ||
+		capturedHeader.Get("X-User-Permissions") != "knowledge:read" ||
+		capturedHeader.Get("X-Request-Id") != "req_query" ||
+		capturedHeader.Get("X-Caller-Service") != "gateway" ||
+		capturedHeader.Get("X-Service-Token") != "svc-token" {
+		t.Fatalf("downstream headers = %#v", capturedHeader)
+	}
+	if !strings.Contains(res.Body.String(), `"id":"kq_1"`) {
+		t.Fatalf("response body was not proxied: %s", res.Body.String())
+	}
+}
+
 func TestProxyOverwritesSpoofedForwardingHeaders(t *testing.T) {
 	hasher := testHasher(t)
 	store := newMemorySessionStore()

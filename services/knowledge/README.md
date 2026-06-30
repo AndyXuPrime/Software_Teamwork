@@ -44,10 +44,13 @@ RAG MCP server work.
 | `AI_GATEWAY_SERVICE_TOKEN` | no | - | Optional AI Gateway service token. |
 | `AI_GATEWAY_EMBEDDING_PROFILE_ID` | no | - | Optional AI Gateway embedding profile ID. |
 | `QDRANT_URL` | no | - | Optional Qdrant REST base URL; unset uses in-memory index. |
+| `QDRANT_BASE_URL` | no | - | Alias for `QDRANT_URL`. |
 | `QDRANT_API_KEY` | no | - | Optional Qdrant API key. |
 | `QDRANT_COLLECTION` | no | `knowledge_chunks` | Qdrant collection name. |
+| `RERANK_MODEL` | rerank | - | Optional AI Gateway rerank model. When unset, rerank requests use the local no-op fallback. |
+| `RERANK_PROFILE_ID` | no | - | Optional AI Gateway rerank profile id. |
 
-When `EMBEDDING_PROVIDER=ai_gateway`, `EMBEDDING_MODEL` must match the resolved AI Gateway embedding profile `model`. If `AI_GATEWAY_EMBEDDING_PROFILE_ID` is unset, AI Gateway uses its default enabled embedding profile and still validates the `model` value before calling the provider.
+When `EMBEDDING_PROVIDER=ai_gateway`, `EMBEDDING_MODEL` must match the resolved AI Gateway embedding profile `model`. If `AI_GATEWAY_EMBEDDING_PROFILE_ID` or `EMBEDDING_PROFILE_ID` is unset, AI Gateway uses its default enabled embedding profile and still validates the `model` value before calling the provider. `RERANK_MODEL` is optional; when unset, query rerank keeps the vector order as a local no-op fallback.
 
 ## Implemented Routes
 
@@ -66,6 +69,7 @@ Internal service routes:
 - `GET /internal/v1/knowledge-bases/{knowledgeBaseId}/documents`
 - `POST /internal/v1/knowledge-bases/{knowledgeBaseId}/documents`
 - `GET /internal/v1/documents/{documentId}`
+- `POST /internal/v1/knowledge-queries`
 
 Public gateway equivalents are documented in
 `docs/services/gateway/api/openapi.yaml`.
@@ -105,8 +109,10 @@ internal URLs.
 
 `document_chunks` is now written by the ingestion worker. Qdrant payloads are
 limited to `knowledge_base_id`, `document_id`, `chunk_id`, `chunk_index`,
-`chunk_type`, `section_path`, `tags`, and `metadata`. Retrieval execution and
-gateway chunk/query routes remain separate follow-up work.
+`chunk_type`, `section_path`, `tags`, `metadata`, `job_id`,
+`job_attempt`, and ingestion attempt markers. Knowledge query retrieval uses the
+configured vector index and PostgreSQL chunk hydration; tests can still inject
+fake embedder/vector adapters without real AI Gateway or Qdrant.
 
 Knowledge base deletion is soft-delete-first:
 

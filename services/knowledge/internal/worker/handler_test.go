@@ -770,6 +770,13 @@ func (i *recordingVectorIndex) DeleteStaleDocumentPoints(ctx context.Context, do
 	return nil
 }
 
+func (i *recordingVectorIndex) Search(ctx context.Context, request service.VectorSearchRequest) ([]service.VectorSearchHit, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return []service.VectorSearchHit{}, nil
+}
+
 type reclaimingVectorIndex struct {
 	recordingVectorIndex
 	repo      *repository.MemoryRepository

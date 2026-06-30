@@ -110,18 +110,15 @@ func (s *Service) CreateKnowledgeQuery(ctx context.Context, reqCtx RequestContex
 			ID:      queryID,
 			Query:   query,
 			Results: []KnowledgeQueryResult{},
-			Trace: KnowledgeQueryTrace{
-				QdrantCollection: s.vectorCollection,
-				SearchTopK:       topK,
-				ScoreThreshold:   scoreThreshold,
-				HitCount:         0,
-				Rerank:           input.Rerank,
-				RerankTopN:       rerankTopN,
-			},
+			Trace:   s.baseKnowledgeQueryTrace(topK, scoreThreshold, input.Rerank, rerankTopN),
 		}, nil
 	}
 
-	embedding, err := s.embedder.Embed(ctx, EmbeddingRequest{Texts: []string{query}})
+	embedding, err := s.embedder.Embed(ctx, EmbeddingRequest{
+		Texts:     []string{query},
+		UserID:    strings.TrimSpace(reqCtx.UserID),
+		RequestID: strings.TrimSpace(reqCtx.RequestID),
+	})
 	if err != nil {
 		return KnowledgeQuerySummary{}, DependencyError("knowledge query embedding failed", err)
 	}
@@ -156,26 +153,49 @@ func (s *Service) CreateKnowledgeQuery(ctx context.Context, reqCtx RequestContex
 	}
 
 	queryID := s.newID("kq")
-	qdrantCollection := strings.TrimSpace(s.vectorCollection)
-	if qdrantCollection == "" {
-		qdrantCollection = DefaultVectorCollection
-	}
+	trace := s.baseKnowledgeQueryTrace(topK, scoreThreshold, input.Rerank, rerankTopN)
+	trace.EmbeddingProvider = strings.TrimSpace(embedding.Provider)
+	trace.EmbeddingModel = strings.TrimSpace(embedding.Model)
+	trace.EmbeddingDimension = embedding.Dimension
+	trace.HitCount = len(results)
+	trace = normalizeKnowledgeQueryTrace(trace)
 	return KnowledgeQuerySummary{
 		ID:      queryID,
 		Query:   query,
 		Results: results,
-		Trace: KnowledgeQueryTrace{
-			EmbeddingProvider:  embedding.Provider,
-			EmbeddingModel:     embedding.Model,
-			EmbeddingDimension: embedding.Dimension,
-			QdrantCollection:   qdrantCollection,
-			SearchTopK:         topK,
-			ScoreThreshold:     scoreThreshold,
-			HitCount:           len(results),
-			Rerank:             input.Rerank,
-			RerankTopN:         rerankTopN,
-		},
+		Trace:   trace,
 	}, nil
+}
+
+func (s *Service) baseKnowledgeQueryTrace(topK int, scoreThreshold float64, rerank bool, rerankTopN *int) KnowledgeQueryTrace {
+	trace := KnowledgeQueryTrace{
+		EmbeddingProvider:  "configured",
+		EmbeddingModel:     "configured",
+		EmbeddingDimension: 1,
+		QdrantCollection:   strings.TrimSpace(s.vectorCollection),
+		SearchTopK:         topK,
+		ScoreThreshold:     scoreThreshold,
+		HitCount:           0,
+		Rerank:             rerank,
+		RerankTopN:         cloneIntPointer(rerankTopN),
+	}
+	return normalizeKnowledgeQueryTrace(trace)
+}
+
+func normalizeKnowledgeQueryTrace(trace KnowledgeQueryTrace) KnowledgeQueryTrace {
+	if strings.TrimSpace(trace.EmbeddingProvider) == "" {
+		trace.EmbeddingProvider = "configured"
+	}
+	if strings.TrimSpace(trace.EmbeddingModel) == "" {
+		trace.EmbeddingModel = "configured"
+	}
+	if trace.EmbeddingDimension < 1 {
+		trace.EmbeddingDimension = 1
+	}
+	if strings.TrimSpace(trace.QdrantCollection) == "" {
+		trace.QdrantCollection = DefaultVectorCollection
+	}
+	return trace
 }
 
 func (s *Service) rerankRetrievalResults(ctx context.Context, reqCtx RequestContext, query string, results []KnowledgeQueryResult, topN *int) ([]KnowledgeQueryResult, error) {
