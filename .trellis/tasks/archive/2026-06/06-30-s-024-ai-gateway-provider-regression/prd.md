@@ -38,6 +38,7 @@ Complete GitHub issue #287 by adding AI Gateway provider adapter regression samp
 * [x] `docker run --rm -u 1000:1000 -e GOCACHE=/tmp/go-cache -e GOPROXY=https://goproxy.cn,direct -v /home/eir/Software_Teamwork:/repo -w /repo/services/ai-gateway golang:1.25 sh -c 'go test ./... && go build ./cmd/server'`
 * [x] `docker run --rm -u 1000:1000 -e GOCACHE=/tmp/go-cache -e GOPROXY=https://goproxy.cn,direct -v /home/eir/Software_Teamwork:/repo -w /repo/services/ai-gateway golang:1.25 sh -c 'go test ./internal/http -run "Test(ChatSmoke|ChatStreamSmoke|EmbeddingSmoke|RerankSmoke)" -count=1'`
 * [x] `git diff --check`
+* [x] Rebased onto `upstream/develop` `434640c4f3475e6388dea59403dd3892989925b3` and reran `go test ./... && go build ./cmd/server`, the controlled provider regression command, and `git diff --check`.
 
 ## Technical Approach
 
@@ -72,7 +73,7 @@ Update AI Gateway provider adapter docs, implementation status, and seed runbook
 * Branch: `Special/test/ai-gateway-provider-regression`
 * Base branch: `develop`
 * Scope: `ai-gateway`
-* Current upstream baseline at task start: `b02de674bf58de2cef6269292b55475be28b5820`
+* Current upstream baseline after final rebase: `434640c4f3475e6388dea59403dd3892989925b3`
 * Relevant docs:
   * `docs/services/ai-gateway/docs/provider-adapters.md`
   * `docs/services/ai-gateway/docs/implementation.md`
