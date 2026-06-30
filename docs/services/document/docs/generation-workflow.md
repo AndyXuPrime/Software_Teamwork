@@ -2,9 +2,11 @@
 
 日期：2026-06-30
 
-本文说明 `document` 服务报告生成链路的目标工作流、当前已实现部分和未实现缺口。它用于帮助前端、后端和部署同学判断“现在能联调什么”，不是替代 README、OpenAPI 或 implementation。
+本文说明 `document` 服务报告生成链路的目标工作流和联调判断。当前实现状态、缺口和最近检查记录以 [`implementation.md`](implementation.md) 为准；本文不是 README、OpenAPI 或 implementation 的替代品。
 
-## 当前结论
+## 联调判断摘要
+
+本节只用于快速判断当前链路能联调什么；状态变更以 [`implementation.md`](implementation.md) 同步。
 
 | 范围 | 当前状态 | 说明 |
 | --- | --- | --- |

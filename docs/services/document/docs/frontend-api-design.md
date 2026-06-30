@@ -75,7 +75,7 @@ type ApiErrorResponse = {
 
 技术基线固定为 `openapi-typescript` + typed fetch wrapper：
 
-- OpenAPI 类型从 `docs/services/gateway/api/openapi.yaml` 生成到 `apps/web/src/api/generated/`，生成文件不得手工修改。
+- OpenAPI 类型从 `docs/services/gateway/api/public.openapi.yaml` 生成到 `apps/web/src/api/generated/`，生成文件不得手工修改。
 - `apps/web/src/api/client.ts` 只负责 transport：base URL、Bearer token、request id、JSON/form/文件流处理、envelope 和错误归一化。
 - feature API 层可以包装生成类型以贴合页面语义，但字段、枚举和响应结构必须以生成类型为准。
 - 组件不得直接拼 `fetch`、不得直接依赖 `document` 服务内部地址、不得使用旧 envelope。

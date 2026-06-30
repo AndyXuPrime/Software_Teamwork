@@ -8,7 +8,7 @@
 
 本文定义 `file` 服务的逻辑数据模型，用于支撑基础文件对象元数据、对象存储引用、删除清理和内部服务调用。
 
-本文只描述逻辑数据模型，不提供具体 SQL 建表语句。后续实现应根据 `services/file` 的 PostgreSQL repository 和 migration 规范转换为 forward-only migration。服务级 API 契约见 [`services/file/api/openapi.yaml`](../../../../services/file/api/openapi.yaml)，前端稳定公开契约仍以 [`docs/services/gateway/api/openapi.yaml`](../../gateway/api/openapi.yaml) 为准。
+本文只描述逻辑数据模型，不提供具体 SQL 建表语句。后续实现应根据 `services/file` 的 PostgreSQL repository 和 migration 规范转换为 forward-only migration。服务级内部 API 契约见 [`../api/internal.openapi.yaml`](../api/internal.openapi.yaml)，前端稳定公开契约仍以 [`docs/services/gateway/api/public.openapi.yaml`](../../gateway/api/public.openapi.yaml) 为准。
 
 本文按 [`docs/architecture/technology-decisions.md`](../../../architecture/technology-decisions.md) 的最新技术基线编写：
 
@@ -146,7 +146,7 @@ PostgreSQL 类型建议：
 | `content_type` | `text` | 缺失或不可信时落 `application/octet-stream`。 |
 | `size_bytes` | `bigint` | 使用 `CHECK (size_bytes >= 0)`。 |
 | `checksum_sha256` | `text` | 使用 `CHECK` 约束为空或 64 位十六进制。 |
-| `storage_backend` | `text` | 第一阶段枚举 `memory`、`minio`，生产必须使用 `minio` 或等价持久后端。 |
+| `storage_backend` | `text` | 第一阶段枚举 `memory`、`local`、`minio`，生产必须使用 `minio` 或等价持久后端。 |
 | `status` | `text` | 第一阶段可用 `CHECK` 约束枚举；引入 PostgreSQL enum 前需评估迁移成本。 |
 | 时间字段 | `timestamptz` | 统一保存 UTC 语义，API 输出 RFC 3339 / OpenAPI `date-time`。 |
 

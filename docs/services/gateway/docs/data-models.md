@@ -4,7 +4,7 @@
 
 本文定义 `gateway` 服务的逻辑数据模型，用于支撑公开 API envelope、认证上下文、Redis 会话缓存、下游调用上下文、SSE 转发、健康检查和运行时审计。
 
-本文只描述逻辑数据模型，不提供具体 SQL 建表语句。`gateway` 首期不拥有业务数据库；稳定前端公开契约以 [`../api/openapi.yaml`](../api/openapi.yaml) 为准，职责边界见 [`../README.md`](../README.md)，技术选型以 [`../../../architecture/technology-decisions.md`](../../../architecture/technology-decisions.md) 为基线。
+本文只描述逻辑数据模型，不提供具体 SQL 建表语句。`gateway` 首期不拥有业务数据库；稳定前端公开契约以 [`../api/public.openapi.yaml`](../api/public.openapi.yaml) 为准，职责边界见 [`../README.md`](../README.md)，技术选型以 [`../../../architecture/technology-decisions.md`](../../../architecture/technology-decisions.md) 为基线。
 
 ## 2. 存储边界
 

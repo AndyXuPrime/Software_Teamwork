@@ -1,6 +1,6 @@
 # File 服务实现说明
 
-版本：v0.3
+版本：v0.4
 日期：2026-06-30
 范围：`services/file/` 当前实现、契约对齐、缺口和后续实现约束
 
@@ -13,8 +13,8 @@
 | 类型 | 权威来源 | 本文档关系 |
 | --- | --- | --- |
 | 服务公开说明 | `docs/services/file/README.md` | 只能补充，不能覆盖 |
-| 服务 OpenAPI | `services/file/api/openapi.yaml` | 只能跟随，不能另起契约 |
-| Gateway 公开契约 | `docs/services/gateway/api/openapi.yaml` | 前端稳定契约以 gateway 为准 |
+| 服务 OpenAPI | `docs/services/file/api/internal.openapi.yaml`；`services/file/api/openapi.yaml` 是实现本地路由副本 | 只能跟随，不能另起契约 |
+| Gateway 公开契约 | `docs/services/gateway/api/public.openapi.yaml` | 前端稳定契约以 gateway 为准 |
 | 服务边界 | `docs/architecture/service-boundaries.md` | 必须遵守 |
 | 技术基线 | `docs/architecture/technology-decisions.md` | 必须跟随 |
 | 代码实现 | `services/file/` | 本文档记录当前状态和差距 |
@@ -26,7 +26,7 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | 文档状态 | active | README、数据模型和内部 OpenAPI 已存在。 |
-| 代码状态 | partial | Go service、`/internal/v1/files/**`、兼容 document 路由、memory/local/MinIO object store、file_objects migration、PostgreSQL metadata runtime 和 service-token 校验已存在。 |
+| 代码状态 | partial | Go service、`/internal/v1/files/**`、兼容 document 路由、memory/local/MinIO object store、file_objects migration、PostgreSQL metadata runtime、`pgx/v5@v5.9.2` 和 service-token 校验已存在。 |
 | 契约对齐 | partial | 内部 OpenAPI 声明 `/internal/v1/files/**`；代码仍保留 knowledge-document 兼容路由。PostgreSQL metadata runtime 已按 `FILE_DATABASE_URL` 接入；MinIO adapter 已落地，根级 Compose 已提供 MinIO server/mc bucket 初始化。 |
 | 数据持久化 | memory / postgres metadata + memory/local/MinIO objects | `FILE_DATABASE_URL` 为空时 metadata 使用 memory repository；配置后使用 PostgreSQL repository。object bytes 可用 memory、local 或 MinIO adapter。 |
 | 测试状态 | partial | `go test ./...` 覆盖 service、handler、local storage、MinIO adapter、config、默认跳过的 PostgreSQL repository smoke 和默认跳过的 PostgreSQL + MinIO 联合 smoke。 |
@@ -36,10 +36,10 @@
 
 | 能力 | 代码位置 | 契约来源 | 验证方式 | 备注 |
 | --- | --- | --- | --- | --- |
-| 健康检查 | `services/file/internal/http/server.go` | `services/file/api/openapi.yaml` | `cd services/file && go test ./...` | `GET /healthz`、`GET /readyz`。 |
-| 基础文件创建 | `services/file/internal/http/server.go`、`services/file/internal/service/service.go` | `services/file/api/openapi.yaml` | `TestFileCreateGetContentDeleteFlow` | `POST /internal/v1/files` 接收 multipart，计算或校验 SHA-256。 |
-| 基础文件元数据读取 | `services/file/internal/service/service.go` | `services/file/api/openapi.yaml` | `TestFileCreateGetContentDeleteFlow` | 返回 file ID、文件名、content type、大小、checksum，不返回 object key。 |
-| 基础文件内容读取 | `services/file/internal/http/server.go` | `services/file/api/openapi.yaml` | `TestFileCreateGetContentDeleteFlow` | 成功时返回二进制流，不包 JSON envelope。 |
+| 健康检查 | `services/file/internal/http/server.go` | `docs/services/file/api/internal.openapi.yaml` | `cd services/file && go test ./...` | `GET /healthz`、`GET /readyz`。 |
+| 基础文件创建 | `services/file/internal/http/server.go`、`services/file/internal/service/service.go` | `docs/services/file/api/internal.openapi.yaml` | `TestFileCreateGetContentDeleteFlow` | `POST /internal/v1/files` 接收 multipart，计算或校验 SHA-256。 |
+| 基础文件元数据读取 | `services/file/internal/service/service.go` | `docs/services/file/api/internal.openapi.yaml` | `TestFileCreateGetContentDeleteFlow` | 返回 file ID、文件名、content type、大小、checksum，不返回 object key。 |
+| 基础文件内容读取 | `services/file/internal/http/server.go` | `docs/services/file/api/internal.openapi.yaml` | `TestFileCreateGetContentDeleteFlow` | 成功时返回二进制流，不包 JSON envelope。 |
 | 基础文件删除 | `services/file/internal/service/service.go` | `docs/services/file/README.md` | `TestDeleteFileHidesMetadataAndContent` | 删除后 metadata/content 读取返回 not found。 |
 | 上传校验 | `services/file/internal/service/service.go`、`services/file/internal/http/server_test.go` | `docs/services/file/README.md` | handler/service tests | 覆盖缺少文件、空文件、超限、checksum 格式和 mismatch。 |
 | local object store | `services/file/internal/platform/storage/local.go` | `docs/services/file/README.md` | `TestLocalStorePutGetDelete` | 可用于本地持久化 smoke；metadata 仍非持久。 |
@@ -47,7 +47,7 @@
 | PostgreSQL metadata runtime | `services/file/cmd/server/main.go`、`services/file/internal/repository/postgres.go` | 数据模型 / 技术选型 | `go test ./...`、`FILE_TEST_DATABASE_URL` smoke（可选） | `FILE_DATABASE_URL` 配置后使用 PostgreSQL repository；未配置时保留 memory 模式。 |
 | PostgreSQL + MinIO 联合 smoke | `services/file/internal/integration/minio_postgres_smoke_test.go`、`deploy/docker-compose.yml` | #286 / 本地联调手册 | `FILE_MINIO_POSTGRES_SMOKE=1 ... go test ./internal/integration -run TestFileMinIOPostgresSmoke -count=1 -v` | 默认跳过；显式启用后通过 HTTP API 验证上传、metadata 写入、内容读取、删除和清理。 |
 | service token 校验 | `services/file/internal/config/config.go`、`services/file/internal/http/server.go` | File README / 内部服务契约 | handler/config tests | DB 模式要求 `FILE_INTERNAL_SERVICE_TOKEN` 或 `INTERNAL_SERVICE_TOKEN`；保护 `/internal/v1/files/**`。 |
-| readyz runtime 状态 | `services/file/internal/http/server.go` | `services/file/api/openapi.yaml` | handler tests | 返回 metadata/storage backend、service token 配置状态和 PostgreSQL dependency 状态。 |
+| readyz runtime 状态 | `services/file/internal/http/server.go` | `docs/services/file/api/internal.openapi.yaml` | handler tests | 返回 metadata/storage backend、service token 配置状态和 PostgreSQL dependency 状态。 |
 | knowledge-document 兼容路由 | `services/file/internal/http/server.go`、`services/file/internal/service/document.go` | 历史联调兼容，不是目标内部 OpenAPI | `TestUploadGetPatchAndContent` | 仍暴露 `/internal/v1/knowledge-bases/{knowledgeBaseId}/documents` 等。 |
 | file_objects migration | `services/file/migrations/0001_create_file_objects.sql` | `docs/services/file/docs/data-models.md` | 需手工 goose apply；env-gated test 会应用 migration | PostgreSQL runtime 使用该 schema。 |
 
@@ -64,7 +64,7 @@
 | 出入点 | 文档要求 | 当前实现 | 风险 | 建议处理 |
 | --- | --- | --- | --- | --- |
 | 生产对象存储 | 文档要求 File Service 封装 MinIO | 已有 MinIO adapter；根级 Compose 已固定 MinIO server/mc 镜像并初始化 `software-teamwork-local` bucket；File 联合 smoke 需显式 env 启用 | 普通 CI 不跑真实对象存储；跨服务链路仍需 #125/#289 等任务覆盖 | 使用 env-gated smoke 记录本机验证结果，不把根级 Compose 误写成完整 E2E。 |
-| 服务 OpenAPI 与代码路由 | `services/file/api/openapi.yaml` 只声明 `/internal/v1/files/**` | 代码还暴露 knowledge-document 兼容路由 | 调用方可能继续依赖错误 owner 边界 | 保留短期兼容但在 implementation 中登记退出条件；不要扩展兼容路由。 |
+| 服务 OpenAPI 与代码路由 | `docs/services/file/api/internal.openapi.yaml` 只声明 `/internal/v1/files/**` | 代码还暴露 knowledge-document 兼容路由；`services/file/api/openapi.yaml` 是实现本地副本 | 调用方可能继续依赖错误 owner 边界 | 保留短期兼容但在 implementation 中登记退出条件；不要扩展兼容路由。 |
 | 配置说明 | 早期实现说明列出 `FILE_DATABASE_URL`、MinIO、Redis 等 | runtime 已解析 `FILE_DATABASE_URL`、service token 和 MinIO 配置；Redis/异步清理仍未落地 | 部署若只配置 Redis 仍不会启用异步清理 | README 和 implementation 只把已接入项写成 runtime 能力，未落地项放在缺口。 |
 | file reference 边界 | File 不保存业务字段 | 兼容 document 路由仍保存 `knowledgeBaseId` 和 tags | 与 owner service 边界冲突 | 迁移 knowledge 上传链路到 `/internal/v1/files`，逐步删除兼容业务字段。 |
 
@@ -92,11 +92,11 @@
 
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
-| 单元测试 | `cd services/file && go test ./...` | pass（2026-06-30，本次执行） | 不覆盖真实 MinIO server；env-gated DB smoke 默认跳过。 |
+| 单元测试 | `cd services/file && go test ./...` | pass（既有记录，2026-06-30；本轮文档审计未重跑） | 不覆盖真实 MinIO server；env-gated DB smoke 默认跳过。 |
 | 集成测试 | `FILE_TEST_DATABASE_URL=... go test ./internal/repository` | available / not run by default | 需要真实 DB；测试会创建独立 schema、应用 migration 并验证 repository metadata lifecycle。 |
 | 联合 smoke | `FILE_MINIO_POSTGRES_SMOKE=1 FILE_TEST_DATABASE_URL=... FILE_MINIO_ENDPOINT=... FILE_MINIO_ACCESS_KEY=... FILE_MINIO_SECRET_KEY=... FILE_MINIO_BUCKET=... go test ./internal/integration -run TestFileMinIOPostgresSmoke -count=1 -v` | available / not run by default | 需要真实 PostgreSQL 和 MinIO；测试会创建独立 schema，上传/读取/删除对象，并验证 metadata 清理状态。 |
 | 契约测试 | handler tests against `/internal/v1/files/**` | partial | 未从 OpenAPI 自动校验。 |
-| 手工 smoke | `FILE_STORAGE_BACKEND=local go run ./cmd/server` 后上传/读取/删除 | pass（本次执行：healthz、上传、读取、删除、删除后 404） | local 路径仍可用于无 MinIO 的快速验证；真实 MinIO 路径使用 env-gated 联合 smoke。 |
+| 手工 smoke | `FILE_STORAGE_BACKEND=local go run ./cmd/server` 后上传/读取/删除 | pass（既有记录，2026-06-30：healthz、上传、读取、删除、删除后 404；本轮文档审计未重跑） | local 路径仍可用于无 MinIO 的快速验证；真实 MinIO 路径使用 env-gated 联合 smoke。 |
 
 ## 9. 建议任务
 
@@ -114,3 +114,4 @@
 | 2026-06-30 | Codex task #154 | `upstream/develop` + `L1nggTeam/feat/file-minio-storage` | File 已接入官方 MinIO Go SDK adapter 和 runtime 配置；metadata runtime、异步清理 worker、service token 和 MinIO Compose smoke 仍未完成。 |
 | 2026-06-30 | Codex goal #235 | working tree | PostgreSQL metadata runtime、`X-Service-Token` 校验、readyz backend/dependency 状态和 env-gated repository smoke 已补齐；异步清理、MinIO Compose smoke 和兼容路由退出仍未完成。 |
 | 2026-06-30 | Codex issue #286 | `Special/test/file-minio-pg-smoke` | 新增默认跳过的 PostgreSQL + MinIO 联合 smoke；根级 Compose 的 MinIO bucket 初始化和运行命令已写入 README/runbook。 |
+| 2026-06-30 | Codex full-day audit | `develop@92d3afc` | 复核今日 PR/issue：File 已包含 MinIO adapter、PostgreSQL metadata runtime、service-token 校验、`pgx/v5@v5.9.2` 和默认跳过的 PostgreSQL + MinIO 联合 smoke；剩余为兼容 knowledge-document 路由退出、异步清理 worker、sqlc 生成代码和跨服务 smoke。 |

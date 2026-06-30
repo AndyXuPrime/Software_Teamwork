@@ -47,7 +47,7 @@
 ## 缺失契约登记
 
 以下下游前端/后端接口在团队最终确定请求和响应结构前，会有意保持
-`docs/services/gateway/api/openapi.yaml` 为空白。QA 会话、消息、SSE、响应运行、引用、配置、
+`docs/services/gateway/api/public.openapi.yaml` 为空白。QA 会话、消息、SSE、响应运行、引用、配置、
 检索测试和指标路由已不再缺失；它们是已生效的 gateway 契约。
 
 | 领域 | 占位路径 | 归属方 |

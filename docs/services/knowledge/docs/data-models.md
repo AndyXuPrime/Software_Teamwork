@@ -8,7 +8,7 @@
 
 本文定义 Knowledge Service 的服务内数据模型，用于指导 Go service、PostgreSQL goose migration、Qdrant payload、gateway 代理契约对齐和后续测试用例编写。
 
-本文只描述 Knowledge Service 拥有的业务数据，不替代 gateway 公开 OpenAPI，也不定义 File Service、QA Service 或 Document Service 的内部模型。前端可见字段仍以 `docs/services/gateway/api/openapi.yaml` 为准；服务本地内部接口以 `services/knowledge/api/openapi.yaml` 和 Go DTO 为准。
+本文只描述 Knowledge Service 拥有的业务数据，不替代 gateway 公开 OpenAPI，也不定义 File Service、QA Service 或 Document Service 的内部模型。前端可见字段仍以 `docs/services/gateway/api/public.openapi.yaml` 为准；服务本地内部接口以 `docs/services/knowledge/api/internal.openapi.yaml` 和 Go DTO 为准。
 
 ## 2. 技术基线
 

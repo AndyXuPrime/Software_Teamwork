@@ -1,6 +1,6 @@
 # Gateway Active API Owner Map
 
-This document is the human-readable audit list for gateway active API paths. The machine-readable source of truth remains [`../api/openapi.yaml`](../api/openapi.yaml); if this document and OpenAPI disagree, update this document from OpenAPI.
+This document is the human-readable audit list for gateway active API paths. The machine-readable source of truth remains [`../api/public.openapi.yaml`](../api/public.openapi.yaml); if this document and OpenAPI disagree, update this document from OpenAPI.
 
 ## Audit Result
 

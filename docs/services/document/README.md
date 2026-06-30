@@ -1,6 +1,6 @@
 # Document 服务接口文档
 
-本文档定义 `document` 服务在项目初期的职责边界、gateway 公开接口、报告生成工作流和实现约束。详细字段、状态码、response envelope 和 schema 以 [`docs/services/gateway/api/openapi.yaml`](../gateway/api/openapi.yaml) 为准；服务本地 OpenAPI 草案见 [`api/openapi.yaml`](api/openapi.yaml)。
+本文档定义 `document` 服务在项目初期的职责边界、gateway 公开接口、报告生成工作流和实现约束。详细字段、状态码、response envelope 和 schema 以 [`docs/services/gateway/api/public.openapi.yaml`](../gateway/api/public.openapi.yaml) 为准；服务本地公开 OpenAPI 草案见 [`api/public.openapi.yaml`](api/public.openapi.yaml)，内部运行合同见 [`api/internal.openapi.yaml`](api/internal.openapi.yaml)。
 
 前端、管理端、其他后端模块和 MCP 工具调用方只能通过 gateway `/api/v1/**` 访问报告生成能力，不能直接调用 `document` 服务内部地址。
 
@@ -13,7 +13,8 @@ RESTful 路径、统一响应和错误 envelope 以 [前后端集成契约](../.
 | 文档 | 说明 |
 | --- | --- |
 | [`../../architecture/technology-decisions.md`](../../architecture/technology-decisions.md) | 项目当前技术选型基线；`document` 服务实现和本文档约束必须与其保持一致。 |
-| [`api/openapi.yaml`](api/openapi.yaml) | `document` 服务本地 OpenAPI 草案；公开稳定契约仍以 gateway OpenAPI 为准。 |
+| [`api/public.openapi.yaml`](api/public.openapi.yaml) | `document` 服务本地公开 OpenAPI 草案；公开稳定契约仍以 gateway OpenAPI 为准。 |
+| [`api/internal.openapi.yaml`](api/internal.openapi.yaml) | `document` 服务内部运行和 report job 合同。 |
 | [`docs/data-models.md`](docs/data-models.md) | 报告生成逻辑数据模型、实体关系、关键字段和存储约束。 |
 | [`docs/frontend-api-design.md`](docs/frontend-api-design.md) | 前端 API 层、页面到接口映射和类型使用建议。 |
 | [`docs/generation-workflow.md`](docs/generation-workflow.md) | 报告 job、attempt、event、worker、AI Gateway、File Service 和 DOCX 创建的目标流程与当前缺口。 |

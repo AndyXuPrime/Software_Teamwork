@@ -1,0 +1,19 @@
+openapi: 3.0.3
+info:
+  title: File Public API
+  version: 0.1.0
+  description: |
+    File has no direct frontend-facing or gateway-public API. This file exists
+    to make the service-level public/internal API split explicit.
+
+    Knowledge and Document own the public business resources that reuse File
+    internally. Gateway exposes those owner-service resources through
+    docs/services/gateway/api/public.openapi.yaml.
+x-api-scope: gateway-public
+x-owner-service: file
+x-public-api-status: none
+x-no-public-paths-reason: File is an internal base file-object service reused by owner services.
+servers:
+  - url: /api/v1
+paths: {}
+components: {}

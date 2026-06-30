@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Knowledge Management API
   version: 0.1.0
-  description: RESTful API contract for knowledge bases, documents, processing jobs, knowledge queries, settings, and stats. All endpoints use opaque Bearer token auth; model calls use an AI gateway with an OpenAI-compatible API. Stable paths must use resource names and HTTP methods instead of action words.
+  description: Service-level public design draft for knowledge bases, documents, processing jobs, knowledge queries, settings, and stats. Stable frontend-facing paths remain in docs/services/gateway/api/public.openapi.yaml; paths in this file that are absent from the gateway public OpenAPI are candidate contracts, not active browser-facing APIs. All endpoints use opaque Bearer token auth; model calls use an AI gateway with an OpenAI-compatible API. Stable paths must use resource names and HTTP methods instead of action words.
 servers:
   - url: /api/v1
 security:

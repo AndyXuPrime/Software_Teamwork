@@ -1,6 +1,6 @@
 # AI Gateway 实现说明
 
-版本：v0.1
+版本：v0.2
 日期：2026-06-30
 范围：`services/ai-gateway/` 当前实现、契约对齐、缺口和后续实现约束
 
@@ -13,8 +13,8 @@
 | 类型 | 权威来源 | 本文档关系 |
 | --- | --- | --- |
 | 服务公开说明 | `docs/services/ai-gateway/README.md` | 只能补充，不能覆盖 |
-| 服务 OpenAPI | `docs/services/ai-gateway/api/openapi.yaml` | 只能跟随，不能另起契约 |
-| Gateway 公开契约 | `docs/services/gateway/api/openapi.yaml` | 前端稳定契约以 gateway 为准 |
+| 服务 OpenAPI | `docs/services/ai-gateway/api/internal.openapi.yaml` | 只能跟随，不能另起契约 |
+| Gateway 公开契约 | `docs/services/gateway/api/public.openapi.yaml` | 前端稳定契约以 gateway 为准 |
 | 服务边界 | `docs/architecture/service-boundaries.md` | 必须遵守 |
 | 技术基线 | `docs/architecture/technology-decisions.md` | 必须跟随 |
 | 代码实现 | `services/ai-gateway/` | 本文档记录当前状态和差距 |
@@ -26,7 +26,7 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | 文档状态 | active | README、数据模型和内部 OpenAPI 存在。 |
-| 代码状态 | partial | Go service、PostgreSQL repository、model profile CRUD、credential encryption、service-token auth、chat completions、embeddings、rerankings、provider invocation 记录和 usage aggregate 已实现；provider adapter 已有受控 fake 回归样本和默认跳过的真实 provider smoke 入口，DB smoke 仍缺。 |
+| 代码状态 | partial | Go service、PostgreSQL repository、`pgx/v5@v5.9.2`、model profile CRUD、credential encryption、service-token auth、chat completions、embeddings、rerankings、provider invocation 记录和 usage aggregate 已实现；provider adapter 已有受控 fake 回归样本、adapter regression smokes 和默认跳过的真实 provider smoke 入口，DB smoke 仍缺。 |
 | 契约对齐 | partial | `/internal/v1/model-profiles/**`、`/internal/v1/chat/completions`、`/internal/v1/embeddings` 和 `/internal/v1/rerankings` 已按当前 OpenAPI 落地；前端仍不得直接调用本服务。 |
 | 数据持久化 | postgres | runtime 使用 PostgreSQL 和 AES-GCM 加密列保存 provider credentials；migrations `0001`-`0006` 覆盖 profile、credential、revision、invocation、attempt 和 usage aggregate。 |
 | 测试状态 | partial | config/service/http/middleware/provider tests 覆盖 profile、安全、非流式 chat、流式 chat、embedding、rerank、受控 fake provider 成功路径、脱敏、响应映射和失败记录；真实 provider smoke 有 env-gated 入口但缺实际凭证运行记录，DB smoke 仍缺。 |
@@ -46,7 +46,7 @@
 | OpenAI-style rerankings | `internal/http/server.go`、`internal/service/invocations.go`、`internal/provider/client.go` | AI Gateway OpenAPI | HTTP/service tests；受控 fake provider smoke | 使用 `/rerank` 兼容路径，校验 index、document_id、score、`data[]`/`results[]` 归一和 topN。 |
 | provider invocation 记录 | `migrations/0004`-`0006`、`internal/service/chat.go`、`internal/service/invocations.go`、`internal/repository/postgres.go` | 数据模型 / observability | service/http tests | 记录 provider、model、status、token usage、duration、input count、embedding dimensions、rerank topN 和错误归一摘要，不保存 prompt/API key/input 文本。 |
 | usage aggregate | `migrations/0006_create_model_usage_aggregates.sql`、`internal/repository/postgres.go` | 数据模型 / observability | repository path via service tests | 按小时、caller、profile 和 operation 聚合 request/success/failure/token/duration。 |
-| PostgreSQL schema/repository | `migrations/0001`-`0006`、`internal/repository/postgres.go` | 数据模型 | service tests / migration CI | runtime 使用 `pgx/v5`。 |
+| PostgreSQL schema/repository | `migrations/0001`-`0006`、`internal/repository/postgres.go` | 数据模型 | service tests / migration CI | runtime 使用 `pgx/v5@v5.9.2`。 |
 
 ## 4. 未实现
 
@@ -67,7 +67,8 @@
 | Provider adapter 行为 | README 只描述接口形态 | 代码还包含 model exact-match、embedding count/index 校验、rerank document_id 校验和 usage aggregate | 不写清会导致下游绕过 profile 或误存敏感 payload | 新增 `provider-adapters.md`，本文链接到该细则。 |
 | Migration 编号 | 数据模型早期把 usage aggregate 规划为 `0005` | 当前 `0005` 是 invocation attempts，usage aggregate 是 `0006` | reviewer 按旧编号找不到表 | 本次回写 data-models 和 implementation。 |
 | Service token 格式 | README 要求 `X-Service-Token`，配置使用 token hashes | 代码读取 `AI_GATEWAY_SERVICE_TOKEN_HASHES`，不接受明文配置 | 安全部署需要先生成 hash | README 保留 hash 格式说明，补生成示例。 |
-| pgx version | 技术基线目标为 `pgx/v5@v5.7.6` | AI Gateway 使用 `pgx/v5` | 无直接出入 | 保持随技术基线升级；不得降回 `pgx/v4`。 |
+| Metrics 预留配置 | README/config 提到 `AI_GATEWAY_METRICS_ADDR` | config 已解析该变量，但 `cmd/server` 尚未启动独立 metrics listener；Prometheus metrics 也未落地 | 配置该变量不会暴露指标，部署可能误判 observability 已可用 | README 已标为预留；实现 metrics server 后同步 README、implementation 和 provider adapter 观测说明。 |
+| pgx version | 技术基线目标为 `pgx/v5@v5.9.2` | AI Gateway 使用 `pgx/v5@v5.9.2` | 无直接出入 | 保持随技术基线升级；不得降回 `pgx/v4`。 |
 
 ## 6. MVP / mock / memory backend / 占位
 
@@ -91,8 +92,8 @@
 
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
-| 单元测试 | `cd services/ai-gateway && go test ./...` | pass（本次执行） | 真实 provider smoke 默认跳过。 |
-| Provider adapter 受控回归 | `cd services/ai-gateway && go test ./internal/http -run 'Test(ChatSmoke|ChatStreamSmoke|EmbeddingSmoke|RerankSmoke)' -count=1` | pass（本次执行） | 使用 `httptest.Server`，不外联。 |
+| 单元测试 | `cd services/ai-gateway && go test ./...` | pass（既有记录，2026-06-30；本轮文档审计未重跑） | 真实 provider smoke 默认跳过。 |
+| Provider adapter 受控回归 | `cd services/ai-gateway && go test ./internal/http -run 'Test(ChatSmoke|ChatStreamSmoke|EmbeddingSmoke|RerankSmoke)' -count=1`；#320 provider adapter regression smokes | pass（2026-06-30） | 使用 `httptest.Server`，不外联；覆盖 chat/streaming/embedding/rerank 响应映射和脱敏。 |
 | 真实 provider smoke | `AI_GATEWAY_REAL_PROVIDER_SMOKE=1 ... go test ./internal/http -run TestRealProviderSmoke_ExplicitEnvOnly -count=1 -v` | available / not run by default | 需要真实 provider base URL、API key 和至少一个模型环境变量。 |
 | 集成测试 | goose apply + profile CRUD against DB | missing | 需要 PostgreSQL。 |
 | 契约测试 | HTTP tests for profile、chat completion、streaming、embedding、rerank routes | partial | 未从 OpenAPI 自动校验完整 schema。 |
@@ -115,3 +116,4 @@
 | 2026-06-29 | Codex after #225 rebase | `51045a1` + docs branch | AI Gateway 已实现模型配置、凭据安全、chat、embedding、rerank、调用摘要和 usage aggregate；主要缺口转为真实 provider smoke 与跨服务接入验证。 |
 | 2026-06-29 | Codex docs PR | `065b3f4` rebased on `51045a1` | 本文从旧实现状态更新到 #225 后的当前能力，并新增 provider adapter、本地联调、能力矩阵和测试策略文档。 |
 | 2026-06-30 | Codex issue #287 | `b02de67` | 增加 embedding/rerank 受控 fake provider 成功回归样本、env-gated 真实 provider smoke 入口和 seed runbook；普通 CI 不依赖外部模型服务。 |
+| 2026-06-30 | Codex full-day audit | `develop@92d3afc` | 复核今日 PR/issue：#320 provider adapter regression smokes、#313 `pgx/v5@v5.9.2` 和安全依赖更新已在 develop；真实 provider smoke、DB smoke 和 Knowledge/QA/Document 跨服务接入验证仍待补齐。 |

@@ -1,6 +1,6 @@
 # File 服务接口文档
 
-本文档定义 `file` 服务的职责边界和内部文件能力契约。前端公开契约以 [`docs/services/gateway/api/openapi.yaml`](../gateway/api/openapi.yaml) 为准；前端不得直接调用 `file` 服务内部地址，只能通过 gateway 暴露的 `/api/v1/**` 入口访问文件能力。
+本文档定义 `file` 服务的职责边界和内部文件能力契约。前端公开契约以 [`docs/services/gateway/api/public.openapi.yaml`](../gateway/api/public.openapi.yaml) 为准；前端不得直接调用 `file` 服务内部地址，只能通过 gateway 暴露的 `/api/v1/**` 入口访问文件能力。
 
 RESTful 路径、统一响应和错误 envelope 以 [前后端集成契约](../../architecture/frontend-backend-contract.md) 为准。知识库原始文件流使用 `documents/{documentId}/content` 子资源表示；报告模板、素材和导出文件使用 `document` 服务拥有的 report 资源路径，由 `document` 在服务边界内复用 `file` 服务的基础文件能力。
 
@@ -10,14 +10,14 @@ RESTful 路径、统一响应和错误 envelope 以 [前后端集成契约](../.
 | --- | --- |
 | [数据模型](docs/data-models.md) | File Service 拥有的基础文件对象元数据、对象存储引用和清理模型。 |
 | [实现说明](docs/implementation.md) | 当前代码实现、契约对齐、缺口、临时后端和最近检查记录。 |
-| [服务 OpenAPI](../../../services/file/api/openapi.yaml) | File Service 内部 `/internal/v1/files/**` API 契约；不是前端公开契约。 |
+| [服务 OpenAPI](api/internal.openapi.yaml) | File Service 内部 `/internal/v1/files/**` API 契约；不是前端公开契约。 |
 
 ## 技术基线
 
 File Service 必须遵循 [技术选型基线](../../architecture/technology-decisions.md)。本服务只补充文件域特有约束：
 
 - 上传大小限制必须在 HTTP 层和 multipart 解析层同时生效。
-- 目标对象存储使用官方 MinIO Go SDK；当前 runtime 已有 memory/local/MinIO `ObjectStore` adapter，但本地 MinIO server/mc 初始化尚未提供。`file` 服务封装 bucket、object key、etag、version id 和对象 URL，owner service 与前端都不得直接依赖这些内部字段。
+- 目标对象存储使用官方 MinIO Go SDK；当前 runtime 已有 memory/local/MinIO `ObjectStore` adapter，根级 Compose 已提供 MinIO server/mc 初始化和 `software-teamwork-local` bucket。`file` 服务封装 bucket、object key、etag、version id 和对象 URL，owner service 与前端都不得直接依赖这些内部字段。
 - 当前 `cmd/server` 在 `FILE_DATABASE_URL` 为空时使用 memory metadata repository；配置 `FILE_DATABASE_URL` 时接入 PostgreSQL repository，并要求 `FILE_INTERNAL_SERVICE_TOKEN` 或 `INTERNAL_SERVICE_TOKEN`。具体状态以 [实现说明](docs/implementation.md) 为准。
 - 对象物理清理可由 `asynq` worker 执行，任务类型使用 `file:object:purge`。PostgreSQL 中的文件状态、失败摘要、重试次数和最终结果仍是权威来源。
 - handler 测试重点覆盖 envelope、错误码、request id、multipart 边界和内容流响应；repository 测试覆盖 migration 后的 SQL 行为。

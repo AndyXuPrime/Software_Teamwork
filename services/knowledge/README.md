@@ -76,7 +76,7 @@ Internal service routes:
 - `POST /internal/v1/knowledge-queries`
 
 Public gateway equivalents are documented in
-`docs/services/gateway/api/openapi.yaml`.
+`docs/services/gateway/api/public.openapi.yaml`.
 
 ## Access Context
 

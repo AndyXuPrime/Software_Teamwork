@@ -4,7 +4,7 @@
 
 本文定义 `auth` 服务的逻辑数据模型，用于支撑用户身份、凭证、角色权限、会话令牌、撤销状态、安全审计和 gateway 会话缓存协作。
 
-本文只描述逻辑数据模型，不提供具体 SQL 建表语句。后续实现可根据 Go 服务和数据库规范转换为 PostgreSQL migration。服务级 API 契约见 [`../api/openapi.yaml`](../api/openapi.yaml)，稳定前端公开契约仍以 [`../../gateway/api/openapi.yaml`](../../gateway/api/openapi.yaml) 为准。
+本文只描述逻辑数据模型，不提供具体 SQL 建表语句。后续实现可根据 Go 服务和数据库规范转换为 PostgreSQL migration。服务级 API 契约见 [`../api/internal.openapi.yaml`](../api/internal.openapi.yaml)，稳定前端公开契约仍以 [`../../gateway/api/public.openapi.yaml`](../../gateway/api/public.openapi.yaml) 为准。
 
 ## 2. 存储边界
 
@@ -92,7 +92,7 @@ AuthSession 1 ── N AuthSecurityEvent
 | `updated_by` | 最近修改来源。 |
 | `request_id` | 贯穿 gateway、auth 和下游服务的一次请求 ID。 |
 
-公开 API 字段映射以 `docs/services/gateway/api/openapi.yaml` 和 `docs/services/auth/api/openapi.yaml` 为准。当内部字段和公开字段不是简单大小写转换时，本文在实体说明中单独列出。
+公开 API 字段映射以 `docs/services/gateway/api/public.openapi.yaml` 和 `docs/services/auth/api/internal.openapi.yaml` 为准。当内部字段和公开字段不是简单大小写转换时，本文在实体说明中单独列出。
 
 ## 6. 核心实体
 

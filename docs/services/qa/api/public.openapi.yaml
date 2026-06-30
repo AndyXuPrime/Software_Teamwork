@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: QA API
   version: 0.1.0
-  description: Service-level QA API reference for Agent Host sessions, messages, response runs, SSE answering, citations, config versions, retrieval tests, and stats. The stable frontend-facing gateway contract is docs/services/gateway/api/openapi.yaml; this file is kept as QA service design context. JSON endpoints are wrapped by the gateway response envelope for frontend consumption; SSE endpoints use POST plus text/event-stream and are consumed with a fetch stream reader. Public requests use opaque Bearer token auth; model calls use AI Gateway with OpenAI-compatible function-calling transport; tool execution is owned by QA through an MCP SDK or sidecar.
+  description: Service-level QA API reference for Agent Host sessions, messages, response runs, SSE answering, citations, config versions, retrieval tests, and stats. The stable frontend-facing gateway contract is docs/services/gateway/api/public.openapi.yaml; this file is kept as QA service design context. JSON endpoints are wrapped by the gateway response envelope for frontend consumption; SSE endpoints use POST plus text/event-stream and are consumed with a fetch stream reader. Public requests use opaque Bearer token auth; model calls use AI Gateway with OpenAI-compatible function-calling transport; tool execution is owned by QA through an MCP SDK or sidecar.
 servers:
   - url: /api/v1
 security:

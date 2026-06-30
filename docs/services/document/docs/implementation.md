@@ -1,6 +1,6 @@
 # Document 服务实现说明
 
-版本：v0.1
+版本：v0.2
 日期：2026-06-30
 范围：`services/document/` 当前实现、契约对齐、缺口和后续实现约束
 
@@ -13,8 +13,8 @@
 | 类型 | 权威来源 | 本文档关系 |
 | --- | --- | --- |
 | 服务公开说明 | `docs/services/document/README.md` | 只能补充，不能覆盖 |
-| 服务 OpenAPI | `docs/services/document/api/openapi.yaml` | 只能跟随，不能另起契约 |
-| Gateway 公开契约 | `docs/services/gateway/api/openapi.yaml` | 前端稳定契约以 gateway 为准 |
+| 服务 OpenAPI | `docs/services/document/api/public.openapi.yaml` | 只能跟随，不能另起契约 |
+| Gateway 公开契约 | `docs/services/gateway/api/public.openapi.yaml` | 前端稳定契约以 gateway 为准 |
 | 服务边界 | `docs/architecture/service-boundaries.md` | 必须遵守 |
 | 技术基线 | `docs/architecture/technology-decisions.md` | 必须跟随 |
 | 代码实现 | `services/document/` | 本文档记录当前状态和差距 |
@@ -26,7 +26,7 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | 文档状态 | active | README、需求、数据模型、前端 API 设计和 OpenAPI 存在。 |
-| 代码状态 | partial | Go service、PostgreSQL repository、模板/材料/报告/大纲/章节 API、report jobs/attempts/events、report files/content、基础内置 DOCX 导出、asynq worker 状态机、report settings、statistics 和 operation logs 已实现；剩余缺口为 Document MCP tools、真实 AI 大纲/正文生成和 Pandoc/LibreOffice 富 DOCX 工具链。 |
+| 代码状态 | partial | Go service、PostgreSQL repository、`pgx/v5@v5.9.2`、模板/材料/报告/大纲/章节 API、report jobs/attempts/events、report files/content、基础内置 DOCX 导出、asynq worker 状态机、report settings、statistics 和 operation logs 已实现；剩余缺口为 Document MCP tools、真实 AI 大纲/正文生成和 Pandoc/LibreOffice 富 DOCX 工具链。 |
 | 契约对齐 | partial | Gateway active document paths 有 43 个；当前 Document active routes 已由服务处理。report file content 只有在文件 `succeeded` 且 File Service 已保存内容后可读取。 |
 | 数据持久化 | postgres | runtime 使用 PostgreSQL；模板/材料底层文件通过 File Service client。 |
 | 测试状态 | partial | service、HTTP、repository tests 存在；集成测试依赖 `DOCUMENT_TEST_DATABASE_URL`。 |
@@ -56,8 +56,8 @@
 | 缺口 | 文档来源 | 影响范围 | 建议任务 |
 | --- | --- | --- | --- |
 | Document MCP tools | Document README / requirements | QA / tool integration | 注册工具、权限校验、参数校验、脱敏输出和调用链路仍未实现。 |
-| 真实生成逻辑 | Document README | worker / report content | worker 当前只推进状态，尚未调用 AI Gateway 填充大纲/章节内容；需要真实生成闭环任务。 |
-| AI Gateway / Pandoc / LibreOffice generation | Document README | AI provider / rich DOCX | 实现生成编排和富 DOCX 工具链；落地前不得承诺 Pandoc/LibreOffice 转换已可用。 |
+| 真实生成逻辑 | Document README / #101 | worker / report content | 大纲/正文类 worker 当前只推进状态，尚未调用 AI Gateway 填充内容；`report_file_creation` 已能生成基础 DOCX。需要继续实现真实生成闭环。 |
+| AI Gateway / Pandoc / LibreOffice generation | Document README / #307 | AI provider / rich DOCX | 实现生成编排和富 DOCX 工具链；落地前不得承诺 Pandoc/LibreOffice 转换已可用。 |
 
 ## 5. 文档与实现出入
 
@@ -92,7 +92,7 @@
 
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
-| 单元测试 | `cd services/document && go test ./internal/http ./internal/service ./internal/worker -v` | pass（本次执行） | 全量 `./...` 和真实 DB tests 未在本次文档回写中执行。 |
+| 单元测试 | `cd services/document && go test ./internal/http ./internal/service ./internal/worker -v` | pass（既有记录，2026-06-30；本轮文档审计未重跑） | 全量 `./...` 和真实 DB tests 未在本次文档回写中执行。 |
 | 集成测试 | `DOCUMENT_TEST_DATABASE_URL=... go test ./internal/repository` | not run | 需要 PostgreSQL。 |
 | 契约测试 | route coverage tests + gateway route matrix | partial | active routes 已覆盖 report files/content；仍缺 File Service + Redis + worker 的端到端内容读取 smoke。 |
 | 手工 smoke | 创建模板/报告/大纲/章节 through gateway | not run | 需要 gateway/auth/file/document。 |
@@ -111,6 +111,7 @@
 | 日期 | 检查人/工具 | 代码基准 | 结论 |
 | --- | --- | --- | --- |
 | 2026-06-30 | Codex PR #265 review follow-up | working tree | Document 状态文档已与当前实现对齐：report files/content 和基础内置 DOCX 导出已落地；AI 正文生成、Document MCP tools 和 Pandoc/LibreOffice 富 DOCX 仍是缺口。 |
+| 2026-06-30 | Codex full-day audit | `develop@92d3afc` | 复核今日 PR/issue：Document 已包含 report jobs/attempts/events、基础 DOCX report file creation、settings/statistics/logs、`pgx/v5@v5.9.2` 和安全依赖更新；#101 真实大纲/正文生成、#307 富 DOCX worker toolchain、Document MCP tools 和跨服务 content smoke 仍待补齐。 |
 | 2026-06-30 | Codex C-08 redo | `31711d9` + working tree | Document 已补 report settings、statistics、operation logs、AI Gateway profile validation 和日志脱敏写入；后续当前分支已补齐 report files/content 基础导出，Document MCP tools、真实 AI 生成和 Pandoc/LibreOffice 富 DOCX 仍是缺口。 |
 | 2026-06-29 | Codex after proxy rebase | `0e402ca` + working tree | Document 已补 report jobs/attempts/events 和 asynq worker 状态机；报告文件、统计/settings、真实 AI/Pandoc/DOCX 生成仍是主要缺口。 |
 | 2026-06-29 | Codex goal | `eddf917` + working tree | Document 已有模板、材料、报告、大纲、章节基础能力；当时生成任务、报告文件、统计/settings/worker 仍是主要缺口，后续 `develop` 已补 jobs/worker 状态机。 |

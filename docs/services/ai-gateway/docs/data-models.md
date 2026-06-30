@@ -4,7 +4,7 @@
 
 本文定义 `ai-gateway` 服务的逻辑数据模型，用于支撑运行时模型 profile、provider 凭据写入状态、配置变更审计、模型调用脱敏记录、健康检查和错误归一化。
 
-本文只描述逻辑数据模型，不提供具体 SQL 建表语句。后续实现应根据服务代码、PostgreSQL 规范和迁移策略转换为 migration。服务级 API 契约见 [`../api/openapi.yaml`](../api/openapi.yaml)，领域说明见 [`../README.md`](../README.md)。前端稳定公开模型配置入口仍以 [`../../gateway/api/openapi.yaml`](../../gateway/api/openapi.yaml) 中的 `/api/v1/admin/model-profiles` 为准。
+本文只描述逻辑数据模型，不提供具体 SQL 建表语句。后续实现应根据服务代码、PostgreSQL 规范和迁移策略转换为 migration。服务级 API 契约见 [`../api/internal.openapi.yaml`](../api/internal.openapi.yaml)，领域说明见 [`../README.md`](../README.md)。前端稳定公开模型配置入口仍以 [`../../gateway/api/public.openapi.yaml`](../../gateway/api/public.openapi.yaml) 中的 `/api/v1/admin/model-profiles` 为准。
 
 ## 2. 存储边界
 

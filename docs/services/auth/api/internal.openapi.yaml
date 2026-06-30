@@ -10,7 +10,7 @@ info:
 
     This file documents auth-owned internal service-to-service resources used by
     gateway. It is not the frontend-facing contract. Stable frontend paths remain
-    owned by docs/services/gateway/api/openapi.yaml and are exposed through
+    owned by docs/services/gateway/api/public.openapi.yaml and are exposed through
     /api/v1/users, /api/v1/sessions, /api/v1/sessions/current, and /api/v1/users/me.
 
     All stable paths are RESTful resource-oriented paths. User registration is

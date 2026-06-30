@@ -5,7 +5,8 @@
 相关文档：
 
 - [Gateway 数据模型文档](docs/data-models.md)
-- [Gateway OpenAPI 契约](api/openapi.yaml)
+- [Gateway Public OpenAPI 契约](api/public.openapi.yaml)
+- [Gateway Internal OpenAPI 契约](api/internal.openapi.yaml)
 - [Gateway Active API Owner Map](docs/active-api-owner-map.md)
 - [Gateway 实现说明](docs/implementation.md)
 - [技术选型基线](../../architecture/technology-decisions.md)
@@ -75,7 +76,7 @@ Gateway 后续实现必须遵循 [技术选型基线](../../architecture/technol
 
 逐项 active operation、owner service、tag、operationId 和认证要求见
 [Gateway Active API Owner Map](docs/active-api-owner-map.md)。该清单从
-[`api/openapi.yaml`](api/openapi.yaml) 审计生成；若两者冲突，以 OpenAPI 为准并同步更新清单。
+[`api/public.openapi.yaml`](api/public.openapi.yaml) 审计生成；若两者冲突，以 OpenAPI 为准并同步更新清单。
 
 当前已确定路径分组：
 
@@ -122,7 +123,7 @@ Gateway 后续实现必须遵循 [技术选型基线](../../architecture/technol
 | --- | --- | --- |
 | `GET /api/v1/admin-overview`、`GET /api/v1/admin-metrics` | `gateway` + domain services | 缺失：概览/指标聚合来源和展示字段未定。模型 profile 和解析器配置管理不属于该缺失范围，已在 active paths 中定义。 |
 
-当某个 endpoint 涉及两个服务时，文档必须显式标注 workflow owner。默认规则是：拥有核心业务状态的服务拥有流程，gateway 只做入口和上下文传递。若流程需要模型能力，领域服务应通过 [AI Gateway 服务接口文档](../ai-gateway/README.md) 和 [AI Gateway OpenAPI 契约](../ai-gateway/api/openapi.yaml) 调用内部模型接口，不能让 public gateway 直接拼 prompt 或直连 provider。
+当某个 endpoint 涉及两个服务时，文档必须显式标注 workflow owner。默认规则是：拥有核心业务状态的服务拥有流程，gateway 只做入口和上下文传递。若流程需要模型能力，领域服务应通过 [AI Gateway 服务接口文档](../ai-gateway/README.md) 和 [AI Gateway OpenAPI 契约](../ai-gateway/api/internal.openapi.yaml) 调用内部模型接口，不能让 public gateway 直接拼 prompt 或直连 provider。
 
 ## 认证与上下文传递
 
@@ -183,7 +184,7 @@ Gateway 调用下游服务时应传递：
 
 ## Gateway User / Session 接口
 
-Gateway 对前端暴露 auth 相关公开接口，具体 schema 以 [`docs/services/gateway/api/openapi.yaml`](api/openapi.yaml) 为准。
+Gateway 对前端暴露 auth 相关公开接口，具体 schema 以 [`docs/services/gateway/api/public.openapi.yaml`](api/public.openapi.yaml) 为准。
 
 | Method | Path | Auth | Gateway 行为 | Auth service 行为 |
 | --- | --- | --- | --- | --- |
@@ -218,7 +219,7 @@ Gateway 必须只把 `data.session.accessToken` 返回给前端，不得把 Redi
 
 ## Gateway Knowledge 接口
 
-Gateway 对前端暴露 knowledge 相关公开接口，具体 schema 以 [`docs/services/gateway/api/openapi.yaml`](api/openapi.yaml) 为准。Gateway 只负责鉴权上下文传递、路由和响应归一化，不执行解析、切片、embedding、Qdrant 检索或重排序。
+Gateway 对前端暴露 knowledge 相关公开接口，具体 schema 以 [`docs/services/gateway/api/public.openapi.yaml`](api/public.openapi.yaml) 为准。Gateway 只负责鉴权上下文传递、路由和响应归一化，不执行解析、切片、embedding、Qdrant 检索或重排序。
 
 | Method | Path | Auth | Gateway 行为 | Knowledge service 行为 |
 | --- | --- | --- | --- | --- |
@@ -240,7 +241,7 @@ Gateway 对前端暴露 knowledge 相关公开接口，具体 schema 以 [`docs/
 
 ## Gateway QA 接口
 
-Gateway 对前端暴露智能问答相关公开接口，具体 schema 以 [`docs/services/gateway/api/openapi.yaml`](api/openapi.yaml) 为准。Gateway 只负责认证上下文、统一 envelope、SSE 转发和错误归一化；`qa` 服务拥有会话、消息、回答运行、Agent/ReAct 循环、MCP 工具编排、引用快照、配置版本、检索体验测试和问答统计。
+Gateway 对前端暴露智能问答相关公开接口，具体 schema 以 [`docs/services/gateway/api/public.openapi.yaml`](api/public.openapi.yaml) 为准。Gateway 只负责认证上下文、统一 envelope、SSE 转发和错误归一化；`qa` 服务拥有会话、消息、回答运行、Agent/ReAct 循环、MCP 工具编排、引用快照、配置版本、检索体验测试和问答统计。
 
 | Method | Path | Auth | Gateway 行为 | QA service 行为 |
 | --- | --- | --- | --- | --- |
@@ -261,17 +262,17 @@ QA SSE 事件类型包括 `message.created`、`agent.iteration.started`、`reaso
 
 Gateway 负责对前端保持统一成功响应、分页响应和错误响应结构。通用 envelope、错误码和前端处理规则见 [前后端集成契约](../../architecture/frontend-backend-contract.md)。本节不再重复定义格式，避免与 OpenAPI 和架构契约漂移。
 
-Gateway 可透传或映射 owner service 的服务特有错误码，但任何稳定公开错误都必须先进入 [`api/openapi.yaml`](api/openapi.yaml)。
+Gateway 可透传或映射 owner service 的服务特有错误码，但任何稳定公开错误都必须先进入 [`api/public.openapi.yaml`](api/public.openapi.yaml)。
 
 ## 缺失下游接口
 
 管理后台概览/指标聚合的前后端接口尚未完全确定。当前 OpenAPI 只在顶层 `x-missing-contracts` 标记这些缺失范围，不把这些 endpoint 作为可依赖的公开契约。QA 会话、消息、SSE、引用、配置、检索体验测试和统计已经进入 active paths。
 
-AI Gateway 的内部模型调用接口已经有独立契约：[`docs/services/ai-gateway/api/openapi.yaml`](../ai-gateway/api/openapi.yaml)。该契约不属于前端可调用的 gateway OpenAPI，也不应生成到前端 API client。前端需要管理运行时模型配置时，只能使用 gateway OpenAPI 中的 `/api/v1/admin/model-profiles` 资源；gateway 再调用 AI Gateway 内部 `/internal/v1/model-profiles`。
+AI Gateway 的内部模型调用接口已经有独立契约：[`docs/services/ai-gateway/api/internal.openapi.yaml`](../ai-gateway/api/internal.openapi.yaml)。该契约不属于前端可调用的 gateway OpenAPI，也不应生成到前端 API client。前端需要管理运行时模型配置时，只能使用 gateway OpenAPI 中的 `/api/v1/admin/model-profiles` 资源；gateway 再调用 AI Gateway 内部 `/internal/v1/model-profiles`。
 
 后续补齐任一缺失接口时，需要同步更新：
 
-- `docs/services/gateway/api/openapi.yaml`
+- `docs/services/gateway/api/public.openapi.yaml`
 - `docs/architecture/frontend-backend-contract.md`
 - `docs/architecture/service-boundaries.md`
 - 对应服务接口文档

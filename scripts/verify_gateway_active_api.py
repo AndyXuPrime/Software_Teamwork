@@ -31,7 +31,7 @@ ACTION_STYLE_SEGMENTS = {
     "revoke",
 }
 OPERATIONAL_PATHS = {"/healthz", "/readyz"}
-EXPECTED_FRONTEND_OPENAPI_SOURCE = "../../docs/services/gateway/api/openapi.yaml"
+EXPECTED_FRONTEND_OPENAPI_SOURCE = "../../docs/services/gateway/api/public.openapi.yaml"
 
 
 @dataclass(frozen=True)
@@ -392,7 +392,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--openapi",
         type=Path,
-        default=Path("docs/services/gateway/api/openapi.yaml"),
+        default=Path("docs/services/gateway/api/public.openapi.yaml"),
         help="Path to gateway OpenAPI YAML.",
     )
     parser.add_argument(

@@ -9,7 +9,7 @@ Authoritative contract docs:
 - `docs/services/ai-gateway/README.md`
 - `docs/services/ai-gateway/docs/data-models.md`
 - `docs/services/ai-gateway/docs/provider-adapters.md`
-- `docs/services/ai-gateway/api/openapi.yaml`
+- `docs/services/ai-gateway/api/internal.openapi.yaml`
 
 ## Environment
 

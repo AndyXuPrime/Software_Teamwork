@@ -7,7 +7,7 @@
 1. 先读 [整体需求分析](requirements-analysis/overall-requirements-analysis.md)，了解完整业务范围。
 2. 再读 [服务边界矩阵](architecture/service-boundaries.md) 和 [当前能力矩阵](architecture/current-capability-matrix.md)，确认各服务职责归属和已落地能力。
 3. 实现服务或前端工程能力前，阅读 [技术选型基线](architecture/technology-decisions.md)。
-4. 开始前后端联调前，阅读 [前后端集成契约](architecture/frontend-backend-contract.md)、[本地联调运行手册](runbooks/local-integration.md) 和 [Gateway OpenAPI 契约](services/gateway/api/openapi.yaml)。
+4. 开始前后端联调前，阅读 [前后端集成契约](architecture/frontend-backend-contract.md)、[本地联调运行手册](runbooks/local-integration.md) 和 [Gateway OpenAPI 契约](services/gateway/api/public.openapi.yaml)。
 5. 提 PR 前，阅读 [测试策略](testing/strategy.md)，选择与改动范围匹配的检查。
 6. 需要实现具体后端服务时，阅读对应服务接口文档。
 7. 新增或调整文档时，先读 [文档维护工作流](collaboration/documentation-workflow.md)，确认内容应落在架构、协作还是服务细则中。
@@ -45,9 +45,9 @@
 | [Document 生成工作流](services/document/docs/generation-workflow.md) | 报告 job、attempt、event、worker、AI Gateway、File Service 和 DOCX 创建的目标流程与当前缺口。 |
 | [Document 实现说明](services/document/docs/implementation.md) | `services/document/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [前后端集成契约](architecture/frontend-backend-contract.md) | 前端调用 gateway 的入口、认证、请求/响应、错误、分页、SSE 和 mock 约定。 |
-| [Gateway OpenAPI 契约](services/gateway/api/openapi.yaml) | 当前稳定的 gateway 公开 API 机器可读契约。 |
+| [Gateway OpenAPI 契约](services/gateway/api/public.openapi.yaml) | 当前稳定的 gateway 公开 API 机器可读契约。 |
 | [Gateway Active API Owner Map](services/gateway/docs/active-api-owner-map.md) | 从 Gateway OpenAPI 审计得到的 active API 清单、owner service、tag、operationId 和认证要求。 |
-| [AI Gateway OpenAPI 契约](services/ai-gateway/api/openapi.yaml) | AI Gateway 内部服务机器可读契约；前端不得直接调用。 |
+| [AI Gateway OpenAPI 契约](services/ai-gateway/api/internal.openapi.yaml) | AI Gateway 内部服务机器可读契约；前端不得直接调用。 |
 | [Parser Runtime 公开契约](services/parser/api/public.openapi.yaml) | Parser 无 Gateway 公开 API 的机器可读声明。 |
 | [Parser Runtime 内部契约](services/parser/api/internal.openapi.yaml) | Parser 内部服务机器可读契约；只供 Knowledge ingestion 等后端服务调用。 |
 
@@ -88,12 +88,12 @@
 
 新增或调整公开接口或内部模型接口时，需要同步更新：
 
-- [Gateway OpenAPI 契约](services/gateway/api/openapi.yaml)
+- [Gateway OpenAPI 契约](services/gateway/api/public.openapi.yaml)
 - [前后端集成契约](architecture/frontend-backend-contract.md)
 - [服务边界矩阵](architecture/service-boundaries.md)
 - 对应服务接口文档
 - 对应服务 `docs/services/<service>/api/public.openapi.yaml` 或 `internal.openapi.yaml`：`public` 只记录经 Gateway 暴露的 `/api/v1/**` 子契约，`internal` 只记录服务间 `/internal/v1/**` 和健康检查契约；没有公开路径的内部服务应提供空 `public.openapi.yaml` 明确声明。
-- 涉及内部模型调用、provider 配置或调用记录时，同步更新 [AI Gateway 服务接口文档](services/ai-gateway/README.md)、[AI Gateway 数据模型文档](services/ai-gateway/docs/data-models.md) 和 [AI Gateway OpenAPI 契约](services/ai-gateway/api/openapi.yaml)
+- 涉及内部模型调用、provider 配置或调用记录时，同步更新 [AI Gateway 服务接口文档](services/ai-gateway/README.md)、[AI Gateway 数据模型文档](services/ai-gateway/docs/data-models.md) 和 [AI Gateway OpenAPI 契约](services/ai-gateway/api/internal.openapi.yaml)
 - 涉及 provider adapter、embedding、rerank 或模型调用摘要时，同步更新 [AI Gateway Provider Adapter 说明](services/ai-gateway/docs/provider-adapters.md)
 - 涉及本地 Compose、环境变量、跨服务 smoke 或 PR 前检查策略时，同步更新 [本地联调运行手册](runbooks/local-integration.md) 和 [测试策略](testing/strategy.md)
 

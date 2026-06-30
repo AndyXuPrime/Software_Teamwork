@@ -1,7 +1,7 @@
 # QA 服务实现说明
 
-版本：v0.1
-日期：2026-06-29
+版本：v0.2
+日期：2026-06-30
 范围：`services/qa/` 当前实现、契约对齐、缺口和后续实现约束
 
 ## 1. 文档定位
@@ -13,8 +13,8 @@
 | 类型 | 权威来源 | 本文档关系 |
 | --- | --- | --- |
 | 服务公开说明 | `docs/services/qa/README.md` | 只能补充，不能覆盖 |
-| 服务 OpenAPI | `services/qa/api/openapi.yaml`、`docs/services/qa/api/openapi.yaml` | 只能跟随，不能另起契约 |
-| Gateway 公开契约 | `docs/services/gateway/api/openapi.yaml` | 前端稳定契约以 gateway 为准 |
+| 服务 OpenAPI | `docs/services/qa/api/internal.openapi.yaml`、`docs/services/qa/api/public.openapi.yaml`；`services/qa/api/openapi.yaml` 是实现本地路由副本 | 只能跟随，不能另起契约 |
+| Gateway 公开契约 | `docs/services/gateway/api/public.openapi.yaml` | 前端稳定契约以 gateway 为准 |
 | 服务边界 | `docs/architecture/service-boundaries.md` | 必须遵守 |
 | 技术基线 | `docs/architecture/technology-decisions.md` | 必须跟随 |
 | 代码实现 | `services/qa/` | 本文档记录当前状态和差距 |
@@ -26,8 +26,8 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | 文档状态 | active | README、数据模型、公开设计 OpenAPI 和服务内部 OpenAPI 存在。 |
-| 代码状态 | partial / B-03 branch covered | Go service、PostgreSQL repository、QA sessions/messages/SSE、资源查询、settings、MCP/model tooling 已实现；本分支补齐 B-03 ResponseRun 与非流式 Agent Loop MVP。 |
-| 契约对齐 | partial | Gateway 25 个 QA active operations 均有 proxy route；QA 内部 routes 也注册，模型调用通过 AI Gateway chat completions；端到端 RAG 仍依赖 Knowledge retrieval。 |
+| 代码状态 | partial | Go service、PostgreSQL repository、QA sessions/messages/SSE heartbeat/replay、资源查询、settings、MCP/model tooling、ResponseRun Agent Loop、function-calling adapter 和 QA -> AI Gateway env-gated smoke 已实现。 |
+| 契约对齐 | partial | Gateway 25 个 QA active operations 均有 proxy route；QA 内部 routes 也注册，模型调用通过 AI Gateway chat completions；Knowledge `knowledge-queries` 已落地，但完整 RAG/citation 跨服务闭环仍未证明。 |
 | 数据持久化 | postgres | runtime 使用 PostgreSQL；配置 secret 使用本地加密 key。 |
 | 测试状态 | covered / partial | 单元测试覆盖 service、repository mapping、HTTP、MCP/model/local tools；QA -> AI Gateway chat 已有 env-gated smoke，完整 QA/Knowledge/Gateway 端到端仍未覆盖。 |
 | 建议动作 | 补联调 / 回写文档 | 在受控或真实 provider 环境按需运行 QA -> AI Gateway smoke；继续补 QA + Knowledge 与 Gateway/Auth 完整联调。 |
@@ -36,15 +36,16 @@
 
 | 能力 | 代码位置 | 契约来源 | 验证方式 | 备注 |
 | --- | --- | --- | --- | --- |
-| 健康/就绪检查 | `services/qa/internal/http/server.go` | `services/qa/api/openapi.yaml` | `cd services/qa && go test ./...` | `/readyz` 使用 repo ping。 |
+| 健康/就绪检查 | `services/qa/internal/http/server.go` | `docs/services/qa/api/internal.openapi.yaml` | `cd services/qa && go test ./...` | `/readyz` 使用 repo ping。 |
 | QA session CRUD | `services/qa/internal/http/server.go`、`internal/service/qa.go` | Gateway OpenAPI QA paths | HTTP/service tests | 创建、列表、详情、更新、删除。 |
 | QA owner authorization | `internal/repository/postgres.go`、`internal/repository/resources_postgres.go` | Gateway OpenAPI QA `403`/`404` responses | HTTP/service tests；PostgreSQL integration test gated by `QA_TEST_DATABASE_URL` | 有效非 owner session 的详情、更新、删除返回 `403`；message/run/citation 子资源按契约执行 owner 过滤与隐藏。 |
 | 消息创建与 SSE | `services/qa/internal/http/server.go`、`internal/service/qa.go` | Gateway OpenAPI | `TestStreamUsesContractEventNames` | 支持 `Accept: text/event-stream`。 |
+| SSE heartbeat/replay safeguards | `services/qa/internal/http/server.go`、`internal/service/qa.go`、`internal/repository` | #92 / #321 | SSE/service/repository tests | 支持 heartbeat、事件回放边界、取消后 replay record 保留和 event id 语义保护。 |
 | response runs / tool calls / citations | `services/qa/internal/http/resource_handlers.go`、`internal/service/resources.go` | Gateway OpenAPI | service/repository tests | 返回脱敏资源摘要。 |
 | QA/LLM config versions | `services/qa/internal/http/resource_handlers.go`、`internal/service/settings.go` | Gateway OpenAPI | config/settings tests | 配置版本持久化并加密敏感字段。 |
 | retrieval test / metrics | `services/qa/internal/http/resource_handlers.go` | Gateway OpenAPI | resource tests | 依赖 Knowledge retrieval client。 |
-| B-03 非流式 Agent Run MVP | `services/qa/internal/service/qa.go`、`internal/service/agent`、`internal/repository` | #89 / QA README / QA 数据模型 | service、repository、modelclient tests | 创建用户消息、助手占位、response run、初始事件和模型调用摘要；落库 `completed`、`model_error`、`timeout`、`cancelled`、`max_iterations` 等终止原因。 |
-| AI Gateway chat client | `services/qa/internal/platform/modelclient/openai.go` | QA README / AI Gateway OpenAPI | modelclient tests | 发送 OpenAI-compatible chat request，透传 `X-Caller-Service: qa` 和 request id，支持 `profile_id`。 |
+| ResponseRun Agent Loop | `services/qa/internal/service/qa.go`、`internal/service/agent`、`internal/repository` | #89 / QA README / QA 数据模型 | service、repository、modelclient tests | 创建用户消息、助手占位、response run、初始事件和模型调用摘要；落库 `completed`、`model_error`、`timeout`、`cancelled`、`max_iterations` 等终止原因。 |
+| AI Gateway chat/function-calling client | `services/qa/internal/platform/modelclient/openai.go`、`internal/service/agent` | #90 / #253 / AI Gateway OpenAPI | modelclient/agent tests | 发送 OpenAI-compatible chat request，透传 `X-Caller-Service: qa` 和 request id，支持 `profile_id`、tool calls 和 streamed function-call completions。 |
 | QA -> AI Gateway env-gated smoke | `services/qa/internal/platform/modelclient/ai_gateway_smoke_test.go`、`services/qa/README.md` | #288 / AI Gateway seed runbook | `QA_AI_GATEWAY_SMOKE=1 go test ./internal/platform/modelclient -run '^TestAIGatewaySmoke$' -count=1 -v` | 默认 skip；显式启用时验证成功模型响应、service token 拒绝和缺失 profile 错误归一化。 |
 | MCP client/tooling | `services/qa/internal/platform/mcpclient`、`localtools` | QA README | platform tests | 支持 stdio、streamable HTTP、内置工具。 |
 | PostgreSQL schema/repository | `services/qa/migrations/*.sql`、`internal/repository` | QA 数据模型 | repository tests | 有 integration tests，但依赖 `QA_TEST_DATABASE_URL`。 |
@@ -53,8 +54,9 @@
 
 | 缺口 | 文档来源 | 影响范围 | 建议任务 |
 | --- | --- | --- | --- |
-| 依赖的 Knowledge `/internal/v1/knowledge-queries` 未在 Knowledge 实现 | `docs/services/gateway/api/openapi.yaml`、QA RAG 流程 | QA / Knowledge / frontend | 拆 Knowledge retrieval / Qdrant / embedding-rerank 闭环任务；QA 保持降级和依赖说明。 |
-| QA -> AI Gateway smoke 依赖外部受控环境 | `docs/services/ai-gateway/api/openapi.yaml` | QA / AI Gateway | 已提供 env-gated 入口；普通 CI 不启动 AI Gateway/provider，真实 provider 仍只允许显式手工运行。 |
+| 完整 QA + Knowledge + AI Gateway RAG smoke 未证明 | `docs/services/gateway/api/public.openapi.yaml`、QA RAG 流程、#304 | QA / Knowledge / frontend | Knowledge `knowledge-queries` 已落地；仍需跨 Gateway/Auth/Knowledge/AI Gateway 的可复现 smoke。 |
+| 引用快照、引用详情和批量查询仍未完全闭环 | #93 / #325 | QA / frontend | 保留现有脱敏资源摘要，继续补 citation snapshot/detail/batch query 契约与持久化验证。 |
+| QA -> AI Gateway smoke 依赖外部受控环境 | `docs/services/ai-gateway/api/internal.openapi.yaml` | QA / AI Gateway | 已提供 env-gated 入口；普通 CI 不启动 AI Gateway/provider，真实 provider 仍只允许显式手工运行。 |
 | 真实 MCP/Knowledge/Model 端到端测试未证明 | QA README | integration | 补 Compose 或 smoke；在根级联调环境完成前不写成 required。 |
 | AI Gateway service-token 配置需联调 | QA config / AI Gateway middleware | QA / AI Gateway / deploy | 验证 `AI_GATEWAY_TOKEN` 缺省复用 `INTERNAL_SERVICE_TOKEN` 与 AI Gateway token hashes 一致，并补 profile seed 说明。 |
 
@@ -63,10 +65,10 @@
 | 出入点 | 文档要求 | 当前实现 | 风险 | 建议处理 |
 | --- | --- | --- | --- | --- |
 | 模型调用边界 | 文档要求业务服务通过 AI Gateway 调模型 | `services/qa/internal/config/config.go` 默认 `AI_GATEWAY_URL=http://localhost:8086/internal/v1/chat/completions`，token header 默认 `X-Service-Token`，不再要求 `DEEPSEEK_API_KEY` fallback | 与架构方向一致；仍需部署联调 token hash 和 caller header | 补 QA -> AI Gateway smoke。 |
-| Knowledge retrieval dependency | QA 文档将检索作为 RAG 主路径 | Knowledge 当前未实现 `knowledge-queries` | QA 问答闭环无法真实检索 | 补 Knowledge retrieval 或 QA mock/fallback 状态说明。 |
+| Knowledge retrieval dependency | QA 文档将检索作为 RAG 主路径 | Knowledge 已实现 `knowledge-queries`，QA 仍缺完整 RAG/citation 跨服务 smoke | 单服务测试通过不等于用户问答闭环已验收 | 补 #304 端到端 sample、#95 retrieval tests 和 #93/#325 citation snapshot/detail/batch query。 |
 | Gateway active QA paths | Gateway 25 个 QA operations active | QA 内部 routes 全注册 | route 层对齐，但业务结果依赖外部服务 | 增加跨服务 contract smoke。 |
 | MCP 原始信息不得暴露 | 文档要求只返回脱敏摘要 | 代码有 tool-call summary 和 local tool safety tests | 当前方向一致 | 持续补审计和字段级契约测试。 |
-| B-03 Agent Run 状态 | README 描述 Agent Run、termination 和 maxIterations；#229 要求未合入能力不得写成 develop 事实 | 本分支将 B-03 ResponseRun、终止原因、模型调用摘要和基础测试一起提交；合入后可视为当前实现，未合入前 PR 描述需说明仍是待合入能力 | 如果只合代码不合文档会造成状态漂移 | 本文档和能力矩阵随本 PR 更新。 |
+| Agent Run 状态 | README 描述 Agent Run、termination 和 maxIterations | develop 已包含 ResponseRun、终止原因、模型调用摘要、function-calling adapter 和基础测试 | 容易把 Agent Loop 可用误读为完整 RAG/citation 已完成 | 本文将 Agent Loop 和真实 RAG/citation smoke 分开记录。 |
 
 ## 6. MVP / mock / memory backend / 占位
 
@@ -90,8 +92,8 @@
 
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
-| 单元测试 | `cd services/qa && go test ./internal/repository ./internal/service ./internal/service/agent ./internal/platform/modelclient` | pass（本次执行） | 真实 DB tests 可能被 env gate 跳过。 |
-| 服务构建 | `cd services/qa && go build -buildvcs=false ./cmd/server && go build -buildvcs=false ./cmd/agent` | pass（本次执行） | `-buildvcs=false` 用于规避本地 worktree VCS stamping。 |
+| 单元测试 | `cd services/qa && go test ./internal/repository ./internal/service ./internal/service/agent ./internal/platform/modelclient` | pass（既有记录，2026-06-30；本轮文档审计未重跑） | 真实 DB tests 可能被 env gate 跳过。 |
+| 服务构建 | `cd services/qa && go build -buildvcs=false ./cmd/server && go build -buildvcs=false ./cmd/agent` | pass（既有记录，2026-06-30；本轮文档审计未重跑） | `-buildvcs=false` 用于规避本地 worktree VCS stamping。 |
 | 集成测试 | `QA_TEST_DATABASE_URL=... go test ./internal/repository` | not run | 需要 PostgreSQL。 |
 | 契约测试 | Gateway route matrix + QA HTTP tests | partial | 未从 OpenAPI 自动校验全部 schema。 |
 | QA -> AI Gateway smoke | `QA_AI_GATEWAY_SMOKE=1 go test ./internal/platform/modelclient -run '^TestAIGatewaySmoke$' -count=1 -v` | env-gated | 需要运行中的 AI Gateway、有效 service token、显式 chat profile 和受控或真实 provider；默认 CI skip。 |
@@ -102,8 +104,8 @@
 | 任务 | 类型 | 优先级 | 依据 | 说明 |
 | --- | --- | --- | --- | --- |
 | 将 QA -> AI Gateway smoke 接入受控集成环境 | 后续任务 | P1 | #288 env-gated smoke | 当前入口默认 skip；待共享 provider fixture/CI secret 策略稳定后再升级为受控集成 job。 |
-| 补 QA + Knowledge retrieval 联调 | 新任务 | P0 | RAG 主链路 | 覆盖 no result、dependency_error、citation snapshot。 |
-| #89 合入后确认 Agent Run 状态 | 回写文档 | P0 | 文档/代码出入评审结论 | 确认本文和能力矩阵在 `develop` 基线上保留 B-03 实现状态，不把真实 RAG 闭环误写成已完成。 |
+| 补 QA + Knowledge + AI Gateway retrieval 联调 | 新任务 | P0 | #304 / RAG 主链路 | 覆盖 no result、dependency_error、真实 query 命中、rerank trace 和 citation snapshot。 |
+| 补 citation snapshot/detail/batch query | 新任务 | P0 | #93 / #325 | 不把现有 tool-call/resource 摘要误写成完整 citation API。 |
 | 补 QA OpenAPI schema contract test | 新任务 | P1 | active paths 已多 | 防字段漂移。 |
 
 ## 10. 最近检查记录
@@ -111,6 +113,7 @@
 | 日期 | 检查人/工具 | 代码基准 | 结论 |
 | --- | --- | --- | --- |
 | 2026-06-30 | Codex #288 branch | working tree | 新增 QA -> AI Gateway env-gated chat smoke，覆盖成功响应、无效 service token、缺失 profile 和 request id 诊断；普通 CI 保持 skip，不扩展到完整 QA/Knowledge/Gateway 链路。 |
+| 2026-06-30 | Codex full-day audit | `develop@92d3afc` | 复核今日 PR/issue：QA 已包含 Agent Loop、function-calling adapter、SSE heartbeat/replay safeguards、MCP SDK security update 和 QA -> AI Gateway env-gated smoke；Knowledge `knowledge-queries` 已落地，剩余为完整 RAG/citation 跨服务 smoke、citation snapshot/detail/batch query、retrieval/metrics 强化。 |
 | 2026-06-29 | Codex #89 branch | `31711d9` + working tree | B-03 非流式 Agent Run MVP 覆盖成功、模型失败、超时、取消和 max-iterations；response_run、assistant message、初始事件和模型调用摘要保持一致。剩余风险为 Knowledge retrieval、跨服务 smoke 和 env-gated DB integration。 |
 | 2026-06-29 | Codex after proxy rebase | `0e402ca` + working tree | QA route 层基本对齐，config 默认走 AI Gateway chat；主要剩余风险在 Knowledge retrieval 未完成和跨服务 smoke 未跑。 |
 | 2026-06-29 | Codex after rebase | `808c589` + working tree | QA route 层基本对齐，AI Gateway chat 下游已落地；当时主要剩余风险在 Knowledge retrieval 未完成、跨服务 smoke 未跑和 direct provider fallback 边界，后续 `develop` 已移除 DeepSeek fallback。 |

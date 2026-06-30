@@ -79,7 +79,7 @@ Report 1 ── N OperationLog
 | `updated_by` | 更新人标识，优先来自 gateway 注入的用户上下文或 MCP 调用上下文 |
 
 本模块不做用户认证，用户相关字段只用于记录来源和追溯。
-数据库字段使用 snake_case；公开 API 字段映射为 camelCase，并以 `docs/services/gateway/api/openapi.yaml` 为准。
+数据库字段使用 snake_case；公开 API 字段映射为 camelCase，并以 `docs/services/gateway/api/public.openapi.yaml` 为准。
 当数据库内部字段和公开 API 字段不是简单大小写转换时，应在实体说明中显式写明映射关系。
 
 ## 6. 核心实体

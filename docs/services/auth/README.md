@@ -1,6 +1,6 @@
 # Auth 服务 API 文档
 
-本文档定义 `auth` 服务的职责边界、公开 API 契约和内部服务 API。稳定前端公开契约以 [`docs/services/gateway/api/openapi.yaml`](../gateway/api/openapi.yaml) 为准；auth 服务级 OpenAPI 见 [`api/openapi.yaml`](api/openapi.yaml)，数据模型见 [`docs/data-models.md`](docs/data-models.md)，当前实现状态和缺口见 [`docs/implementation.md`](docs/implementation.md)。本文用于指导 auth 服务实现、gateway 转发和联调。
+本文档定义 `auth` 服务的职责边界、公开 API 契约和内部服务 API。稳定前端公开契约以 [`docs/services/gateway/api/public.openapi.yaml`](../gateway/api/public.openapi.yaml) 为准；auth 服务级 OpenAPI 见 [`api/internal.openapi.yaml`](api/internal.openapi.yaml)，数据模型见 [`docs/data-models.md`](docs/data-models.md)，当前实现状态和缺口见 [`docs/implementation.md`](docs/implementation.md)。本文用于指导 auth 服务实现、gateway 转发和联调。
 
 RESTful 路径、统一响应和错误 envelope 以 [前后端集成契约](../../architecture/frontend-backend-contract.md) 为准。认证相关动作在本服务中建模为资源操作：
 
@@ -19,8 +19,9 @@ RESTful 路径、统一响应和错误 envelope 以 [前后端集成契约](../.
 | 文档 | 内容 |
 | --- | --- |
 | [技术选型基线](../../architecture/technology-decisions.md) | 后端服务、数据库访问、迁移、认证 token、密码哈希、日志、测试和观测的统一选型。 |
-| [Gateway OpenAPI](../gateway/api/openapi.yaml) | 前端稳定公开契约，auth 公开路径以此为准。 |
-| [Auth OpenAPI](api/openapi.yaml) | Auth 内部服务 API 草案。 |
+| [Gateway OpenAPI](../gateway/api/public.openapi.yaml) | 前端稳定公开契约，auth 公开路径以此为准。 |
+| [Auth Internal OpenAPI](api/internal.openapi.yaml) | Auth 内部服务 API 草案。 |
+| [Auth Public OpenAPI](api/public.openapi.yaml) | 显式声明无前端直连公开 API。 |
 | [Auth 数据模型](docs/data-models.md) | 用户、凭证、角色权限、会话、撤销和审计逻辑模型。 |
 | [Auth 实现说明](docs/implementation.md) | 当前代码实现、契约对齐、缺口和最近检查记录。 |
 
@@ -387,7 +388,7 @@ Redis 不是 auth 的持久化数据库。Auth 仍需在自己的 PostgreSQL 中
 
 公开契约由 gateway OpenAPI 决定。后续落地 `services/auth/` 时，gateway 可通过内部 HTTP API 与 auth 服务协作。内部 API 同样必须使用资源路径、统一 JSON error shape，并保留 `X-Request-Id`。
 
-机器可读契约见 [`api/openapi.yaml`](api/openapi.yaml)。
+机器可读契约见 [`api/internal.openapi.yaml`](api/internal.openapi.yaml)。
 
 | Method | Auth service path | 说明 |
 | --- | --- | --- |

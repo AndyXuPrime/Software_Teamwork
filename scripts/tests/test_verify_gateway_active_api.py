@@ -104,7 +104,7 @@ VALID_OWNER_MAP = textwrap.dedent(
 
 VALID_WEB_PACKAGE = {
     "scripts": {
-        "api:generate": "openapi-typescript ../../docs/services/gateway/api/openapi.yaml -o src/api/generated/gateway.ts"
+        "api:generate": "openapi-typescript ../../docs/services/gateway/api/public.openapi.yaml -o src/api/generated/gateway.ts"
     }
 }
 
@@ -167,13 +167,13 @@ class GatewayActiveAPIContractTests(unittest.TestCase):
     def test_frontend_generation_must_use_gateway_openapi_source(self) -> None:
         web_package = {
             "scripts": {
-                "api:generate": "openapi-typescript ../../docs/services/ai-gateway/api/openapi.yaml -o src/api/generated/gateway.ts"
+                "api:generate": "openapi-typescript ../../docs/services/ai-gateway/api/internal.openapi.yaml -o src/api/generated/gateway.ts"
             }
         }
 
         issues = self.verify(web_package=web_package)
 
-        self.assertIssueContains(issues, "apps/web api:generate must use ../../docs/services/gateway/api/openapi.yaml")
+        self.assertIssueContains(issues, "apps/web api:generate must use ../../docs/services/gateway/api/public.openapi.yaml")
 
     def test_owner_map_drift_fails(self) -> None:
         owner_map = VALID_OWNER_MAP.replace(

@@ -1,0 +1,19 @@
+openapi: 3.0.3
+info:
+  title: AI Gateway Public API
+  version: 0.1.0
+  description: |
+    AI Gateway has no direct frontend-facing or gateway-public API. This file
+    exists to make the service-level public/internal API split explicit.
+
+    External callers must use the public gateway API. Gateway exposes runtime
+    model profile administration through /api/v1/admin/model-profiles and calls
+    AI Gateway through the internal contract in internal.openapi.yaml.
+x-api-scope: gateway-public
+x-owner-service: ai-gateway
+x-public-api-status: none
+x-no-public-paths-reason: AI Gateway is an internal model provider gateway only.
+servers:
+  - url: /api/v1
+paths: {}
+components: {}

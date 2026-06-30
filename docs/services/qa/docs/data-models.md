@@ -4,7 +4,7 @@
 
 本文定义 `qa` 服务的逻辑数据模型，用于支撑会话、消息、Agent Run、模型调用、MCP 工具调用、SSE 事件回放、引用快照、配置版本、LLM 连接测试、检索体验测试和 QA 指标查询。
 
-本文只描述逻辑数据模型，不提供具体 SQL 建表语句。后续实现应根据服务代码、PostgreSQL 规范和迁移策略转换为 migration。稳定前端公开契约以 [`../../gateway/api/openapi.yaml`](../../gateway/api/openapi.yaml) 为准，领域说明见 [`../README.md`](../README.md)。
+本文只描述逻辑数据模型，不提供具体 SQL 建表语句。后续实现应根据服务代码、PostgreSQL 规范和迁移策略转换为 migration。稳定前端公开契约以 [`../../gateway/api/public.openapi.yaml`](../../gateway/api/public.openapi.yaml) 为准，领域说明见 [`../README.md`](../README.md)。
 
 ## 2. 存储边界
 

@@ -1,0 +1,531 @@
+openapi: 3.1.0
+info:
+  title: Knowledge Service Internal API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8083
+tags:
+  - name: operational
+  - name: knowledge
+paths:
+  /healthz:
+    get:
+      tags: [operational]
+      summary: Liveness check
+      operationId: knowledgeHealth
+      responses:
+        "200":
+          description: Service is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /readyz:
+    get:
+      tags: [operational]
+      summary: Readiness check
+      operationId: knowledgeReady
+      responses:
+        "200":
+          description: Service is ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /internal/v1/knowledge-bases:
+    get:
+      tags: [knowledge]
+      summary: List knowledge bases
+      operationId: internalListKnowledgeBases
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Knowledge bases.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBaseListResponse"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [knowledge]
+      summary: Create knowledge base
+      operationId: internalCreateKnowledgeBase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateKnowledgeBaseRequest"
+      responses:
+        "201":
+          description: Knowledge base created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBaseResponse"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /internal/v1/knowledge-bases/{knowledgeBaseId}:
+    parameters:
+      - $ref: "#/components/parameters/KnowledgeBaseId"
+    get:
+      tags: [knowledge]
+      summary: Get knowledge base
+      operationId: internalGetKnowledgeBase
+      responses:
+        "200":
+          description: Knowledge base.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBaseResponse"
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [knowledge]
+      summary: Update knowledge base
+      operationId: internalUpdateKnowledgeBase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateKnowledgeBaseRequest"
+      responses:
+        "200":
+          description: Knowledge base updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBaseResponse"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [knowledge]
+      summary: Soft delete knowledge base
+      operationId: internalDeleteKnowledgeBase
+      responses:
+        "204":
+          description: Knowledge base deleted.
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /internal/v1/knowledge-bases/{knowledgeBaseId}/documents:
+    parameters:
+      - $ref: "#/components/parameters/KnowledgeBaseId"
+    get:
+      tags: [knowledge]
+      summary: List knowledge-base documents
+      operationId: internalListKnowledgeBaseDocuments
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/DocumentStatus"
+      responses:
+        "200":
+          description: Documents in the knowledge base.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentListResponse"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [knowledge]
+      summary: Upload a knowledge-base document
+      operationId: internalUploadKnowledgeBaseDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UploadDocumentRequest"
+      responses:
+        "201":
+          description: Document uploaded and ingestion job queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentResponse"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+  /internal/v1/documents/{documentId}:
+    parameters:
+      - $ref: "#/components/parameters/DocumentId"
+    get:
+      tags: [knowledge]
+      summary: Get document processing details
+      operationId: internalGetDocument
+      responses:
+        "200":
+          description: Document processing details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentResponse"
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [knowledge]
+      summary: Update document metadata
+      operationId: internalUpdateDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDocumentRequest"
+      responses:
+        "200":
+          description: Updated document metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentResponse"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [knowledge]
+      summary: Soft-delete document
+      operationId: internalDeleteDocument
+      responses:
+        "204":
+          description: Document was soft-deleted and cleanup was queued.
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /internal/v1/documents/{documentId}/chunks:
+    parameters:
+      - $ref: "#/components/parameters/DocumentId"
+    get:
+      tags: [knowledge]
+      summary: List document chunks
+      operationId: internalListDocumentChunks
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Document chunks.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentChunkListResponse"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /internal/v1/documents/{documentId}/content:
+    parameters:
+      - $ref: "#/components/parameters/DocumentId"
+    get:
+      tags: [knowledge]
+      summary: Get original document content
+      operationId: internalGetDocumentContent
+      responses:
+        "200":
+          description: Original document content stream.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+  /internal/v1/knowledge-queries:
+    post:
+      tags: [knowledge]
+      summary: Create knowledge query
+      operationId: internalCreateKnowledgeQuery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KnowledgeQueryRequest"
+      responses:
+        "201":
+          description: Knowledge query created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeQueryResponse"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+components:
+  parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 200, default: 20 }
+    KnowledgeBaseId:
+      name: knowledgeBaseId
+      in: path
+      required: true
+      schema: { type: string }
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    Error:
+      description: Standard error envelope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    HealthResponse:
+      type: object
+      required: [data, requestId]
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+        requestId: { type: string }
+    CreateKnowledgeBaseRequest:
+      type: object
+      required: [name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string, default: "" }
+        docType: { type: string, default: GENERAL }
+        chunkStrategy: { type: object, additionalProperties: true }
+        retrievalStrategy: { type: object, additionalProperties: true }
+    UpdateKnowledgeBaseRequest:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        docType: { type: string }
+        chunkStrategy: { type: object, additionalProperties: true }
+        retrievalStrategy: { type: object, additionalProperties: true }
+    UploadDocumentRequest:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+        tags:
+          description: Optional repeated tag fields, or a JSON string array in one field.
+          oneOf:
+            - type: array
+              items: { type: string }
+            - type: string
+    UpdateDocumentRequest:
+      type: object
+      additionalProperties: false
+      required: [tags]
+      properties:
+        tags:
+          type: array
+          items: { type: string }
+    KnowledgeBaseSummary:
+      type: object
+      required: [id, name, description, docType, chunkStrategy, retrievalStrategy, documentCount, chunkCount, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        docType: { type: string }
+        chunkStrategy: { type: object, additionalProperties: true }
+        retrievalStrategy: { type: object, additionalProperties: true }
+        documentCount: { type: integer, minimum: 0 }
+        chunkCount: { type: integer, minimum: 0 }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    KnowledgeBaseResponse:
+      type: object
+      required: [data, requestId]
+      properties:
+        data: { $ref: "#/components/schemas/KnowledgeBaseSummary" }
+        requestId: { type: string }
+    KnowledgeBaseListResponse:
+      type: object
+      required: [data, page, requestId]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/KnowledgeBaseSummary" }
+        page: { $ref: "#/components/schemas/PageInfo" }
+        requestId: { type: string }
+    DocumentStatus:
+      type: string
+      enum: [uploaded, parsing, chunking, embedding, ready, failed]
+    DocumentSummary:
+      type: object
+      required: [id, knowledgeBaseId, name, status, chunkCount, createdAt]
+      properties:
+        id: { type: string }
+        knowledgeBaseId: { type: string }
+        name: { type: string }
+        contentType: { type: string, nullable: true }
+        sizeBytes: { type: integer, minimum: 0, nullable: true }
+        status: { $ref: "#/components/schemas/DocumentStatus" }
+        errorCode: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true }
+        chunkCount: { type: integer, minimum: 0 }
+        tags:
+          type: array
+          items: { type: string }
+        parserBackend: { type: string, nullable: true }
+        createdBy: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time, nullable: true }
+        jobId: { type: string, nullable: true }
+    DocumentResponse:
+      type: object
+      required: [data, requestId]
+      properties:
+        data: { $ref: "#/components/schemas/DocumentSummary" }
+        requestId: { type: string }
+    DocumentListResponse:
+      type: object
+      required: [data, page, requestId]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/DocumentSummary" }
+        page: { $ref: "#/components/schemas/PageInfo" }
+        requestId: { type: string }
+    DocumentChunk:
+      type: object
+      required: [id, knowledgeBaseId, documentId, chunkIndex, content, tokenCount, createdAt]
+      properties:
+        id: { type: string }
+        knowledgeBaseId: { type: string }
+        documentId: { type: string }
+        chunkIndex: { type: integer, minimum: 0 }
+        sectionPath: { type: string, nullable: true }
+        content: { type: string }
+        tokenCount: { type: integer, minimum: 0 }
+        chunkType: { type: string, nullable: true }
+        embeddingProvider: { type: string, nullable: true }
+        embeddingDimension: { type: integer, minimum: 1, nullable: true }
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt: { type: string, format: date-time }
+    DocumentChunkListResponse:
+      type: object
+      required: [data, page, requestId]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/DocumentChunk" }
+        page: { $ref: "#/components/schemas/PageInfo" }
+        requestId: { type: string }
+    KnowledgeQueryRequest:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string, minLength: 1, maxLength: 2000 }
+        knowledgeBaseIds:
+          type: array
+          items: { type: string }
+        topK: { type: integer, minimum: 1, maximum: 100, default: 10 }
+        scoreThreshold: { type: number, minimum: 0, default: 0.35 }
+        tags:
+          type: array
+          items: { type: string }
+        metadataFilter:
+          type: object
+          additionalProperties: { type: string }
+        rerank: { type: boolean, default: false }
+        rerankTopN: { type: integer, minimum: 1, nullable: true }
+    KnowledgeQueryResult:
+      type: object
+      required: [score, knowledgeBaseId, documentId, chunkId, documentName, contentPreview]
+      properties:
+        score: { type: number }
+        knowledgeBaseId: { type: string }
+        documentId: { type: string }
+        chunkId: { type: string }
+        documentName: { type: string }
+        sectionPath: { type: string, nullable: true }
+        chunkIndex: { type: integer, minimum: 0, nullable: true }
+        chunkType: { type: string, nullable: true }
+        contentPreview: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+    KnowledgeQueryTrace:
+      type: object
+      required: [embeddingProvider, embeddingModel, embeddingDimension, qdrantCollection, searchTopK, scoreThreshold, hitCount, rerank]
+      properties:
+        embeddingProvider: { type: string }
+        embeddingModel: { type: string }
+        embeddingDimension: { type: integer, minimum: 0 }
+        qdrantCollection: { type: string }
+        searchTopK: { type: integer, minimum: 1 }
+        scoreThreshold: { type: number, minimum: 0 }
+        hitCount: { type: integer, minimum: 0 }
+        rerank: { type: boolean }
+        rerankTopN: { type: integer, minimum: 1, nullable: true }
+    KnowledgeQuerySummary:
+      type: object
+      required: [id, query, results, trace]
+      properties:
+        id: { type: string }
+        query: { type: string }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/KnowledgeQueryResult" }
+        trace: { $ref: "#/components/schemas/KnowledgeQueryTrace" }
+    KnowledgeQueryResponse:
+      type: object
+      required: [data, requestId]
+      properties:
+        data: { $ref: "#/components/schemas/KnowledgeQuerySummary" }
+        requestId: { type: string }
+    PageInfo:
+      type: object
+      required: [page, pageSize, total]
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code:
+              type: string
+              enum: [validation_error, unauthorized, forbidden, not_found, conflict, rate_limited, dependency_error, internal_error]
+            message: { type: string }
+            requestId: { type: string }
+            fields:
+              type: object
+              additionalProperties: { type: string }

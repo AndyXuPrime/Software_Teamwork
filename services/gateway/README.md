@@ -9,7 +9,7 @@ workflows.
 Authoritative contracts and service boundaries:
 
 - `docs/services/gateway/README.md`
-- `docs/services/gateway/api/openapi.yaml`
+- `docs/services/gateway/api/public.openapi.yaml`
 - `docs/services/gateway/docs/data-models.md`
 - `docs/architecture/service-boundaries.md`
 - `docs/architecture/technology-decisions.md`

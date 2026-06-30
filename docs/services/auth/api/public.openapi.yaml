@@ -1,0 +1,19 @@
+openapi: 3.0.3
+info:
+  title: Auth Public API
+  version: 0.1.0
+  description: |
+    Auth has no direct service-public API. This file exists to make the
+    service-level public/internal API split explicit.
+
+    Frontend-facing user and session resources are exposed by the public
+    gateway contract in docs/services/gateway/api/public.openapi.yaml.
+    Gateway calls Auth through the internal contract in internal.openapi.yaml.
+x-api-scope: gateway-public
+x-owner-service: auth
+x-public-api-status: none
+x-no-public-paths-reason: Auth frontend-facing routes are owned and exposed by Gateway.
+servers:
+  - url: /api/v1
+paths: {}
+components: {}

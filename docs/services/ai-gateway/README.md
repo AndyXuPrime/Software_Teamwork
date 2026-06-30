@@ -1,6 +1,6 @@
 # AI Gateway 服务接口文档
 
-本文档定义 `ai-gateway` 服务在项目初期的职责边界和内部接口契约。机器可读契约见 [`docs/services/ai-gateway/api/openapi.yaml`](api/openapi.yaml)，逻辑数据模型见 [`docs/data-models.md`](docs/data-models.md)，当前实现状态和缺口见 [`docs/implementation.md`](docs/implementation.md)。
+本文档定义 `ai-gateway` 服务在项目初期的职责边界和内部接口契约。机器可读契约见 [`docs/services/ai-gateway/api/internal.openapi.yaml`](api/internal.openapi.yaml)，逻辑数据模型见 [`docs/data-models.md`](docs/data-models.md)，当前实现状态和缺口见 [`docs/implementation.md`](docs/implementation.md)。
 
 `ai-gateway` 是内部服务，不直接面向前端。前端仍只调用 public `gateway` 的 `/api/v1/**` 接口；`qa`、`knowledge`、`document` 等领域服务在需要大模型、embedding 或 rerank 能力时，通过内部 HTTP API 调用 `ai-gateway`。管理员需要运行时管理模型配置时，也只能调用 public gateway 的 `/api/v1/admin/model-profiles` 资源，再由 gateway 调用本服务的 `/internal/v1/model-profiles`。
 
@@ -10,7 +10,8 @@ RESTful 路径、统一响应和错误 envelope 以 [前后端集成契约](../.
 
 | 文档 | 内容 |
 | --- | --- |
-| [AI Gateway OpenAPI](api/openapi.yaml) | 内部服务机器可读 API 契约。 |
+| [AI Gateway Internal OpenAPI](api/internal.openapi.yaml) | 内部服务机器可读 API 契约。 |
+| [AI Gateway Public OpenAPI](api/public.openapi.yaml) | 显式声明无前端直连公开 API。 |
 | [数据模型](docs/data-models.md) | 模型 profile、provider 凭据、配置审计、脱敏调用日志和安全约束。 |
 | [Provider Adapter 说明](docs/provider-adapters.md) | Chat、embedding、rerank provider adapter 的请求映射、响应校验、脱敏和 usage aggregate 约束。 |
 | [实现说明](docs/implementation.md) | 当前代码实现、契约对齐、缺口和最近检查记录。 |
@@ -532,7 +533,7 @@ AI Gateway 的环境变量应按结构化配置分组，服务启动时一次性
 | `AI_GATEWAY_CREDENTIAL_ENCRYPTION_KEY_REF` | 条件 | `encrypted_column` 模式下的加密密钥引用或版本。 |
 | `AI_GATEWAY_DEFAULT_TIMEOUT_MS` | 否 | Provider 请求默认超时，profile 未配置时使用。 |
 | `AI_GATEWAY_MAX_REQUEST_BYTES` | 否 | JSON 请求体大小限制。 |
-| `AI_GATEWAY_METRICS_ADDR` | 否 | 独立 metrics 监听地址；为空时可复用主服务。 |
+| `AI_GATEWAY_METRICS_ADDR` | 否 | 预留 metrics 监听地址；当前代码只解析配置，尚未启动独立 metrics listener。 |
 
 配置校验失败时服务应启动失败，不应以缺省空 token、空数据库连接串或明文密钥配置继续运行。启动日志只能输出配置项是否存在、超时和非敏感开关，不能输出 token、数据库连接串、secret ref、加密密钥引用或 provider API key。
 

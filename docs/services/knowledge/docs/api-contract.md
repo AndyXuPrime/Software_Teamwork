@@ -48,9 +48,9 @@ RESTful 路径、动作词限制、分页、时间和通用 OpenAPI 协作规则
 
 OpenAPI 约定：
 
-- `knowledge` 服务维护服务内契约：`services/knowledge/api/openapi.yaml`。
-- 当前文档配套的 OpenAPI 草稿见 [public.openapi.yaml](../api/public.openapi.yaml)。
-- 涉及知识库文档上传和内容读取的公开接口由 `knowledge` 通过 gateway 维护；`file` 仅提供内部基础文件对象契约：`services/file/api/openapi.yaml`。公开 API 不要求前端先申请 file 上传 URL，也不暴露 file 内部 ID。
+- `knowledge` 服务维护服务内契约：[`../api/internal.openapi.yaml`](../api/internal.openapi.yaml)。
+- 当前文档配套的服务级公开草案见 [`../api/public.openapi.yaml`](../api/public.openapi.yaml)；前端稳定公开契约仍以 gateway public OpenAPI 为准。
+- 涉及知识库文档上传和内容读取的公开接口由 `knowledge` 通过 gateway 维护；`file` 仅提供内部基础文件对象契约：[`../../file/api/internal.openapi.yaml`](../../file/api/internal.openapi.yaml)。公开 API 不要求前端先申请 file 上传 URL，也不暴露 file 内部 ID。
 - OpenAPI 必须声明 `securitySchemes`、通用错误响应、分页响应、资源 schema、状态枚举和 SSE/异步任务说明。
 - API 文档中的 request/response 示例应与本文 Markdown 契约保持一致。
 
@@ -406,7 +406,7 @@ DELETE /api/v1/knowledge-bases/{knowledgeBaseId}
 
 ### 4.6 创建知识库删除任务
 
-候选扩展接口，尚未进入 gateway active public OpenAPI；进入公开契约前必须先更新 `docs/services/gateway/api/openapi.yaml`。
+候选扩展接口，尚未进入 gateway active public OpenAPI；进入公开契约前必须先更新 `docs/services/gateway/api/public.openapi.yaml`。
 
 ```http
 POST /api/v1/knowledge-base-deletion-jobs
@@ -545,7 +545,7 @@ DELETE /api/v1/documents/{documentId}
 
 ### 5.6 创建文档删除任务
 
-候选扩展接口，尚未进入 gateway active public OpenAPI；进入公开契约前必须先更新 `docs/services/gateway/api/openapi.yaml`。
+候选扩展接口，尚未进入 gateway active public OpenAPI；进入公开契约前必须先更新 `docs/services/gateway/api/public.openapi.yaml`。
 
 ```http
 POST /api/v1/document-deletion-jobs
@@ -563,7 +563,7 @@ POST /api/v1/document-deletion-jobs
 
 ### 5.7 创建文档处理任务
 
-候选扩展接口，尚未进入 gateway active public OpenAPI；进入公开契约前必须先更新 `docs/services/gateway/api/openapi.yaml`。
+候选扩展接口，尚未进入 gateway active public OpenAPI；进入公开契约前必须先更新 `docs/services/gateway/api/public.openapi.yaml`。
 
 ```http
 POST /api/v1/documents/{documentId}/processing-jobs
@@ -633,7 +633,7 @@ GET /api/v1/documents/{documentId}/content
 
 ## 6. 文档处理任务 API
 
-本节为候选扩展接口，尚未进入 gateway active public OpenAPI；当前服务内实现优先走 `services/knowledge/api/openapi.yaml` 的 `/internal/v1/**` contract。进入 browser-facing 契约前必须先更新 gateway OpenAPI。
+本节为候选扩展接口，尚未进入 gateway active public OpenAPI；当前服务内实现优先走 [`../api/internal.openapi.yaml`](../api/internal.openapi.yaml) 的 `/internal/v1/**` contract。进入 browser-facing 契约前必须先更新 gateway OpenAPI。
 
 ### 6.1 获取处理任务
 
@@ -802,7 +802,7 @@ POST /api/v1/knowledge-queries
 
 管理员接口：
 
-候选扩展接口，尚未进入 gateway active public OpenAPI；进入公开契约前必须先更新 `docs/services/gateway/api/openapi.yaml`。
+候选扩展接口，尚未进入 gateway active public OpenAPI；进入公开契约前必须先更新 `docs/services/gateway/api/public.openapi.yaml`。
 
 ```http
 POST /api/v1/knowledge-query-tests
@@ -984,7 +984,7 @@ PATCH /api/v1/knowledge-settings
 
 ## 10. 统计 API
 
-候选扩展接口，尚未进入 gateway active public OpenAPI；进入公开契约前必须先更新 `docs/services/gateway/api/openapi.yaml`。
+候选扩展接口，尚未进入 gateway active public OpenAPI；进入公开契约前必须先更新 `docs/services/gateway/api/public.openapi.yaml`。
 
 ```http
 GET /api/v1/knowledge-statistics/overview

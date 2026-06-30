@@ -82,13 +82,13 @@ func readDocumentDocsOpenAPI(t *testing.T) string {
 	}
 	dir := filepath.Dir(file)
 	for i := 0; i < 12; i++ {
-		candidate := filepath.Join(dir, "docs", "services", "document", "api", "openapi.yaml")
+		candidate := filepath.Join(dir, "docs", "services", "document", "api", "public.openapi.yaml")
 		if data, err := os.ReadFile(candidate); err == nil {
 			return string(data)
 		}
 		dir = filepath.Dir(dir)
 	}
-	t.Skip("docs/services/document/api/openapi.yaml not found; skipping OpenAPI contract test")
+	t.Skip("docs/services/document/api/public.openapi.yaml not found; skipping OpenAPI contract test")
 	return ""
 }
 

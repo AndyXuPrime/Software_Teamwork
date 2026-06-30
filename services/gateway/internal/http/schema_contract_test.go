@@ -18,7 +18,7 @@ import (
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-// gatewayOpenAPIPath locates docs/services/gateway/api/openapi.yaml by walking
+// gatewayOpenAPIPath locates docs/services/gateway/api/public.openapi.yaml by walking
 // up from the test source file. Returns "" and calls t.Skip if not found.
 func gatewayOpenAPIPath(t *testing.T) string {
 	t.Helper()
@@ -29,13 +29,13 @@ func gatewayOpenAPIPath(t *testing.T) string {
 	}
 	dir := filepath.Dir(file)
 	for i := 0; i < 12; i++ {
-		candidate := filepath.Join(dir, "docs", "services", "gateway", "api", "openapi.yaml")
+		candidate := filepath.Join(dir, "docs", "services", "gateway", "api", "public.openapi.yaml")
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
 		dir = filepath.Dir(dir)
 	}
-	t.Skip("docs/services/gateway/api/openapi.yaml not found; skipping OpenAPI contract test")
+	t.Skip("docs/services/gateway/api/public.openapi.yaml not found; skipping OpenAPI contract test")
 	return ""
 }
 
@@ -89,7 +89,7 @@ func decodeJSONContract(r io.Reader, dst any) error {
 // ── schema-level route contract ───────────────────────────────────────────────
 
 // TestRouteOperationIDsExistInOpenAPISpec verifies that every operationId in
-// activeProxyRoutes has a matching entry in docs/services/gateway/api/openapi.yaml.
+// activeProxyRoutes has a matching entry in docs/services/gateway/api/public.openapi.yaml.
 // This catches typos in routes.go and detects when the OpenAPI is updated
 // without a corresponding routes.go change (or vice versa).
 func TestRouteOperationIDsExistInOpenAPISpec(t *testing.T) {
@@ -218,7 +218,7 @@ func TestGatewayOwnedResponsesReturnJSONContentType(t *testing.T) {
 
 // TestGatewayErrorEnvelopeShape verifies that every gateway-owned error
 // response carries the canonical { "error": { "code", "message", "requestId" } }
-// shape required by the frontend-backend contract and docs/services/gateway/api/openapi.yaml.
+// shape required by the frontend-backend contract and docs/services/gateway/api/public.openapi.yaml.
 func TestGatewayErrorEnvelopeShape(t *testing.T) {
 	server := NewServer(Config{
 		Logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),

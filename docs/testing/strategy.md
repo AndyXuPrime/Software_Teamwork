@@ -95,7 +95,7 @@ KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgre
 
 | 检查 | 触发条件 |
 | --- | --- |
-| Gateway active API verifier | 改 `docs/services/gateway/api/openapi.yaml`、owner map、Gateway route 或前端 API 生成规则。 |
+| Gateway active API verifier | 改 `docs/services/gateway/api/public.openapi.yaml`、owner map、Gateway route 或前端 API 生成规则。 |
 | 服务 implementation 文档 | 改服务能力、stub/501 状态、runtime dependency、migration、worker 或 provider adapter。 |
 | 技术选型基线 | 引入新运行时依赖、镜像、CLI、SDK、队列、数据库或工具链。 |
 | 本地联调手册 | 新增 Compose、env template、seed data、跨服务 smoke 或端口约定。 |

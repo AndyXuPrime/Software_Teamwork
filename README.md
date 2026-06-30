@@ -79,7 +79,7 @@ Gateway 基础契约文档：
 - File 服务接口文档：[docs/services/file/README.md](docs/services/file/README.md)
 - Knowledge 服务接口文档：[docs/services/knowledge/README.md](docs/services/knowledge/README.md)
 - Parser Runtime 服务文档：[docs/services/parser/README.md](docs/services/parser/README.md)
-- Gateway OpenAPI 契约：[docs/services/gateway/api/openapi.yaml](docs/services/gateway/api/openapi.yaml)
+- Gateway OpenAPI 契约：[docs/services/gateway/api/public.openapi.yaml](docs/services/gateway/api/public.openapi.yaml)
 - 服务边界矩阵：[docs/architecture/service-boundaries.md](docs/architecture/service-boundaries.md)
 - 前后端集成契约：[docs/architecture/frontend-backend-contract.md](docs/architecture/frontend-backend-contract.md)
 

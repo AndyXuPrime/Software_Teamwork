@@ -286,8 +286,8 @@
 本任务同步产出三份 API 契约：
 
 - 知识管理：[api-contract.md](../services/knowledge/docs/api-contract.md)，OpenAPI 草稿：[public.openapi.yaml](../services/knowledge/api/public.openapi.yaml)
-- 智能问答：[README.md](../services/qa/README.md)，公开契约：[gateway openapi.yaml](../services/gateway/api/openapi.yaml)
-- 报告生成：[Document 服务接口文档](../services/document/README.md)，OpenAPI 草稿：[openapi.yaml](../services/document/api/openapi.yaml)
+- 智能问答：[README.md](../services/qa/README.md)，公开契约：[gateway openapi.yaml](../services/gateway/api/public.openapi.yaml)
+- 报告生成：[Document 服务接口文档](../services/document/README.md)，OpenAPI 草稿：[openapi.yaml](../services/document/api/public.openapi.yaml)
 
 拆分原则：
 

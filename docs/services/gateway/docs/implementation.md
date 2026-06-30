@@ -1,6 +1,6 @@
 # Gateway 实现说明
 
-版本：v0.2
+版本：v0.3
 日期：2026-06-30
 范围：`services/gateway/` 当前实现、契约对齐、缺口和后续实现约束
 
@@ -13,7 +13,7 @@
 | 类型 | 权威来源 | 本文档关系 |
 | --- | --- | --- |
 | 服务公开说明 | `docs/services/gateway/README.md` | 只能补充，不能覆盖 |
-| 服务 OpenAPI | `docs/services/gateway/api/openapi.yaml` | 前端公开契约权威来源 |
+| 服务 OpenAPI | `docs/services/gateway/api/public.openapi.yaml` | 前端公开契约权威来源 |
 | Active owner map | `docs/services/gateway/docs/active-api-owner-map.md` | 路由审计清单 |
 | 服务边界 | `docs/architecture/service-boundaries.md` | 必须遵守 |
 | 技术基线 | `docs/architecture/technology-decisions.md` | 必须跟随 |
@@ -26,17 +26,17 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | 文档状态 | active | README、OpenAPI、active owner map 和数据模型文档存在。 |
-| 代码状态 | partial | Go gateway、auth public routes、Redis session cache、proxy route matrix、中间件和错误归一化已实现。 |
+| 代码状态 | partial | Go gateway、auth public routes、Redis session cache、proxy route matrix、中间件、错误归一化和 Prometheus HTTP metrics baseline 已实现。 |
 | 契约对齐 | guarded / partial | route matrix 覆盖 97 个 active operations，并校验 method/path/owner/operationId 与 OpenAPI 一致；admin parser-configs、Knowledge document lifecycle、chunks、content 和 knowledge-queries 已转为 owner proxy；当前 Gateway route matrix 不再为 Knowledge active routes 返回阶段性 501。 |
 | 数据持久化 | redis / none | Gateway 不持久化业务数据库；使用 Redis 保存 session cache。 |
-| 测试状态 | partial | 单元测试覆盖 route matrix、auth proxy、headers、binary/SSE proxy、中间件；缺真实 Redis/downstream 集成测试。 |
+| 测试状态 | partial | 单元测试覆盖 route matrix、auth proxy、headers、binary/SSE proxy、中间件和 metrics middleware；缺真实 Redis/downstream 集成测试。 |
 | 建议动作 | 联调 / 复核 | 补真实 Redis、auth 和 owner services 端到端联调验证。 |
 
 ## 3. 已实现
 
 | 能力 | 代码位置 | 契约来源 | 验证方式 | 备注 |
 | --- | --- | --- | --- | --- |
-| 健康检查 | `services/gateway/internal/http/server.go` | `docs/services/gateway/api/openapi.yaml` | `cd services/gateway && go test ./...` | `GET /healthz`、`GET /readyz`。 |
+| 健康检查 | `services/gateway/internal/http/server.go` | `docs/services/gateway/api/public.openapi.yaml` | `cd services/gateway && go test ./...` | `GET /healthz`、`GET /readyz`。 |
 | 用户/会话公开入口 | `services/gateway/internal/http/auth.go` | Gateway OpenAPI auth paths | `TestCreateSessionCachesSessionWithoutRawToken` | 转发 auth，成功后写 Redis session cache。 |
 | Redis session cache | `services/gateway/internal/platform/redis/session_store.go` | `docs/services/gateway/README.md` | config/auth proxy tests | 使用 token hash key，不缓存原始 token。 |
 | 认证上下文注入 | `services/gateway/internal/http/proxy.go` | `frontend-backend-contract.md` | `TestProxyInjectsAuthenticatedContextHeaders` | 注入 `X-User-*`、`X-Request-Id`、`X-Service-Token`。 |
@@ -44,6 +44,7 @@
 | binary content proxy | `services/gateway/internal/http/proxy.go` | Gateway OpenAPI file content paths | `TestProxyStreamsBinaryContentWithoutJSONEnvelope` | 文件流成功响应不包 JSON。 |
 | SSE proxy | `services/gateway/internal/http/proxy.go` | QA SSE contract | `TestProxyStreamsSSEWithoutFixedTimeout` | `Accept: text/event-stream` 使用 streaming client。 |
 | CORS / body limit / timeout / recover / request id | `services/gateway/internal/middleware/` | 前后端集成契约 | middleware/server tests | 覆盖基础 edge policy。 |
+| Prometheus HTTP metrics | `services/gateway/internal/metrics/metrics.go`、`internal/middleware/metrics.go`、`cmd/server` | #308 / #322 observability baseline | metrics middleware tests | 通过独立 metrics listener 暴露 gateway HTTP request count/duration，不在 Gateway 内聚合业务指标。 |
 | 服务边界导入守卫 | `services/gateway/internal/http/routes_internal_test.go` | 服务边界 / 技术基线 | `TestGatewayDoesNotImportBusinessInfrastructureClients` | 防止 Gateway 生产代码引入 SQL、MinIO、Qdrant 或 provider SDK。 |
 | Admin parser config proxy | `services/gateway/internal/http/routes.go`、`parser_config_test.go` | Gateway OpenAPI admin runtime config | `cd services/gateway && go test ./...` | 转发 `/api/v1/admin/parser-configs` 到 Knowledge `/internal/v1/parser-configs`，支持管理员权限、request id、validation/conflict/error 归一化。 |
 | Knowledge document lifecycle proxy | `services/gateway/internal/http/routes.go`、`gateway_auth_proxy_test.go` | Gateway OpenAPI document paths | `TestKnowledgeDocumentLifecycleRoutesProxyToKnowledge` | 转发 `PATCH/DELETE /api/v1/documents/{documentId}` 到 Knowledge，保留认证上下文和 request id。 |
@@ -63,6 +64,7 @@
 | readyz 依赖 | Gateway README 要求统一入口可用 | `gatewayReadyCheck` 要求 Redis、auth、knowledge、qa、document、ai-gateway base URL 全配置 | 本地只启动 gateway 时 `/readyz` 易失败 | README/implementation 保留该行为，补本地 smoke 配置。 |
 | 下游错误归一化 | 前后端契约要求统一 error envelope | proxy 会丢弃非公开错误细节并归一化 | 有利于安全，但可能隐藏调试信息 | 在日志/trace 中补 request id 和 dependency 信息。 |
 | Gateway 不写业务逻辑 | 服务边界要求 Gateway 不访问 SQL/MinIO/Qdrant/LLM | 当前代码符合 | 无 | 持续通过 review/测试防回归。 |
+| metrics 边界 | #308/#322 要求 observability baseline | Gateway 只暴露自身 HTTP request count/duration；跨服务业务指标仍由 owner service 或后续聚合契约提供 | 容易被误读为管理概览已完成 | 本文和缺口表继续保留“跨服务指标聚合契约缺失”。 |
 
 ## 6. MVP / mock / memory backend / 占位
 
@@ -75,7 +77,7 @@
 | 项目 | 当前状态 | 缺口 |
 | --- | --- | --- |
 | 启动命令 | `cd services/gateway && go run ./cmd/server` | 需要 Redis、auth 和 owner base URLs 才能 ready。 |
-| 环境变量 | `GATEWAY_HTTP_ADDR`、Redis、token hash secret、auth/knowledge/qa/document/ai-gateway base URLs、CORS、timeouts | 缺根级 Compose 串联验证。 |
+| 环境变量 | `GATEWAY_HTTP_ADDR`、`GATEWAY_METRICS_ADDR`、Redis、token hash secret、auth/knowledge/qa/document/ai-gateway base URLs、CORS、timeouts | 缺根级 Compose 串联验证。 |
 | PostgreSQL / migration | 不拥有 PostgreSQL | 无。 |
 | Redis / queue | Redis session cache | 缺真实 Redis 集成测试。 |
 | Object storage / vector store / AI provider | 不直接访问 | 必须继续由 owner services / ai-gateway 处理。 |
@@ -84,9 +86,9 @@
 
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
-| 单元测试 | `cd services/gateway && go test ./...` | pass（本次执行） | 不覆盖真实 Redis/downstreams。 |
+| 单元测试 | `cd services/gateway && go test ./...` | pass（既有记录，2026-06-30；本轮文档审计未重跑） | 不覆盖真实 Redis/downstreams。 |
 | 集成测试 | Gateway + Redis + auth + owner services smoke | missing | 需要本地 Compose 或脚本。 |
-| 契约测试 | `TestActiveRouteMatrixCoversGatewayOwnerMap`、`TestNotImplementedRoutesReturnStableGatewayError`、`TestGatewayDoesNotImportBusinessInfrastructureClients` | pass（本次执行） | 仍不覆盖真实 Redis/downstreams。 |
+| 契约测试 | `TestActiveRouteMatrixCoversGatewayOwnerMap`、`TestNotImplementedRoutesReturnStableGatewayError`、`TestGatewayDoesNotImportBusinessInfrastructureClients` | pass（既有记录，2026-06-30；本轮文档审计未重跑） | 仍不覆盖真实 Redis/downstreams。 |
 | 手工 smoke | 登录、访问 knowledge/report/qa route | not run | 需要完整依赖环境。 |
 
 ## 9. 建议任务
@@ -104,3 +106,4 @@
 | 2026-06-30 | Codex | `8f294ec` + 本分支改动 | route matrix 已显式覆盖 gateway/auth 直接路由和 owner proxy routes，并与 OpenAPI 的 method/path/owner/operationId 对齐；501 占位和 Gateway 不直连业务基础设施均有回归测试。 |
 | 2026-06-30 | Codex | A-13 PR #249 | admin parser-configs 已完成 Gateway proxy 和权限/error 测试，不再属于 501 占位范围。 |
 | 2026-06-30 | Codex | PR #273 | Knowledge document lifecycle、chunks、content 和 knowledge-queries 已完成 Gateway proxy，不再属于 501 占位范围；真实 Redis/downstream smoke 仍待补齐。 |
+| 2026-06-30 | Codex full-day audit | `develop@92d3afc` | 复核今日 PR/issue：#322 已补 Gateway Prometheus HTTP metrics baseline 和 middleware 测试；route matrix 仍覆盖 97 active operations，真实 Redis/downstream smoke 和跨服务指标聚合契约仍待补齐。 |

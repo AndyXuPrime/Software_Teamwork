@@ -1,6 +1,6 @@
 # Knowledge 服务接口文档
 
-本文档定义 `knowledge` 服务在项目初期的职责边界和 gateway 公开接口。详细字段、状态码、response envelope 和 schema 以 [`docs/services/gateway/api/openapi.yaml`](../gateway/api/openapi.yaml) 为准。前端不得直接调用 `services/knowledge`，只能通过 gateway 暴露的 `/api/v1/**` 入口访问知识库能力。
+本文档定义 `knowledge` 服务在项目初期的职责边界和 gateway 公开接口。详细字段、状态码、response envelope 和 schema 以 [`docs/services/gateway/api/public.openapi.yaml`](../gateway/api/public.openapi.yaml) 为准。前端不得直接调用 `services/knowledge`，只能通过 gateway 暴露的 `/api/v1/**` 入口访问知识库能力。
 
 RESTful 路径、统一响应和错误 envelope 以 [前后端集成契约](../../architecture/frontend-backend-contract.md) 为准。知识检索使用 `knowledge-queries` 资源表示，不使用 `/search`、`/retrieval/search` 或其他动作式路径。
 
@@ -114,7 +114,7 @@ Gateway 调用 knowledge 服务时应传递：
 | `KnowledgeQueryRequest` | query、knowledgeBaseIds、topK、scoreThreshold、tags、metadataFilter、rerank 配置。 |
 | `KnowledgeQuerySummary` | 检索请求 ID、原始 query、召回结果列表和 trace。 |
 
-字段详情以 [`docs/services/gateway/api/openapi.yaml`](../gateway/api/openapi.yaml) 为准，不在本文档重复定义完整 schema。
+字段详情以 [`docs/services/gateway/api/public.openapi.yaml`](../gateway/api/public.openapi.yaml) 为准，不在本文档重复定义完整 schema。
 
 ## 状态约定
 

@@ -25,7 +25,7 @@
 - 后端业务接口：通过 gateway 的 `/api/v1` 公开资源型 HTTP API，供大项目前端、管理后台、其他后端模块或工具调用方使用。
 - MCP 工具接口：供其他小组、智能体或自动化流程调用；工具执行过程中如需访问报告生成 HTTP 能力，也必须调用 gateway `/api/v1` 公共接口，不直接调用 `document` 服务内部地址。
 
-公开 HTTP API 必须遵循主仓库最新接口规范：先更新 `docs/services/gateway/api/openapi.yaml`，再作为稳定前端契约使用；路径使用 RESTful 资源名，不在 path 中出现 `generate`、`regenerate`、`export`、`retry`、`download` 等动作词。报告生成公开接口已升级为 gateway OpenAPI active paths，owner service 为 `document`。
+公开 HTTP API 必须遵循主仓库最新接口规范：先更新 `docs/services/gateway/api/public.openapi.yaml`，再作为稳定前端契约使用；路径使用 RESTful 资源名，不在 path 中出现 `generate`、`regenerate`、`export`、`retry`、`download` 等动作词。报告生成公开接口已升级为 gateway OpenAPI active paths，owner service 为 `document`。
 
 技术实现必须遵循当前 [技术选型基线](../../../architecture/technology-decisions.md)。本文只记录报告生成需求和验收点，不作为技术栈、前端类型生成或仓库流程的权威来源。
 
