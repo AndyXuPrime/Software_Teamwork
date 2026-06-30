@@ -415,3 +415,36 @@ Aligned QA chat SSE errors, tool summaries, citation snapshot messaging, and RAG
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: F-016 PR review follow-up
+
+**Date**: 2026-06-30
+**Task**: F-016 PR review follow-up
+**Branch**: `Frontend/feat/qa-capability-aligned-chat`
+
+### Summary
+
+Addressed PR review findings for QA chat: normalized answer.delta text/content payloads, blocked unsafe free-text tool summaries, added focused regression tests, and reran frontend checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `25ff65e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
