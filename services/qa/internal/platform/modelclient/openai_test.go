@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,8 +15,8 @@ import (
 
 func TestCompleteSendsFunctionToolsAndParsesToolCalls(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
-			t.Errorf("Authorization = %q", got)
+		if got := r.Header.Get("X-Service-Token"); got != "test-token" {
+			t.Errorf("X-Service-Token = %q", got)
 		}
 		if got := r.Header.Get("X-Caller-Service"); got != "qa" {
 			t.Errorf("X-Caller-Service = %q", got)
@@ -23,12 +24,18 @@ func TestCompleteSendsFunctionToolsAndParsesToolCalls(t *testing.T) {
 		if got := r.Header.Get("X-Request-Id"); got != "req-model-test" {
 			t.Errorf("X-Request-Id = %q", got)
 		}
+		if got := r.Header.Get("X-User-Id"); got != "user-model-test" {
+			t.Errorf("X-User-Id = %q", got)
+		}
 		var request completionRequest
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Fatal(err)
 		}
 		if request.ToolChoice != "auto" || len(request.Tools) != 1 {
 			t.Errorf("unexpected tool request: %+v", request)
+		}
+		if request.ParallelToolCalls {
+			t.Errorf("parallel_tool_calls = true, want false by default")
 		}
 		if request.ProfileID != "profile-chat" {
 			t.Errorf("profile_id = %q", request.ProfileID)
@@ -44,11 +51,11 @@ func TestCompleteSendsFunctionToolsAndParsesToolCalls(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(Config{Endpoint: server.URL, Token: "test-token", TokenHeader: "Authorization", Model: "test", ProfileID: "profile-chat", MaxTokens: 100, Timeout: time.Second})
+	client, err := New(Config{Endpoint: server.URL, Token: "test-token", TokenHeader: "X-Service-Token", Model: "test", ProfileID: "profile-chat", MaxTokens: 100, Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := service.WithRequestID(context.Background(), "req-model-test")
+	ctx := service.WithUserID(service.WithRequestID(context.Background(), "req-model-test"), "user-model-test")
 	completion, err := client.Complete(ctx, []agent.Message{{Role: agent.RoleUser, Content: "add"}}, []agent.ToolDefinition{{
 		Type: "function", Function: agent.FunctionTool{Name: "add", Parameters: map[string]any{"type": "object"}},
 	}})
@@ -65,15 +72,63 @@ func TestCompleteSendsFunctionToolsAndParsesToolCalls(t *testing.T) {
 
 func TestCompleteRejectsDependencyErrorBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "provider secret detail", http.StatusBadGateway)
+		http.Error(w, "provider secret detail api_key=sk-test prompt=hello", http.StatusBadGateway)
 	}))
 	defer server.Close()
-	client, err := New(Config{Endpoint: server.URL, TokenHeader: "Authorization", Model: "test", MaxTokens: 100, Timeout: time.Second})
+	client, err := New(Config{Endpoint: server.URL, TokenHeader: "X-Service-Token", Model: "test", MaxTokens: 100, Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = client.Complete(context.Background(), []agent.Message{{Role: agent.RoleUser, Content: "hi"}}, nil)
-	if err == nil || err.Error() != "AI gateway returned HTTP 502" {
-		t.Fatalf("unexpected sanitized error: %v", err)
+	appErr, ok := service.Classify(err)
+	if !ok || appErr.Code != service.CodeDependency || appErr.Message != "AI gateway request failed" {
+		t.Fatalf("unexpected normalized error: %v", err)
+	}
+	if strings.Contains(err.Error(), "provider secret") || strings.Contains(err.Error(), "sk-test") || strings.Contains(err.Error(), "prompt=hello") {
+		t.Fatalf("error leaked provider body: %v", err)
+	}
+}
+
+func TestCompleteMapsGatewayValidationError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"full prompt must stay hidden","type":"invalid_request_error","code":"bad_request"}}`))
+	}))
+	defer server.Close()
+	client, err := New(Config{Endpoint: server.URL, TokenHeader: "X-Service-Token", Model: "test", MaxTokens: 100, Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Complete(context.Background(), []agent.Message{{Role: agent.RoleUser, Content: "hi"}}, nil)
+	appErr, ok := service.Classify(err)
+	if !ok || appErr.Code != service.CodeValidation || appErr.Message != "AI gateway rejected model request" {
+		t.Fatalf("unexpected normalized error: %v", err)
+	}
+	if strings.Contains(err.Error(), "full prompt") {
+		t.Fatalf("error leaked gateway body: %v", err)
+	}
+}
+
+func TestParseToolCallDeltasMergesStreamingArguments(t *testing.T) {
+	stream := []byte(`data: {"choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"search_","arguments":"{\"q\""}}]},"finish_reason":null}]}
+data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"name":"knowledge","arguments":":\"breaker\"}"}}]},"finish_reason":"tool_calls"}]}
+data: [DONE]
+`)
+
+	calls, err := parseToolCallDeltas(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("tool calls = %+v", calls)
+	}
+	if calls[0].Index == nil || *calls[0].Index != 0 {
+		t.Fatalf("tool call index = %+v", calls[0].Index)
+	}
+	if calls[0].ID != "call-1" || calls[0].Type != "function" || calls[0].Function.Name != "search_knowledge" {
+		t.Fatalf("unexpected tool call metadata: %+v", calls[0])
+	}
+	if calls[0].Function.Arguments != `{"q":"breaker"}` {
+		t.Fatalf("arguments = %q", calls[0].Function.Arguments)
 	}
 }

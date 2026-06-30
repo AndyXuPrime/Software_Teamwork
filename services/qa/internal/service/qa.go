@@ -351,11 +351,11 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	if err != nil {
 		return AskResult{}, err
 	}
-	baseCtx := ctx
+	baseCtx := WithUserID(ctx, userID)
 	cancelBase := func() {}
 	if runtime.OverallTimeout > 0 {
 		var cancel context.CancelFunc
-		baseCtx, cancel = context.WithTimeout(ctx, runtime.OverallTimeout)
+		baseCtx, cancel = context.WithTimeout(baseCtx, runtime.OverallTimeout)
 		cancelBase = cancel
 	}
 	runCtx, cancelRun := context.WithCancel(baseCtx)

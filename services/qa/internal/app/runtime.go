@@ -60,6 +60,7 @@ func New(ctx context.Context, cfg config.Config, observer agent.Observer) (*Runt
 		Token:       cfg.AIGatewayToken,
 		TokenHeader: cfg.AIGatewayTokenHeader,
 		Model:       cfg.ModelID,
+		ProfileID:   cfg.AIGatewayProfileID,
 		MaxTokens:   cfg.MaxTokens,
 		Timeout:     cfg.ModelTimeout,
 	})

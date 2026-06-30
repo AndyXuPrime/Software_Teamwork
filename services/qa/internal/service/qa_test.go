@@ -124,7 +124,8 @@ func (r *fakeRepository) SaveModelInvocation(ctx context.Context, _ string, invo
 }
 
 type fakeAgentRunner struct {
-	input []agent.Message
+	input  []agent.Message
+	userID string
 }
 type blockingAgentRunner struct{ started chan struct{} }
 
@@ -164,7 +165,8 @@ func (r cancelBeforeCompletedObserverRunner) RunWithObserver(_ context.Context, 
 	return agent.Result{Final: final, Messages: append(input, final), Iterations: 1}, nil
 }
 
-func (r *fakeAgentRunner) RunWithObserver(_ context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
+func (r *fakeAgentRunner) RunWithObserver(ctx context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
+	r.userID = UserIDFromContext(ctx)
 	r.input = append([]agent.Message(nil), input...)
 	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
 	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1, Usage: agent.TokenUsage{PromptTokens: 10, CompletionTokens: 4, TotalTokens: 14}})
@@ -242,6 +244,9 @@ func TestAskPersistsConversationMessagesAndDisplayableSteps(t *testing.T) {
 	}
 	if len(runner.input) < 2 || runner.input[0].Role != agent.RoleSystem || runner.input[len(runner.input)-1].Content != "锅炉检查要求" {
 		t.Fatalf("unexpected agent input: %+v", runner.input)
+	}
+	if runner.userID != "user-id" {
+		t.Fatalf("agent context userID = %q", runner.userID)
 	}
 }
 

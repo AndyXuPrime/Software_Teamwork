@@ -10,6 +10,7 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("AI_GATEWAY_URL", "")
 	t.Setenv("AI_GATEWAY_TOKEN", "")
 	t.Setenv("AI_GATEWAY_TOKEN_HEADER", "")
+	t.Setenv("AI_GATEWAY_PROFILE_ID", "")
 	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-service-token")
 	t.Setenv("MODEL_ID", "")
 	t.Setenv("MCP_TRANSPORT", "stdio")
@@ -73,13 +74,15 @@ func TestLoadAcceptsExplicitAIGatewayEndpoint(t *testing.T) {
 	t.Setenv("AI_GATEWAY_URL", "https://ai-gateway.example.test/internal/v1/chat/completions")
 	t.Setenv("AI_GATEWAY_TOKEN", "explicit-token")
 	t.Setenv("AI_GATEWAY_TOKEN_HEADER", "X-Service-Token")
+	t.Setenv("AI_GATEWAY_PROFILE_ID", "profile-chat")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.AIGatewayURL != "https://ai-gateway.example.test/internal/v1/chat/completions" ||
 		cfg.AIGatewayToken != "explicit-token" ||
-		cfg.AIGatewayTokenHeader != "X-Service-Token" {
+		cfg.AIGatewayTokenHeader != "X-Service-Token" ||
+		cfg.AIGatewayProfileID != "profile-chat" {
 		t.Fatalf("unexpected AI Gateway override: %+v", cfg)
 	}
 }

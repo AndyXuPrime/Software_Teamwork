@@ -45,7 +45,8 @@ func main() {
 		LLM: service.RuntimeLLMConfig{
 			Endpoint: cfg.AIGatewayURL, Token: cfg.AIGatewayToken,
 			TokenHeader: cfg.AIGatewayTokenHeader, Model: cfg.ModelID,
-			Timeout: cfg.ModelTimeout, MaxTokens: cfg.MaxTokens,
+			ProfileID: cfg.AIGatewayProfileID,
+			Timeout:   cfg.ModelTimeout, MaxTokens: cfg.MaxTokens,
 		},
 		SystemPrompt: cfg.SystemPrompt,
 	}

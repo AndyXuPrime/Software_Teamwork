@@ -25,6 +25,7 @@ type Message struct {
 
 type ToolCall struct {
 	ID       string       `json:"id"`
+	Index    *int         `json:"index,omitempty"`
 	Type     string       `json:"type"`
 	Function FunctionCall `json:"function"`
 }

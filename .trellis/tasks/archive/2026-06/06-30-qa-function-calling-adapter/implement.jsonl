@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/api-contracts.md", "reason": "Defines internal service header propagation, AI Gateway OpenAI-compatible model invocation contracts, and service boundary ownership for QA versus AI Gateway."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Defines stable validation_error/dependency_error classification and safe downstream error exposure."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Defines secret-safe handling for provider errors, prompts, API keys, tokens, internal URLs, and tool payloads."}
+{"file": "docs/services/qa/README.md", "reason": "Defines QA Agent Host ownership of the ReAct loop, MCP tool execution, model invocation summaries, and AI Gateway-only model access."}
+{"file": "docs/services/ai-gateway/README.md", "reason": "Defines function calling transport fields including tools, tool_choice, parallel_tool_calls, assistant.tool_calls, role=tool, and streaming tool-call deltas."}
+{"file": "docs/services/ai-gateway/api/openapi.yaml", "reason": "Defines the concrete /internal/v1/chat/completions request, response, header, and streaming chunk schemas."}

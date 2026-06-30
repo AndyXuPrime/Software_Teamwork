@@ -75,6 +75,7 @@ func run() error {
 		Token:       cfg.AIGatewayToken,
 		TokenHeader: cfg.AIGatewayTokenHeader,
 		Model:       cfg.ModelID,
+		ProfileID:   cfg.AIGatewayProfileID,
 		MaxTokens:   cfg.MaxTokens,
 		Timeout:     cfg.ModelTimeout,
 	})

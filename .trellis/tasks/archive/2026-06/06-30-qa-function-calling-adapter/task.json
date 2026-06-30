@@ -1,0 +1,28 @@
+{
+  "id": "qa-function-calling-adapter",
+  "name": "qa-function-calling-adapter",
+  "title": "QA AI Gateway function calling adapter",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "ynxlna",
+  "assignee": "ynxlna",
+  "createdAt": "2026-06-30",
+  "completedAt": "2026-06-30",
+  "branch": null,
+  "base_branch": "JerryTeam/feat/qa-function-calling-adapter",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "Implements issue #90 on top of latest develop after #89 and #120 were closed.",
+  "meta": {
+    "issue": 90
+  }
+}
