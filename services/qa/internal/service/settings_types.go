@@ -58,6 +58,10 @@ func (s *RetrievalSettings) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func (s RetrievalSettings) HasScoreThreshold() bool {
+	return s.scoreThresholdSet || s.similaritySet || s.ScoreThreshold > 0
+}
+
 type StoredLLMConfig struct {
 	ID              string
 	Provider        string

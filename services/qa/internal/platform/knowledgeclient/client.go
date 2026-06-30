@@ -44,7 +44,7 @@ func (c *Client) Retrieve(ctx context.Context, userID string, input service.Retr
 	if retrieval.TopK > 0 {
 		payload["topK"] = retrieval.TopK
 	}
-	if retrieval.ScoreThreshold > 0 {
+	if retrieval.HasScoreThreshold() {
 		payload["scoreThreshold"] = retrieval.ScoreThreshold
 	}
 	payload["rerank"] = retrieval.EnableRerank

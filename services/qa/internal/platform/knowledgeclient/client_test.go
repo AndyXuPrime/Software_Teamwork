@@ -71,6 +71,38 @@ func TestRetrieveTreatsKnowledgeScoreAsVectorScoreWithoutRerank(t *testing.T) {
 	}
 }
 
+func TestRetrieveSendsExplicitZeroScoreThreshold(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		value, ok := payload["scoreThreshold"]
+		if !ok {
+			t.Fatalf("payload missing scoreThreshold: %+v", payload)
+		}
+		if value != float64(0) {
+			t.Fatalf("scoreThreshold=%v, want 0", value)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"results":[]},"requestId":"req-knowledge-test"}`))
+	}))
+	defer server.Close()
+	client, err := New(server.URL, "service-token", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var retrieval service.RetrievalSettings
+	if err := json.Unmarshal([]byte(`{"topK":5,"scoreThreshold":0}`), &retrieval); err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Retrieve(context.Background(), "user-1", service.RetrievalTestInput{Question: "query", Retrieval: retrieval})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRetrieveMapsForbiddenKnowledgeResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

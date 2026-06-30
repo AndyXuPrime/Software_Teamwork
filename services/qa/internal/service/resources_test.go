@@ -187,7 +187,7 @@ func TestCreateRetrievalTestRunCanClearActiveThresholds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantRetrieval := RetrievalSettings{TopK: 5}
+	wantRetrieval := RetrievalSettings{TopK: 5, scoreThresholdSet: true, rerankThresholdSet: true}
 	if !reflect.DeepEqual(retriever.input.Retrieval, wantRetrieval) {
 		t.Fatalf("retrieval=%+v, want %+v", retriever.input.Retrieval, wantRetrieval)
 	}
