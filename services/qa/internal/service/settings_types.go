@@ -14,17 +14,20 @@ type RetrievalSettings struct {
 	UseRerank           bool    `json:"useRerank,omitempty"`
 	RerankThreshold     float64 `json:"rerankThreshold"`
 	RerankTopN          int     `json:"rerankTopN"`
+	scoreThresholdSet   bool
+	similaritySet       bool
 	enableRerankSet     bool
 	useRerankSet        bool
+	rerankThresholdSet  bool
 }
 
 type retrievalSettingsJSON struct {
 	TopK                int      `json:"topK"`
-	ScoreThreshold      float64  `json:"scoreThreshold"`
-	SimilarityThreshold float64  `json:"similarityThreshold,omitempty"`
+	ScoreThreshold      *float64 `json:"scoreThreshold"`
+	SimilarityThreshold *float64 `json:"similarityThreshold,omitempty"`
 	EnableRerank        *bool    `json:"enableRerank"`
 	UseRerank           *bool    `json:"useRerank,omitempty"`
-	RerankThreshold     float64  `json:"rerankThreshold"`
+	RerankThreshold     *float64 `json:"rerankThreshold"`
 	RerankTopN          int      `json:"rerankTopN"`
 	TagFilters          struct{} `json:"tagFilters,omitempty"`
 }
@@ -35,14 +38,23 @@ func (s *RetrievalSettings) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	s.TopK = raw.TopK
-	s.ScoreThreshold = raw.ScoreThreshold
-	s.SimilarityThreshold = raw.SimilarityThreshold
+	if raw.ScoreThreshold != nil {
+		s.ScoreThreshold = *raw.ScoreThreshold
+	}
+	if raw.SimilarityThreshold != nil {
+		s.SimilarityThreshold = *raw.SimilarityThreshold
+	}
 	s.EnableRerank = raw.EnableRerank != nil && *raw.EnableRerank
 	s.UseRerank = raw.UseRerank != nil && *raw.UseRerank
-	s.RerankThreshold = raw.RerankThreshold
+	if raw.RerankThreshold != nil {
+		s.RerankThreshold = *raw.RerankThreshold
+	}
 	s.RerankTopN = raw.RerankTopN
+	s.scoreThresholdSet = raw.ScoreThreshold != nil
+	s.similaritySet = raw.SimilarityThreshold != nil
 	s.enableRerankSet = raw.EnableRerank != nil
 	s.useRerankSet = raw.UseRerank != nil
+	s.rerankThresholdSet = raw.RerankThreshold != nil
 	return nil
 }
 

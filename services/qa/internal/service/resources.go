@@ -415,12 +415,15 @@ func mergeRetrievalSettings(base, override RetrievalSettings) RetrievalSettings 
 	if override.TopK != 0 {
 		base.TopK = override.TopK
 	}
-	threshold := override.ScoreThreshold
-	if threshold == 0 {
-		threshold = override.SimilarityThreshold
-	}
-	if threshold != 0 {
-		base.ScoreThreshold = threshold
+	switch {
+	case override.scoreThresholdSet:
+		base.ScoreThreshold = override.ScoreThreshold
+	case override.similaritySet:
+		base.ScoreThreshold = override.SimilarityThreshold
+	case override.ScoreThreshold != 0:
+		base.ScoreThreshold = override.ScoreThreshold
+	case override.SimilarityThreshold != 0:
+		base.ScoreThreshold = override.SimilarityThreshold
 	}
 	if override.enableRerankSet {
 		base.EnableRerank = override.EnableRerank
@@ -432,7 +435,7 @@ func mergeRetrievalSettings(base, override RetrievalSettings) RetrievalSettings 
 	} else if override.UseRerank {
 		base.EnableRerank = true
 	}
-	if override.RerankThreshold != 0 {
+	if override.rerankThresholdSet || override.RerankThreshold != 0 {
 		base.RerankThreshold = override.RerankThreshold
 	}
 	if override.RerankTopN != 0 {
@@ -440,8 +443,11 @@ func mergeRetrievalSettings(base, override RetrievalSettings) RetrievalSettings 
 	}
 	base.SimilarityThreshold = 0
 	base.UseRerank = false
+	base.scoreThresholdSet = false
+	base.similaritySet = false
 	base.enableRerankSet = false
 	base.useRerankSet = false
+	base.rerankThresholdSet = false
 	return base
 }
 

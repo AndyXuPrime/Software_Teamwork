@@ -167,6 +167,35 @@ func TestCreateRetrievalTestRunCanDisableActiveRerank(t *testing.T) {
 	}
 }
 
+func TestCreateRetrievalTestRunCanClearActiveThresholds(t *testing.T) {
+	repository := &resourceRepositoryStub{activeQAConfig: QAConfigVersion{
+		ID:        "qa-config-id",
+		Retrieval: RetrievalSettings{TopK: 5, ScoreThreshold: .7, RerankThreshold: .5},
+	}}
+	retriever := &knowledgeRetrieverStub{results: []RetrievalTestResult{{DocumentID: "doc-1", Metadata: map[string]any{}}}}
+	resources, err := NewResourceService(repository, retriever, llmTesterStub{}, RuntimeLLMConfig{}, runCancellerStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var input RetrievalTestInput
+	if err := json.Unmarshal([]byte(`{"question":"query","overrides":{"scoreThreshold":0,"rerankThreshold":0}}`), &input); err != nil {
+		t.Fatal(err)
+	}
+	run, err := resources.CreateRetrievalTestRun(context.Background(), "user-1", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantRetrieval := RetrievalSettings{TopK: 5}
+	if !reflect.DeepEqual(retriever.input.Retrieval, wantRetrieval) {
+		t.Fatalf("retrieval=%+v, want %+v", retriever.input.Retrieval, wantRetrieval)
+	}
+	if run.Status != "completed" {
+		t.Fatalf("run=%+v", run)
+	}
+}
+
 func TestCreateRetrievalTestRunRejectsRerankTopNGreaterThanTopK(t *testing.T) {
 	repository := &resourceRepositoryStub{activeQAConfig: QAConfigVersion{ID: "qa-config-id", Retrieval: RetrievalSettings{TopK: 5}}}
 	retriever := &knowledgeRetrieverStub{results: []RetrievalTestResult{{DocumentID: "doc-1", Metadata: map[string]any{}}}}
