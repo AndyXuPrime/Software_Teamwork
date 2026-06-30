@@ -17,7 +17,7 @@
 - 数据库 migration 必须能从空库 apply。
 - env-gated integration tests 默认可能跳过；如果本次改动触碰 repository、SQL 或 migration，应尽量提供本地数据库执行记录。
 - 当前没有完整跨服务 E2E smoke；不要用单服务测试或前端 mock E2E 替代跨服务验收。
-- Parser 当前只有内部契约和目录 scaffold；Python packaging、PaddleOCR runtime、Parser CI 和 Parser HTTP tests 未落地前，不能把 Parser 写成 required check。
+- Parser runtime、Dockerfile 和 Parser Service CI 已落地；当前 CI 使用 fake OCR backend 覆盖 lint/test/compile，并校验 PaddleOCR extra lock，不等同于真实 PaddleOCR 模型 smoke。
 - open PR、未合入 issue 和草案不能写成当前 `develop` 已实现；测试记录也不能把未稳定依赖的检查写成 required。
 
 ## 当前 CI 覆盖
@@ -26,12 +26,13 @@
 | --- | --- | --- |
 | `go-services.yml` | `services/{ai-gateway,auth,document,file,gateway,knowledge,qa}` | 执行 `go test ./...`、`go build ./cmd/server`；QA 额外 build `./cmd/agent`；Knowledge 额外用 PostgreSQL 16 和 `KNOWLEDGE_TEST_DATABASE_URL` 执行 repository lifecycle integration test。 |
 | `go-migrations.yml` | `services/{ai-gateway,auth,document,file,knowledge,qa}` | 校验 migration 文件名并用 `goose@v3.27.1` 对 PostgreSQL 16 apply；Gateway 和 Parser 当前没有 SQL migration。 |
+| `parser-service.yml` | `services/parser/**` | 执行 `uv sync --frozen --group dev`、PaddleOCR extra lock dry-run、`uv run ruff check .`、`uv run pytest` 和 `uv run python -m compileall src tests`；测试使用 fake OCR backend，不下载真实 PaddleOCR 模型。 |
 | `frontend.yml` | `apps/web/**`、根前端依赖文件和 workflow | 执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`build`、`test:unit`、安装 Chromium 后执行 `test:e2e`。 |
 | `gateway-contract.yml` | Gateway OpenAPI active API | 执行 verifier unit tests 和 `python3 scripts/verify_gateway_active_api.py`。 |
 | `check-api-types.yml` | 前端 Gateway 类型漂移 | 在 `apps/web` 执行 `bun run api:generate`，本地等价命令为 `bun run --cwd apps/web api:generate`，并要求 generated diff 干净。 |
 | `commitlint.yml` / `pr-guard.yml` | 协作规则 | 检查提交格式、PR body、issue 关联和 base 更新要求。 |
 
-当前可作为 required checks 的优先候选是 Go service tests、goose migration apply、Frontend check/build/unit/E2E、Gateway contract/API drift 和 API type drift。Parser Python/runtime CI、后端路径过滤矩阵和跨服务 E2E smoke 仍未落地；在 CI 提供稳定依赖前只能作为 PR 前建议或缺口登记。
+当前可作为 required checks 的优先候选是 Go service tests、goose migration apply、Parser Service、Frontend check/build/unit/E2E、Gateway contract/API drift 和 API type drift。Parser 真实 PaddleOCR 模型 smoke、后端路径过滤矩阵和跨服务 E2E smoke 仍未落地；在稳定依赖和脚本提供前只能作为 PR 前建议或缺口登记。
 
 ## 本地命令矩阵
 
@@ -45,7 +46,7 @@
 | QA 服务 | `cd services/qa && go test ./...`；`go build ./cmd/server`；`go build ./cmd/agent`。 |
 | Knowledge repository / SQL | `cd services/knowledge && KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' go test ./internal/repository -count=1`。 |
 | migration | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up`。 |
-| Parser 契约 / 文档 | 检查 `services/parser/api/openapi.yaml` 与 `docs/services/parser/README.md`、Knowledge ingestion 文档一致；当前没有 `pytest`、PaddleOCR runtime smoke 或 Parser build 命令。 |
+| Parser 契约 / 文档 / runtime | 检查 `services/parser/api/openapi.yaml` 与 `docs/services/parser/README.md`、Knowledge ingestion 文档一致；如改 runtime，执行 `cd services/parser && uv run ruff check . && uv run pytest && uv run python -m compileall src tests`，并说明是否仅覆盖 fake OCR backend。 |
 | AI Gateway provider adapter | `cd services/ai-gateway && go test ./...`；尽量加 fake provider case 和真实 provider smoke 记录。 |
 | Document worker/job | `cd services/document && go test ./...`；如改 repository，设置 `DOCUMENT_TEST_DATABASE_URL` 跑 repository integration tests。 |
 
@@ -57,7 +58,7 @@
 | Repository tests | 部分服务有 SQL/repository tests；Knowledge/QA/Document 有 env-gated PostgreSQL integration tests；Knowledge repository lifecycle 已接入 CI PostgreSQL job。 | repository、SQL、transaction、migration 相关改动。 |
 | Migration apply | CI 使用 PostgreSQL 16 和 goose apply。 | 新增或修改 migration。 |
 | Contract tests | Gateway active API verifier、route coverage tests。 | OpenAPI、owner map、active path 和 RESTful path 规则。 |
-| Parser contract review | 当前以 OpenAPI schema review 和文档一致性检查为主。 | Parser runtime 实现前的契约变更；runtime 落地后再补 HTTP success/error/de-sensitization tests。 |
+| Parser runtime tests | OpenAPI schema review、文档一致性检查、FastAPI handler/service tests 和 fake OCR backend。 | Parser API/runtime 变更；真实 PaddleOCR 模型、OCR 质量和部署资源仍需单独 smoke。 |
 | Cross-service smoke | 当前缺失统一脚本。 | Auth -> Gateway -> Domain、Document -> File/AI Gateway、QA -> Knowledge/AI Gateway 等链路。 |
 
 env-gated repository tests：

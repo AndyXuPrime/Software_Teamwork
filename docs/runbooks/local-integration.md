@@ -8,12 +8,12 @@
 
 | 范围 | 当前状态 | 说明 |
 | --- | --- | --- |
-| 根级本地/演示 Compose | partial | `deploy/docker-compose.yml` 已提供共享 PostgreSQL、Redis、Qdrant、MinIO、服务 migration、`seed-local` / `seed-local-ai` 和服务串联基线；仍缺统一跨服务 smoke 和一键验收脚本，现有 seed data 只覆盖本地登录、基础报告类型、示例知识库和 AI profile placeholder。 |
+| 根级本地/演示 Compose | partial | `deploy/docker-compose.yml` 已提供共享 PostgreSQL、Redis、Qdrant、MinIO、Parser、服务 migration、`seed-local` / `seed-local-ai` 和服务串联基线；仍缺统一跨服务 smoke 和一键验收脚本，现有 seed data 只覆盖本地登录、基础报告类型、示例知识库和 AI profile placeholder。 |
 | QA 服务 Compose | partial | `services/qa/docker-compose.yml` 会启动 QA PostgreSQL、Auth PostgreSQL、Redis、Auth、QA 和 Gateway；不包含 Knowledge、Document、File、AI Gateway。 |
 | Document 服务 Compose | partial | `services/document/docker-compose.yml` 会启动 Document PostgreSQL、Redis、migration 和 Document；不包含 File、AI Gateway。 |
 | AI Gateway 本地运行 | root profile / host-run | 根级 `docker compose --profile ai` 会启动 AI Gateway、migration 和 placeholder profile seed；单独调试时也可 host-run，真实 provider smoke 仍需配置有效 provider key。 |
-| File / Knowledge 独立运行 | host-run | 需要手动准备各自依赖；File MinIO adapter 已落地但缺真实对象存储 smoke，Knowledge Qdrant adapter 尚未落地。 |
-| Parser Runtime | contract-only | 当前只有内部 OpenAPI、README 和目录 scaffold；Python packaging、PaddleOCR runtime、Docker image 和 HTTP smoke 尚未落地。 |
+| File / Knowledge 独立运行 | host-run | 需要手动准备各自依赖；File MinIO adapter 已落地但缺真实对象存储 smoke，Knowledge 已有 ingestion worker、Parser Service client、embedding 和 Qdrant/in-memory vector index 写入，仍缺 content、knowledge-queries、retrieval/rerank 闭环和真实依赖端到端 smoke。 |
+| Parser Runtime | partial | `services/parser/` 已提供 Python/FastAPI runtime、内部 HTTP API、Dockerfile、service-token auth 和可选 PaddleOCR extra；CI 使用 fake OCR backend 覆盖 lint/test/compile，仍缺真实 PaddleOCR 模型 smoke 和部署资源配置。 |
 | 前端联调入口 | host-run | 前端只调用 public Gateway `/api/v1/**`；不要直连内部服务。 |
 
 因此当前本地联调应按“根级依赖基线 + 服务级 smoke + 手动拼接关键链路”的方式执行。除非 #125 等跨服务 smoke 任务落地，不要在 PR 或文档中声称已有完整一键本地 E2E 验收环境。
@@ -122,8 +122,8 @@ go run ./cmd/server
 | --- | --- | --- |
 | 根级跨服务 smoke 缺失 | 即使使用 `deploy/docker-compose.yml` 启动本地/演示基线，也不能自动证明 Auth/Gateway/File/Knowledge/QA/Document/AI Gateway 链路可用。 | #125 |
 | 跨服务契约测试和 E2E smoke 缺失 | 不能自动证明前端 -> Gateway -> 多服务链路可用。 | #125 |
-| Parser runtime 和 smoke 缺失 | 只能检查 `services/parser/api/openapi.yaml` 与文档一致性，不能验证真实 PaddleOCR 解析或 Knowledge -> Parser 调用链路。 | 待拆分 |
-| Qdrant adapter 未落地，MinIO 跨服务 smoke 缺失 | Knowledge 检索闭环仍缺 Qdrant adapter；File 已有 MinIO adapter，但真实对象存储和跨服务内容读取 smoke 仍缺。 | #152、#154 |
+| Parser 真实 OCR smoke 缺失 | Parser runtime 和 fake OCR 测试已落地，但不能自动证明真实 PaddleOCR 模型加载、OCR 解析质量或部署资源配置。 | 待拆分 |
+| Knowledge retrieval/rerank 与对象存储跨服务 smoke 缺失 | Knowledge 已有 Qdrant/in-memory vector index 写入和 File handoff，但 content、knowledge-queries、rerank、真实对象存储和跨服务内容读取 smoke 仍缺。 | #152、#154 |
 | Document 真实 AI 生成和富 DOCX 工具链未落地 | 报告 job 状态机和基础 DOCX 导出可用；真实大纲/正文生成、Pandoc/LibreOffice 富 DOCX 转换和跨服务内容读取 smoke 仍需补齐。 | #160、#223 |
 | Document 跨服务 smoke 仍缺失 | settings/statistics/logs 已在服务端落地，但管理端、Gateway、File Service、Document worker 串联 smoke 仍未一键化。 | #159、#221 |
 | QA Agent Run MVP 和权限一致性仍在推进 | QA 会话/消息基础可用，完整 Agent 编排和 403 一致性仍需收口。 | #157、#217 |
@@ -134,6 +134,6 @@ go run ./cmd/server
 - 只改文档：至少执行 `git diff --check`，并检查新增链接、相对路径和实现事实。
 - 改后端服务：执行对应服务 `go test ./...` 和 `go build ./cmd/server`；QA 还要 `go build ./cmd/agent`。
 - 改 migration：执行 goose apply；如果服务有 env-gated repository integration tests，尽量使用本地 PostgreSQL 跑一遍。
-- 改 Parser 契约或运行时规划：检查 `services/parser/api/openapi.yaml`、Parser README 和 Knowledge ingestion 文档是否一致；runtime 落地前不要记录 `pytest`、PaddleOCR smoke 或 Parser build 结果。
+- 改 Parser 契约或运行时：检查 `services/parser/api/openapi.yaml`、Parser README、Knowledge ingestion 文档和 `parser-service.yml` 是否一致；区分 fake OCR 测试结果与真实 PaddleOCR 模型 smoke。
 - 改 Gateway OpenAPI：执行 `python3 scripts/verify_gateway_active_api.py`，前端类型相关改动还要执行 `bun run --cwd apps/web api:generate` 并检查生成 diff。
 - 改前端：执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`bun run --cwd apps/web build`、`bun run --cwd apps/web test:unit`；涉及关键浏览器流程时执行 `bun run --cwd apps/web playwright install --with-deps chromium` 和 `bun run --cwd apps/web test:e2e`。

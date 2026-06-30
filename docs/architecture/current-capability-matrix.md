@@ -31,7 +31,7 @@
 | Auth 用户、会话和权限上下文 | 已实现 | `services/auth/` Go service、PostgreSQL migration、argon2id、session token hash、服务间 token。 | Gateway auth public routes；Auth service OpenAPI。 | 与完整本地 E2E、种子数据和管理端权限配置仍需联调。 | #109、#122、#125 |
 | Gateway active route proxy 和 session cache | 部分实现 | `services/gateway/` active proxy matrix、Redis session cache、Auth routes。 | Gateway OpenAPI 是前端权威契约。 | 部分 Knowledge active routes 仍是阶段性 501；跨服务 smoke 未自动化。 | #153、#199、#125 |
 | File 基础文件对象 | 部分实现 | `services/file/` 内部 `/internal/v1/files/**`、memory/local/MinIO object store、file metadata migration、PostgreSQL metadata runtime 和 service-token 校验。 | File service 内部 API；业务服务不得暴露 object key。 | MinIO server/mc 本地初始化、真实对象存储 smoke 和跨服务 smoke 未自动化。 | #154、#235 |
-| Knowledge 知识库 CRUD 和上传 handoff | 部分实现 | Knowledge PostgreSQL repository、知识库 CRUD、文档上传、File handoff、asynq ingestion 入队。 | Gateway Knowledge active paths；Knowledge service OpenAPI。 | ingestion worker、解析、embedding、Qdrant、retrieval、rerank 闭环未落地。 | #152、#200 |
+| Knowledge 知识库 CRUD、上传和 ingestion 写入链路 | 部分实现 | Knowledge PostgreSQL repository、知识库 CRUD、文档上传、File handoff、asynq ingestion 入队、Parser Service client、chunker、embedding、chunk 持久化和 Qdrant/in-memory vector index 写入。 | Gateway Knowledge active paths；Knowledge service OpenAPI。 | content、knowledge-queries、document PATCH/DELETE、retrieval/rerank 闭环和真实 File/Parser/Qdrant/AI Gateway 端到端 smoke 仍需补齐。 | #152、#200、#226 |
 | Parser Runtime | 部分实现 | `services/parser/` Python/FastAPI runtime、`services/parser/api/openapi.yaml`、service-token auth、PaddleOCR optional extra、Dockerfile 和 Knowledge Parser service client。 | Parser 内部 `/internal/v1/parsed-documents` API；不通过 gateway 暴露。 | 真实 PaddleOCR 模型 smoke、部署资源配置和 Knowledge/File/Redis 全链路 smoke 仍需补齐。 | #83、#226 |
 | QA 会话、消息、配置、引用和统计资源 | 部分实现 | `services/qa/` 会话/消息 API、SSE 事件、config versions、citations、retrieval test/metrics 资源、AI Gateway chat client、B-03 非流式 ResponseRun / Agent Loop MVP（本分支）。 | Gateway QA active paths；QA service OpenAPI。 | 真实 Knowledge retrieval、RAG 引用闭环、权限一致性和跨服务 smoke 待收口。 | #157、#89、#217、#219、#210 |
 | QA MCP/local tool 基础 | 部分实现 | `services/qa/internal/platform/mcpclient`、local tools、安全摘要。 | QA README 和数据模型。 | MCP SDK/sidecar 版本、工具白名单运维和完整审计仍待决策。 | #151、#105 |
@@ -45,8 +45,8 @@
 | Document MCP tools | 缺失 | README/requirements 保留 Document MCP 工具目标，当前 implementation 已单列缺口。 | QA/Document 工具边界设计。 | 工具注册、权限校验、脱敏输出和调用链路未落地。 | #151、#158 |
 | 前端 App shell、登录态和 RBAC 导航 | 已实现 | `apps/web` auth shell、read-only report navigation 修正。 | 只调用 Gateway `/api/v1/**`。 | 管理端配置、Knowledge 页面和测试基线仍在推进。 | #109、#212、#222、#110、#111、#163 |
 | 前端 Gateway 类型和 typed client | 已实现 / 需持续校验 | `openapi-typescript` 已进入前端依赖，`api:generate` 脚本存在。 | Gateway OpenAPI -> `apps/web/src/api/generated/`。 | 类型漂移需 CI 和 PR 前检查持续约束。 | #108、#161、#162 |
-| 本地联调环境 | 部分实现 | 根 `deploy/docker-compose.yml` 已提供本地/演示基线，并包含 `seed-local` / `seed-local-ai` 基础 seed；QA 和 Document 也有服务级 Compose。 | 本地运行手册见 `docs/runbooks/local-integration.md`。 | 现有 seed data 覆盖本地登录、基础报告类型、示例知识库和 AI profile placeholder，但跨服务验收数据覆盖、统一跨服务 smoke 和一键 E2E 验收脚本仍缺。 | #125、#150 |
-| 测试策略和 CI | 部分实现 | Go services workflow、goose migration workflow、Frontend check/build/unit/E2E workflow、Gateway contract workflow、API type drift workflow。 | 测试策略见 `docs/testing/strategy.md`。 | Parser Python/runtime CI、后端路径过滤矩阵和跨服务 E2E smoke 待补。 | #123、#125、#163 |
+| 本地联调环境 | 部分实现 | 根 `deploy/docker-compose.yml` 已提供本地/演示基线，并包含 PostgreSQL、Redis、Qdrant、MinIO、Parser、服务串联和 `seed-local` / `seed-local-ai` 基础 seed；QA 和 Document 也有服务级 Compose。 | 本地运行手册见 `docs/runbooks/local-integration.md`。 | 现有 seed data 覆盖本地登录、基础报告类型、示例知识库和 AI profile placeholder，但跨服务验收数据覆盖、统一跨服务 smoke 和一键 E2E 验收脚本仍缺。 | #125、#150 |
+| 测试策略和 CI | 部分实现 | Go services workflow、goose migration workflow、Parser Service workflow、Frontend check/build/unit/E2E workflow、Gateway contract workflow、API type drift workflow。 | 测试策略见 `docs/testing/strategy.md`。 | Parser 真实 PaddleOCR 模型 smoke、后端路径过滤矩阵和跨服务 E2E smoke 待补。 | #123、#125、#163 |
 
 ## 当前最重要的文档缺口
 
