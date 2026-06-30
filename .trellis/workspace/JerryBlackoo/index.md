@@ -30,7 +30,7 @@
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
 | 3 | 2026-06-30 | Fix PR 300 review findings | `c9ae097`, `251a521` | `JerryTeam/test/qa-ai-gateway-smoke` |
-| 2 | 2026-06-30 | QA to AI Gateway smoke | `c0f160a` | `JerryTeam/test/qa-ai-gateway-smoke` |
+| 2 | 2026-06-30 | QA to AI Gateway smoke | `f9662a9` | `JerryTeam/test/qa-ai-gateway-smoke` |
 | 1 | 2026-06-30 | QA owner authorization consistency | `ba65e00` | `JerryTeam/fix/qa-session-forbidden` |
 <!-- @@@/auto:session-history -->
 

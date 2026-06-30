@@ -61,7 +61,7 @@ Implemented issue #288 with an env-gated QA to AI Gateway chat smoke, token/prof
 
 | Hash | Message |
 |------|---------|
-| `c0f160a` | (see git log) |
+| `f9662a9` | (see git log) |
 
 ### Testing
 
