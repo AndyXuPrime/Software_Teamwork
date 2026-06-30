@@ -22,13 +22,29 @@ jobs:
             const projectOwner = 'Sakayori-Iroha-168';
             const projectNumber = 1;
             const projectName = 'Software Teamwork';
-            const projectGraphql = process.env.PROJECTS_TOKEN
-              ? github.graphql.defaults({
+            const projectGraphql = async (query, variables = {}) => {
+              if (!process.env.PROJECTS_TOKEN) {
+                return github.graphql(query, variables);
+              }
+
+              const response = await fetch('https://api.github.com/graphql', {
+                method: 'POST',
                 headers: {
-                  authorization: `token ${process.env.PROJECTS_TOKEN}`,
+                  authorization: `Bearer ${process.env.PROJECTS_TOKEN}`,
+                  accept: 'application/vnd.github+json',
+                  'content-type': 'application/json',
                 },
-              })
-              : github.graphql;
+                body: JSON.stringify({ query, variables }),
+              });
+              const payload = await response.json();
+              if (!response.ok || payload.errors?.length) {
+                const requestId = response.headers.get('x-github-request-id');
+                const errors = payload.errors?.map((error) => error.message).join('; ') || `${response.status} ${response.statusText}`;
+                throw new Error(`GitHub GraphQL request failed via PROJECTS_TOKEN: ${errors}${requestId ? ` (request id ${requestId})` : ''}`);
+              }
+
+              return payload.data;
+            };
             const comment = context.payload.comment;
             const issue = context.payload.issue;
             const match = comment.body.trim().match(/^认领\s*[:：]\s*@?([A-Za-z0-9-]+)\s*$/u);
@@ -39,19 +55,25 @@ jobs:
             }
 
             const parseTaskCode = (title) => {
-              const nextTemplateMatch = title.match(/^([SABCF]-\d{3})\s+.+$/u);
-              if (nextTemplateMatch) {
-                return nextTemplateMatch[1];
+              const bracketedMatch = title.trim().match(/^\[([SABCF]-(?:\d{8}-)?\d{2,3})\]\s+.+$/u);
+              if (bracketedMatch) {
+                return { taskCode: bracketedMatch[1], legacyTitle: false };
               }
-              const legacyMatch = title.match(/^\[([SABCF]-(?:\d{8}-)?\d{2})\]\s+.+$/u);
-              return legacyMatch ? legacyMatch[1] : '';
+              const bareMatch = title.trim().match(/^([SABCF]-(?:\d{8}-)?\d{2,3})\s+.+$/u);
+              return bareMatch
+                ? { taskCode: bareMatch[1], legacyTitle: true }
+                : { taskCode: '', legacyTitle: false };
             };
 
-            const taskCode = parseTaskCode(issue.title || '');
+            const { taskCode, legacyTitle } = parseTaskCode(issue.title || '');
             if (!taskCode) {
               core.info('Issue title does not look like a managed task issue; skipping.');
               return;
             }
+            if (legacyTitle) {
+              core.warning(`Issue title uses legacy task format. Use '[${taskCode}] ...' for new task issues.`);
+            }
+            core.info(`Using ${process.env.PROJECTS_TOKEN ? 'PROJECTS_TOKEN' : 'GITHUB_TOKEN'} for Project GraphQL sync.`);
 
             const requestedLogin = match[1];
             const commenterLogin = comment.user.login;
@@ -80,7 +102,7 @@ jobs:
                 return '无';
               }
               return normalized
-                .split(/[，,、]/u)
+                .split(/[，,、\s]+/u)
                 .map((item) => cleanValue(item))
                 .filter(Boolean)
                 .join(', ') || '无';
@@ -142,6 +164,7 @@ jobs:
 
             const body = issue.body || '';
             let syncState = 'pending';
+            let syncErrorMessage = '';
 
             try {
               const projectQuery = `
@@ -273,8 +296,9 @@ jobs:
               syncState = 'synced';
             } catch (error) {
               syncState = 'blocked';
+              syncErrorMessage = error.message;
               core.warning(
-                `Project status sync failed. Configure a PROJECTS_TOKEN secret with Project read/write access if GITHUB_TOKEN cannot access the user project. ${error.message}`
+                `Project status sync failed. Configure PROJECTS_TOKEN as a token owned by or granted access to the user-level Project '${projectName}', with Project read/write access. ${error.message}`
               );
             }
 
@@ -292,4 +316,8 @@ jobs:
               });
             }
 
-            core.info(`Assigned issue #${issue.number} to @${commenterLogin}.`);
+            if (syncState === 'blocked') {
+              core.setFailed(`Assigned issue #${issue.number} to @${commenterLogin}, but Project sync is blocked. ${syncErrorMessage}`);
+            } else {
+              core.info(`Assigned issue #${issue.number} to @${commenterLogin}.`);
+            }
