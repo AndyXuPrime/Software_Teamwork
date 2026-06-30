@@ -61,3 +61,48 @@ func TestMetricsMiddlewareNilRegistryIsNoOp(t *testing.T) {
 		t.Fatalf("want 200, got %d", rec.Code)
 	}
 }
+
+func TestMetricsMiddlewareFlusherPassThrough(t *testing.T) {
+	reg := metrics.New()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /stream", func(w http.ResponseWriter, r *http.Request) {
+		// SSE / streaming handlers assert http.Flusher; this must not fail.
+		f, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("responseWriter does not implement http.Flusher")
+			http.Error(w, "no flusher", http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte("data: hello\n\n"))
+		f.Flush()
+	})
+
+	handler := middleware.Chain(mux, middleware.Metrics(reg, mux))
+
+	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+}
+
+func TestMetricsMiddlewareImplicit200OnWrite(t *testing.T) {
+	reg := metrics.New()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /body", func(w http.ResponseWriter, r *http.Request) {
+		// Write body without calling WriteHeader — net/http implies 200.
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	handler := middleware.Chain(mux, middleware.Metrics(reg, mux))
+
+	req := httptest.NewRequest(http.MethodGet, "/body", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+}
