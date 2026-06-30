@@ -100,37 +100,6 @@ services:
       retries: 120
     restart: unless-stopped
 
-  oceanbase:
-    profiles:
-      - oceanbase
-    image: oceanbase/oceanbase-ce:4.4.1.0-100000032025101610
-    entrypoint: ["bash", "/root/boot/ragflow-oceanbase-entrypoint.sh"]
-    ulimits:
-      nofile:
-        soft: 655350
-        hard: 655350
-    volumes:
-      - ./oceanbase/data:/root/ob
-      - ./oceanbase/conf:/root/.obd/cluster
-      - ./oceanbase/init.d:/root/boot/init.d
-      - ./oceanbase-entrypoint.sh:/root/boot/ragflow-oceanbase-entrypoint.sh:ro
-    ports:
-      - ${OCEANBASE_PORT:-2881}:2881
-    env_file: .env
-    environment:
-      - MODE=normal
-      - OB_SERVER_IP=127.0.0.1
-    mem_limit: ${MEM_LIMIT}
-    healthcheck:
-      test: [ 'CMD-SHELL', 'obclient -h127.0.0.1 -P2881 -uroot@${OB_TENANT_NAME:-ragflow} -p${OB_TENANT_PASSWORD:-infini_rag_flow} -e "CREATE DATABASE IF NOT EXISTS ${OCEANBASE_DOC_DBNAME:-ragflow_doc};"' ]
-      interval: 10s
-      retries: 30
-      start_period: 30s
-      timeout: 10s
-    networks:
-      - ragflow
-    restart: unless-stopped
-
   seekdb:
     profiles:
       - seekdb
