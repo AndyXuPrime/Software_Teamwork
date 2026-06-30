@@ -101,6 +101,7 @@ func main() {
 		logger.Info("gateway metrics server starting", "service", "gateway", "addr", cfg.MetricsAddr)
 		if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("gateway metrics server stopped unexpectedly", "service", "gateway", "error", err)
+			stop()
 		}
 	}()
 

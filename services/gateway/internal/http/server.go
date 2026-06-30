@@ -79,8 +79,8 @@ func NewServer(cfg Config) *Server {
 	s.handler = middleware.Chain(
 		s.mux,
 		middleware.RequestID(),
-		middleware.Recover(cfg.Logger),
 		middleware.Metrics(cfg.MetricsReg, s.mux),
+		middleware.Recover(cfg.Logger),
 		middleware.TimeoutWithSkip(cfg.RequestTimeout, skipsFixedRequestTimeout),
 		middleware.CORS(middleware.CORSConfig{
 			AllowedOrigins:   cfg.CORSAllowedOrigins,
