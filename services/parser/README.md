@@ -89,6 +89,31 @@ uv run pytest
 uv run python -m compileall src tests
 ```
 
+The default pytest suite uses fake OCR coverage and skips the real PaddleOCR
+model smoke. To validate an installed PaddleOCR runtime and real model loading
+locally, install the optional OCR extra and explicitly enable the smoke:
+
+```bash
+uv sync --group dev --extra paddleocr
+PARSER_PADDLEOCR_SMOKE=1 \
+PARSER_PADDLEOCR_ALLOW_DOWNLOAD=1 \
+uv run pytest -m paddleocr_smoke -s
+```
+
+For an offline or deployment-like run, provide a PaddleX config that points at
+prepared local model files instead of allowing runtime downloads:
+
+```bash
+PARSER_PADDLEOCR_SMOKE=1 \
+PARSER_PADDLEOCR_CONFIG_PATH=/absolute/path/to/paddlex.yaml \
+uv run pytest -m paddleocr_smoke -s
+```
+
+The smoke decodes `tests/fixtures/paddleocr_smoke.png.b64`, runs it through
+the same `PaddleOCRBackend.parse` path used by the service, and asserts that
+OCR returns non-empty text. If `PARSER_PADDLEOCR_SMOKE` is unset, the test is
+skipped so ordinary CI and developer checkouts do not need PaddleOCR models.
+
 Run the service with the default dependency set:
 
 ```bash
@@ -128,6 +153,32 @@ docker build -t software-teamwork-parser:local .
 | `PADDLEOCR_USE_DOC_ORIENTATION_CLASSIFY` | `false` | PaddleOCR document orientation option. |
 | `PADDLEOCR_USE_DOC_UNWARPING` | `false` | PaddleOCR document unwarping option. |
 | `PADDLEOCR_USE_TEXTLINE_ORIENTATION` | `false` | PaddleOCR textline orientation option. |
+
+Real smoke aliases:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PARSER_PADDLEOCR_SMOKE` | empty | Set to `1` to run the real PaddleOCR model smoke. |
+| `PARSER_PADDLEOCR_ALLOW_DOWNLOAD` | `false` | Allows PaddleOCR to use its default model download/cache behavior during the smoke when no local config path is provided. |
+| `PARSER_PADDLEOCR_CONFIG_PATH` | `PADDLEOCR_CONFIG_PATH` | PaddleX config path for prepared local model files. |
+| `PARSER_PADDLEOCR_LANG` | `PADDLEOCR_LANG` or `ch` | Smoke-only alias for language selection. |
+| `PARSER_PADDLEOCR_DEVICE` | `PADDLEOCR_DEVICE` or `cpu` | Smoke-only alias for CPU/GPU device selection. |
+| `PARSER_PADDLEOCR_ENGINE` | `PADDLEOCR_ENGINE` | Smoke-only alias for engine override. |
+
+For CPU-only local validation, reserve at least 2 vCPU and 4 GiB memory; first
+model downloads or larger model packs may need 1-2 GiB of writable cache space.
+Use GPU only after the local PaddlePaddle runtime, driver, and model config have
+already been validated outside the ordinary test suite.
+
+Troubleshooting:
+
+- Missing `paddleocr` or `paddle` modules: run `uv sync --group dev --extra paddleocr`.
+- Missing model files in offline mode: set `PARSER_PADDLEOCR_CONFIG_PATH` or
+  `PADDLEOCR_CONFIG_PATH` to an existing PaddleX config with local model paths.
+- Unexpected downloads in restricted environments: do not set
+  `PARSER_PADDLEOCR_ALLOW_DOWNLOAD`; use prepared local model paths instead.
+- Empty OCR output: verify the model language/device, model cache completeness,
+  and that the fixture image can be read by the local PaddleOCR install.
 
 ## Deployment Boundary
 

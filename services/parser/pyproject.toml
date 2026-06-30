@@ -36,6 +36,9 @@ packages = ["src/parser_service"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "paddleocr_smoke: requires real OCR runtime; skipped unless PARSER_PADDLEOCR_SMOKE=1",
+]
 
 [tool.ruff]
 line-length = 100

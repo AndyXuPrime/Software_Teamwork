@@ -61,4 +61,27 @@ uv run pytest
 uv run python -m compileall src tests
 ```
 
-测试套件使用 fake OCR backend，不下载 PaddleOCR 模型。
+默认测试套件使用 fake OCR backend；真实 PaddleOCR 模型 smoke 只有显式设置
+`PARSER_PADDLEOCR_SMOKE=1` 才会运行，因此普通 CI 和普通开发者环境不需要安装或下载模型。
+
+真实模型本地 smoke：
+
+```bash
+cd services/parser
+uv sync --group dev --extra paddleocr
+PARSER_PADDLEOCR_SMOKE=1 \
+PARSER_PADDLEOCR_ALLOW_DOWNLOAD=1 \
+uv run pytest -m paddleocr_smoke -s
+```
+
+离线或部署近似环境应使用准备好的本地模型配置：
+
+```bash
+PARSER_PADDLEOCR_SMOKE=1 \
+PARSER_PADDLEOCR_CONFIG_PATH=/absolute/path/to/paddlex.yaml \
+uv run pytest -m paddleocr_smoke -s
+```
+
+资源预估：CPU-only smoke 建议至少 2 vCPU、4 GiB 内存；首次下载或准备模型缓存时预留
+1-2 GiB 可写磁盘。该 smoke 只证明 PaddleOCR runtime、模型加载和最小 fixture OCR
+可用，不等同于 #125 的跨服务端到端 smoke。

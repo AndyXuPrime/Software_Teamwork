@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify checks and review expectations for backend-adjacent service work."}
+{"file": ".trellis/spec/backend/api-contracts.md", "reason": "Confirm no accidental contract/API changes."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Review failure diagnostics and sanitization."}
+{"file": "docs/testing/strategy.md", "reason": "Confirm smoke test and runbook documentation match project testing policy."}
+{"file": ".agents/git-commit-checklist.md", "reason": "Commit gate before local commit."}

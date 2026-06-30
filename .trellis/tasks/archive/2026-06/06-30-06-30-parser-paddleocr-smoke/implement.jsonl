@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend pre-development checklist and service-boundary rules for Parser work."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Required quality checks, forbidden patterns, and test expectations."}
+{"file": ".trellis/spec/backend/api-contracts.md", "reason": "Ensure Parser smoke docs do not change public or internal API semantics."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Shape diagnostic failure messages without leaking internals."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Avoid sensitive data in diagnostics or docs."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking and commit guidance for implementation."}
+{"file": "docs/architecture/service-boundaries.md", "reason": "Parser/Knowledge/PaddleOCR boundary ownership."}
+{"file": "docs/architecture/technology-decisions.md", "reason": "Python/PaddleOCR runtime baseline and dependency constraints."}
+{"file": "docs/testing/strategy.md", "reason": "Env-gated smoke and PR verification expectations."}

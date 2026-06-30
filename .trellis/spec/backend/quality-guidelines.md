@@ -26,6 +26,81 @@ uv run pytest
 uv run python -m compileall src tests
 ```
 
+### Parser Real PaddleOCR Smoke
+
+#### 1. Scope / Trigger
+
+- Trigger: changing Parser PaddleOCR runtime code, model loading behavior,
+  deployment resource docs, or local OCR smoke commands.
+- Applies to `services/parser` tests/docs and Parser runbook entries.
+
+#### 2. Signatures
+
+```bash
+PARSER_PADDLEOCR_SMOKE=1 \
+PARSER_PADDLEOCR_ALLOW_DOWNLOAD=1 \
+uv run pytest -m paddleocr_smoke -s
+```
+
+Offline or deployment-like runs should use:
+
+```bash
+PARSER_PADDLEOCR_SMOKE=1 \
+PARSER_PADDLEOCR_CONFIG_PATH=/absolute/path/to/paddlex.yaml \
+uv run pytest -m paddleocr_smoke -s
+```
+
+#### 3. Contracts
+
+- Without `PARSER_PADDLEOCR_SMOKE=1`, the real model smoke must skip and ordinary
+  Parser CI must rely on fake OCR tests.
+- With `PARSER_PADDLEOCR_SMOKE=1`, missing PaddleOCR/PaddlePaddle runtime or
+  missing model policy must produce an actionable local test failure.
+- The smoke must call the Parser PaddleOCR backend path and assert non-empty OCR
+  output from a small fixture.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required handling |
+| --- | --- |
+| Smoke env unset | `pytest.skip`, ordinary CI passes without PaddleOCR. |
+| Runtime modules missing | Fail with install command such as `uv sync --group dev --extra paddleocr`. |
+| No local model config and downloads not allowed | Fail with `PARSER_PADDLEOCR_CONFIG_PATH` or `PARSER_PADDLEOCR_ALLOW_DOWNLOAD` guidance. |
+| OCR returns empty content | Fail with fixture, language/device, and model-completeness guidance. |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: default `uv run pytest` skips real model smoke, while an explicit local
+  env run validates model loading and fixture OCR.
+- Base: PR records that only fake OCR checks ran because the local machine lacks
+  PaddleOCR models.
+- Bad: ordinary CI downloads PaddleOCR models, or a smoke failure emits raw
+  provider/debug bodies instead of a short actionable diagnostic.
+
+#### 6. Tests Required
+
+- Parser fake OCR suite: `uv run pytest`.
+- Parser lint: `uv run ruff check .`.
+- Parser compile: `uv run python -m compileall src tests`.
+- For PaddleOCR runtime/resource changes, run the env-gated smoke when a real
+  model environment is available; otherwise record why it was skipped.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+
+```bash
+uv run pytest  # implicitly downloads real OCR models in CI
+```
+
+Correct:
+
+```bash
+uv run pytest  # fake OCR only; real model smoke skipped
+PARSER_PADDLEOCR_SMOKE=1 PARSER_PADDLEOCR_ALLOW_DOWNLOAD=1 \
+  uv run pytest -m paddleocr_smoke -s
+```
+
 When lint tooling is introduced, CI should run the selected linter for each
 changed service.
 
