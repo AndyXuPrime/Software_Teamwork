@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 20
+- **Total Sessions**: 21
 - **Last Active**: 2026-07-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~696 | Active |
+| `journal-1.md` | ~729 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 21 | 2026-07-01 | PR 350 generation failure compensation | `e791f71` | `PrimeTeam/feat/report-section-versions` |
 | 20 | 2026-07-01 | PR 350 review fixes | `0c8cb41`, `135a4ab` | `PrimeTeam/feat/report-section-versions` |
 | 19 | 2026-07-01 | Document section versions | `c0c871d`, `a4aa9c4` | `PrimeTeam/feat/report-section-versions` |
 | 18 | 2026-07-01 | Address PR 334 generation review follow-ups | `015fbe9` | `PrimeTeam/feat/report-generation-orchestration` |

@@ -694,3 +694,36 @@ Addressed PR #350 review feedback: locked section-version transaction re-read, a
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: PR 350 generation failure compensation
+
+**Date**: 2026-07-01
+**Task**: PR 350 generation failure compensation
+**Branch**: `PrimeTeam/feat/report-section-versions`
+
+### Summary
+
+Fixed report generation failure compensation to use narrow section status updates, preserve concurrent section edits, and document the concurrency rule in backend specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e791f71` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
