@@ -30,6 +30,8 @@ type RerankRequest struct {
 	Query     string
 	Documents []RerankDocument
 	TopN      int
+	UserID    string
+	RequestID string
 }
 
 type RerankResult struct {
@@ -37,8 +39,8 @@ type RerankResult struct {
 	Score      float64
 }
 
-// Reranker is the provider-neutral boundary for reranking. A real AI Gateway
-// adapter is deferred until S-04 lands; tests can inject a deterministic fake.
+// Reranker is the provider-neutral boundary for reranking. Tests can inject a
+// deterministic fake; production wiring can use an AI Gateway HTTP adapter.
 type Reranker interface {
 	Rerank(ctx context.Context, request RerankRequest) ([]RerankResult, error)
 }

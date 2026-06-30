@@ -155,7 +155,7 @@ func (s *KnowledgeService) CreateKnowledgeQuery(ctx context.Context, reqCtx Requ
 		results = results[:topK]
 	}
 	if input.Rerank {
-		results, err = s.rerankRetrievalResults(ctx, query, results, rerankTopN)
+		results, err = s.rerankRetrievalResults(ctx, reqCtx, query, results, rerankTopN)
 		if err != nil {
 			return KnowledgeQuerySummary{}, err
 		}
@@ -187,7 +187,7 @@ func (s *KnowledgeService) CreateKnowledgeQuery(ctx context.Context, reqCtx Requ
 	}, nil
 }
 
-func (s *KnowledgeService) rerankRetrievalResults(ctx context.Context, query string, results []KnowledgeQueryResult, topN *int) ([]KnowledgeQueryResult, error) {
+func (s *KnowledgeService) rerankRetrievalResults(ctx context.Context, reqCtx RequestContext, query string, results []KnowledgeQueryResult, topN *int) ([]KnowledgeQueryResult, error) {
 	limit := len(results)
 	if topN != nil && *topN < limit {
 		limit = *topN
@@ -195,8 +195,8 @@ func (s *KnowledgeService) rerankRetrievalResults(ctx context.Context, query str
 	if limit == 0 {
 		return []KnowledgeQueryResult{}, nil
 	}
-	// Until S-04 provides the AI Gateway adapter, a nil Reranker is an explicit
-	// no-op fallback: preserve vector order and never require provider credentials.
+	// When the adapter is not configured, a nil Reranker is an explicit no-op
+	// fallback: preserve vector order and never require provider credentials.
 	if s.reranker == nil {
 		return append([]KnowledgeQueryResult(nil), results[:limit]...), nil
 	}
@@ -207,7 +207,13 @@ func (s *KnowledgeService) rerankRetrievalResults(ctx context.Context, query str
 		documents = append(documents, RerankDocument{ID: result.ChunkID, Text: result.rerankContent})
 		byID[result.ChunkID] = result
 	}
-	reranked, err := s.reranker.Rerank(ctx, RerankRequest{Query: query, Documents: documents, TopN: limit})
+	reranked, err := s.reranker.Rerank(ctx, RerankRequest{
+		Query:     query,
+		Documents: documents,
+		TopN:      limit,
+		UserID:    strings.TrimSpace(reqCtx.UserID),
+		RequestID: strings.TrimSpace(reqCtx.RequestID),
+	})
 	if err != nil {
 		return nil, DependencyError("knowledge query reranking failed", err)
 	}

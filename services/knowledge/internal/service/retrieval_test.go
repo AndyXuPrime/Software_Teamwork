@@ -2,11 +2,15 @@ package service_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	rerankplatform "github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/platform/rerank"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/repository"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
 )
@@ -134,6 +138,95 @@ func TestKnowledgeQueryRerankPartialResultsPreserveVectorCandidates(t *testing.T
 	}
 }
 
+func TestKnowledgeQueryCallsAIGatewayReranker(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedRetrievalBase(t, repo, "kb_owned", "usr_owner")
+	seedRetrievalDocumentWithContent(t, repo, "doc_one", "kb_owned", "usr_owner", "one")
+	seedRetrievalDocumentWithContent(t, repo, "doc_two", "kb_owned", "usr_owner", "two")
+	index := &retrievalIndex{hits: []service.VectorSearchHit{
+		{ID: "point_one", Score: .9, Payload: map[string]any{"chunk_id": "chunk_doc_one"}},
+		{ID: "point_two", Score: .8, Payload: map[string]any{"chunk_id": "chunk_doc_two"}},
+	}}
+
+	called := false
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if r.Method != http.MethodPost || r.URL.Path != "/internal/v1/rerankings" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("X-Caller-Service") != "knowledge" || r.Header.Get("X-User-Id") != "usr_owner" || r.Header.Get("X-Request-Id") != "req_rerank" || r.Header.Get("X-Service-Token") != "svc_token" {
+			t.Fatalf("headers = %+v", r.Header)
+		}
+		var body struct {
+			ProfileID string `json:"profile_id"`
+			Model     string `json:"model"`
+			Query     string `json:"query"`
+			Documents []struct {
+				ID   string `json:"id"`
+				Text string `json:"text"`
+			} `json:"documents"`
+			TopN int `json:"top_n"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.ProfileID != "profile_rerank" || body.Model != "rerank-model" || body.Query != "query" || body.TopN != 2 {
+			t.Fatalf("body = %+v", body)
+		}
+		if len(body.Documents) != 2 || body.Documents[0].ID != "chunk_doc_one" || body.Documents[0].Text != "one" || body.Documents[1].ID != "chunk_doc_two" || body.Documents[1].Text != "two" {
+			t.Fatalf("documents = %+v", body.Documents)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","model":"rerank-model","data":[{"index":1,"document_id":"chunk_doc_two","score":0.99},{"index":0,"document_id":"chunk_doc_one","score":0.77}]}`))
+	}))
+	defer gateway.Close()
+
+	reranker, err := rerankplatform.NewAIGatewayReranker(rerankplatform.AIGatewayConfig{
+		BaseURL:      gateway.URL,
+		ServiceToken: "svc_token",
+		Model:        "rerank-model",
+		ProfileID:    "profile_rerank",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := service.NewKnowledgeService(repo, service.WithVectorIndex(retrievalEmbedder{}, index), service.WithReranker(reranker))
+	result, err := svc.CreateKnowledgeQuery(context.Background(), service.RequestContext{UserID: "usr_owner", RequestID: "req_rerank"}, service.KnowledgeQueryInput{Query: "query", KnowledgeBaseIDs: []string{"kb_owned"}, TopK: 2, Rerank: true})
+	if err != nil {
+		t.Fatalf("CreateKnowledgeQuery() error = %v", err)
+	}
+	if !called {
+		t.Fatal("expected AI Gateway reranker call")
+	}
+	if len(result.Results) != 2 || result.Results[0].ChunkID != "chunk_doc_two" || result.Results[0].Score != .99 || result.Results[1].ChunkID != "chunk_doc_one" {
+		t.Fatalf("reranked results = %+v", result.Results)
+	}
+}
+
+func TestKnowledgeQueryAIGatewayRerankErrorIsSanitized(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedRetrievalBase(t, repo, "kb_owned", "usr_owner")
+	seedRetrievalDocumentWithContent(t, repo, "doc_one", "kb_owned", "usr_owner", "one")
+	index := &retrievalIndex{hits: []service.VectorSearchHit{{ID: "point_one", Score: .8, Payload: map[string]any{"chunk_id": "chunk_doc_one"}}}}
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "provider raw secret response", http.StatusBadGateway)
+	}))
+	defer gateway.Close()
+	reranker, err := rerankplatform.NewAIGatewayReranker(rerankplatform.AIGatewayConfig{
+		BaseURL:      gateway.URL,
+		ServiceToken: "svc_token",
+		Model:        "rerank-model",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := service.NewKnowledgeService(repo, service.WithVectorIndex(retrievalEmbedder{}, index), service.WithReranker(reranker))
+	_, err = svc.CreateKnowledgeQuery(context.Background(), service.RequestContext{UserID: "usr_owner", RequestID: "req_rerank"}, service.KnowledgeQueryInput{Query: "query", KnowledgeBaseIDs: []string{"kb_owned"}, TopK: 1, Rerank: true})
+	if err == nil || strings.Contains(err.Error(), "provider raw secret response") {
+		t.Fatalf("rerank error = %v", err)
+	}
+}
+
 func TestKnowledgeQueryMetadataFilterMatchesNumericValue(t *testing.T) {
 	repo := repository.NewMemoryRepository()
 	seedRetrievalBase(t, repo, "kb_owned", "usr_owner")
@@ -176,6 +269,26 @@ func TestKnowledgeQueryRerankFallbackAndEmptyResults(t *testing.T) {
 	empty, err := svc.CreateKnowledgeQuery(context.Background(), service.RequestContext{UserID: "usr_owner"}, service.KnowledgeQueryInput{Query: "missing", KnowledgeBaseIDs: []string{"kb_owned"}, TopK: 2})
 	if err != nil || empty.Results == nil || len(empty.Results) != 0 {
 		t.Fatalf("empty result = %+v, error = %v", empty, err)
+	}
+}
+
+func TestKnowledgeQueryRerankFallbackPreservesVectorOrderAndTopN(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedRetrievalBase(t, repo, "kb_owned", "usr_owner")
+	seedRetrievalDocumentWithContent(t, repo, "doc_one", "kb_owned", "usr_owner", "one")
+	seedRetrievalDocumentWithContent(t, repo, "doc_two", "kb_owned", "usr_owner", "two")
+	index := &retrievalIndex{hits: []service.VectorSearchHit{
+		{ID: "point_one", Score: .9, Payload: map[string]any{"chunk_id": "chunk_doc_one"}},
+		{ID: "point_two", Score: .8, Payload: map[string]any{"chunk_id": "chunk_doc_two"}},
+	}}
+	svc := service.NewKnowledgeService(repo, service.WithVectorIndex(retrievalEmbedder{}, index))
+	topN := 1
+	result, err := svc.CreateKnowledgeQuery(context.Background(), service.RequestContext{UserID: "usr_owner"}, service.KnowledgeQueryInput{Query: "query", KnowledgeBaseIDs: []string{"kb_owned"}, TopK: 2, Rerank: true, RerankTopN: &topN})
+	if err != nil {
+		t.Fatalf("CreateKnowledgeQuery() error = %v", err)
+	}
+	if len(result.Results) != 1 || result.Results[0].ChunkID != "chunk_doc_one" || result.Results[0].Score != .9 {
+		t.Fatalf("fallback results = %+v", result.Results)
 	}
 }
 

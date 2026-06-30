@@ -144,7 +144,7 @@ POST /api/v1/knowledge-queries
 | `scoreThreshold` | 相似度阈值，默认 0.35，低于阈值的结果应过滤。 |
 | `tags` | 标签过滤条件。 |
 | `metadataFilter` | 扩展元数据过滤条件。 |
-| `rerank` | 是否请求重排序；A-12 保留 provider-neutral boundary，真实 AI Gateway adapter 等 S-04。 |
+| `rerank` | 是否请求重排序；配置 AI Gateway rerank adapter 时调用 `/internal/v1/rerankings`。 |
 | `rerankTopN` | 重排序后保留数量，必须小于等于 `topK`；未配置 reranker 时仍会按向量顺序截断。 |
 
 响应必须返回可溯源字段，例如 `knowledgeBaseId`、`documentId`、`chunkId`、`documentName`、`sectionPath`、`score` 和 `contentPreview`。不要向前端返回原始向量、完整 Qdrant payload、内部 object key、prompt 或下游服务 URL。
