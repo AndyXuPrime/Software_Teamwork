@@ -322,7 +322,7 @@ func (r *Postgres) FinalizeResponseRun(ctx context.Context, userID string, final
 	if err := q.UpdateMessageContentBlock(ctx, final.AssistantMessage.Content, blockStatus(final.AssistantMessage.Status), final.AssistantMessage.ID); err != nil {
 		return service.ResponseRun{}, fmt.Errorf("update assistant content: %w", err)
 	}
-	if err := replaceCitations(ctx, tx, final.RunID, final.AssistantMessage.ID, final.Citations); err != nil {
+	if err := r.replaceCitations(ctx, tx, final.RunID, final.AssistantMessage.ID, final.Citations); err != nil {
 		return service.ResponseRun{}, err
 	}
 	if err := replaceReasoningSteps(ctx, q, final.RunID, final.ReasoningSteps); err != nil {
@@ -453,10 +453,11 @@ func replaceStreamEvents(ctx context.Context, q *sqlc.Queries, runID string, eve
 	return nil
 }
 
-func replaceCitations(ctx context.Context, tx pgx.Tx, runID, messageID string, citations []service.Citation) error {
+func (r *Postgres) replaceCitations(ctx context.Context, tx pgx.Tx, runID, messageID string, citations []service.Citation) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM citations WHERE message_id=$1`, messageID); err != nil {
 		return fmt.Errorf("replace citations: %w", err)
 	}
+	useSnapshot := r.hasCitationSnapshotColumns(ctx)
 	for index, item := range citations {
 		item.MessageID = messageID
 		item.ResponseRunID = runID
@@ -474,25 +475,45 @@ func replaceCitations(ctx context.Context, tx pgx.Tx, runID, messageID string, c
 		if !item.IsSourceAvailable {
 			sourceUnavailableReason = item.SourceUnavailableReason
 		}
-		_, err = tx.Exec(ctx, `
-INSERT INTO citations (
-    id, message_id, response_run_id, citation_no,
-    external_kb_id, external_doc_id, external_chunk_id, doc_name,
-    section_path, quote_text, content_preview, context, page_number,
-    score, rerank_score, chunk_type, is_source_available,
-    source_unavailable_reason, metadata
-) VALUES (
-    COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, NULLIF($3, '')::uuid, $4,
-    NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), $8,
-    NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), $13,
-    $14, $15, NULLIF($16, ''), $17,
-    NULLIF($18, ''), $19
-)`,
-			item.ID, item.MessageID, item.ResponseRunID, item.CitationNo,
-			item.KnowledgeBaseID, item.DocumentID, item.ChunkID, item.DocumentName,
-			item.SectionPath, item.Text, item.ContentPreview, item.Context, nullableInt(item.PageNumber),
-			nullableFloat(item.Score), nullableFloat(item.RerankScore), item.ChunkType, item.IsSourceAvailable,
-			sourceUnavailableReason, metadata)
+		if useSnapshot {
+			_, err = tx.Exec(ctx, `
+	INSERT INTO citations (
+	    id, message_id, response_run_id, citation_no,
+	    external_kb_id, external_doc_id, external_chunk_id, doc_name,
+	    section_path, quote_text, content_preview, context, page_number,
+	    score, rerank_score, chunk_type, is_source_available,
+	    source_unavailable_reason, metadata
+	) VALUES (
+	    COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, NULLIF($3, '')::uuid, $4,
+	    NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), $8,
+	    NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), $13,
+	    $14, $15, NULLIF($16, ''), $17,
+	    NULLIF($18, ''), $19
+	)`,
+				item.ID, item.MessageID, item.ResponseRunID, item.CitationNo,
+				item.KnowledgeBaseID, item.DocumentID, item.ChunkID, item.DocumentName,
+				item.SectionPath, item.Text, item.ContentPreview, item.Context, nullableInt(item.PageNumber),
+				nullableFloat(item.Score), nullableFloat(item.RerankScore), item.ChunkType, item.IsSourceAvailable,
+				sourceUnavailableReason, metadata)
+		} else {
+			_, err = tx.Exec(ctx, `
+	INSERT INTO citations (
+	    id, message_id, citation_no,
+	    external_kb_id, external_doc_id, external_chunk_id, doc_name,
+	    section_path, quote_text, context, page_number,
+	    score, rerank_score, chunk_type, metadata
+	) VALUES (
+	    COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3,
+	    NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), $7,
+	    NULLIF($8, ''), NULLIF($9, ''), NULLIF($10, ''), $11,
+	    $12, $13, NULLIF($14, ''), $15
+	)`,
+				item.ID, item.MessageID, item.CitationNo,
+				item.KnowledgeBaseID, item.DocumentID, item.ChunkID, item.DocumentName,
+				item.SectionPath, item.Text, item.Context, nullableInt(item.PageNumber),
+				nullableFloat(item.Score), nullableFloat(item.RerankScore), item.ChunkType,
+				metadata)
+		}
 		if err != nil {
 			return fmt.Errorf("insert citation: %w", err)
 		}
