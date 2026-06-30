@@ -38,7 +38,7 @@ func TestAIGatewayRerankerSendsHeadersBodyAndMapsResults(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"document_id":"chunk_2","score":0.92},{"document_id":"chunk_1","score":0.81}]}`))
+		_, _ = w.Write([]byte(`{"object":"list","model":"rerank-model","data":[{"index":1,"document_id":"chunk_2","score":0.92},{"index":0,"document_id":"chunk_1","score":0.81}]}`))
 	}))
 	defer server.Close()
 

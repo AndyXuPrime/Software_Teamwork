@@ -20,6 +20,10 @@ const (
 	maxTagLength    = 64
 
 	defaultIngestionRunningLease = 30 * time.Minute
+
+	DefaultRetrievalTopK    = 10
+	DefaultScoreThreshold   = 0.35
+	DefaultVectorCollection = "knowledge_chunks"
 )
 
 var (
@@ -31,31 +35,44 @@ type Clock func() time.Time
 
 type IDGenerator func(prefix string) string
 
-type Option func(*Service)
-
 type Service struct {
-	repo         Repository
-	files        FileClient
-	queue        IngestionQueue
-	source       SourceReader
-	parser       Parser
-	chunker      Chunker
-	embedder     Embedder
-	vectorIndex  VectorIndex
-	now          Clock
-	newID        IDGenerator
-	runningLease time.Duration
+	repo             Repository
+	files            FileClient
+	queue            IngestionQueue
+	source           SourceReader
+	parser           Parser
+	chunker          Chunker
+	embedder         Embedder
+	vectorIndex      VectorIndex
+	reranker         Reranker
+	vectorCollection string
+	retrievalTopK    int
+	scoreThreshold   float64
+	now              Clock
+	newID            IDGenerator
+	runningLease     time.Duration
 }
+
+type Option func(*Service)
 
 func New(repo Repository) *Service {
 	return &Service{
-		repo: repo,
-		now: func() time.Time {
-			return time.Now().UTC()
-		},
-		newID:        newID,
-		runningLease: defaultIngestionRunningLease,
+		repo:             repo,
+		vectorCollection: DefaultVectorCollection,
+		retrievalTopK:    DefaultRetrievalTopK,
+		scoreThreshold:   DefaultScoreThreshold,
+		now:              func() time.Time { return time.Now().UTC() },
+		newID:            newID,
+		runningLease:     defaultIngestionRunningLease,
 	}
+}
+
+func NewKnowledgeService(repo Repository, opts ...Option) *Service {
+	s := New(repo)
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func NewWithOptions(repo Repository, now Clock, idGenerator IDGenerator) *Service {
@@ -70,12 +87,15 @@ func NewWithDependencies(repo Repository, files FileClient, queue IngestionQueue
 		idGenerator = newID
 	}
 	s := &Service{
-		repo:         repo,
-		files:        files,
-		queue:        queue,
-		now:          now,
-		newID:        idGenerator,
-		runningLease: defaultIngestionRunningLease,
+		repo:             repo,
+		files:            files,
+		queue:            queue,
+		vectorCollection: DefaultVectorCollection,
+		retrievalTopK:    DefaultRetrievalTopK,
+		scoreThreshold:   DefaultScoreThreshold,
+		now:              now,
+		newID:            idGenerator,
+		runningLease:     defaultIngestionRunningLease,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -93,10 +113,19 @@ func WithProcessingPipeline(source SourceReader, parser Parser, chunker Chunker)
 	}
 }
 
-func WithVectorIndex(embedder Embedder, vectorIndex VectorIndex) Option {
+func WithVectorIndex(embedder Embedder, vectorIndex VectorIndex, collection ...string) Option {
 	return func(s *Service) {
 		s.embedder = embedder
 		s.vectorIndex = vectorIndex
+		if len(collection) > 0 && strings.TrimSpace(collection[0]) != "" {
+			s.vectorCollection = strings.TrimSpace(collection[0])
+		}
+	}
+}
+
+func WithReranker(reranker Reranker) Option {
+	return func(s *Service) {
+		s.reranker = reranker
 	}
 }
 

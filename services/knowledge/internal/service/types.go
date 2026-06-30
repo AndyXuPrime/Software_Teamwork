@@ -173,6 +173,23 @@ type KnowledgeDocument struct {
 	DeletedAt       *time.Time
 }
 
+type DocumentChunk struct {
+	ID                 string
+	KnowledgeBaseID    string
+	DocumentID         string
+	ChunkIndex         int
+	SectionPath        *string
+	Content            string
+	TokenCount         int
+	ChunkType          *string
+	QdrantPointID      *string
+	EmbeddingProvider  *string
+	EmbeddingModel     *string
+	EmbeddingDimension *int
+	Metadata           map[string]any
+	CreatedAt          time.Time
+}
+
 type ProcessingJob struct {
 	ID                   string
 	KnowledgeBaseID      string
@@ -372,6 +389,7 @@ type Repository interface {
 	MarkDocumentJobFailed(ctx context.Context, documentID string, jobID string, expectedAttempts *int32, code string, message string, failedAt time.Time) error
 	ListDocumentsByKnowledgeBase(ctx context.Context, knowledgeBaseID string, status *DocumentStatus, scope AccessScope, page PageInput) (DocumentList, error)
 	GetDocument(ctx context.Context, id string, scope AccessScope) (KnowledgeDocument, error)
+	FindChunksByIDs(ctx context.Context, ids []string) ([]DocumentChunk, error)
 	ListParserConfigs(ctx context.Context, enabled *bool) ([]ParserConfig, error)
 	GetParserConfig(ctx context.Context, id string) (ParserConfig, error)
 	CreateParserConfig(ctx context.Context, config ParserConfig, audit ParserConfigAudit) (ParserConfig, error)

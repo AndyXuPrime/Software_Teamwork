@@ -14,6 +14,7 @@ type MemoryRepository struct {
 	mu             sync.RWMutex
 	knowledgeBases map[string]service.KnowledgeBase
 	documents      map[string]service.KnowledgeDocument
+	chunks         map[string]service.DocumentChunk
 	jobs           map[string]service.ProcessingJob
 	parserConfigs  map[string]service.ParserConfig
 	parserAudits   []service.ParserConfigAudit
@@ -24,6 +25,7 @@ func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{
 		knowledgeBases: map[string]service.KnowledgeBase{},
 		documents:      map[string]service.KnowledgeDocument{},
+		chunks:         map[string]service.DocumentChunk{},
 		jobs:           map[string]service.ProcessingJob{},
 		parserConfigs:  map[string]service.ParserConfig{},
 		chunks:         map[string]service.DocumentChunk{},
@@ -693,6 +695,22 @@ func (r *MemoryRepository) GetDocument(ctx context.Context, id string, scope ser
 	return cloneDocument(r.hydrateDocumentLocked(doc)), nil
 }
 
+func (r *MemoryRepository) FindChunksByIDs(ctx context.Context, ids []string) ([]service.DocumentChunk, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	items := make([]service.DocumentChunk, 0, len(ids))
+	for _, id := range ids {
+		if chunk, exists := r.chunks[id]; exists {
+			items = append(items, cloneChunk(chunk))
+		}
+	}
+	return items, nil
+}
+
 func (r *MemoryRepository) SeedKnowledgeBase(kb service.KnowledgeBase) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -703,6 +721,32 @@ func (r *MemoryRepository) SeedDocument(doc service.KnowledgeDocument) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.documents[doc.ID] = cloneDocument(doc)
+}
+
+func (r *MemoryRepository) PutDocumentForTest(doc service.KnowledgeDocument) {
+	r.SeedDocument(doc)
+}
+
+func (r *MemoryRepository) ReplaceDocumentChunks(ctx context.Context, documentID string, chunks []service.DocumentChunk) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for id, chunk := range r.chunks {
+		if chunk.DocumentID == documentID {
+			delete(r.chunks, id)
+		}
+	}
+	for _, chunk := range chunks {
+		r.chunks[chunk.ID] = cloneChunk(chunk)
+	}
+	if doc, exists := r.documents[documentID]; exists {
+		doc.ChunkCount = int64(len(chunks))
+		r.documents[documentID] = doc
+	}
+	return nil
 }
 
 func (r *MemoryRepository) hydrateKnowledgeBaseLocked(kb service.KnowledgeBase) service.KnowledgeBase {
@@ -790,6 +834,26 @@ func cloneDocument(doc service.KnowledgeDocument) service.KnowledgeDocument {
 		doc.DeletedAt = &value
 	}
 	return doc
+}
+
+func cloneChunk(chunk service.DocumentChunk) service.DocumentChunk {
+	chunk.SectionPath = cloneStringPtr(chunk.SectionPath)
+	chunk.ChunkType = cloneStringPtr(chunk.ChunkType)
+	chunk.QdrantPointID = cloneStringPtr(chunk.QdrantPointID)
+	chunk.EmbeddingProvider = cloneStringPtr(chunk.EmbeddingProvider)
+	chunk.EmbeddingModel = cloneStringPtr(chunk.EmbeddingModel)
+	if chunk.EmbeddingDimension != nil {
+		value := *chunk.EmbeddingDimension
+		chunk.EmbeddingDimension = &value
+	}
+	if chunk.Metadata != nil {
+		metadata := make(map[string]any, len(chunk.Metadata))
+		for key, value := range chunk.Metadata {
+			metadata[key] = value
+		}
+		chunk.Metadata = metadata
+	}
+	return chunk
 }
 
 func cloneJob(job service.ProcessingJob) service.ProcessingJob {

@@ -323,15 +323,14 @@ func TestKnowledgeQueryValidationAndSanitizedRerankError(t *testing.T) {
 func seedRetrievalBase(t *testing.T, repo *repository.MemoryRepository, id, owner string) {
 	t.Helper()
 	now := time.Now().UTC()
-	if _, err := repo.CreateKnowledgeBase(context.Background(), service.KnowledgeBase{ID: id, Name: id, DocType: "GENERAL", CreatedBy: owner, CreatedAt: now, UpdatedAt: now}); err != nil {
-		t.Fatal(err)
-	}
+	repo.SeedKnowledgeBase(service.KnowledgeBase{ID: id, Name: id, DocType: "GENERAL", CreatedBy: owner, CreatedAt: now, UpdatedAt: now})
 }
 
 func seedRetrievalDocument(t *testing.T, repo *repository.MemoryRepository, id, kbID, owner string, status service.DocumentStatus, deletedAt *time.Time, tags []string, metadata map[string]any) {
 	t.Helper()
 	now := time.Now().UTC()
-	repo.PutDocumentForTest(service.KnowledgeDocument{ID: id, KnowledgeBaseID: kbID, FileID: "file_" + id, Name: id + ".md", Status: status, CreatedBy: owner, CreatedAt: now, DeletedAt: deletedAt, Tags: tags})
+	fileRef := "file_" + id
+	repo.PutDocumentForTest(service.KnowledgeDocument{ID: id, KnowledgeBaseID: kbID, FileRef: &fileRef, Name: id + ".md", Status: status, CreatedBy: owner, CreatedAt: now, DeletedAt: deletedAt, Tags: tags})
 	if err := repo.ReplaceDocumentChunks(context.Background(), id, []service.DocumentChunk{{ID: "chunk_" + id, KnowledgeBaseID: kbID, DocumentID: id, Content: "content for " + id, Metadata: metadata, CreatedAt: now}}); err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +339,8 @@ func seedRetrievalDocument(t *testing.T, repo *repository.MemoryRepository, id, 
 func seedRetrievalDocumentWithContent(t *testing.T, repo *repository.MemoryRepository, id, kbID, owner, content string) {
 	t.Helper()
 	now := time.Now().UTC()
-	repo.PutDocumentForTest(service.KnowledgeDocument{ID: id, KnowledgeBaseID: kbID, FileID: "file_" + id, Name: id + ".md", Status: service.DocumentStatusReady, CreatedBy: owner, CreatedAt: now})
+	fileRef := "file_" + id
+	repo.PutDocumentForTest(service.KnowledgeDocument{ID: id, KnowledgeBaseID: kbID, FileRef: &fileRef, Name: id + ".md", Status: service.DocumentStatusReady, CreatedBy: owner, CreatedAt: now})
 	if err := repo.ReplaceDocumentChunks(context.Background(), id, []service.DocumentChunk{{ID: "chunk_" + id, KnowledgeBaseID: kbID, DocumentID: id, Content: content, CreatedAt: now}}); err != nil {
 		t.Fatal(err)
 	}

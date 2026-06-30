@@ -78,3 +78,19 @@ func knowledgeQueryFromDomain(query service.KnowledgeQuerySummary) knowledgeQuer
 		},
 	}
 }
+
+func cloneStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func cloneIntPtr(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}

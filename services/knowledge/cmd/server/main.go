@@ -19,6 +19,7 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/platform/fileclient"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/platform/parser"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/platform/queue"
+	rerankplatform "github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/platform/rerank"
 	vectorplatform "github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/platform/vector"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/repository"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
@@ -71,6 +72,11 @@ func main() {
 	ingestionQueue := queue.NewAsynqQueue(asynqClient)
 
 	repo := repository.NewPostgresRepository(pool)
+	reranker, err := newReranker(cfg)
+	if err != nil {
+		logger.Error("reranker configuration failed", "service", "knowledge", "dependency", "ai-gateway", "error", err)
+		os.Exit(1)
+	}
 	knowledgeService := service.NewWithDependencies(
 		repo,
 		fileClient,
@@ -78,8 +84,11 @@ func main() {
 		nil,
 		nil,
 		service.WithProcessingPipeline(fileClient, documentParser, service.NewFixedChunker()),
-		service.WithVectorIndex(embedder, vectorIndex),
+		service.WithVectorIndex(embedder, vectorIndex, cfg.QdrantCollection),
 	)
+	if reranker != nil {
+		service.WithReranker(reranker)(knowledgeService)
+	}
 	handler := knowledgehttp.NewServer(knowledgeService, knowledgehttp.Config{
 		ServiceVersion: cfg.ServiceVersion,
 		Environment:    cfg.Environment,
@@ -172,5 +181,17 @@ func buildVectorIndex(cfg config.Config) (service.VectorIndex, error) {
 		APIKey:     cfg.QdrantAPIKey,
 		Collection: cfg.QdrantCollection,
 		Dimension:  cfg.EmbeddingDimension,
+	})
+}
+
+func newReranker(cfg config.Config) (service.Reranker, error) {
+	if strings.TrimSpace(cfg.RerankModel) == "" {
+		return nil, nil
+	}
+	return rerankplatform.NewAIGatewayReranker(rerankplatform.AIGatewayConfig{
+		BaseURL:      cfg.AIGatewayBaseURL,
+		ServiceToken: cfg.AIGatewayToken,
+		Model:        cfg.RerankModel,
+		ProfileID:    cfg.RerankProfileID,
 	})
 }

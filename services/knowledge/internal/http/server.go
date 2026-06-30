@@ -64,6 +64,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /internal/v1/knowledge-bases/{knowledgeBaseId}/documents", s.handleListDocuments)
 	s.mux.HandleFunc("POST /internal/v1/knowledge-bases/{knowledgeBaseId}/documents", s.handleUploadDocument)
 	s.mux.HandleFunc("GET /internal/v1/documents/{documentId}", s.handleGetDocument)
+	s.mux.HandleFunc("POST /internal/v1/knowledge-queries", s.handleCreateKnowledgeQuery)
 	s.mux.HandleFunc("GET /internal/v1/parser-configs", s.handleListParserConfigs)
 	s.mux.HandleFunc("POST /internal/v1/parser-configs", s.handleCreateParserConfig)
 	s.mux.HandleFunc("GET /internal/v1/parser-configs/{parserConfigId}", s.handleGetParserConfig)
@@ -379,6 +380,32 @@ func (s *Server) handleGetDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, documentFromDomain(doc), requestIDFromContext(r.Context()))
+}
+
+func (s *Server) handleCreateKnowledgeQuery(w http.ResponseWriter, r *http.Request) {
+	reqCtx, ok := s.gatewayContext(w, r)
+	if !ok {
+		return
+	}
+	var payload knowledgeQueryRequest
+	if !decodeJSONBody(w, r, &payload) {
+		return
+	}
+	query, err := s.knowledge.CreateKnowledgeQuery(r.Context(), reqCtx, service.KnowledgeQueryInput{
+		Query:            payload.Query,
+		KnowledgeBaseIDs: payload.KnowledgeBaseIDs,
+		TopK:             payload.TopK,
+		ScoreThreshold:   payload.ScoreThreshold,
+		Tags:             payload.Tags,
+		MetadataFilter:   payload.MetadataFilter,
+		Rerank:           payload.Rerank,
+		RerankTopN:       payload.RerankTopN,
+	})
+	if err != nil {
+		writeAppError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, knowledgeQueryFromDomain(query), requestIDFromContext(r.Context()))
 }
 
 func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {

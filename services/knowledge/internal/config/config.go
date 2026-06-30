@@ -40,6 +40,8 @@ type Config struct {
 	AIGatewayBaseURL     string
 	AIGatewayToken       string
 	AIGatewayProfileID   string
+	RerankModel          string
+	RerankProfileID      string
 	QdrantURL            string
 	QdrantAPIKey         string
 	QdrantCollection     string
@@ -65,6 +67,8 @@ func Load() (Config, error) {
 		AIGatewayBaseURL:     trimTrailingSlash(os.Getenv("AI_GATEWAY_BASE_URL")),
 		AIGatewayToken:       strings.TrimSpace(os.Getenv("AI_GATEWAY_SERVICE_TOKEN")),
 		AIGatewayProfileID:   strings.TrimSpace(os.Getenv("AI_GATEWAY_EMBEDDING_PROFILE_ID")),
+		RerankModel:          strings.TrimSpace(os.Getenv("RERANK_MODEL")),
+		RerankProfileID:      strings.TrimSpace(os.Getenv("RERANK_PROFILE_ID")),
 		QdrantURL:            trimTrailingSlash(os.Getenv("QDRANT_URL")),
 		QdrantAPIKey:         strings.TrimSpace(os.Getenv("QDRANT_API_KEY")),
 		QdrantCollection:     stringValue("QDRANT_COLLECTION", DefaultQdrantCollection),
@@ -123,6 +127,15 @@ func Load() (Config, error) {
 		if err := validateOptionalHTTPURL(name, value); err != nil {
 			return Config{}, err
 		}
+	}
+	if (cfg.RerankModel != "" || cfg.RerankProfileID != "") && cfg.AIGatewayBaseURL == "" {
+		return Config{}, fmt.Errorf("AI_GATEWAY_BASE_URL is required when reranker is configured")
+	}
+	if cfg.RerankProfileID != "" && cfg.RerankModel == "" {
+		return Config{}, fmt.Errorf("RERANK_MODEL is required when reranker is configured")
+	}
+	if cfg.RerankModel != "" && cfg.AIGatewayToken == "" {
+		return Config{}, fmt.Errorf("AI_GATEWAY_SERVICE_TOKEN is required when reranker is configured")
 	}
 
 	return cfg, nil

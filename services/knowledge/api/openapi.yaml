@@ -179,6 +179,27 @@ paths:
                 $ref: "#/components/schemas/DocumentResponse"
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+  /internal/v1/knowledge-queries:
+    post:
+      tags: [knowledge]
+      summary: Create knowledge query
+      operationId: internalCreateKnowledgeQuery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KnowledgeQueryRequest"
+      responses:
+        "201":
+          description: Knowledge query created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeQueryResponse"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
 components:
   parameters:
     Page:
@@ -316,6 +337,69 @@ components:
           type: array
           items: { $ref: "#/components/schemas/DocumentSummary" }
         page: { $ref: "#/components/schemas/PageInfo" }
+        requestId: { type: string }
+    KnowledgeQueryRequest:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string, minLength: 1, maxLength: 2000 }
+        knowledgeBaseIds:
+          type: array
+          items: { type: string }
+        topK: { type: integer, minimum: 1, maximum: 100, default: 10 }
+        scoreThreshold: { type: number, minimum: 0, default: 0.35 }
+        tags:
+          type: array
+          items: { type: string }
+        metadataFilter:
+          type: object
+          additionalProperties: { type: string }
+        rerank: { type: boolean, default: false }
+        rerankTopN: { type: integer, minimum: 1, nullable: true }
+    KnowledgeQueryResult:
+      type: object
+      required: [score, knowledgeBaseId, documentId, chunkId, documentName, contentPreview]
+      properties:
+        score: { type: number }
+        knowledgeBaseId: { type: string }
+        documentId: { type: string }
+        chunkId: { type: string }
+        documentName: { type: string }
+        sectionPath: { type: string, nullable: true }
+        chunkIndex: { type: integer, minimum: 0, nullable: true }
+        chunkType: { type: string, nullable: true }
+        contentPreview: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+    KnowledgeQueryTrace:
+      type: object
+      required: [embeddingProvider, embeddingModel, embeddingDimension, qdrantCollection, searchTopK, scoreThreshold, hitCount, rerank]
+      properties:
+        embeddingProvider: { type: string }
+        embeddingModel: { type: string }
+        embeddingDimension: { type: integer, minimum: 0 }
+        qdrantCollection: { type: string }
+        searchTopK: { type: integer, minimum: 1 }
+        scoreThreshold: { type: number, minimum: 0 }
+        hitCount: { type: integer, minimum: 0 }
+        rerank: { type: boolean }
+        rerankTopN: { type: integer, minimum: 1, nullable: true }
+    KnowledgeQuerySummary:
+      type: object
+      required: [id, query, results, trace]
+      properties:
+        id: { type: string }
+        query: { type: string }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/KnowledgeQueryResult" }
+        trace: { $ref: "#/components/schemas/KnowledgeQueryTrace" }
+    KnowledgeQueryResponse:
+      type: object
+      required: [data, requestId]
+      properties:
+        data: { $ref: "#/components/schemas/KnowledgeQuerySummary" }
         requestId: { type: string }
     PageInfo:
       type: object

@@ -398,6 +398,50 @@ func (r *PostgresRepository) GetDocument(ctx context.Context, id string, scope s
 	return documentFromGetRow(row), nil
 }
 
+func (r *PostgresRepository) FindChunksByIDs(ctx context.Context, ids []string) ([]service.DocumentChunk, error) {
+	if len(ids) == 0 {
+		return []service.DocumentChunk{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, knowledge_base_id, document_id, chunk_index, section_path, content,
+			COALESCE(token_count, 0), chunk_type, qdrant_point_id, embedding_provider,
+			embedding_model, embedding_dimension, metadata, created_at
+		FROM document_chunks
+		WHERE id = ANY($1::text[])`, ids)
+	if err != nil {
+		return nil, wrapPostgresError("find chunks by ids", err)
+	}
+	defer rows.Close()
+
+	items := []service.DocumentChunk{}
+	for rows.Next() {
+		var chunk service.DocumentChunk
+		var sectionPath, chunkType, pointID, embeddingProvider, embeddingModel pgtype.Text
+		var embeddingDimension pgtype.Int4
+		var metadata []byte
+		if err := rows.Scan(&chunk.ID, &chunk.KnowledgeBaseID, &chunk.DocumentID, &chunk.ChunkIndex, &sectionPath, &chunk.Content, &chunk.TokenCount, &chunkType, &pointID, &embeddingProvider, &embeddingModel, &embeddingDimension, &metadata, &chunk.CreatedAt); err != nil {
+			return nil, wrapPostgresError("scan chunk", err)
+		}
+		chunk.SectionPath = textPtr(sectionPath)
+		chunk.ChunkType = textPtr(chunkType)
+		chunk.QdrantPointID = textPtr(pointID)
+		chunk.EmbeddingProvider = textPtr(embeddingProvider)
+		chunk.EmbeddingModel = textPtr(embeddingModel)
+		if embeddingDimension.Valid {
+			value := int(embeddingDimension.Int32)
+			chunk.EmbeddingDimension = &value
+		}
+		if len(metadata) > 0 {
+			_ = json.Unmarshal(metadata, &chunk.Metadata)
+		}
+		items = append(items, chunk)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrapPostgresError("find chunks by ids", err)
+	}
+	return items, nil
+}
+
 func (r *PostgresRepository) CreateDocumentWithJob(ctx context.Context, input service.CreateDocumentWithJobRecord, scope service.AccessScope) (service.KnowledgeDocument, service.ProcessingJob, error) {
 	if _, err := r.GetKnowledgeBase(ctx, input.KnowledgeBaseID, scope); err != nil {
 		return service.KnowledgeDocument{}, service.ProcessingJob{}, err

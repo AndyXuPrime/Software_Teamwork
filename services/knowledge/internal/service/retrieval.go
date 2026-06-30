@@ -57,8 +57,9 @@ type KnowledgeQueryTrace struct {
 	RerankTopN         *int
 }
 
-func (s *KnowledgeService) CreateKnowledgeQuery(ctx context.Context, reqCtx RequestContext, input KnowledgeQueryInput) (KnowledgeQuerySummary, error) {
-	if err := validateActor(reqCtx); err != nil {
+func (s *Service) CreateKnowledgeQuery(ctx context.Context, reqCtx RequestContext, input KnowledgeQueryInput) (KnowledgeQuerySummary, error) {
+	scope, err := readScope(reqCtx)
+	if err != nil {
 		return KnowledgeQuerySummary{}, err
 	}
 
@@ -69,15 +70,14 @@ func (s *KnowledgeService) CreateKnowledgeQuery(ctx context.Context, reqCtx Requ
 	} else if len(query) > maxKnowledgeQueryLength {
 		fields["query"] = fmt.Sprintf("must be at most %d characters", maxKnowledgeQueryLength)
 	}
-	runtimeConfig := s.getRuntimeConfig()
 	topK := input.TopK
 	if topK == 0 {
-		topK = runtimeConfig.RetrievalTopK
+		topK = s.retrievalTopK
 	}
 	if topK < 1 || topK > maxRetrievalTopK {
 		fields["topK"] = fmt.Sprintf("must be between 1 and %d", maxRetrievalTopK)
 	}
-	scoreThreshold := runtimeConfig.ScoreThreshold
+	scoreThreshold := s.scoreThreshold
 	if input.ScoreThreshold != nil {
 		scoreThreshold = *input.ScoreThreshold
 	}
@@ -88,9 +88,9 @@ func (s *KnowledgeService) CreateKnowledgeQuery(ctx context.Context, reqCtx Requ
 	if rerankTopN != nil && (*rerankTopN < 1 || *rerankTopN > topK) {
 		fields["rerankTopN"] = "must be between 1 and topK"
 	}
-	tags, err := NormalizeTags(input.Tags)
-	if err != nil {
-		fields["tags"] = err.Error()
+	tags, tagFields := normalizeTags(input.Tags)
+	for key, value := range tagFields {
+		fields[key] = value
 	}
 	metadataFilter := normalizeMetadataFilter(input.MetadataFilter)
 	if len(fields) > 0 {
@@ -100,29 +100,23 @@ func (s *KnowledgeService) CreateKnowledgeQuery(ctx context.Context, reqCtx Requ
 		return KnowledgeQuerySummary{}, DependencyError("retrieval pipeline is not configured", nil)
 	}
 
-	allowedKnowledgeBaseIDs, err := s.resolveRetrievalKnowledgeBases(ctx, reqCtx, input.KnowledgeBaseIDs)
+	allowedKnowledgeBaseIDs, err := s.resolveRetrievalKnowledgeBases(ctx, scope, input.KnowledgeBaseIDs)
 	if err != nil {
 		return KnowledgeQuerySummary{}, err
 	}
 	if len(allowedKnowledgeBaseIDs) == 0 {
-		queryID, idErr := s.newID("kq")
-		if idErr != nil {
-			return KnowledgeQuerySummary{}, DependencyError("knowledge query id generation failed", idErr)
-		}
+		queryID := s.newID("kq")
 		return KnowledgeQuerySummary{
 			ID:      queryID,
 			Query:   query,
 			Results: []KnowledgeQueryResult{},
 			Trace: KnowledgeQueryTrace{
-				EmbeddingProvider:  runtimeConfig.EmbeddingProvider,
-				EmbeddingModel:     runtimeConfig.EmbeddingModel,
-				EmbeddingDimension: runtimeConfig.EmbeddingDimension,
-				QdrantCollection:   runtimeConfig.QdrantCollection,
-				SearchTopK:         topK,
-				ScoreThreshold:     scoreThreshold,
-				HitCount:           0,
-				Rerank:             input.Rerank,
-				RerankTopN:         rerankTopN,
+				QdrantCollection: s.vectorCollection,
+				SearchTopK:       topK,
+				ScoreThreshold:   scoreThreshold,
+				HitCount:         0,
+				Rerank:           input.Rerank,
+				RerankTopN:       rerankTopN,
 			},
 		}, nil
 	}
@@ -161,13 +155,10 @@ func (s *KnowledgeService) CreateKnowledgeQuery(ctx context.Context, reqCtx Requ
 		}
 	}
 
-	queryID, err := s.newID("kq")
-	if err != nil {
-		return KnowledgeQuerySummary{}, DependencyError("knowledge query id generation failed", err)
-	}
-	qdrantCollection := runtimeConfig.QdrantCollection
-	if configuredCollection := strings.TrimSpace(s.vectorCollection); configuredCollection != "" {
-		qdrantCollection = configuredCollection
+	queryID := s.newID("kq")
+	qdrantCollection := strings.TrimSpace(s.vectorCollection)
+	if qdrantCollection == "" {
+		qdrantCollection = DefaultVectorCollection
 	}
 	return KnowledgeQuerySummary{
 		ID:      queryID,
@@ -187,7 +178,7 @@ func (s *KnowledgeService) CreateKnowledgeQuery(ctx context.Context, reqCtx Requ
 	}, nil
 }
 
-func (s *KnowledgeService) rerankRetrievalResults(ctx context.Context, reqCtx RequestContext, query string, results []KnowledgeQueryResult, topN *int) ([]KnowledgeQueryResult, error) {
+func (s *Service) rerankRetrievalResults(ctx context.Context, reqCtx RequestContext, query string, results []KnowledgeQueryResult, topN *int) ([]KnowledgeQueryResult, error) {
 	limit := len(results)
 	if topN != nil && *topN < limit {
 		limit = *topN
@@ -248,7 +239,7 @@ func (s *KnowledgeService) rerankRetrievalResults(ctx context.Context, reqCtx Re
 	return ordered, nil
 }
 
-func (s *KnowledgeService) resolveRetrievalKnowledgeBases(ctx context.Context, reqCtx RequestContext, ids []string) ([]string, error) {
+func (s *Service) resolveRetrievalKnowledgeBases(ctx context.Context, scope AccessScope, ids []string) ([]string, error) {
 	normalized := make([]string, 0, len(ids))
 	seen := map[string]struct{}{}
 	for _, raw := range ids {
@@ -259,12 +250,9 @@ func (s *KnowledgeService) resolveRetrievalKnowledgeBases(ctx context.Context, r
 		if _, exists := seen[id]; exists {
 			continue
 		}
-		base, err := s.repo.FindKnowledgeBaseByID(ctx, id)
+		_, err := s.repo.GetKnowledgeBase(ctx, id, scope)
 		if err != nil {
-			return nil, mapKnowledgeBaseRepositoryError(err, "knowledge base not found", "knowledge base metadata access failed")
-		}
-		if !canAccessKnowledgeBase(reqCtx, base) {
-			return nil, NotFoundError("knowledge base not found")
+			return nil, repositoryError(err)
 		}
 		seen[id] = struct{}{}
 		normalized = append(normalized, id)
@@ -273,11 +261,7 @@ func (s *KnowledgeService) resolveRetrievalKnowledgeBases(ctx context.Context, r
 		return normalized, nil
 	}
 
-	list, err := s.repo.ListKnowledgeBases(ctx, KnowledgeBaseFilter{
-		OwnerUserID: ownerFilter(reqCtx),
-		Page:        1,
-		PageSize:    200,
-	})
+	list, err := s.repo.ListKnowledgeBases(ctx, scope, PageInput{Page: 1, PageSize: 200})
 	if err != nil {
 		return nil, DependencyError("knowledge base metadata access failed", err)
 	}
@@ -287,7 +271,7 @@ func (s *KnowledgeService) resolveRetrievalKnowledgeBases(ctx context.Context, r
 	return normalized, nil
 }
 
-func (s *KnowledgeService) hydrateRetrievalResults(ctx context.Context, reqCtx RequestContext, hits []VectorSearchHit, scoreThreshold float64, tags []string, metadataFilter map[string]string) ([]KnowledgeQueryResult, error) {
+func (s *Service) hydrateRetrievalResults(ctx context.Context, reqCtx RequestContext, hits []VectorSearchHit, scoreThreshold float64, tags []string, metadataFilter map[string]string) ([]KnowledgeQueryResult, error) {
 	if len(hits) == 0 {
 		return []KnowledgeQueryResult{}, nil
 	}
@@ -316,14 +300,18 @@ func (s *KnowledgeService) hydrateRetrievalResults(ctx context.Context, reqCtx R
 		if !ok {
 			continue
 		}
-		doc, err := s.repo.FindDocumentByID(ctx, chunk.DocumentID)
+		scope, scopeErr := readScope(reqCtx)
+		if scopeErr != nil {
+			return nil, scopeErr
+		}
+		doc, err := s.repo.GetDocument(ctx, chunk.DocumentID, scope)
 		if err != nil {
 			if errorsIsNotFound(err) {
 				continue
 			}
-			return nil, mapDocumentRepositoryError(err, "document not found", "document metadata access failed")
+			return nil, repositoryError(err)
 		}
-		if doc.Status != DocumentStatusReady || !canAccessKnowledgeDocument(reqCtx, doc) || !containsAllTags(doc.Tags, tags) || !matchesChunkMetadata(chunk.Metadata, metadataFilter) {
+		if doc.Status != DocumentStatusReady || !containsAllTags(doc.Tags, tags) || !matchesChunkMetadata(chunk.Metadata, metadataFilter) {
 			continue
 		}
 		chunkIndex := chunk.ChunkIndex
