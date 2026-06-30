@@ -1,1 +1,3 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend stack, module boundaries, and gateway integration contract for the test coverage task."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Vitest, React Testing Library, Playwright, and test isolation expectations for implementation."}
+{"file": ".trellis/spec/guides/commit-convention.md", "reason": "Conventional Commits requirements used for task and follow-up commits."}
