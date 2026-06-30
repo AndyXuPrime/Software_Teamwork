@@ -514,3 +514,36 @@ Preserved the remote stream-ordering fix by preventing message payload sequenceN
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: F-016 archive context cleanup
+
+**Date**: 2026-06-30
+**Task**: F-016 archive context cleanup
+**Branch**: `Frontend/feat/qa-capability-aligned-chat`
+
+### Summary
+
+Replaced archived Trellis context placeholders with real implementation/check references and updated final develop baseline.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `de16ac9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
