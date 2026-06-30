@@ -1,1 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/backend/index.md","reason":"Defines the QA service boundary and the backend pre-development checklist."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Places the smoke test beside the production QA infrastructure client."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Defines the environment-gated cross-service smoke contract and QA verification commands."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Constrains request correlation and prevents credentials or provider payloads from leaking in test output."}
+{"file":".trellis/tasks/archive/2026-06/06-30-issue-288-qa-ai-gateway-smoke/research/smoke-design.md","reason":"Records the issue-specific smoke design, failure matrix, configuration, and validation approach."}

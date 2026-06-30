@@ -52,7 +52,10 @@ Implemented issue #288 with an env-gated QA to AI Gateway chat smoke, token/prof
 
 ### Main Changes
 
-(Add details)
+- Added an opt-in QA-to-AI-Gateway completion smoke beside the production model client.
+- Covered a valid completion, invalid service token, and missing profile while keeping ordinary CI offline.
+- Documented runtime variables, controlled-provider and real-provider execution, expected output, and troubleshooting.
+- Captured the reusable environment-gated cross-service smoke contract in the backend quality guidelines.
 
 ### Git Commits
 
@@ -62,7 +65,12 @@ Implemented issue #288 with an env-gated QA to AI Gateway chat smoke, token/prof
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `cd services/qa && go test -count=1 ./...`
+- [OK] `cd services/qa && go build -buildvcs=false ./cmd/server`
+- [OK] `cd services/qa && go build -buildvcs=false ./cmd/agent`
+- [OK] Confirmed the smoke reports `SKIP` when `QA_AI_GATEWAY_SMOKE` is unset.
+- [OK] Exercised all three smoke subtests against a controlled local HTTP fixture.
+- [OK] `git diff --check`
 
 ### Status
 
