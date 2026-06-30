@@ -19,6 +19,7 @@ services/qa/
 services/knowledge/
 services/document/
 services/ai-gateway/
+services/parser/
 deploy/docker-compose.yml
 ```
 
