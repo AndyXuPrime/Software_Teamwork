@@ -18,10 +18,6 @@
       {
         "command": "python3 .cursor/hooks/inject-shell-session-context.py",
         "timeout": 5
-      },
-      {
-        "command": "python3 -X utf8 .trellis/scripts/hooks/git_commit_reminder.py",
-        "timeout": 5
       }
     ]
   }
