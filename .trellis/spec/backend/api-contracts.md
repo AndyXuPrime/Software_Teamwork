@@ -1331,6 +1331,9 @@ report | section
   the enum until the service accepts them.
 - Omitted `target.scope` means report-level generation. `section_regeneration`
   requires `target.sectionId`, and the section must exist on the same report.
+  `target.scope=section` and any submitted `target.sectionId` are valid only
+  for `section_regeneration`; report-level job types must reject them before
+  persisting a job.
 - Deleted reports are not valid job targets. `ReportStatusDeleted` and non-nil
   `DeletedAt` must be rejected before creating a `report_jobs` row, an initial
   `report_job_attempts` row, a report file row, or an asynq task.
@@ -1348,6 +1351,7 @@ report | section
 | --- | --- |
 | Unsupported `jobType` | `400 validation_error` |
 | Unsupported `target.scope` | `400 validation_error` |
+| Non-`section_regeneration` job submits `target.scope=section` or `target.sectionId` | `400 validation_error` before job/attempt/file/enqueue side effects |
 | `section_regeneration` missing `target.sectionId` | `400 validation_error` |
 | Target section is missing or belongs to another report | `404 not_found` |
 | Report is soft-deleted by status or `deleted_at` | `409 conflict` before persistence/enqueue |
@@ -1360,12 +1364,14 @@ report | section
 - Good: a deleted report returns `409 conflict` before any job, attempt, file, or
   queue side effect; a post-job-insert conflict before enqueue rolls back the
   inserted job; target scope enums in service-local, Document public, and Gateway
-  public OpenAPI all match `report | section`.
+  public OpenAPI all match `report | section`; `content_generation` with a
+  section target returns `400 validation_error`.
 - Base: a report-level generation request omits `target`, creating a pending job
   and first pending attempt before enqueueing the asynq task.
 - Bad: OpenAPI advertises `target.scope: file` while the service returns
-  `unsupported target scope`, or a deleted/concurrently invalid report leaves an
-  orphan pending job.
+  `unsupported target scope`, a deleted/concurrently invalid report leaves an
+  orphan pending job, or `content_generation` persists a section target that the
+  worker later ignores.
 
 ### 6. Tests Required
 
@@ -1374,6 +1380,8 @@ report | section
 - Service or repository tests must cover a failure after `report_jobs` insert but
   before enqueue and assert the inserted initial job state is rolled back.
 - Service tests must cover section target existence and same-report ownership.
+- Service tests must reject section targets for every non-`section_regeneration`
+  job type and assert no job, attempt, report file, or enqueue side effect.
 - Contract checks must parse the changed OpenAPI files and verify
   `CreateReportJobRequest.target.scope` only advertises implemented values.
 - Run `cd services/document && go test ./...` and
@@ -1387,6 +1395,7 @@ report | section
 ```text
 OpenAPI target.scope enum: report | outline | section | file
 CreateJob(report status=deleted) -> insert report_jobs(status=pending) -> enqueue/update later fails
+CreateJob(jobType=content_generation, target.scope=section) -> persisted section target -> worker generates all sections
 ```
 
 #### Correct
@@ -1394,6 +1403,7 @@ CreateJob(report status=deleted) -> insert report_jobs(status=pending) -> enqueu
 ```text
 OpenAPI target.scope enum: report | section
 CreateJob(report status=deleted) -> 409 conflict before job, attempt, file, or enqueue side effects
+CreateJob(jobType=content_generation, target.scope=section) -> 400 validation_error before persistence
 ```
 
 ## Scenario: Document Report Settings Statistics And Operation Logs

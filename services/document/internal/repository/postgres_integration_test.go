@@ -545,6 +545,110 @@ func TestPostgresRepositoryWithinJobTxRollsBackOnGenerationStatusConflict(t *tes
 	}
 }
 
+func TestPostgresRepositoryWithinGenerationTxRollsBackOutlineAndSections(t *testing.T) {
+	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DOCUMENT_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	pool := newTestPool(t, ctx, databaseURL)
+	defer pool.Close()
+	applyMigration(t, ctx, pool)
+
+	repo := NewPostgresRepository(pool)
+	now := time.Date(2026, 6, 29, 10, 50, 0, 0, time.UTC)
+	reportType, err := repo.UpsertReportType(ctx, service.ReportType{
+		Code:      "generation_tx_report",
+		Name:      "Generation Tx Report",
+		Enabled:   true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("UpsertReportType() error = %v", err)
+	}
+	report, err := repo.CreateReport(ctx, service.Report{
+		ID:         "00000000-0000-0000-0000-000000000811",
+		Name:       "generation tx rollback",
+		ReportType: reportType.Code,
+		Topic:      "generation tx rollback",
+		Status:     service.ReportStatusDraft,
+		Source:     "backend",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("CreateReport() error = %v", err)
+	}
+	oldOutline, err := repo.CreateReportOutline(ctx, service.ReportOutline{
+		ID:        "00000000-0000-0000-0000-000000000812",
+		ReportID:  report.ID,
+		Sections:  []service.ReportOutlineNode{{ID: "old-node", Title: "Old outline", Level: 1}},
+		Version:   1,
+		Source:    service.OutlineSourceManual,
+		IsCurrent: true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("CreateReportOutline() old error = %v", err)
+	}
+
+	rollbackErr := errors.New("rollback generation transaction")
+	err = repo.WithinGenerationTx(ctx, func(txRepo service.ReportGenerationRepository) error {
+		newOutline, err := txRepo.CreateReportOutline(ctx, service.ReportOutline{
+			ID:        "00000000-0000-0000-0000-000000000813",
+			ReportID:  report.ID,
+			Sections:  []service.ReportOutlineNode{{ID: "new-node", Title: "New outline", Level: 1}},
+			Version:   2,
+			Source:    service.OutlineSourceAI,
+			IsCurrent: true,
+			CreatedAt: now,
+			UpdatedAt: now,
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := txRepo.CreateReportSection(ctx, service.ReportSection{
+			ID:               "00000000-0000-0000-0000-000000000814",
+			ReportID:         report.ID,
+			OutlineID:        newOutline.ID,
+			SectionPath:      "00000000-0000-0000-0000-000000000814",
+			Title:            "Partial skeleton",
+			Level:            1,
+			SortOrder:        0,
+			SectionType:      service.SectionTypeText,
+			GenerationStatus: service.JobStatusPending,
+			ContentSource:    service.ContentSourceAI,
+			Version:          1,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}); err != nil {
+			return err
+		}
+		return rollbackErr
+	})
+	if !errors.Is(err, rollbackErr) {
+		t.Fatalf("WithinGenerationTx() error = %v, want rollbackErr", err)
+	}
+
+	outlines, err := repo.ListReportOutlines(ctx, report.ID)
+	if err != nil {
+		t.Fatalf("ListReportOutlines() error = %v", err)
+	}
+	if len(outlines) != 1 || outlines[0].ID != oldOutline.ID || !outlines[0].IsCurrent {
+		t.Fatalf("outlines after rollback = %+v, want previous current outline only", outlines)
+	}
+	sections, err := repo.ListReportSections(ctx, report.ID)
+	if err != nil {
+		t.Fatalf("ListReportSections() error = %v", err)
+	}
+	if len(sections) != 0 {
+		t.Fatalf("section count after rollback = %d, want 0", len(sections))
+	}
+}
+
 func TestPostgresRepositoryWithinTxRollsBack(t *testing.T) {
 	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
 	if databaseURL == "" {

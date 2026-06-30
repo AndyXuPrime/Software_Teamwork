@@ -70,6 +70,55 @@ func TestReportGenerationServicePersistsAIOutlineAndSectionSkeletons(t *testing.
 	}
 }
 
+func TestReportGenerationServiceRollsBackOutlineAndSkeletonsWhenSkeletonCreationFails(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer peak inspection",
+		ReportType: "summer_peak_inspection",
+		TemplateID: "template-1",
+		Topic:      "summer power supply",
+		CreatorID:  "user-1",
+		Status:     ReportStatusDraft,
+	}
+	repo.jobs["job-1"] = ReportJob{ID: "job-1", JobType: JobTypeOutlineGeneration, ReportID: "report-1"}
+	repo.templateStructures["template-1"] = ReportTemplateStructure{OutlineSchema: []byte(`{"sections":["overview"]}`)}
+	repo.outlines["outline-old"] = ReportOutline{
+		ID:        "outline-old",
+		ReportID:  "report-1",
+		Version:   1,
+		IsCurrent: true,
+	}
+	repo.createSectionErrAfter = 1
+	repo.createSectionErr = errors.New("insert section skeleton failed")
+	chat := &fakeGenerationChatClient{
+		responses: []ChatCompletionResponse{{
+			Content: `{"sections":[{"title":"Overview"},{"title":"Risk inspection"}]}`,
+		}},
+	}
+	svc := NewReportGenerationService(repo, chat)
+	svc.clock = func() time.Time { return time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC) }
+
+	_, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-outline",
+		JobType:   JobTypeOutlineGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	})
+	if err == nil {
+		t.Fatal("ExecuteReportGeneration() error = nil, want skeleton creation failure")
+	}
+	if len(repo.outlines) != 1 {
+		t.Fatalf("outline count = %d, want previous outline only after rollback", len(repo.outlines))
+	}
+	if !repo.outlines["outline-old"].IsCurrent {
+		t.Fatalf("previous outline current flag = false, want restored current outline")
+	}
+	if len(repo.sections) != 0 {
+		t.Fatalf("section skeleton count = %d, want rollback of partial skeletons", len(repo.sections))
+	}
+}
+
 func TestReportGenerationServiceKeepsGeneratedSectionsOnPartialFailure(t *testing.T) {
 	repo := newFakeReportGenerationRepository()
 	repo.reports["report-1"] = Report{
@@ -504,15 +553,18 @@ func (f *fakeGenerationChatClient) CreateChatCompletion(_ context.Context, _ Req
 }
 
 type fakeReportGenerationRepository struct {
-	reports            map[string]Report
-	jobs               map[string]ReportJob
-	templateStructures map[string]ReportTemplateStructure
-	settings           ReportSettings
-	outlines           map[string]ReportOutline
-	sections           map[string]ReportSection
-	sectionVersions    map[string][]ReportSectionVersion
-	events             []ReportEvent
-	progressUpdates    []map[string]any
+	reports               map[string]Report
+	jobs                  map[string]ReportJob
+	templateStructures    map[string]ReportTemplateStructure
+	settings              ReportSettings
+	outlines              map[string]ReportOutline
+	sections              map[string]ReportSection
+	sectionVersions       map[string][]ReportSectionVersion
+	events                []ReportEvent
+	progressUpdates       []map[string]any
+	createSectionErr      error
+	createSectionErrAfter int
+	createdSectionCount   int
 }
 
 func newFakeReportGenerationRepository() *fakeReportGenerationRepository {
@@ -527,6 +579,46 @@ func newFakeReportGenerationRepository() *fakeReportGenerationRepository {
 		sections:        map[string]ReportSection{},
 		sectionVersions: map[string][]ReportSectionVersion{},
 	}
+}
+
+func (f *fakeReportGenerationRepository) WithinGenerationTx(ctx context.Context, fn func(ReportGenerationRepository) error) error {
+	snapshot := *f
+	snapshot.reports = make(map[string]Report, len(f.reports))
+	for id, report := range f.reports {
+		snapshot.reports[id] = report
+	}
+	snapshot.jobs = make(map[string]ReportJob, len(f.jobs))
+	for id, job := range f.jobs {
+		snapshot.jobs[id] = job
+	}
+	snapshot.templateStructures = make(map[string]ReportTemplateStructure, len(f.templateStructures))
+	for id, structure := range f.templateStructures {
+		structure.OutlineSchema = append([]byte(nil), structure.OutlineSchema...)
+		snapshot.templateStructures[id] = structure
+	}
+	snapshot.outlines = make(map[string]ReportOutline, len(f.outlines))
+	for id, outline := range f.outlines {
+		snapshot.outlines[id] = outline
+	}
+	snapshot.sections = make(map[string]ReportSection, len(f.sections))
+	for id, section := range f.sections {
+		snapshot.sections[id] = section
+	}
+	snapshot.sectionVersions = make(map[string][]ReportSectionVersion, len(f.sectionVersions))
+	for id, versions := range f.sectionVersions {
+		snapshot.sectionVersions[id] = append([]ReportSectionVersion(nil), versions...)
+	}
+	snapshot.events = append([]ReportEvent(nil), f.events...)
+	snapshot.progressUpdates = make([]map[string]any, len(f.progressUpdates))
+	for i, update := range f.progressUpdates {
+		snapshot.progressUpdates[i] = cloneJSONLikeMap(update)
+	}
+
+	if err := fn(f); err != nil {
+		*f = snapshot
+		return err
+	}
+	return nil
 }
 
 func (f *fakeReportGenerationRepository) GetReportByID(_ context.Context, id string) (Report, error) {
@@ -581,6 +673,10 @@ func (f *fakeReportGenerationRepository) ListReportOutlines(_ context.Context, r
 }
 
 func (f *fakeReportGenerationRepository) CreateReportSection(_ context.Context, value ReportSection) (ReportSection, error) {
+	if f.createSectionErr != nil && f.createdSectionCount >= f.createSectionErrAfter {
+		return ReportSection{}, f.createSectionErr
+	}
+	f.createdSectionCount++
 	f.sections[value.ID] = value
 	return value, nil
 }

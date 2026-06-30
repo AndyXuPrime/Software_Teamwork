@@ -237,6 +237,8 @@ func resolveCreateJobTarget(input CreateJobInput) (string, string, error) {
 			return "", "", ValidationError(map[string]string{"target.sectionId": "is required for section_regeneration"})
 		}
 		scope = "section"
+	} else if scope == "section" || sectionID != "" {
+		return "", "", ValidationError(map[string]string{"target.scope": "section scope is only supported for section_regeneration"})
 	}
 	switch scope {
 	case "report":

@@ -267,6 +267,52 @@ func TestJobServiceCreateSectionRegenerationRejectsSectionFromAnotherReport(t *t
 	}
 }
 
+func TestJobServiceCreateJobRejectsSectionTargetForNonSectionRegeneration(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name        string
+		jobType     JobType
+		targetScope string
+		sectionID   string
+	}{
+		{name: "outline generation explicit section scope", jobType: JobTypeOutlineGeneration, targetScope: "section", sectionID: "section-1"},
+		{name: "outline regeneration explicit section scope", jobType: JobTypeOutlineRegeneration, targetScope: "section", sectionID: "section-1"},
+		{name: "content generation explicit section scope", jobType: JobTypeContentGeneration, targetScope: "section", sectionID: "section-1"},
+		{name: "content regeneration section id without scope", jobType: JobTypeContentRegeneration, sectionID: "section-1"},
+		{name: "report file creation explicit section scope", jobType: JobTypeReportFileCreation, targetScope: "section", sectionID: "section-1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeJobRepository{
+				report:   Report{ID: "report-1", CreatorID: "user-1"},
+				sections: map[string]ReportSection{"section-1": {ID: "section-1", ReportID: "report-1"}},
+			}
+			enqueuer := &fakeTaskEnqueuer{}
+			svc := NewJobService(repo, enqueuer)
+
+			_, err := svc.CreateJob(ctx, RequestContext{UserID: "user-1"}, CreateJobInput{
+				RequestID:   "req-section-target",
+				UserID:      "user-1",
+				ReportID:    "report-1",
+				JobType:     tt.jobType,
+				TargetScope: tt.targetScope,
+				SectionID:   tt.sectionID,
+			})
+			if err == nil {
+				t.Fatal("CreateJob() error = nil, want validation error")
+			}
+			appErr, ok := Classify(err)
+			if !ok || appErr.Code != CodeValidation {
+				t.Fatalf("CreateJob() error = %v, want validation_error", err)
+			}
+			if repo.createdJob.ID != "" || repo.createdAttempt.ID != "" || repo.reportFile.ID != "" || enqueuer.jobType != "" {
+				t.Fatalf("section target should not create job/attempt/file or enqueue, job=%+v attempt=%+v file=%+v enqueued=%q", repo.createdJob, repo.createdAttempt, repo.reportFile, enqueuer.jobType)
+			}
+		})
+	}
+}
+
 func TestJobServiceCreateGenerationJobMarksReportFailedWhenEnqueueFails(t *testing.T) {
 	ctx := context.Background()
 	repo := &fakeJobRepository{

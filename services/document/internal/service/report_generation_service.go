@@ -10,6 +10,7 @@ import (
 )
 
 type ReportGenerationRepository interface {
+	WithinGenerationTx(ctx context.Context, fn func(ReportGenerationRepository) error) error
 	GetReportByID(ctx context.Context, id string) (Report, error)
 	FindReportJobByID(ctx context.Context, id string) (ReportJob, error)
 	GetReportTemplateStructure(ctx context.Context, id string) (ReportTemplateStructure, error)
@@ -140,11 +141,18 @@ func (s *ReportGenerationService) executeOutlineGeneration(ctx context.Context, 
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	created, err := s.repo.CreateReportOutline(ctx, outline)
-	if err != nil {
-		return ReportGenerationExecutionResult{}, dependencyError("create report outline", err)
-	}
-	if err := s.createSectionSkeletons(ctx, report.ID, created, payload.JobID, now); err != nil {
+	var created ReportOutline
+	if err := s.repo.WithinGenerationTx(ctx, func(txRepo ReportGenerationRepository) error {
+		var err error
+		created, err = txRepo.CreateReportOutline(ctx, outline)
+		if err != nil {
+			return dependencyError("create report outline", err)
+		}
+		if err := createSectionSkeletons(ctx, txRepo, report.ID, created, payload.JobID, now); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return ReportGenerationExecutionResult{}, err
 	}
 	_ = s.repo.UpdateReportJobProgress(ctx, payload.JobID, CountOutlineNodes(created.Sections), CountOutlineNodes(created.Sections))
@@ -343,7 +351,7 @@ func (s *ReportGenerationService) loadGenerationContext(ctx context.Context, req
 	return result, nil
 }
 
-func (s *ReportGenerationService) createSectionSkeletons(ctx context.Context, reportID string, outline ReportOutline, jobID string, now time.Time) error {
+func createSectionSkeletons(ctx context.Context, repo ReportGenerationRepository, reportID string, outline ReportOutline, jobID string, now time.Time) error {
 	var createNodes func(nodes []ReportOutlineNode, parentID string) error
 	sortOrder := 0
 	createNodes = func(nodes []ReportOutlineNode, parentID string) error {
@@ -370,7 +378,7 @@ func (s *ReportGenerationService) createSectionSkeletons(ctx context.Context, re
 				UpdatedAt:        now,
 			}
 			sortOrder++
-			created, err := s.repo.CreateReportSection(ctx, section)
+			created, err := repo.CreateReportSection(ctx, section)
 			if err != nil {
 				return dependencyError("create report section skeleton", err)
 			}
