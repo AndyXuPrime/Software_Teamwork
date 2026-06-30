@@ -64,6 +64,36 @@ Rule posture:
 - Use Playwright for login, document upload flow, chat streaming, report generation wizard, and download flows once those screens exist.
 - Mock network at the API boundary. Do not test generated OpenAPI internals unless generated code is customized.
 
+## Test Type Boundaries
+
+- Keep `apps/web/tsconfig.app.json` production-only: include app source, but exclude `*.test.*`, `*.spec.*`, and `src/test/**`.
+- Do not add `vitest/globals`, `@testing-library/jest-dom`, or other test-only globals to the app tsconfig. Put them in `apps/web/tsconfig.test.json` or Vitest-specific config instead.
+- Provide `bun run --cwd apps/web typecheck:test` for test TypeScript coverage when test files need type checking. `check` should run both production typecheck and test typecheck.
+- Global test setup must reset module-level singletons and providers that can leak across tests. For example, API clients with stored tokens, token providers, request id providers, mock routes, or unauthorized handlers need a reset helper called from `beforeEach` or `afterEach`.
+
+Wrong:
+
+```json
+{
+  "compilerOptions": {
+    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
+  },
+  "include": ["src"]
+}
+```
+
+Correct:
+
+```json
+{
+  "compilerOptions": {
+    "types": ["vite/client"]
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**"]
+}
+```
+
 ## UI State Coverage
 
 Every data-driven page should handle:
