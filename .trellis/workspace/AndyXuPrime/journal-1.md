@@ -303,7 +303,7 @@ Added Vitest/RTL frontend unit and component coverage, Playwright critical-flow 
 
 | Hash | Message |
 |------|---------|
-| `184a377` | (see git log) |
+| `2543dff` | (see git log) |
 
 ### Testing
 
