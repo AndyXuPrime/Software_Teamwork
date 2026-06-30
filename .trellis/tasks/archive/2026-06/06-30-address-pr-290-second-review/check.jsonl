@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend scope and backend integration contract review."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Required checks, silent mutation failure prevention, and test expectations."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Gateway envelope, void response, and generated schema alignment."}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Mutation invalidation behavior for report job attempts."}
