@@ -4,7 +4,7 @@ version = "0.26.2"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
-readme = "README.md"
+readme = "README_zh.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     # discord-py==2.3.2 unconditionally imports audioop in discord/player.py at module-
