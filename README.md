@@ -126,7 +126,7 @@ git clone https://github.com/Sakayori-Iroha-168/Software_Teamwork.git
 cd Software_Teamwork
 
 cp deploy/.env.example deploy/.env
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d postgres redis qdrant minio
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d postgres redis qdrant minio minio-init
 ```
 
 完整本地后端栈见 [deploy/README.md](deploy/README.md)。

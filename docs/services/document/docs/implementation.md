@@ -13,7 +13,8 @@
 | 类型 | 权威来源 | 本文档关系 |
 | --- | --- | --- |
 | 服务公开说明 | `docs/services/document/README.md` | 只能补充，不能覆盖 |
-| 服务 OpenAPI | `docs/services/document/api/public.openapi.yaml` | 只能跟随，不能另起契约 |
+| 服务公开 OpenAPI | `docs/services/document/api/public.openapi.yaml` | Document-owned public 设计面；前端稳定契约仍以 gateway 为准 |
+| 服务内部 OpenAPI | `docs/services/document/api/internal.openapi.yaml` | 内部运行和 report job contract；只能跟随，不能另起契约 |
 | Gateway 公开契约 | `docs/services/gateway/api/public.openapi.yaml` | 前端稳定契约以 gateway 为准 |
 | 服务边界 | `docs/architecture/service-boundaries.md` | 必须遵守 |
 | 技术基线 | `docs/architecture/technology-decisions.md` | 必须跟随 |
@@ -68,6 +69,7 @@
 | AI Gateway/Pandoc/LibreOffice | README 描述生成和导出依赖 | config 校验相关 env/path；report file creation 当前使用内置 Go 生成器，不调用 AI Gateway 或 Pandoc/LibreOffice | 部署方配置后仍不会产生 AI 正文或 Pandoc/LibreOffice 富 DOCX | 在 implementation 中标为未实现；补 worker 后更新。 |
 | Document MCP tools | README/requirements 描述后续可注册 Document MCP 工具 | 当前没有 Document MCP tool registry、handler 或 QA 调用链路 | 后续排期容易漏掉 MCP tools，或误以为 README 中的工具已可用 | 在本文未实现任务表单列；拆实现任务。 |
 | Service path prefix | Gateway public paths 是 `/api/v1/report-*` | Document service 本地 routes 无 `/internal/v1` 前缀，gateway 默认剥离 `/api/v1` | 这与 gateway proxy 逻辑一致但易误解 | README/implementation 明确 document local path 形态。 |
+| `go-redis` 传递依赖版本 | 技术基线固定直接 Redis client 为 `go-redis/v9@v9.21.0` | Document 通过 `asynq v0.26.0` 间接带入 `go-redis/v9@v9.14.1`；本次版本修复不改非 Docker 代码依赖 | 文档基线和锁定依赖存在出入，后续队列依赖升级时可能被忽略 | 下次升级 asynq 或调整 worker queue 依赖时优先消除该出入；不能消除时继续在本文记录原因。 |
 
 ## 6. MVP / mock / memory backend / 占位
 

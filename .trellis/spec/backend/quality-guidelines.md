@@ -270,6 +270,14 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - Go service Dockerfiles should set `GOPROXY=https://goproxy.cn,direct` in the
   build stage before `go mod download`, matching the local network fallback used
   by service verification.
+- Local Docker image tags must stay pinned and version-aligned across Compose,
+  Dockerfiles, README/runbooks, and `docs/architecture/technology-decisions.md`.
+  The current backend baseline is `postgres:16-alpine`, `redis:7-alpine`,
+  `qdrant/qdrant:v1.18.2`, `golang:1.25-alpine`, and `alpine:3.22` for Go
+  service runtime stages. MinIO is the explicit exception: root Compose uses one
+  `minio/minio` server image and one `minio/mc` bucket-initializer image, so
+  different release tags are allowed only when the higher server tag has no
+  matching `mc` manifest and the reason is documented.
 - PostgreSQL seed scripts may create local/demo data only after service-owned
   migrations have applied; production seed or secret material does not belong in
   `deploy/seeds`.
@@ -288,6 +296,7 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | --- | --- |
 | Compose YAML or env interpolation is invalid | `docker compose ... config --quiet` must fail before merge. |
 | Required Docker image is unavailable locally | Document `docker pull` commands and report Docker runtime validation as skipped. |
+| Same component appears with multiple Docker tags | Use the documented baseline or, absent a special reason, the higher explicit version; if code cannot be changed in the same task, record the implementation/documentation mismatch in the service implementation document. |
 | Docker build times out on `proxy.golang.org` | Set the service Dockerfile build-stage `GOPROXY` to `https://goproxy.cn,direct` and rebuild. |
 | Migration jobs fail with `connect: connection refused` immediately after PostgreSQL init | Ensure Postgres healthcheck uses `pg_isready -h localhost`, then recreate containers without deleting volumes unless seed state requires it. |
 | Qdrant stays `health: starting` while `http://localhost:6333/readyz` works | Inspect Docker health output for missing probe tools and switch to an in-image TCP probe. |
@@ -312,6 +321,9 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 ### 6. Tests Required
 
 - Run Compose config parsing for default and optional profiles.
+- Search Docker and docs for duplicate image tags such as `redis:7` vs
+  `redis:7-alpine`, `alpine:3.21` vs `alpine:3.22`, and MinIO server/client
+  tags before declaring version cleanup complete.
 - Run `git diff --check`.
 - Run `go test ./...` and `go build ./cmd/server` for changed Go services or
   every service referenced by the integration baseline when feasible.

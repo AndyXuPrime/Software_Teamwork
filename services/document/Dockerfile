@@ -7,7 +7,7 @@ RUN go mod download
 COPY . .
 RUN go build -o /out/document-service ./cmd/server
 
-FROM alpine:3.20
+FROM alpine:3.22
 
 RUN adduser -D -H document
 USER document

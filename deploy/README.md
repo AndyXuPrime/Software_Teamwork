@@ -47,7 +47,6 @@ docker pull qdrant/qdrant:v1.18.2
 docker pull minio/minio:RELEASE.2025-09-07T16-13-09Z
 docker pull minio/mc:RELEASE.2025-08-13T08-35-41Z
 docker pull golang:1.25-alpine
-docker pull alpine:3.21
 docker pull alpine:3.22
 ```
 
@@ -59,8 +58,10 @@ docker compose build
 docker compose --profile ai build
 ```
 
-The local Qdrant and MinIO images are pinned to explicit tags in
-`deploy/docker-compose.yml`. Update this document and
+The local Qdrant, MinIO server, MinIO `mc`, Redis, PostgreSQL, and Alpine
+runtime images are pinned to explicit tags in this repository. MinIO uses one
+server image plus one `mc` initialization image; `minio-init` is not a second
+MinIO server. Update this document and
 `docs/architecture/technology-decisions.md` in the same PR when changing them.
 
 ## Ports

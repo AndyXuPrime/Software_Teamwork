@@ -70,6 +70,7 @@
 | Gateway active QA paths | Gateway 25 个 QA operations active | QA 内部 routes 全注册 | route 层对齐，但业务结果依赖外部服务 | 增加跨服务 contract smoke。 |
 | MCP 原始信息不得暴露 | 文档要求只返回脱敏摘要 | 代码有 tool-call summary 和 local tool safety tests | 当前方向一致 | 持续补审计和字段级契约测试。 |
 | Agent Run 状态 | README 描述 Agent Run、termination 和 maxIterations | develop 已包含 ResponseRun、终止原因、模型调用摘要、function-calling adapter 和基础测试 | 容易把 Agent Loop 可用误读为完整 RAG/citation 已完成 | 本文将 Agent Loop 和真实 RAG/citation smoke 分开记录。 |
+| `sqlc` 生成器版本 | 技术基线固定 `sqlc` CLI 推荐版本为 `v1.31.1` | `services/qa/internal/repository/sqlc/*.go` 头部仍记录 `sqlc v1.29.0`；本次版本修复不改非 Docker 生成代码 | 代码生成器版本与文档基线出入，后续 SQL 变更时容易继续沿用旧生成器 | 下次修改 QA SQL 或 repository 生成代码时，使用 `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate` 重新生成并提交。 |
 
 ## 6. MVP / mock / memory backend / 占位
 

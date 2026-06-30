@@ -69,6 +69,8 @@
 | AI Gateway rerank smoke 状态 | AI Gateway 已实现 embeddings/rerankings endpoint，Knowledge 支持 embedding 与 rerank adapter | `knowledge-queries` 可选 rerank 已接入；本地未配置 `RERANK_MODEL` 时使用 no-op fallback | 容易把 no-op fallback 误读为真实 provider rerank 已验收 | 保留 fake/seeded 契约测试，同时补带真实 provider credential 的跨服务 smoke。 |
 | 公开 Knowledge 草案范围 | `docs/services/knowledge/api/public.openapi.yaml` 是服务级 public 设计草案，覆盖 deletion jobs、processing jobs、query tests、support materials、settings、statistics | runtime 已实现 KB CRUD、文档 upload/list/detail/tags/soft delete、chunks/content 和 knowledge-queries；deletion job 查询、processing job 查询、query tests、support materials、settings、statistics 仍是草案/缺口；前端稳定契约以 gateway public OpenAPI 为准 | 文件名里的 `public` 可能被误读为 active browser-facing contract | 草案文件已加说明；进入前端稳定契约前必须先更新 `docs/services/gateway/api/public.openapi.yaml`。 |
 | File handoff 边界 | Knowledge 拥有文档资源，File 只保存基础 file object | 当前已按 `/internal/v1/files` 保存 raw file，并通过 content API 读取；DELETE 已创建 cleanup job，但实际 File/Qdrant 清理 worker 未闭环 | 删除文档后底层 file/vector 清理仍可能滞后 | 实现 delete cleanup worker 幂等消费。 |
+| `sqlc` 生成器版本 | 技术基线固定 `sqlc` CLI 推荐版本为 `v1.31.1` | `services/knowledge/internal/repository/sqlc/*.go` 头部仍记录 `sqlc v1.29.0`；本次版本修复不改非 Docker 生成代码 | 代码生成器版本与文档基线出入，后续 SQL 变更时容易继续沿用旧生成器 | 下次修改 Knowledge SQL 或 repository 生成代码时，使用 `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate` 重新生成并提交。 |
+| `go-redis` 传递依赖版本 | 技术基线固定直接 Redis client 为 `go-redis/v9@v9.21.0` | Knowledge 通过 `asynq v0.26.0` 间接带入 `go-redis/v9@v9.14.1`；本次版本修复不改非 Docker 代码依赖 | 文档基线和锁定依赖存在出入，后续队列依赖升级时可能被忽略 | 下次升级 asynq 或调整 queue 依赖时优先消除该出入；不能消除时继续在本文记录原因。 |
 
 ## 6. MVP / mock / memory backend / 占位
 

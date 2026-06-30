@@ -7,7 +7,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/file ./cmd/server
 
-FROM alpine:3.21
+FROM alpine:3.22
 
 RUN addgroup -S file && adduser -S -G file file && mkdir -p /data/file-storage && chown -R file:file /data/file-storage
 COPY --from=build /out/file /usr/local/bin/file

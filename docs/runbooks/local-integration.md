@@ -23,10 +23,11 @@
 | 工具 | 当前基线 | 用途 |
 | --- | --- | --- |
 | Go | `1.25` | 后端服务 build/test/run。 |
-| Bun | `1.3.x`，根 `packageManager` 为 `bun@1.3.12` | 前端 install/check/build。 |
+| Bun | `bun@1.3.12` | 前端 install/check/build；以根 `packageManager` 为准。 |
 | Docker Compose | 支持 Compose v2 | 启动服务级 PostgreSQL、Redis 和服务容器。 |
 | PostgreSQL | `postgres:16-alpine` | 服务数据库和 migration smoke。 |
-| Redis | `redis:7-alpine` 或当前服务 Compose 镜像 | Gateway session cache、QA/Document 队列。 |
+| Redis | `redis:7-alpine` | Gateway session cache、QA/Document 队列。 |
+| Alpine runtime | `alpine:3.22` | Go 服务 runtime 和 migration 镜像的运行阶段。 |
 
 需要访问 GitHub、Go module proxy、npm registry 或 provider 时，按本机 `proxy` 约定给单条命令加代理环境变量：
 
@@ -65,7 +66,7 @@ cd deploy
 docker compose --env-file .env.example up -d postgres minio minio-init migrate-file
 ```
 
-`minio-init` 会创建 bucket `software-teamwork-local`。默认本地配置：
+`minio-init` 使用 MinIO `mc` 客户端镜像创建 bucket `software-teamwork-local`；它不是第二个 MinIO server。默认本地配置：
 
 ```text
 endpoint: localhost:9000

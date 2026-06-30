@@ -54,9 +54,9 @@
 | 领域 | 当前仓库事实 | 目标基线 / 后续动作 |
 | --- | --- | --- |
 | PostgreSQL client | Auth、Knowledge、QA、Document、File、AI Gateway 均已升级至 `pgx/v5@v5.9.2`（S-025 安全升级）。 | 新增 PostgreSQL 服务沿用 `pgx/v5@v5.9.2`，不得重新引入 `pgx/v4` 或第三种 major 版本。 |
-| Redis client | Gateway 直接使用 `go-redis/v9@v9.21.0`；Knowledge 和 Document 通过 asynq v0.26.0 间接引入 `go-redis/v9@v9.14.1`。两条路径用途不同（缓存 vs 队列间接依赖），不强制要求统一版本；新增直接 Redis 依赖应沿用 `v9.21.0`。 | 已决策：维持现有双路径，不主动提升 asynq 的间接依赖版本；如需升级 asynq，需同步评估 go-redis 版本变化。 |
+| Redis client | `go-redis/v9@v9.21.0` 是直接 Redis client 固定基线。Knowledge 和 Document 当前仍被 `asynq v0.26.0` 间接带入 `go-redis/v9@v9.14.1`，这是实现与基线出入，不作为目标版本。 | 新增直接 Redis 依赖沿用 `v9.21.0`；后续升级 asynq 时优先消除传递依赖版本出入，不能消除时必须在服务 implementation 文档登记原因。 |
 | asynq | Knowledge 和 Document 已接入 `asynq v0.26.0`；队列目标基线已确认。 | 技术表和三选一记录统一标为已固定；新增异步任务复用该版本或显式决策升级。 |
-| File object store | Runtime 已有 memory/local/MinIO object store；根目录本地 Compose 已固定 MinIO server/mc 镜像并初始化本地 bucket。 | File 仍是 MinIO 对象存储边界；SDK 和本地 server/client 镜像版本需保持同步记录。 |
+| File object store | Runtime 已有 memory/local/MinIO object store；根目录本地 Compose 已固定 MinIO server/mc 镜像并初始化本地 bucket。 | File 仍是 MinIO 对象存储边界；MinIO server 与 `mc` 是不同镜像，分别记录固定 tag；SDK 和本地 server/client 镜像版本需保持同步记录。 |
 | 前端 OpenAPI 类型生成 | `openapi-typescript@7.13.0` 已进入 `apps/web/package.json` 和 `bun.lock`。 | API type drift check 持续约束 generated diff；升级版本需同步本文。 |
 
 ## 已确认选型总览
@@ -65,7 +65,7 @@
 | --- | --- | --- | --- | --- |
 | Monorepo 包管理 | Bun workspace | `bun@1.3.12` | 已固定 | 根目录 `packageManager` 固定；`bun.lock` 为唯一前端锁文件。 |
 | 前端框架 | React + React DOM | `19.2.7` | 已固定 | `apps/web` 使用 React 19。 |
-| 前端语言 | TypeScript | `6.0.3` lock，`~6.0.2` range | 已固定 | 以 `bun.lock` 解析版本为准。 |
+| 前端语言 | TypeScript | `6.0.3` | 已固定 | 以 `bun.lock` 解析版本为准。 |
 | 前端构建 | Vite | `8.1.0` | 已固定 | 使用 `@vitejs/plugin-react` 和 `@tailwindcss/vite`。 |
 | 前端样式 | Tailwind CSS | `4.3.1` | 已固定 | 配套 `@tailwindcss/vite@4.3.1`。 |
 | 前端路由 | TanStack Router | `@tanstack/react-router@1.170.16` | 已固定 | `apps/web/src/app/router.tsx` 负责路由组合。 |
@@ -94,10 +94,11 @@
 | 数据库迁移 | `goose` | `v3.27.1` | 已固定 | 使用 `pressly/goose` CLI 或库执行服务内 migration；该版本要求 Go 1.25+。 |
 | 关系数据库 | PostgreSQL | `postgres:16-alpine` | 已固定 | 当前本地 Compose 固定在 16 Alpine。 |
 | Redis 队列 | `asynq` over Redis | `asynq v0.26.0`；Redis `7-alpine` | 已固定 | Knowledge 和 Document 已接入 asynq client/worker；后续异步服务按需复用该队列基线。 |
-| Redis 缓存/会话 | `go-redis` | `go-redis/v9 v9.21.0`（直接）；`v9.14.1`（asynq 间接） | 已决策 | Gateway 直接使用 `github.com/redis/go-redis/v9@v9.21.0`；Knowledge/Document 通过 asynq v0.26.0 间接固定 `v9.14.1`。两条路径用途不同，不强制统一版本（S-033）；新增直接 Redis 依赖沿用 `v9.21.0`；asynq 升级时需评估其 go-redis 传递版本。 |
+| Redis 缓存/会话 | `go-redis` | `go-redis/v9 v9.21.0` | 已固定 | Gateway 直接使用 `github.com/redis/go-redis/v9@v9.21.0`；Knowledge/Document 当前通过 asynq 间接带入的 `v9.14.1` 是实现出入，记录在对应 implementation 文档，不作为目标版本。 |
+| Go 服务 runtime 镜像 | Alpine | `alpine:3.22` | 已固定 | Go 服务 Dockerfile 和 migration Dockerfile 的 runtime stage 统一使用 `alpine:3.22`；如需偏离必须在对应服务 implementation 文档登记原因。 |
 | 向量数据库 | Qdrant | `qdrant/qdrant:v1.18.2` | 已固定 | 根目录本地 Compose 已固定 Qdrant 镜像；Knowledge schema 已保留 Qdrant point 字段，runtime adapter 尚未落地。 |
 | Qdrant 客户端 | 手写 HTTP client | Go 标准 HTTP client | 已选型，待落地 | 当前代码尚未实现 Qdrant client；落地时先不引入官方 client。 |
-| 对象存储 | MinIO 边界；当前 memory/local/MinIO object store | `minio/minio:RELEASE.2025-09-07T16-13-09Z`；`minio/mc:RELEASE.2025-08-13T08-35-41Z` | 已固定 | File service runtime 已有 MinIO adapter；根目录本地 Compose 使用固定 MinIO server/client 镜像。 |
+| 对象存储 | MinIO 边界；当前 memory/local/MinIO object store | `minio/minio:RELEASE.2025-09-07T16-13-09Z`；`minio/mc:RELEASE.2025-08-13T08-35-41Z` | 已固定 | File service runtime 已有 MinIO adapter；根目录本地 Compose 使用一个 MinIO server 和一个 `mc` bucket 初始化容器；`minio-init` 不是第二个 MinIO server。 |
 | MinIO Go SDK | 官方 MinIO Go SDK | `github.com/minio/minio-go/v7@v7.2.1` | 已固定 | `services/file` 通过 `internal/platform/storage` 封装 SDK，不向 handler 或 owner service client 泄露 MinIO 细节。 |
 | 认证 token | Opaque Bearer token | 协议契约 | 标准库 / 协议 | 不使用 JWT access token；服务端保存 token hash。 |
 | 密码哈希 | `argon2id` | `argon2id-v1`，PHC `v=19` | 已固定 | 参数：`m=65536 KiB`、`t=3`、`p=2`、`salt=16 bytes`、`key=32 bytes`。 |
@@ -105,7 +106,7 @@
 | 模型调用 | AI Gateway 统一封装 OpenAI-compatible API | API 契约 `0.1.0`；provider/model 运行时配置 | 部分已落地 | chat completions、function calling 透传、embeddings 和 rerankings 已落地；真实 provider smoke 和下游接入仍待补齐。 |
 | 本地 embedding | local hashing embedding | 待实现 | 已选型，待落地 | AI Gateway embedding endpoint 已支持 OpenAI-compatible provider；local hashing embedding provider adapter 尚未落地。 |
 | 文档解析运行时 | Python + PaddleOCR behind Parser HTTP API | 待固定 | 已选型，待落地 | Parser 通过 `/internal/v1/parsed-documents` 提供解析结果；Knowledge 不承载 PaddleOCR/PaddlePaddle/OpenCV/CUDA 依赖。 |
-| OpenAPI | OpenAPI | `3.0.3` | 已固定 | Gateway、Auth、Knowledge、QA、Document、AI Gateway 契约均使用 3.0.3。 |
+| OpenAPI | OpenAPI | `3.0.3` / `3.1.0`，以各契约文件 `openapi:` 头为准 | 已固定 | Gateway、Auth、File、Parser、AI Gateway 当前使用 3.0.3；Document、Knowledge、QA 的 internal/实现本地契约使用 3.1.0，服务级 public 设计面仍为 3.0.3。 |
 | API 版本前缀 | `/api/v1` / `/internal/v1` | `v1` | 已固定 | 公开入口以 gateway OpenAPI 为准；内部服务使用服务级契约。 |
 | 后端测试 | Go `testing` + `httptest` | Go `1.25` 标准库 | 已固定 | 默认不引入 BDD 测试框架。 |
 | CI | GitHub Actions | `actions/github-script@v7`；runner `ubuntu-latest`；Bun `1.3.12`；Go `1.25.x` | 部分已固定 | 已有协作类 workflow、前端 check/build/unit/E2E smoke、Go service path-filtered build/test、goose migration apply、Docker/Compose config、Gateway contract 和 API type drift workflow。 |
@@ -162,11 +163,13 @@
 | `github.com/jackc/pgx/v5` | `v5.9.2` | `services/auth/go.mod`、`services/knowledge/go.mod`、`services/qa/go.mod`、`services/document/go.mod`、`services/file/go.mod`、`services/ai-gateway/go.mod` | S-025 安全升级后全仓统一为 v5.9.2。 |
 | `sqlc` CLI 推荐版本 | `v1.31.1` | `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate` | 全仓统一推荐版本（S-033）。Auth/Document 已用 v1.31.1 生成；Knowledge/QA 存量生成包来自 v1.29.0，下次变更 SQL 时须用 v1.31.1 重新生成并提交。服务 README 已更新为 pinned 命令。 |
 | `github.com/pressly/goose/v3` | `v3.27.1` | 技术选型基线 | 迁移工具版本固定；可用 CLI 或库方式接入。 |
+| `github.com/redis/go-redis/v9` | `v9.21.0` | `services/gateway/go.mod` | 直接 Redis client 固定基线；Knowledge/Document 当前由 asynq 间接带入的 `v9.14.1` 是实现出入，待后续 asynq/queue 依赖升级时消除。 |
 | PostgreSQL | `16-alpine` | `services/qa/docker-compose.yml`、`services/qa/docker-compose.db.yml`、`services/document/docker-compose.yml` | 本地开发数据库。 |
 | Redis | `7-alpine` | `services/qa/docker-compose.yml` | 本地队列、缓存、短期协调依赖。 |
+| Alpine runtime | `3.22` | `deploy/Dockerfile.migrate`、`services/*/Dockerfile`、`services/*/Dockerfile.migrate` | Go 服务 runtime stage 和 migration runtime stage；Parser 仍使用 `python:3.12-slim`。 |
 | Qdrant | `qdrant/qdrant:v1.18.2` | `deploy/docker-compose.yml` | 根目录本地 Compose 向量数据库镜像。 |
 | MinIO server | `minio/minio:RELEASE.2025-09-07T16-13-09Z` | `deploy/docker-compose.yml` | 根目录本地 Compose 对象存储服务端镜像。 |
-| MinIO client (`mc`) | `minio/mc:RELEASE.2025-08-13T08-35-41Z` | `deploy/docker-compose.yml` | 根目录本地 Compose bucket 初始化镜像。 |
+| MinIO client (`mc`) | `minio/mc:RELEASE.2025-08-13T08-35-41Z` | `deploy/docker-compose.yml` | 根目录本地 Compose bucket 初始化镜像；`minio/mc:RELEASE.2025-09-07T16-13-09Z` 当前无 Docker Hub manifest，不能按 server tag 强行统一。 |
 | Prometheus Go client | `github.com/prometheus/client_golang@v1.23.2` | 目标技术基线，尚未写入 `go.mod` | 新增 Go 服务暴露 Prometheus metrics 时默认沿用该版本，指标 label 不得包含用户输入、prompt、token、object key 或 API key 指纹。 |
 | OpenTelemetry Go API | `go.opentelemetry.io/otel@v1.44.0` | 目标技术基线，尚未写入 `go.mod` | OpenTelemetry API/root module；新增 tracing 不应只引入该 module。 |
 | OpenTelemetry Go SDK | `go.opentelemetry.io/otel/sdk@v1.44.0` | 目标技术基线，尚未写入 `go.mod` | 关键链路 tracing 使用 parent-based ratio sampler；dev/local 可配置为 100%，生产默认 1%。 |
@@ -185,22 +188,28 @@
 `public.openapi.yaml` 描述该服务拥有的 public/Gateway-facing 设计面；
 只有进入 `docs/services/gateway/api/public.openapi.yaml` active paths 的内容
 才是前端稳定公开契约，未进入 Gateway active paths 的服务级 public
-内容必须标为 candidate/draft。`internal.openapi.yaml` 只描述服务间
-`/internal/v1/**` 和健康检查契约。历史 `openapi.yaml` 文件按服务后续文档整理任务逐步迁移；新建服务或新增调用面应先按
+内容必须标为 candidate/draft。`internal.openapi.yaml` 描述服务间
+`/internal/v1/**`、服务本地运行路径和健康检查契约，例如 Document report job
+内部运行合同。历史 `openapi.yaml` 文件按服务后续文档整理任务逐步迁移；新建服务或新增调用面应先按
 public/internal 命名落位。
 
 | 契约 | OpenAPI 版本 | API 文档版本 | 说明 |
 | --- | --- | --- | --- |
 | Gateway public API | `3.0.3` | `0.1.0` | 前端公开契约权威来源。 |
+| Gateway internal API | `3.0.3` | `0.1.0` | Gateway 内部操作契约。 |
 | Auth service API | `3.0.3` | `0.1.0` | 服务级身份与会话契约。 |
+| AI Gateway public API | `3.0.3` | `0.1.0` | 明确声明 AI Gateway 无直接前端公开路径；前端模型配置入口在 Gateway public API。 |
 | AI Gateway internal API | `3.0.3` | `0.1.0` | 服务间模型配置和 OpenAI-compatible 调用契约。 |
 | Parser public API | `3.0.3` | `0.1.0` | Parser 无 Gateway 公开 API；以空 `paths` 明确声明。 |
 | Parser internal API | `3.0.3` | `0.1.0` | 服务间文档解析运行时契约，只供 Knowledge ingestion 等后端服务调用。 |
 | QA service public API draft | `3.0.3` | `0.1.0` | QA Agent Host 服务级 public 设计面；稳定前端入口仍以 Gateway OpenAPI 为准。 |
+| QA service internal API / implementation copy | `3.1.0` | `1.0.0` | QA 服务本地运行契约和实现副本。 |
 | Document service public API draft | `3.0.3` | `0.1.0` | 报告生成服务级 public 设计面；稳定前端入口仍以 Gateway OpenAPI 为准。 |
-| Knowledge service internal API | `3.0.3` | `0.1.0` | 服务内 OpenAPI 只覆盖已实现的基础知识库和文档上传/详情能力；更多公开能力以 gateway OpenAPI 为准。 |
+| Document service internal API / implementation copy | `3.1.0` | `0.1.0` | Document 服务内部运行和 report job 合同。 |
+| Knowledge service internal API / implementation copy | `3.1.0` | `0.1.0` | 服务内 OpenAPI 覆盖内部知识库、文档、parser config、chunks/content 和查询能力；前端稳定入口仍以 gateway OpenAPI 为准。 |
 | Knowledge public API draft | `3.0.3` | `0.1.0` | Knowledge 公开资源设计草案；稳定公开入口仍以 gateway OpenAPI 为准。 |
-| File service API | `3.0.3` | `0.2.0` | File 服务是后端内部基础文件能力，不直接作为前端公开 API。 |
+| File service internal API / implementation copy | `3.0.3` | `0.2.0` | File 服务是后端内部基础文件能力，不直接作为前端公开 API。 |
+| File service public API draft | `3.0.3` | `0.1.0` | File 当前无前端公开 API；public 文件用于明确调用面边界。 |
 
 ## 服务级偏离
 
@@ -213,7 +222,7 @@ public/internal 命名落位。
 
 | 领域 | 备选 1 | 备选 2 | 备选 3 | 当前决定 | 版本状态 |
 | --- | --- | --- | --- | --- | --- |
-| 数据库访问 | `pgx` + 手写 SQL | `pgx` + `sqlc` | GORM/ent ORM | `pgx` + `sqlc` | `pgx/v5@v5.9.2` 已固定（S-025 升级）；sqlc CLI 推荐版本 `v1.31.1` 已固定（S-033）；存量 Knowledge/QA 生成包来自 v1.29.0，下次改 SQL 时用推荐版本重生成 |
+| 数据库访问 | `pgx` + 手写 SQL | `pgx` + `sqlc` | GORM/ent ORM | `pgx` + `sqlc` | `pgx/v5@v5.9.2` 已固定（S-025 升级）；sqlc CLI 推荐版本 `v1.31.1` 已固定（S-033）；存量 Knowledge/QA 生成包来自 v1.29.0 是实现出入，下次改 SQL 时用推荐版本重生成 |
 | 数据库迁移 | `goose` | `golang-migrate` | Atlas | `goose` | `goose@v3.27.1` 已固定 |
 | 日志 | `slog` | `zap` | `zerolog` | `slog` | Go `1.25` 标准库 |
 | HTTP 路由 | 标准库 `ServeMux` | `chi` | `gin` | 标准库 `ServeMux` | Go `1.25` 标准库 |
@@ -269,7 +278,7 @@ services/<service>/
 
 - 业务状态、任务最终状态、失败摘要和重试次数以 PostgreSQL 为权威；asynq 只负责排队、调度和执行。
 - handler 不直接执行长任务，只创建业务 job 记录并投递 asynq task。
-- 当前 Redis 本地版本为 `redis:7-alpine`；Knowledge 和 Document 已固定 `asynq v0.26.0`，并通过 asynq 间接依赖 `go-redis/v9 v9.14.1`。Gateway 直接使用 `go-redis/v9@v9.21.0`。两条路径用途不同（Gateway Redis 缓存 vs asynq 队列传递依赖），不强制统一版本（S-033 已决策）；新增直接 Redis 依赖沿用 `v9.21.0`。
+- 当前 Redis 本地镜像版本为 `redis:7-alpine`；直接 Redis client 固定为 `go-redis/v9@v9.21.0`。Knowledge 和 Document 当前通过 `asynq v0.26.0` 间接带入的 `go-redis/v9@v9.14.1` 是实现与文档基线出入，已记录到服务 implementation 文档；新增直接 Redis 依赖沿用 `v9.21.0`。
 
 ### 日志、指标和追踪
 
@@ -285,7 +294,7 @@ services/<service>/
 - Qdrant adapter 尚未落地；落地时优先使用服务内手写 HTTP client，不默认引入官方 client。
 - Qdrant 只保存向量和最小 payload；展示正文、权限判断和状态判断必须回 PostgreSQL hydrate。
 - File service 是 MinIO 对象存储边界；业务服务不得直接暴露 bucket、object key、内部 URL、access key 或 presigned URL。
-- MinIO adapter 已在 File Service 落地，Go SDK 固定为 `github.com/minio/minio-go/v7@v7.2.1`；根目录本地 Compose 固定 MinIO server/client 镜像版本，后续生产部署应沿用明确 tag 并同步本文。
+- MinIO adapter 已在 File Service 落地，Go SDK 固定为 `github.com/minio/minio-go/v7@v7.2.1`；根目录本地 Compose 固定 MinIO server 和 `mc` client 镜像版本。`minio-init` 只用 `mc` 创建 bucket，不是第二个 MinIO server。后续生产部署应沿用明确 tag 并同步本文。
 
 ## 前端落地约定
 
@@ -319,7 +328,7 @@ services/<service>/
 
 - 为尚未完成数据库 runtime repository 的 Go 服务补充或迁移 `sqlc.yaml`、query 文件和 `pgx` repository。
 - 为后续新增的数据库服务同步 `goose@v3.27.1` 迁移命令和 CI 校验。
-- 为需要异步任务的服务接入 `asynq` client/worker；Knowledge 已固定首个 asynq/go-redis 版本，后续服务接入前应复核是否沿用该版本。
+- 为需要异步任务的服务接入 `asynq` client/worker；Knowledge/Document 当前 asynq 传递依赖仍带入旧 `go-redis`，后续服务接入或升级前应优先对齐直接 Redis client 基线。
 - 前端接入 `openapi-typescript`，生成 gateway 类型，并固定生成器版本。
 - 前端测试接入 Vitest、React Testing Library 和 Playwright，并固定版本。
 - 本地 Compose 已固定 Qdrant、MinIO、MinIO mc 等依赖镜像 tag；后续升级或生产部署必须继续使用明确 tag，不能以 `latest` 作为基线。
