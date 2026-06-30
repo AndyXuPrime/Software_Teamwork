@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend report page and feature API follow-up for PR #290."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Mutation failure handling, checks, and frontend verification requirements."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Gateway OpenAPI type alignment for DELETE void responses and report job attempts."}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "TanStack Query mutation invalidation and server-state refresh behavior."}

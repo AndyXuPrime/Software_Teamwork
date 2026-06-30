@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend report module scope and integration contract review."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Required checks and no silent fallback/mutation failure review."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Gateway envelope, generated schema, and public API boundary validation."}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Report server state ownership and query invalidation review."}

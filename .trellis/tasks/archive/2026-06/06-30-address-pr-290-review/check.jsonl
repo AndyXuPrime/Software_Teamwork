@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Report frontend review follow-up boundary check."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Mutation error visibility, test coverage, and verification checklist."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Gateway error details and typed API helper consistency."}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Report query/mutation invalidation consistency."}

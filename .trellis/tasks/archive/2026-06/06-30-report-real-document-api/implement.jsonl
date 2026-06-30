@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend report pages and Gateway Document API integration."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Report page loading, error, mutation, test, and verification requirements."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Gateway OpenAPI types, envelope handling, and public API boundary rules."}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "TanStack Query hooks and long-running report job polling behavior."}

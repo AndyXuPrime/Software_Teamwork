@@ -6,39 +6,11 @@ import { ConfirmDialog, InlineNotice, StateBlock, TableSkeleton } from '@/compon
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { Report } from '@/features/reports'
-import { useDeleteReport, useReportsQuery } from '@/features/reports'
+import { formatReportGatewayError, useDeleteReport, useReportsQuery } from '@/features/reports'
 import { canAccess } from '@/lib/permissions'
 import { useAuthStore } from '@/stores/auth-store'
 
 const reportWriteAccess = { any: ['report:write', 'reports:write'] }
-
-const fallbackReports: Report[] = [
-  {
-    id: 'report-20260628-001',
-    name: '2026年迎峰度夏检查报告',
-    reportType: 'summer_peak_inspection',
-    templateId: 'tpl-local-summer',
-    topic: '迎峰度夏设备安全检查',
-    specialty: '电气一次',
-    businessObject: '主变、厂用电系统、保护装置',
-    year: 2026,
-    status: 'generated',
-    latestJobId: 'job-local-content',
-    latestReportFileId: 'file-local-docx',
-    createdAt: '2026-06-28T10:00:00Z',
-    updatedAt: '2026-06-28T14:28:00Z',
-  },
-  {
-    id: 'report-20260628-002',
-    name: '煤库存审计报告',
-    reportType: 'coal_inventory_audit',
-    templateId: 'tpl-local-coal',
-    topic: '燃煤库存盘点与审计分析',
-    year: 2026,
-    status: 'outline_generated',
-    createdAt: '2026-06-28T09:00:00Z',
-  },
-]
 
 function formatDate(value?: string): string {
   if (!value) return '-'
@@ -53,19 +25,25 @@ function formatDate(value?: string): string {
 export function ReportRecordsPage() {
   const [keyword, setKeyword] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Report | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const user = useAuthStore((state) => state.user)
   const reportsQuery = useReportsQuery(keyword)
   const deleteMutation = useDeleteReport()
-  const isFallback = reportsQuery.isError
   const canWriteReports = canAccess(user, reportWriteAccess)
-  const reports = isFallback
-    ? fallbackReports.filter((report) => report.name.includes(keyword))
-    : (reportsQuery.data?.items ?? [])
+  const reports = reportsQuery.data?.items ?? []
+  const reportError = reportsQuery.isError
+    ? formatReportGatewayError(reportsQuery.error, '报告记录加载失败')
+    : null
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!canWriteReports || !deleteTarget) return
-    deleteMutation.mutate(deleteTarget.id)
-    setDeleteTarget(null)
+    setDeleteError(null)
+    try {
+      await deleteMutation.mutateAsync(deleteTarget.id)
+      setDeleteTarget(null)
+    } catch (error) {
+      setDeleteError(formatReportGatewayError(error, '删除报告失败'))
+    }
   }
 
   return (
@@ -96,14 +74,21 @@ export function ReportRecordsPage() {
         </Button>
       </div>
 
-      {reportsQuery.isError && (
-        <InlineNotice className="mb-4" variant="warning">
-          gateway 暂未联通，当前展示本地报告记录示例。
+      {reportError && (
+        <InlineNotice className="mb-4" variant="error" title="报告记录加载失败">
+          {reportError}
         </InlineNotice>
       )}
 
-      {reportsQuery.isLoading && !isFallback ? (
+      {reportsQuery.isLoading ? (
         <TableSkeleton columns={6} showToolbar={false} />
+      ) : reportsQuery.isError ? (
+        <StateBlock
+          description={reportError}
+          size="full"
+          title="无法加载报告记录"
+          variant="error"
+        />
       ) : reports.length === 0 ? (
         <StateBlock title="暂无报告记录" variant="empty" />
       ) : (
@@ -135,7 +120,7 @@ export function ReportRecordsPage() {
                     {formatDate(report.updatedAt ?? report.createdAt)}
                   </td>
                   <td className="px-4 py-3">
-                    {canWriteReports && !isFallback && (
+                    {canWriteReports && (
                       <Button
                         variant="ghost"
                         size="icon-xs"
@@ -157,13 +142,21 @@ export function ReportRecordsPage() {
         cancelLabel="取消"
         confirmLabel="确认删除"
         description={
-          deleteTarget?.name
-            ? `即将删除报告"${deleteTarget.name}"。此操作不可撤销。`
-            : '此操作不可撤销。'
+          <>
+            <span>
+              {deleteTarget?.name
+                ? `即将删除报告"${deleteTarget.name}"。此操作不可撤销。`
+                : '此操作不可撤销。'}
+            </span>
+            {deleteError && <span className="mt-2 block text-destructive">{deleteError}</span>}
+          </>
         }
         onConfirm={handleDelete}
         onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null)
+          if (!open) {
+            setDeleteTarget(null)
+            setDeleteError(null)
+          }
         }}
         open={Boolean(deleteTarget)}
         pending={deleteMutation.isPending}

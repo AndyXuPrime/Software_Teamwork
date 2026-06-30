@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef } from 'react'
 
 import {
   cancelReportJob,
@@ -29,9 +30,21 @@ import {
 import type {
   CreateReportJobPayload,
   CreateReportPayload,
+  ReportJobStatus,
   ReportOutline,
   ReportTemplateStructure,
 } from './report-generation.types'
+
+const terminalReportJobStatuses = new Set<ReportJobStatus>([
+  'succeeded',
+  'partial_succeeded',
+  'failed',
+  'canceled',
+])
+
+function isTerminalReportJobStatus(status: ReportJobStatus): boolean {
+  return terminalReportJobStatuses.has(status)
+}
 
 export const reportKeys = {
   all: ['reports'] as const,
@@ -99,7 +112,9 @@ export function useReportDetailQueries(reportId: string | null) {
 }
 
 export function useReportJobQuery(jobId: string | null) {
-  return useQuery({
+  const queryClient = useQueryClient()
+  const refreshedTerminalJobsRef = useRef(new Set<string>())
+  const query = useQuery({
     queryKey: reportKeys.job(jobId ?? ''),
     queryFn: () => getReportJob(jobId ?? ''),
     enabled: Boolean(jobId),
@@ -108,6 +123,23 @@ export function useReportJobQuery(jobId: string | null) {
       return status === 'pending' || status === 'running' ? 3000 : false
     },
   })
+
+  useEffect(() => {
+    const job = query.data
+    if (!job?.reportId || !isTerminalReportJobStatus(job.status)) return
+
+    const refreshKey = `${job.id}:${job.status}:${job.finishedAt ?? ''}`
+    if (refreshedTerminalJobsRef.current.has(refreshKey)) return
+    refreshedTerminalJobsRef.current.add(refreshKey)
+
+    void queryClient.invalidateQueries({ queryKey: reportKeys.outlines(job.reportId) })
+    void queryClient.invalidateQueries({ queryKey: reportKeys.sections(job.reportId) })
+    void queryClient.invalidateQueries({ queryKey: reportKeys.detail(job.reportId) })
+    void queryClient.invalidateQueries({ queryKey: reportKeys.records() })
+    void queryClient.invalidateQueries({ queryKey: reportKeys.events(job.reportId) })
+  }, [query.data, queryClient])
+
+  return query
 }
 
 export function useCreateReportMutation() {
@@ -186,8 +218,18 @@ export function useCreateReportFileMutation() {
 }
 
 export function useRetryReportJobMutation() {
+  const queryClient = useQueryClient()
+
   return useMutation({
-    mutationFn: (jobId: string) => createReportJobAttempt(jobId),
+    mutationFn: ({ jobId }: { jobId: string; reportId?: string }) => createReportJobAttempt(jobId),
+    onSuccess: (attempt, variables) => {
+      void queryClient.invalidateQueries({ queryKey: reportKeys.job(attempt.jobId) })
+      if (variables.reportId) {
+        void queryClient.invalidateQueries({
+          queryKey: reportKeys.events(variables.reportId),
+        })
+      }
+    },
   })
 }
 

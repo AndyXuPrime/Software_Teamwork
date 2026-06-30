@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "PR #290 report frontend review follow-up scope."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Silent mutation failure handling and regression test expectations."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Gateway error envelope and frontend API boundary behavior."}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "TanStack Query mutation behavior for report pages."}

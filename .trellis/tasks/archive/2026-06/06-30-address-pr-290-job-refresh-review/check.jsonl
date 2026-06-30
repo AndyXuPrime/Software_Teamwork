@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend scope check."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Required checks and regression coverage."}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Query invalidation review."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Generated type consistency review."}

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend report query scope and Gateway integration contract."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Regression tests and required frontend verification."}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "TanStack Query polling and invalidation behavior."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Gateway generated types and API boundary consistency."}
