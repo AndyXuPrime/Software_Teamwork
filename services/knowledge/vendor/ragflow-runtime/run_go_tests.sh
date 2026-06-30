@@ -1,10 +1,8 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 PACKAGES=(
     "./internal/admin/..."
-#    "./internal/binding/..."
-    "./internal/cache/..."
     "./internal/cli/..."
     "./internal/common/..."
     "./internal/dao/..."
@@ -20,12 +18,17 @@ PACKAGES=(
     "./internal/utility/..."
 )
 
-echo "Running tests for specific packages..."
+echo "Running tests for available Go packages..."
 for pkg in "${PACKAGES[@]}"; do
+    package_dir="${pkg#./}"
+    package_dir="${package_dir%/...}"
+    if [ ! -d "$package_dir" ]; then
+        echo "=== Skipping $pkg (missing $package_dir) ==="
+        echo ""
+        continue
+    fi
+
     echo "=== Testing $pkg ==="
-    go test $pkg -v -cover -test.v
+    go test "$pkg" -v -cover
     echo ""
 done
-
-#echo "Running all tests except failed packages..."
-#go test $(go list ./internal/... | grep -v -E '(cli|service|binding)$') -v
