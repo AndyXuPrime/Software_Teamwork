@@ -122,6 +122,7 @@ func extractSlideOCRText(ctx context.Context, archive *officeArchiveReader, slid
 			DocumentName: target,
 			ContentType:  imageContentType(target, data),
 			Data:         data,
+			SizeBytes:    int64(len(data)),
 			RequestID:    requestContext.requestID,
 			UserID:       requestContext.userID,
 		})

@@ -10,30 +10,37 @@ import (
 	"testing"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/platform/parser"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
 )
 
-func TestHTTPOCRClientPostsDocumentAndContextHeaders(t *testing.T) {
+func TestServiceClientPostsDocumentAndContextHeaders(t *testing.T) {
 	var captured *http.Request
-	var payload map[string]string
-	client, err := parser.NewHTTPOCRClient(parser.HTTPOCRConfig{
-		BaseURL:      "https://ocr.internal",
+	var payload struct {
+		DocumentName string `json:"documentName"`
+		ContentType  string `json:"contentType"`
+		SizeBytes    int64  `json:"sizeBytes"`
+		DataBase64   string `json:"dataBase64"`
+	}
+	client, err := parser.NewServiceClient(parser.ServiceClientConfig{
+		BaseURL:      "https://parser.internal",
 		ServiceToken: "secret-token",
 		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			captured = req.Clone(req.Context())
 			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
 				t.Fatalf("Decode request body error = %v", err)
 			}
-			return jsonResponse(http.StatusOK, `{"text":"Breaker OCR"}`), nil
+			return jsonResponse(http.StatusOK, `{"data":{"content":"Breaker OCR","backend":"paddleocr"},"requestId":"req_123"}`), nil
 		})},
 	})
 	if err != nil {
-		t.Fatalf("NewHTTPOCRClient() error = %v", err)
+		t.Fatalf("NewServiceClient() error = %v", err)
 	}
 
 	result, err := client.ExtractText(context.Background(), parser.OCRRequest{
 		DocumentName: "scan.pdf",
 		ContentType:  "application/pdf",
 		Data:         []byte("%PDF"),
+		SizeBytes:    4,
 		RequestID:    "req_123",
 		UserID:       "usr_123",
 	})
@@ -43,7 +50,7 @@ func TestHTTPOCRClientPostsDocumentAndContextHeaders(t *testing.T) {
 	if result.Text != "Breaker OCR" {
 		t.Fatalf("result = %+v", result)
 	}
-	if captured.URL.String() != "https://ocr.internal/internal/v1/ocr" {
+	if captured.URL.String() != "https://parser.internal/internal/v1/parsed-documents" {
 		t.Fatalf("url = %s", captured.URL.String())
 	}
 	if captured.Header.Get("X-Request-Id") != "req_123" ||
@@ -52,10 +59,10 @@ func TestHTTPOCRClientPostsDocumentAndContextHeaders(t *testing.T) {
 		captured.Header.Get("X-Service-Token") != "secret-token" {
 		t.Fatalf("headers = %+v", captured.Header)
 	}
-	if payload["documentName"] != "scan.pdf" || payload["contentType"] != "application/pdf" {
+	if payload.DocumentName != "scan.pdf" || payload.ContentType != "application/pdf" || payload.SizeBytes != 4 {
 		t.Fatalf("payload = %+v", payload)
 	}
-	decoded, err := base64.StdEncoding.DecodeString(payload["dataBase64"])
+	decoded, err := base64.StdEncoding.DecodeString(payload.DataBase64)
 	if err != nil {
 		t.Fatalf("DecodeString() error = %v", err)
 	}
@@ -64,15 +71,59 @@ func TestHTTPOCRClientPostsDocumentAndContextHeaders(t *testing.T) {
 	}
 }
 
-func TestHTTPOCRClientSanitizesFailure(t *testing.T) {
-	client, err := parser.NewHTTPOCRClient(parser.HTTPOCRConfig{
-		BaseURL: "https://ocr.internal/private-path",
+func TestServiceClientParseDelegatesWholeDocumentToParserService(t *testing.T) {
+	var capturedPath string
+	var payload struct {
+		DocumentName string `json:"documentName"`
+		ContentType  string `json:"contentType"`
+		SizeBytes    int64  `json:"sizeBytes"`
+		DataBase64   string `json:"dataBase64"`
+	}
+	client, err := parser.NewServiceClient(parser.ServiceClientConfig{
+		BaseURL: "https://parser.internal",
+		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			capturedPath = req.URL.Path
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				t.Fatalf("Decode request body error = %v", err)
+			}
+			return jsonResponse(http.StatusOK, `{"data":{"content":"Remote DOCX text","title":"Remote Title","backend":"paddleocr"},"requestId":"req_123"}`), nil
+		})},
+	})
+	if err != nil {
+		t.Fatalf("NewServiceClient() error = %v", err)
+	}
+
+	parsed, err := client.Parse(context.Background(), service.ParseInput{
+		Name:        "manual.docx",
+		ContentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		Body:        bytes.NewReader([]byte("not-a-zip-but-remote-parser-handles-it")),
+		SizeBytes:   38,
+		RequestID:   "req_123",
+		UserID:      "usr_123",
+	})
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if capturedPath != "/internal/v1/parsed-documents" {
+		t.Fatalf("path = %s", capturedPath)
+	}
+	if payload.DocumentName != "manual.docx" || payload.SizeBytes != 38 {
+		t.Fatalf("payload = %+v", payload)
+	}
+	if parsed.Content != "Remote DOCX text" || parsed.Title != "Remote Title" || parsed.Backend != "paddleocr" {
+		t.Fatalf("parsed = %+v", parsed)
+	}
+}
+
+func TestServiceClientSanitizesFailure(t *testing.T) {
+	client, err := parser.NewServiceClient(parser.ServiceClientConfig{
+		BaseURL: "https://parser.internal/private-path",
 		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			return jsonResponse(http.StatusBadGateway, `{"error":"secret document text"}`), nil
 		})},
 	})
 	if err != nil {
-		t.Fatalf("NewHTTPOCRClient() error = %v", err)
+		t.Fatalf("NewServiceClient() error = %v", err)
 	}
 
 	_, err = client.ExtractText(context.Background(), parser.OCRRequest{
@@ -88,10 +139,39 @@ func TestHTTPOCRClientSanitizesFailure(t *testing.T) {
 	}
 }
 
-func TestHTTPOCRClientDoesNotFollowRedirectWithServiceToken(t *testing.T) {
+func TestServiceClientClassifiesParserValidationFailure(t *testing.T) {
+	client, err := parser.NewServiceClient(parser.ServiceClientConfig{
+		BaseURL: "https://parser.internal",
+		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusBadRequest, `{"error":{"code":"validation_error","message":"raw secret content"}}`), nil
+		})},
+	})
+	if err != nil {
+		t.Fatalf("NewServiceClient() error = %v", err)
+	}
+
+	_, err = client.Parse(context.Background(), service.ParseInput{
+		Name:        "bad.pdf",
+		ContentType: "application/pdf",
+		Body:        bytes.NewReader([]byte("raw secret content")),
+		SizeBytes:   18,
+	})
+	if err == nil {
+		t.Fatal("Parse() error = nil, want validation error")
+	}
+	appErr, ok := service.Classify(err)
+	if !ok || appErr.Code != service.CodeValidation {
+		t.Fatalf("error = %#v, want validation error", err)
+	}
+	if containsAny(err.Error(), "secret", "bad.pdf") {
+		t.Fatalf("error leaked sensitive detail: %v", err)
+	}
+}
+
+func TestServiceClientDoesNotFollowRedirectWithServiceToken(t *testing.T) {
 	requests := []*http.Request{}
-	client, err := parser.NewHTTPOCRClient(parser.HTTPOCRConfig{
-		BaseURL:      "https://ocr.internal",
+	client, err := parser.NewServiceClient(parser.ServiceClientConfig{
+		BaseURL:      "https://parser.internal",
 		ServiceToken: "secret-token",
 		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			requests = append(requests, req.Clone(req.Context()))
@@ -103,11 +183,11 @@ func TestHTTPOCRClientDoesNotFollowRedirectWithServiceToken(t *testing.T) {
 					Request:    req,
 				}, nil
 			}
-			return jsonResponse(http.StatusOK, `{"text":"redirected"}`), nil
+			return jsonResponse(http.StatusOK, `{"data":{"content":"redirected","backend":"paddleocr"},"requestId":"req_123"}`), nil
 		})},
 	})
 	if err != nil {
-		t.Fatalf("NewHTTPOCRClient() error = %v", err)
+		t.Fatalf("NewServiceClient() error = %v", err)
 	}
 
 	_, err = client.ExtractText(context.Background(), parser.OCRRequest{

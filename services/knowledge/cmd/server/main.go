@@ -143,18 +143,14 @@ func connectPostgres(ctx context.Context, databaseURL string) (*pgxpool.Pool, er
 }
 
 func buildParser(cfg config.Config) (service.Parser, error) {
-	if strings.TrimSpace(cfg.OCRServiceBaseURL) == "" {
+	if strings.TrimSpace(cfg.ParserServiceBaseURL) == "" {
 		return parser.NewRouter(), nil
 	}
-	ocrClient, err := parser.NewHTTPOCRClient(parser.HTTPOCRConfig{
-		BaseURL:      cfg.OCRServiceBaseURL,
-		ServiceToken: cfg.OCRServiceToken,
-		Timeout:      cfg.OCRServiceTimeout,
+	return parser.NewServiceClient(parser.ServiceClientConfig{
+		BaseURL:      cfg.ParserServiceBaseURL,
+		ServiceToken: cfg.ParserServiceToken,
+		Timeout:      cfg.ParserServiceTimeout,
 	})
-	if err != nil {
-		return nil, err
-	}
-	return parser.NewRouterWithOCR(ocrClient), nil
 }
 
 func buildEmbedder(cfg config.Config) (service.Embedder, error) {

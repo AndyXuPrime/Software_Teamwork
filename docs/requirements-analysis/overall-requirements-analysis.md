@@ -118,7 +118,7 @@
 基础设施决策：
 
 - 首期异步任务采用 `asynq` over Redis + PostgreSQL 持久化状态。
-- OCR 和文档解析首期使用外部 HTTP 解析服务跑通 pipeline；解析服务通过 `parser.baseUrl`、`apiKey`、`timeoutSeconds`、`maxConcurrency` 配置，任务失败最多自动重试 3 次。
+- OCR 和文档解析首期使用内部 Parser HTTP 服务跑通 pipeline；Parser runtime 独立部署并预留 PaddleOCR 后端，通过 `parser.baseUrl`、`apiKey`、`timeoutSeconds`、`maxConcurrency` 配置，任务失败最多自动重试 3 次。
 - LLM、Embedding、Rerank 等模型调用统一经 `ai-gateway`，各业务服务首期只需按 OpenAI-compatible API 调用单一可用供应商。
 - MinIO bucket 首期按 `source-files`、`templates`、`generated-reports` 三类拆分；具体 bucket 名可由部署环境变量配置。
 
@@ -218,7 +218,7 @@
 | 文档上传 | 将 PDF、DOCX、PPTX、XLSX、MD、TXT、图片等资料纳入知识库 | 知识库 ID；文件名、MIME、大小；标签；`file` 服务上传 URL；MinIO 对象存储 | 上传 URL 申请 API；创建文档 API；文档 ID、fileId、上传状态、处理任务 ID | P0 |
 | 文档标签管理 | 支持按专业、年份、电厂、材料类型等维度过滤和检索文档 | 文档 ID；标签键值对；标签变更权限 | 文档标签更新 API；标签过滤参数；文档列表中的标签数据 | P0 |
 | 文档状态跟踪 | 让用户明确看到上传、解析、切片、向量化、就绪、失败等处理进度 | 文档处理任务；解析器状态；embedding 状态；错误信息；PostgreSQL 任务状态；尝试次数 | 文档详情 API；处理任务详情 API；状态枚举、进度、失败原因、最近尝试摘要 | P0 |
-| 文档解析 | 把原始文件转换为文本化或结构化内容，为切片和引用做准备 | MinIO 原始文件；外部 HTTP 解析/OCR 服务；解析配置；文档类型 | 解析产物引用；解析状态；失败原因；可选解析文本预览 | P0 |
+| 文档解析 | 把原始文件转换为文本化或结构化内容，为切片和引用做准备 | MinIO 原始文件；内部 Parser HTTP 服务；PaddleOCR 后端；解析配置；文档类型 | 解析产物引用；解析状态；失败原因；可选解析文本预览 | P0 |
 | 文档分段切片 | 按标题层级或固定长度把文档拆成适合检索和引用的片段 | 解析文本；知识库分段策略；章节路径；页码/表格/图片元数据 | 切片列表 API；切片详情；章节路径、切片类型、内容预览、token 数 | P0 |
 | 向量化与索引 | 将切片写入 Qdrant，支撑语义检索和 RAG | 切片文本；AI Gateway embedding profile；Qdrant collection；向量维度；版本信息 | 向量索引状态；文档 ready 状态；版本化 collection；重建索引任务 API | P0 |
 | 知识检索 | 为前台检索、智能问答和报告生成提供统一召回能力 | 查询文本；知识库范围；标签过滤；Top K；相似度阈值；重排序配置；Qdrant；Rerank API | 检索 API；命中文档、章节路径、相关度分数、重排序分数、片段内容 | P0 |
@@ -372,7 +372,7 @@
 | Q1 | 认证统一为 opaque Bearer token。 | 影响前后端鉴权、SSE、下载接口、网关转发 |
 | Q2 | API 统一前缀为 `/api/v1`。 | 影响所有契约和前端请求封装 |
 | Q3 | 异步任务采用 `asynq` over Redis + PostgreSQL 持久化状态；任务最多自动重试 3 次，失败后进入 `failed` 并保留最近 10 次尝试摘要。 | 影响文档处理、报告生成、失败重试 |
-| Q4 | OCR 和文档解析首期使用外部 HTTP 解析服务；通过 `parser.baseUrl`、`apiKey`、`timeoutSeconds`、`maxConcurrency` 配置。 | 影响文件处理链路和部署依赖 |
+| Q4 | OCR 和文档解析首期使用内部 Parser HTTP 服务并预留 PaddleOCR 后端；通过 `parser.baseUrl`、`apiKey`、`timeoutSeconds`、`maxConcurrency` 配置。 | 影响文件处理链路和部署依赖 |
 | Q5 | LLM、Embedding、Rerank 统一通过 `ai-gateway` 以 OpenAI-compatible API 调用。 | 影响配置字段、密钥管理、模型能力边界 |
 | Q6 | 会话历史保存到服务端 PostgreSQL，前端只缓存 `sessionId` 等恢复信息。 | 影响 QA 会话/消息 API 和刷新恢复 |
 | Q7 | 统计指标本期做；智能问答中的 Excel/表格数据分析工具本期不开放。 | 影响智能问答工具白名单和后续 API |

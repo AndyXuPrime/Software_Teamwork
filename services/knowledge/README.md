@@ -34,9 +34,9 @@ RAG MCP server work.
 | `KNOWLEDGE_MAX_UPLOAD_BYTES` | no | `33554432` | Multipart upload limit in bytes. |
 | `KNOWLEDGE_SERVICE_TOKEN` | yes | - | Internal service token forwarded to File Service. |
 | `KNOWLEDGE_SHUTDOWN_TIMEOUT` | no | `10s` | Graceful shutdown timeout. |
-| `OCR_SERVICE_BASE_URL` | no | - | Optional OCR service base URL for PDF/image text extraction. |
-| `OCR_SERVICE_TOKEN` | no | - | Optional OCR service token. |
-| `OCR_SERVICE_TIMEOUT` | no | `30s` | OCR request timeout. |
+| `PARSER_SERVICE_BASE_URL` | no | - | Optional internal Parser service base URL for document parsing. Unset uses the local lightweight parser fallback. |
+| `PARSER_SERVICE_TOKEN` | no | - | Optional Parser service token. |
+| `PARSER_SERVICE_TIMEOUT` | no | `30s` | Parser request timeout. |
 | `EMBEDDING_PROVIDER` | no | `local_hashing` | Embedding provider; `ai_gateway` uses AI Gateway. |
 | `EMBEDDING_MODEL` | no | `local_hashing` | Embedding model/profile label. |
 | `EMBEDDING_DIMENSION` | no | `384` | Embedding vector dimension. |

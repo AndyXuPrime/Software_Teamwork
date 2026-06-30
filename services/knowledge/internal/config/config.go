@@ -10,65 +10,65 @@ import (
 )
 
 const (
-	DefaultHTTPAddr           = ":8083"
-	DefaultServiceVersion     = "dev"
-	DefaultEnvironment        = "local"
-	DefaultMaxUploadBytes     = int64(32 << 20)
-	DefaultOCRServiceTimeout  = 30 * time.Second
-	DefaultEmbeddingProvider  = "local_hashing"
-	DefaultEmbeddingModel     = "local_hashing"
-	DefaultEmbeddingDimension = 384
-	DefaultQdrantCollection   = "knowledge_chunks"
-	DefaultShutdownTimeout    = 10 * time.Second
+	DefaultHTTPAddr             = ":8083"
+	DefaultServiceVersion       = "dev"
+	DefaultEnvironment          = "local"
+	DefaultMaxUploadBytes       = int64(32 << 20)
+	DefaultParserServiceTimeout = 30 * time.Second
+	DefaultEmbeddingProvider    = "local_hashing"
+	DefaultEmbeddingModel       = "local_hashing"
+	DefaultEmbeddingDimension   = 384
+	DefaultQdrantCollection     = "knowledge_chunks"
+	DefaultShutdownTimeout      = 10 * time.Second
 )
 
 type Config struct {
-	HTTPAddr           string
-	ServiceVersion     string
-	Environment        string
-	DatabaseURL        string
-	FileServiceURL     string
-	RedisAddr          string
-	ServiceToken       string
-	MaxUploadBytes     int64
-	OCRServiceBaseURL  string
-	OCRServiceToken    string
-	OCRServiceTimeout  time.Duration
-	EmbeddingProvider  string
-	EmbeddingModel     string
-	EmbeddingDimension int
-	AIGatewayBaseURL   string
-	AIGatewayToken     string
-	AIGatewayProfileID string
-	QdrantURL          string
-	QdrantAPIKey       string
-	QdrantCollection   string
-	ShutdownTimeout    time.Duration
+	HTTPAddr             string
+	ServiceVersion       string
+	Environment          string
+	DatabaseURL          string
+	FileServiceURL       string
+	RedisAddr            string
+	ServiceToken         string
+	MaxUploadBytes       int64
+	ParserServiceBaseURL string
+	ParserServiceToken   string
+	ParserServiceTimeout time.Duration
+	EmbeddingProvider    string
+	EmbeddingModel       string
+	EmbeddingDimension   int
+	AIGatewayBaseURL     string
+	AIGatewayToken       string
+	AIGatewayProfileID   string
+	QdrantURL            string
+	QdrantAPIKey         string
+	QdrantCollection     string
+	ShutdownTimeout      time.Duration
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr:           stringValue("KNOWLEDGE_HTTP_ADDR", DefaultHTTPAddr),
-		ServiceVersion:     stringValue("KNOWLEDGE_SERVICE_VERSION", DefaultServiceVersion),
-		Environment:        stringValue("KNOWLEDGE_ENV", DefaultEnvironment),
-		DatabaseURL:        strings.TrimSpace(os.Getenv("DATABASE_URL")),
-		FileServiceURL:     trimTrailingSlash(os.Getenv("FILE_SERVICE_BASE_URL")),
-		RedisAddr:          strings.TrimSpace(os.Getenv("KNOWLEDGE_REDIS_ADDR")),
-		ServiceToken:       strings.TrimSpace(os.Getenv("KNOWLEDGE_SERVICE_TOKEN")),
-		MaxUploadBytes:     DefaultMaxUploadBytes,
-		OCRServiceBaseURL:  trimTrailingSlash(os.Getenv("OCR_SERVICE_BASE_URL")),
-		OCRServiceToken:    strings.TrimSpace(os.Getenv("OCR_SERVICE_TOKEN")),
-		OCRServiceTimeout:  DefaultOCRServiceTimeout,
-		EmbeddingProvider:  stringValue("EMBEDDING_PROVIDER", DefaultEmbeddingProvider),
-		EmbeddingModel:     stringValue("EMBEDDING_MODEL", DefaultEmbeddingModel),
-		EmbeddingDimension: DefaultEmbeddingDimension,
-		AIGatewayBaseURL:   trimTrailingSlash(os.Getenv("AI_GATEWAY_BASE_URL")),
-		AIGatewayToken:     strings.TrimSpace(os.Getenv("AI_GATEWAY_SERVICE_TOKEN")),
-		AIGatewayProfileID: strings.TrimSpace(os.Getenv("AI_GATEWAY_EMBEDDING_PROFILE_ID")),
-		QdrantURL:          trimTrailingSlash(os.Getenv("QDRANT_URL")),
-		QdrantAPIKey:       strings.TrimSpace(os.Getenv("QDRANT_API_KEY")),
-		QdrantCollection:   stringValue("QDRANT_COLLECTION", DefaultQdrantCollection),
-		ShutdownTimeout:    DefaultShutdownTimeout,
+		HTTPAddr:             stringValue("KNOWLEDGE_HTTP_ADDR", DefaultHTTPAddr),
+		ServiceVersion:       stringValue("KNOWLEDGE_SERVICE_VERSION", DefaultServiceVersion),
+		Environment:          stringValue("KNOWLEDGE_ENV", DefaultEnvironment),
+		DatabaseURL:          strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		FileServiceURL:       trimTrailingSlash(os.Getenv("FILE_SERVICE_BASE_URL")),
+		RedisAddr:            strings.TrimSpace(os.Getenv("KNOWLEDGE_REDIS_ADDR")),
+		ServiceToken:         strings.TrimSpace(os.Getenv("KNOWLEDGE_SERVICE_TOKEN")),
+		MaxUploadBytes:       DefaultMaxUploadBytes,
+		ParserServiceBaseURL: trimTrailingSlash(os.Getenv("PARSER_SERVICE_BASE_URL")),
+		ParserServiceToken:   strings.TrimSpace(os.Getenv("PARSER_SERVICE_TOKEN")),
+		ParserServiceTimeout: DefaultParserServiceTimeout,
+		EmbeddingProvider:    stringValue("EMBEDDING_PROVIDER", DefaultEmbeddingProvider),
+		EmbeddingModel:       stringValue("EMBEDDING_MODEL", DefaultEmbeddingModel),
+		EmbeddingDimension:   DefaultEmbeddingDimension,
+		AIGatewayBaseURL:     trimTrailingSlash(os.Getenv("AI_GATEWAY_BASE_URL")),
+		AIGatewayToken:       strings.TrimSpace(os.Getenv("AI_GATEWAY_SERVICE_TOKEN")),
+		AIGatewayProfileID:   strings.TrimSpace(os.Getenv("AI_GATEWAY_EMBEDDING_PROFILE_ID")),
+		QdrantURL:            trimTrailingSlash(os.Getenv("QDRANT_URL")),
+		QdrantAPIKey:         strings.TrimSpace(os.Getenv("QDRANT_API_KEY")),
+		QdrantCollection:     stringValue("QDRANT_COLLECTION", DefaultQdrantCollection),
+		ShutdownTimeout:      DefaultShutdownTimeout,
 	}
 
 	if raw := os.Getenv("KNOWLEDGE_MAX_UPLOAD_BYTES"); raw != "" {
@@ -86,12 +86,12 @@ func Load() (Config, error) {
 		}
 		cfg.ShutdownTimeout = value
 	}
-	if raw := os.Getenv("OCR_SERVICE_TIMEOUT"); raw != "" {
+	if raw := os.Getenv("PARSER_SERVICE_TIMEOUT"); raw != "" {
 		value, err := time.ParseDuration(raw)
 		if err != nil || value <= 0 {
-			return Config{}, fmt.Errorf("OCR_SERVICE_TIMEOUT must be a positive duration")
+			return Config{}, fmt.Errorf("PARSER_SERVICE_TIMEOUT must be a positive duration")
 		}
-		cfg.OCRServiceTimeout = value
+		cfg.ParserServiceTimeout = value
 	}
 	if raw := os.Getenv("EMBEDDING_DIMENSION"); raw != "" {
 		value, err := strconv.Atoi(raw)
@@ -114,9 +114,9 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("KNOWLEDGE_SERVICE_TOKEN is required")
 	}
 	for name, value := range map[string]string{
-		"AI_GATEWAY_BASE_URL":  cfg.AIGatewayBaseURL,
-		"OCR_SERVICE_BASE_URL": cfg.OCRServiceBaseURL,
-		"QDRANT_URL":           cfg.QdrantURL,
+		"AI_GATEWAY_BASE_URL":     cfg.AIGatewayBaseURL,
+		"PARSER_SERVICE_BASE_URL": cfg.ParserServiceBaseURL,
+		"QDRANT_URL":              cfg.QdrantURL,
 	} {
 		if err := validateOptionalHTTPURL(name, value); err != nil {
 			return Config{}, err

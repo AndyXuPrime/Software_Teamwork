@@ -36,9 +36,9 @@ func TestLoadRuntimeAdapters(t *testing.T) {
 	t.Setenv("FILE_SERVICE_BASE_URL", "http://localhost:8082/")
 	t.Setenv("KNOWLEDGE_REDIS_ADDR", "localhost:6379")
 	t.Setenv("KNOWLEDGE_SERVICE_TOKEN", "knowledge-token")
-	t.Setenv("OCR_SERVICE_BASE_URL", "https://ocr.internal/")
-	t.Setenv("OCR_SERVICE_TOKEN", "ocr-token")
-	t.Setenv("OCR_SERVICE_TIMEOUT", "45s")
+	t.Setenv("PARSER_SERVICE_BASE_URL", "https://parser.internal/")
+	t.Setenv("PARSER_SERVICE_TOKEN", "parser-token")
+	t.Setenv("PARSER_SERVICE_TIMEOUT", "45s")
 	t.Setenv("EMBEDDING_PROVIDER", "ai_gateway")
 	t.Setenv("EMBEDDING_MODEL", "text-embedding-3-small")
 	t.Setenv("EMBEDDING_DIMENSION", "1536")
@@ -54,13 +54,13 @@ func TestLoadRuntimeAdapters(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 	if cfg.FileServiceURL != "http://localhost:8082" ||
-		cfg.OCRServiceBaseURL != "https://ocr.internal" ||
+		cfg.ParserServiceBaseURL != "https://parser.internal" ||
 		cfg.AIGatewayBaseURL != "https://ai.internal" ||
 		cfg.QdrantURL != "http://qdrant.local:6333" {
 		t.Fatalf("trimmed urls = %+v", cfg)
 	}
-	if cfg.OCRServiceToken != "ocr-token" || cfg.OCRServiceTimeout != 45*time.Second {
-		t.Fatalf("ocr config = %+v", cfg)
+	if cfg.ParserServiceToken != "parser-token" || cfg.ParserServiceTimeout != 45*time.Second {
+		t.Fatalf("parser config = %+v", cfg)
 	}
 	if cfg.EmbeddingProvider != "ai_gateway" ||
 		cfg.EmbeddingModel != "text-embedding-3-small" ||
@@ -111,9 +111,9 @@ func TestLoadRejectsInvalidAdapterConfig(t *testing.T) {
 		val  string
 		want string
 	}{
-		{name: "ocr timeout", key: "OCR_SERVICE_TIMEOUT", val: "0s", want: "OCR_SERVICE_TIMEOUT"},
+		{name: "parser timeout", key: "PARSER_SERVICE_TIMEOUT", val: "0s", want: "PARSER_SERVICE_TIMEOUT"},
 		{name: "embedding dimension", key: "EMBEDDING_DIMENSION", val: "0", want: "EMBEDDING_DIMENSION"},
-		{name: "ocr url", key: "OCR_SERVICE_BASE_URL", val: "ftp://ocr.internal", want: "OCR_SERVICE_BASE_URL"},
+		{name: "parser url", key: "PARSER_SERVICE_BASE_URL", val: "ftp://parser.internal", want: "PARSER_SERVICE_BASE_URL"},
 		{name: "qdrant url credentials", key: "QDRANT_URL", val: "http://user:pass@qdrant.local", want: "QDRANT_URL"},
 	}
 	for _, tt := range tests {
@@ -148,9 +148,9 @@ func clearEnv(t *testing.T) {
 		"KNOWLEDGE_SERVICE_VERSION",
 		"KNOWLEDGE_ENV",
 		"KNOWLEDGE_SHUTDOWN_TIMEOUT",
-		"OCR_SERVICE_BASE_URL",
-		"OCR_SERVICE_TOKEN",
-		"OCR_SERVICE_TIMEOUT",
+		"PARSER_SERVICE_BASE_URL",
+		"PARSER_SERVICE_TOKEN",
+		"PARSER_SERVICE_TIMEOUT",
 		"EMBEDDING_PROVIDER",
 		"EMBEDDING_MODEL",
 		"EMBEDDING_DIMENSION",

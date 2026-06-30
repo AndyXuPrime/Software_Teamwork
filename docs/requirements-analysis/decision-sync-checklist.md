@@ -29,7 +29,7 @@
 | D3 | 异步任务机制 | 首期采用 `asynq` over Redis + PostgreSQL 持久化状态。Redis/asynq 用于队列、调度和执行；PostgreSQL 保存可追溯业务状态、最终状态和失败摘要。 | 文档处理、向量化、报告生成任务；任务状态查询 API；基础设施职责 |
 | D4 | 会话历史持久化 | 智能问答会话、消息、Agent Run、工具调用摘要、引用和处理过程摘要以服务端 PostgreSQL 为权威数据源。前端只缓存 `sessionId` 等恢复信息。 | QA 会话/消息 API；刷新恢复说明；前端缓存边界 |
 | D5 | 报告支撑材料归属 | 报告支撑材料是独立业务资源，复用 `file` service 处理上传、下载和 MinIO 相关能力；需要检索时复用 `knowledge` 能力。 | 知识管理支撑材料 API；报告生成材料引用；file service 边界 |
-| D6 | OCR 与文档解析后端 | 分期建设。首期使用外部 HTTP 解析服务确保文档处理 pipeline 跑通；通过 `parser.baseUrl`、`apiKey`、`timeoutSeconds`、`maxConcurrency` 配置，失败最多自动重试 3 次。 | 文档解析配置；失败重试；后续本地化演进 |
+| D6 | OCR 与文档解析后端 | 分期建设。首期使用内部 Parser HTTP 服务确保文档处理 pipeline 跑通；Parser runtime 独立部署并预留 PaddleOCR 后端，通过 `parser.baseUrl`、`apiKey`、`timeoutSeconds`、`maxConcurrency` 配置，失败最多自动重试 3 次。 | 文档解析配置；失败重试；PaddleOCR 本地化演进 |
 | D7 | 模型供应商与配置 | 抽象到专门的 AI gateway。业务服务通过 OpenAI-compatible API 调用，首期各组无需各自实现供应商适配层；业务配置只引用 AI Gateway `profileId`、模型名和超时等参数，provider `baseUrl` 与 `apiKey` 由 AI Gateway 管理。AI Gateway 只透传 Function Calling 字段，不执行 MCP 工具。 | 知识、QA、报告配置 API；模型调用边界；后续 `ai-gateway` 服务设计 |
 | D8 | 数据分析工具 | 统计指标本期做；智能问答中的 Excel/表格“数据分析”工具本期不开放，不进入工具白名单。 | QA Agent 工具白名单；统计 API；P2 范围说明 |
 | D9 | 数据权限粒度 | 首期只做角色级 RBAC。暂不做组织、电厂、专业多维数据权限。 | 权限表述；知识库过滤策略；QA 检索过滤 |
@@ -77,7 +77,7 @@
 以下事项不再阻塞首期实现；首期按上表默认方案执行，后续只做能力增强：
 
 - AI gateway 首期只要求 OpenAI-compatible provider `baseUrl`、`apiKey`、模型名、超时配置；业务服务侧只保存 `profileId`、模型名和业务默认参数。健康检查可通过后续运维接口增强。
-- OCR/文档解析首期接外部 HTTP 服务；本地化解析、额度监控和复杂版面识别作为后续演进。
+- OCR/文档解析首期接内部 Parser HTTP 服务；PaddleOCR 本地化解析、额度监控和复杂版面识别作为后续演进。
 - `asynq` over Redis 首期配合 PostgreSQL job、3 次自动重试和手动 retry；死信队列和可视化运维台作为后续演进。
 - Qdrant 首期使用版本化 collection；跨版本迁移和旧索引清理由后台任务处理。
 - 审计日志首期不做独立服务；需要合规查询时再补独立审计服务和管理端页面。

@@ -20,6 +20,7 @@ Backend services:
 | File | `services/file/` | Uploads, file metadata, MinIO object orchestration |
 | QA | `services/qa/` | AI question answering over retrieved knowledge |
 | Knowledge | `services/knowledge/` | Knowledge ingestion, indexing, retrieval coordination |
+| Parser | `services/parser/` | Internal document parser runtime and PaddleOCR backend boundary |
 | Document | `services/document/` | Report and document generation workflows |
 | AI Gateway | `services/ai-gateway/` | Internal model profiles, provider credentials, OpenAI-compatible chat/embedding/rerank APIs |
 

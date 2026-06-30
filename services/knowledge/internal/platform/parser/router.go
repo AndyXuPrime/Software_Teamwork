@@ -77,6 +77,7 @@ func (r *Router) Parse(ctx context.Context, input service.ParseInput) (service.P
 			DocumentName: input.Name,
 			ContentType:  "application/pdf",
 			Data:         data,
+			SizeBytes:    int64(len(data)),
 			RequestID:    input.RequestID,
 			UserID:       input.UserID,
 		}, "pdf parsing is not supported without external parser")
@@ -86,6 +87,7 @@ func (r *Router) Parse(ctx context.Context, input service.ParseInput) (service.P
 			DocumentName: input.Name,
 			ContentType:  imageContentType(input.Name, data),
 			Data:         data,
+			SizeBytes:    int64(len(data)),
 			RequestID:    input.RequestID,
 			UserID:       input.UserID,
 		}, "image OCR is not supported without external parser")

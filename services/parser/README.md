@@ -1,24 +1,26 @@
 # Parser Runtime Service
 
-This directory defines the internal document parser runtime called by Knowledge
-ingestion.
+This directory defines the internal document parser runtime that Knowledge
+calls during ingestion.
 
 Parser is not a business owner service. Knowledge remains the owner of
 knowledge documents, ingestion jobs, chunks, embeddings, Qdrant indexing,
 retrieval, and parser runtime configuration. Parser only converts raw document
-bytes into normalized parsed content.
+bytes into normalized parsed content that Knowledge can validate, chunk, embed,
+and index.
 
 ## Runtime Direction
 
 The first target backend is PaddleOCR for OCR-heavy PDFs, scanned pages,
-images, tables, seals, and complex layouts. The intended implementation runtime
-is Python because PaddleOCR is Python-first. Go services should call Parser over
+images, tables, seals, and complex layouts. The implementation runtime is
+Python because PaddleOCR is Python-first. Go services should call Parser over
 HTTP and should not host PaddleOCR runtime dependencies.
 
-This scaffold intentionally does not add PaddleOCR, Python packaging, Docker,
-or runtime dependencies. Those belong in a follow-up implementation slice.
+Parser is deployed separately from Knowledge so OCR model loading, GPU/CPU
+scheduling, and document parsing concurrency can evolve without coupling those
+dependencies to the Knowledge service process.
 
-## Planned Shape
+## Planned Runtime Shape
 
 ```text
 services/parser/
@@ -43,6 +45,9 @@ future Parser runtime scaffold and should stay aligned with the docs internal
 contract.
 
 ## Internal Contract
+
+Knowledge calls parser through the internal HTTP API instead of importing parser
+implementation code or PaddleOCR dependencies.
 
 Primary route:
 

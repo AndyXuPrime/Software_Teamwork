@@ -12,6 +12,7 @@ type OCRRequest struct {
 	DocumentName string
 	ContentType  string
 	Data         []byte
+	SizeBytes    int64
 	RequestID    string
 	UserID       string
 }
