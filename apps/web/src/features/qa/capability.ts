@@ -213,8 +213,7 @@ export function getCitationDelta(payload: unknown): QACitation | undefined {
   if (!isRecord(payload) || !isRecord(payload.citation)) return undefined
   const citation = payload.citation
   const id = getString(citation, 'id')
-  const messageId = getString(citation, 'messageId')
-  if (!id || !messageId) return undefined
+  if (!id) return undefined
   return citation as QACitation
 }
 

@@ -124,6 +124,7 @@ export function streamChat(
   let fallbackSeq = 0
   let maxDispatchedSeq = 0
   let didAbort = false
+  let didReceiveTerminalEvent = false
 
   const recordDispatchedSeq = (seq: number) => {
     maxDispatchedSeq = Math.max(maxDispatchedSeq, seq)
@@ -139,6 +140,7 @@ export function streamChat(
     method: 'POST',
     onError: (error) => {
       if (didAbort) return
+      didReceiveTerminalEvent = true
       handlers.onError?.({
         code: error.code,
         fatal: true,
@@ -156,6 +158,9 @@ export function streamChat(
         const qaEvent = event as QASseEventType
         const payload = normalizeSsePayload(qaEvent, parseSsePayload(data, fallbackSeq, id))
         recordDispatchedSeq(payload.seq)
+        if (qaEvent === 'answer.completed' || qaEvent === 'error') {
+          didReceiveTerminalEvent = true
+        }
         dispatch(qaEvent, payload, handlers)
       } catch {
         handlers.onError?.({
@@ -165,6 +170,16 @@ export function streamChat(
           seq: nextSyntheticSeq(),
         })
       }
+    },
+    onDone: () => {
+      if (didAbort || didReceiveTerminalEvent) return
+      didReceiveTerminalEvent = true
+      handlers.onError?.({
+        code: 'stream_ended_without_completion',
+        fatal: true,
+        message: 'QA stream ended before answer.completed',
+        seq: nextSyntheticSeq(),
+      })
     },
     signal,
   })

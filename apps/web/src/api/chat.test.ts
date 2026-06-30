@@ -187,4 +187,36 @@ describe('chat stream API', () => {
       }),
     )
   })
+
+  it('reports fatal error when the stream ends before answer.completed', async () => {
+    const onAnswerDelta = vi.fn()
+    const onError = vi.fn()
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        streamResponse(
+          ['event: answer.delta', 'id: 5', 'data: {"content":"partial"}', '', ''].join('\n'),
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    streamChat('session-1', 'question', {
+      onAnswerDelta,
+      onError,
+    })
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+
+    expect(onAnswerDelta).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'partial', seq: 5 }),
+    )
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'stream_ended_without_completion',
+        fatal: true,
+        seq: 6,
+      }),
+    )
+  })
 })

@@ -131,13 +131,22 @@ describe('QA capability helpers', () => {
     const citation = getCitationDelta({
       citation: {
         id: 'cit-1',
+        citationNo: 1,
+        docId: 'DOC-001',
+        docName: '电力变压器巡检手册.pdf',
         isSourceAvailable: false,
-        messageId: 'msg-1',
+        score: 0.96,
+        text: '变压器外壳应保持清洁...',
       },
     })
 
-    expect(citation).toMatchObject({ id: 'cit-1', messageId: 'msg-1' })
-    expect(getCitationDelta({ citation: { id: 'cit-2' } })).toBeUndefined()
+    expect(citation).toMatchObject({
+      citationNo: 1,
+      docId: 'DOC-001',
+      id: 'cit-1',
+      text: '变压器外壳应保持清洁...',
+    })
+    expect(getCitationDelta({ citation: { messageId: 'msg-1' } })).toBeUndefined()
   })
 
   it('keeps citation detail readiness explicit', () => {
