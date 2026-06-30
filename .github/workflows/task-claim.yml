@@ -38,15 +38,23 @@ jobs:
               return;
             }
 
-            if (!/^\[[SABCF]-(?:\d{8}-)?\d{2}\]\s+.+$/u.test(issue.title || '')) {
+            const parseTaskCode = (title) => {
+              const nextTemplateMatch = title.match(/^([SABCF]-\d{3})\s+.+$/u);
+              if (nextTemplateMatch) {
+                return nextTemplateMatch[1];
+              }
+              const legacyMatch = title.match(/^\[([SABCF]-(?:\d{8}-)?\d{2})\]\s+.+$/u);
+              return legacyMatch ? legacyMatch[1] : '';
+            };
+
+            const taskCode = parseTaskCode(issue.title || '');
+            if (!taskCode) {
               core.info('Issue title does not look like a managed task issue; skipping.');
               return;
             }
 
             const requestedLogin = match[1];
             const commenterLogin = comment.user.login;
-            const titleMatch = issue.title.match(/^\[([SABCF]-(?:\d{8}-)?\d{2})\]\s+.+$/u);
-            const taskCode = titleMatch[1];
             const prefix = taskCode[0];
             const defaultGroupByPrefix = {
               A: 'L1nggTeam',
