@@ -1,2 +1,4 @@
 src/api/generated/
 dist/
+test-results/
+playwright-report/
