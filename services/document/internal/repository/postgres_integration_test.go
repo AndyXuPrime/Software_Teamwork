@@ -248,6 +248,118 @@ func TestPostgresRepositoryTerminalStatusPreservesDetailedProgress(t *testing.T)
 	}
 }
 
+func TestPostgresRepositoryUpdatesReportGenerationLifecycle(t *testing.T) {
+	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DOCUMENT_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	pool := newTestPool(t, ctx, databaseURL)
+	defer pool.Close()
+	applyMigration(t, ctx, pool)
+
+	repo := NewPostgresRepository(pool)
+	now := time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
+	reportType, err := repo.UpsertReportType(ctx, service.ReportType{
+		Code:      "generation_lifecycle_report",
+		Name:      "Generation Lifecycle Report",
+		Enabled:   true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("UpsertReportType() error = %v", err)
+	}
+	report, err := repo.CreateReport(ctx, service.Report{
+		ID:         "00000000-0000-0000-0000-000000000901",
+		Name:       "generation lifecycle",
+		ReportType: reportType.Code,
+		Topic:      "lifecycle",
+		Status:     service.ReportStatusDraft,
+		Source:     "backend",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("CreateReport() error = %v", err)
+	}
+
+	outlineJob, err := repo.CreateReportJob(ctx, service.ReportJob{
+		ID:          "00000000-0000-0000-0000-000000000902",
+		RequestID:   "req_generation_lifecycle",
+		Source:      "api",
+		JobType:     service.JobTypeOutlineGeneration,
+		TargetType:  "report",
+		TargetID:    report.ID,
+		QueueName:   "document",
+		ReportID:    report.ID,
+		Status:      service.JobStatusPending,
+		MaxAttempts: 3,
+		CreatedAt:   now,
+	})
+	if err != nil {
+		t.Fatalf("CreateReportJob(outline) error = %v", err)
+	}
+	if err := repo.UpdateReportGenerationStatus(ctx, report.ID, outlineJob.ID, outlineJob.JobType, service.JobStatusPending, now); err != nil {
+		t.Fatalf("UpdateReportGenerationStatus(outline pending) error = %v", err)
+	}
+	updated, err := repo.GetReportByID(ctx, report.ID)
+	if err != nil {
+		t.Fatalf("GetReportByID(outline pending) error = %v", err)
+	}
+	if updated.Status != service.ReportStatusOutlineGenerating || updated.LatestJobID != outlineJob.ID {
+		t.Fatalf("outline pending report metadata = %+v", updated)
+	}
+	if err := repo.SetJobSucceeded(ctx, outlineJob.ID); err != nil {
+		t.Fatalf("SetJobSucceeded(outline) error = %v", err)
+	}
+	updated, err = repo.GetReportByID(ctx, report.ID)
+	if err != nil {
+		t.Fatalf("GetReportByID(outline succeeded) error = %v", err)
+	}
+	if updated.Status != service.ReportStatusOutlineGenerated || updated.GeneratedAt != nil {
+		t.Fatalf("outline succeeded report metadata = %+v", updated)
+	}
+
+	contentJob, err := repo.CreateReportJob(ctx, service.ReportJob{
+		ID:          "00000000-0000-0000-0000-000000000903",
+		RequestID:   "req_generation_lifecycle",
+		Source:      "api",
+		JobType:     service.JobTypeContentGeneration,
+		TargetType:  "report",
+		TargetID:    report.ID,
+		QueueName:   "document",
+		ReportID:    report.ID,
+		Status:      service.JobStatusPending,
+		MaxAttempts: 3,
+		CreatedAt:   now,
+	})
+	if err != nil {
+		t.Fatalf("CreateReportJob(content) error = %v", err)
+	}
+	if err := repo.UpdateReportGenerationStatus(ctx, report.ID, contentJob.ID, contentJob.JobType, service.JobStatusPending, now); err != nil {
+		t.Fatalf("UpdateReportGenerationStatus(content pending) error = %v", err)
+	}
+	updated, err = repo.GetReportByID(ctx, report.ID)
+	if err != nil {
+		t.Fatalf("GetReportByID(content pending) error = %v", err)
+	}
+	if updated.Status != service.ReportStatusContentGenerating || updated.LatestJobID != contentJob.ID {
+		t.Fatalf("content pending report metadata = %+v", updated)
+	}
+	if err := repo.SetJobSucceeded(ctx, contentJob.ID); err != nil {
+		t.Fatalf("SetJobSucceeded(content) error = %v", err)
+	}
+	updated, err = repo.GetReportByID(ctx, report.ID)
+	if err != nil {
+		t.Fatalf("GetReportByID(content succeeded) error = %v", err)
+	}
+	if updated.Status != service.ReportStatusGenerated || updated.LatestJobID != contentJob.ID || updated.GeneratedAt == nil {
+		t.Fatalf("content succeeded report metadata = %+v", updated)
+	}
+}
+
 func TestPostgresRepositoryClaimRetryUsesNextAttemptNumber(t *testing.T) {
 	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -334,6 +446,13 @@ func TestPostgresRepositoryClaimRetryUsesNextAttemptNumber(t *testing.T) {
 	}
 	if updatedJob.RetryCount != 1 || updatedJob.Status != service.JobStatusPending {
 		t.Fatalf("updated job retry/status = %d/%q, want 1/%q", updatedJob.RetryCount, updatedJob.Status, service.JobStatusPending)
+	}
+	updatedReport, err := repo.GetReportByID(ctx, report.ID)
+	if err != nil {
+		t.Fatalf("GetReportByID() error = %v", err)
+	}
+	if updatedReport.Status != service.ReportStatusOutlineGenerating || updatedReport.LatestJobID != job.ID {
+		t.Fatalf("retry report metadata = %+v, want outline_generating latest job", updatedReport)
 	}
 }
 

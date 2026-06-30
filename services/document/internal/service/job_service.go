@@ -13,12 +13,14 @@ type JobRepository interface {
 	ListReportJobsByReportID(ctx context.Context, reportID string) ([]ReportJob, error)
 	CreateReportJob(ctx context.Context, value ReportJob) (ReportJob, error)
 	UpdateReportJobStatus(ctx context.Context, id string, status JobStatus, errorCode, errorMessage string, startedAt, finishedAt *time.Time) (ReportJob, error)
+	UpdateReportGenerationStatus(ctx context.Context, reportID, jobID string, jobType JobType, status JobStatus, updatedAt time.Time) error
 	UpdateJobAsynqTaskID(ctx context.Context, id, taskID string) error
 	CreateReportJobAttempt(ctx context.Context, value ReportJobAttempt) (ReportJobAttempt, error)
 	UpdateAttemptAsynqTaskID(ctx context.Context, attemptID, taskID string) error
 	SetAttemptFailed(ctx context.Context, attemptID, errCode, errMsg string) error
 	CreateReportFile(ctx context.Context, value ReportFile) (ReportFile, error)
 	UpdateReportFile(ctx context.Context, value ReportFile) (ReportFile, error)
+	GetReportSectionByID(ctx context.Context, id string) (ReportSection, error)
 	// ClaimRetry atomically validates status/retry_count, increments retry_count,
 	// and inserts the attempt — preventing double-retry races.
 	ClaimRetry(ctx context.Context, jobID, attemptID, triggerSource, reason string) (ReportJobAttempt, error)
@@ -99,6 +101,9 @@ func (s *JobService) CreateJob(ctx context.Context, rctx RequestContext, input C
 	if err != nil {
 		return ReportJob{}, err
 	}
+	if err := s.validateCreateJobTarget(ctx, input.ReportID, targetType, targetID); err != nil {
+		return ReportJob{}, err
+	}
 	now := time.Now().UTC()
 	job := ReportJob{
 		ID:             newID(),
@@ -117,6 +122,14 @@ func (s *JobService) CreateJob(ctx context.Context, rctx RequestContext, input C
 	created, err := s.repo.CreateReportJob(ctx, job)
 	if err != nil {
 		return ReportJob{}, fmt.Errorf("create report job: %w", err)
+	}
+	if isReportGenerationJobType(created.JobType) {
+		if err := s.repo.UpdateReportGenerationStatus(ctx, created.ReportID, created.ID, created.JobType, JobStatusPending, now); err != nil {
+			if _, ok := Classify(err); ok {
+				return ReportJob{}, err
+			}
+			return ReportJob{}, dependencyError("update report generation status", err)
+		}
 	}
 	// Create attempt #1 so the attempts list reflects every execution, including the first.
 	attempt := ReportJobAttempt{
@@ -190,6 +203,20 @@ func (s *JobService) CreateJob(ctx context.Context, rctx RequestContext, input C
 	return created, nil
 }
 
+func (s *JobService) validateCreateJobTarget(ctx context.Context, reportID, targetType, targetID string) error {
+	if targetType != "section" {
+		return nil
+	}
+	section, err := s.repo.GetReportSectionByID(ctx, targetID)
+	if err != nil {
+		return mapRepositoryReadError(err, "report section not found")
+	}
+	if section.ReportID != reportID {
+		return NewError(CodeNotFound, "report section not found", nil)
+	}
+	return nil
+}
+
 func resolveCreateJobTarget(input CreateJobInput) (string, string, error) {
 	scope := strings.TrimSpace(input.TargetScope)
 	sectionID := strings.TrimSpace(input.SectionID)
@@ -212,6 +239,15 @@ func resolveCreateJobTarget(input CreateJobInput) (string, string, error) {
 		return "section", sectionID, nil
 	default:
 		return "", "", ValidationError(map[string]string{"target.scope": "unsupported target scope"})
+	}
+}
+
+func isReportGenerationJobType(jobType JobType) bool {
+	switch jobType {
+	case JobTypeOutlineGeneration, JobTypeOutlineRegeneration, JobTypeContentGeneration, JobTypeContentRegeneration, JobTypeSectionRegeneration:
+		return true
+	default:
+		return false
 	}
 }
 
