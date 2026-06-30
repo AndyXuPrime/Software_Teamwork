@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -397,7 +398,7 @@ func (r *Postgres) SaveRetrievalTestRun(ctx context.Context, userID string, inpu
 	for i, item := range results {
 		item = retrievalResultWithAliases(item)
 		results[i] = item
-		metadata, _ := json.Marshal(item.Metadata)
+		metadata, _ := json.Marshal(retrievalResultSnapshotMetadata(item))
 		_, err = r.pool.Exec(ctx, `INSERT INTO retrieval_test_results(test_run_id,rank_no,external_kb_id,external_doc_id,external_chunk_id,doc_name,text_snapshot,vector_score,rerank_score,metadata) VALUES($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),$8,$9,$10)`, run.ID, i+1, item.KnowledgeBaseID, item.DocumentID, item.ChunkID, item.DocumentName, item.ContentPreview, item.VectorScore, item.RerankScore, metadata)
 		if err != nil {
 			return run, fmt.Errorf("save retrieval test result: %w", err)
@@ -428,11 +429,62 @@ func (r *Postgres) GetRetrievalTestRun(ctx context.Context, userID, id string) (
 		if err := rows.Scan(&item.RankNo, &item.KnowledgeBaseID, &item.DocumentID, &item.DocumentName, &item.ChunkID, &item.VectorScore, &item.RerankScore, &item.ContentPreview, &metadata); err != nil {
 			return run, err
 		}
-		item.Score = item.VectorScore
 		_ = json.Unmarshal(metadata, &item.Metadata)
+		applyRetrievalResultSnapshotMetadata(&item)
 		run.Results = append(run.Results, retrievalResultWithAliases(item))
 	}
 	return run, rows.Err()
+}
+
+func retrievalResultSnapshotMetadata(item service.RetrievalTestResult) map[string]any {
+	metadata := make(map[string]any, len(item.Metadata)+2)
+	for key, value := range item.Metadata {
+		metadata[key] = value
+	}
+	metadata["score"] = item.Score
+	if item.SectionPath != "" {
+		metadata["sectionPath"] = item.SectionPath
+	}
+	return metadata
+}
+
+func applyRetrievalResultSnapshotMetadata(item *service.RetrievalTestResult) {
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
+	}
+	if score, ok := floatFromMetadata(item.Metadata["score"]); ok {
+		item.Score = score
+	} else if item.RerankScore != nil {
+		item.Score = *item.RerankScore
+	} else {
+		item.Score = item.VectorScore
+	}
+	if item.SectionPath == "" {
+		if sectionPath, ok := item.Metadata["sectionPath"].(string); ok {
+			item.SectionPath = sectionPath
+		}
+	}
+}
+
+func floatFromMetadata(value any) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case json.Number:
+		parsed, err := v.Float64()
+		return parsed, err == nil
+	case string:
+		parsed, err := strconv.ParseFloat(v, 64)
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func retrievalResultWithAliases(item service.RetrievalTestResult) service.RetrievalTestResult {
