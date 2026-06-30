@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 24
+- **Total Sessions**: 25
 - **Last Active**: 2026-06-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~846 | Active |
+| `journal-1.md` | ~879 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 25 | 2026-06-30 | F-016 malformed stream closure | `2ebcc07` | `Frontend/feat/qa-capability-aligned-chat` |
 | 24 | 2026-06-30 | F-016 citation and EOF follow-up | `67c538d` | `Frontend/feat/qa-capability-aligned-chat` |
 | 23 | 2026-06-30 | F-016 completed message id fallback | `519668d` | `Frontend/feat/qa-capability-aligned-chat` |
 | 22 | 2026-06-30 | F-016 rebase onto develop 92d3afc | `8798068` | `Frontend/feat/qa-capability-aligned-chat` |

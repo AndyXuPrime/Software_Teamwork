@@ -844,3 +844,36 @@ Addressed latest Codex review by accepting citation snapshots without messageId 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: F-016 malformed stream closure
+
+**Date**: 2026-06-30
+**Task**: F-016 malformed stream closure
+**Branch**: `Frontend/feat/qa-capability-aligned-chat`
+
+### Summary
+
+Closed malformed QA streams as terminal fatal events, ignored later old-stream events, and added regression coverage for malformed SSE followed by late delta/completed events.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2ebcc07` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
