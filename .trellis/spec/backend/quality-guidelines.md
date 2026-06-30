@@ -344,6 +344,104 @@ seed SQL -> idempotent local/demo data after service migrations
 
 ---
 
+## Scenario: Environment-Gated Cross-Service Smoke
+
+### 1. Scope / Trigger
+
+- Trigger: adding a smoke test that calls another service or an optional external
+  dependency such as AI Gateway, a model provider, object storage, or a parser
+  runtime.
+- Applies when ordinary unit CI must remain deterministic but operators still
+  need an executable proof of the real service client and runtime configuration.
+
+### 2. Signatures
+
+- Name the opt-in gate `<CALLER>_<DEPENDENCY>_SMOKE`; the enabled value is `1`.
+- Keep the test beside the real service client and expose one explicit command,
+  for example:
+
+```bash
+QA_AI_GATEWAY_SMOKE=1 go test ./internal/platform/modelclient \
+  -run '^TestAIGatewaySmoke$' -count=1 -v
+```
+
+- Reuse the caller's normal endpoint, credential-header, token, profile/model,
+  and timeout environment keys instead of inventing parallel smoke-only keys.
+
+### 3. Contracts
+
+- With the gate unset, the test must call `t.Skip` before reading credentials or
+  making network requests.
+- With the gate enabled, missing required endpoint/profile/token configuration
+  must fail with an actionable message that names keys, never values.
+- The positive path must use the production service client and assert a minimal
+  normalized response.
+- Negative probes should stop at the dependency boundary when possible, such as
+  invalid service-token or missing-profile checks, to avoid provider cost and
+  nondeterministic side effects.
+- Generate a request ID for cross-service log correlation. Do not log tokens,
+  provider keys, raw downstream bodies, prompts, document text, or vectors.
+- Controlled fake providers are preferred. Real providers run only when an
+  operator explicitly supplies the gate and credentials.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Smoke gate unset | `SKIP`; ordinary `go test ./...` remains green and offline. |
+| Gate set but token/profile/endpoint missing | Fail before network I/O with actionable key names. |
+| Dependency authentication rejected | Assert the caller's normalized unauthorized/dependency classification; discard raw body. |
+| Selected profile/resource missing | Assert the caller's normalized not-found/dependency classification. |
+| Provider or dependency unavailable | Fail with request ID and safe configuration hints, not endpoint secrets or provider body. |
+| Positive response malformed | Fail on stable normalized fields such as role, finish reason, ID, or result count. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: an opt-in test uses the QA model client, a controlled AI Gateway profile,
+  request-ID correlation, positive response assertions, and token/profile
+  negative probes.
+- Base: a real-provider smoke is documented but skipped until an operator sets
+  all required variables.
+- Bad: normal CI always calls an external model, a test imports another
+  service's `internal` packages, or a failure prints raw provider output or a
+  credential.
+
+### 6. Tests Required
+
+- Run the targeted test with the gate unset and assert it reports `SKIP`.
+- Exercise the enabled positive and negative paths with a controlled fixture
+  before relying on a real provider.
+- Run the caller service's full unit tests and required builds with the gate
+  unset.
+- Run `git diff --check` and verify the documented command and link targets.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```go
+func TestProviderSmoke(t *testing.T) {
+    token := os.Getenv("PROVIDER_API_KEY")
+    t.Logf("calling provider with token %s", token)
+    callProviderDirectly(token)
+}
+```
+
+#### Correct
+
+```go
+func TestAIGatewaySmoke(t *testing.T) {
+    if os.Getenv("QA_AI_GATEWAY_SMOKE") != "1" {
+        t.Skip("set QA_AI_GATEWAY_SMOKE=1 to run the smoke")
+    }
+    client := newRuntimeServiceClientFromEnvironment(t)
+    result := callWithRequestID(t, client)
+    assertNormalizedResult(t, result)
+}
+```
+
+---
+
 ## Forbidden Patterns
 
 - Root-level Go module used to build all microservices together.
