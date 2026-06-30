@@ -29,7 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
-| 8 | 2026-06-30 | F-10 frontend critical flow tests | `2543dff` | `Frontend/test/frontend-critical-flows` |
+| 8 | 2026-06-30 | F-10 frontend critical flow tests | `3da1363` | `Frontend/test/frontend-critical-flows` |
 | 7 | 2026-06-30 | Finish issue 116 shared UI states | `9131aed` | `Frontend/refactor/shared-ui-states` |
 | 6 | 2026-06-30 | Review PR 226 A11 worker fixes | `6662048`, `d52828d` | `review/pr-226` |
 | 5 | 2026-06-29 | Fix PR 212 read-only report navigation | `71b1dff` | `fix/frontend-report-read-nav` |
