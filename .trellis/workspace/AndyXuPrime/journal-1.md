@@ -580,3 +580,36 @@ Fixed fatal QA stream errors to use the next sequence after the max dispatched s
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: F-016 SSE id sequence follow-up
+
+**Date**: 2026-06-30
+**Task**: F-016 SSE id sequence follow-up
+**Branch**: `Frontend/feat/qa-capability-aligned-chat`
+
+### Summary
+
+Updated QA stream parsing to prefer SSE id as the cross-event sequence and covered stale completed events with id-based regression tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1b2c201` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-06-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~582 | Active |
+| `journal-1.md` | ~615 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-06-30 | F-016 SSE id sequence follow-up | `1b2c201` | `Frontend/feat/qa-capability-aligned-chat` |
 | 16 | 2026-06-30 | F-016 stream error sequence follow-up | `d9e8ee8` | `Frontend/feat/qa-capability-aligned-chat` |
 | 15 | 2026-06-30 | F-016 archive context cleanup | `de16ac9` | `Frontend/feat/qa-capability-aligned-chat` |
 | 14 | 2026-06-30 | F-016 stream sequence preservation | `5410d12` | `Frontend/feat/qa-capability-aligned-chat` |
