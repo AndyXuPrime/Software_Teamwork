@@ -37,7 +37,7 @@ func main() {
 	}
 	defer repo.Close()
 
-	files, err := fileclient.New(cfg.FileServiceURL, nil)
+	files, err := fileclient.NewWithServiceToken(cfg.FileServiceURL, cfg.FileServiceToken, nil)
 	if err != nil {
 		logger.Error("file client initialization failed", "service", "document", "dependency", "file", "error", err)
 		os.Exit(1)

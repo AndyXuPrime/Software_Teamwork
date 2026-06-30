@@ -30,6 +30,9 @@ func TestCreateFileSendsMultipartAndContextHeaders(t *testing.T) {
 		if got := r.Header.Get("X-Caller-Service"); got != "document" {
 			t.Fatalf("X-Caller-Service = %q", got)
 		}
+		if got := r.Header.Get("X-Service-Token"); got != "svc-token" {
+			t.Fatalf("X-Service-Token = %q", got)
+		}
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
 			t.Fatalf("ParseMultipartForm() error = %v", err)
 		}
@@ -66,7 +69,7 @@ func TestCreateFileSendsMultipartAndContextHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(server.URL, server.Client())
+	client, err := NewWithServiceToken(server.URL, "svc-token", server.Client())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

@@ -19,11 +19,16 @@ import (
 const defaultTimeout = 30 * time.Second
 
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
+	baseURL      string
+	serviceToken string
+	httpClient   *http.Client
 }
 
 func New(baseURL string, httpClient *http.Client) (*Client, error) {
+	return NewWithServiceToken(baseURL, "", httpClient)
+}
+
+func NewWithServiceToken(baseURL string, serviceToken string, httpClient *http.Client) (*Client, error) {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return nil, fmt.Errorf("file service URL must be an absolute http(s) URL")
@@ -32,8 +37,9 @@ func New(baseURL string, httpClient *http.Client) (*Client, error) {
 		httpClient = &http.Client{Timeout: defaultTimeout}
 	}
 	return &Client{
-		baseURL:    strings.TrimRight(parsed.String(), "/"),
-		httpClient: httpClient,
+		baseURL:      strings.TrimRight(parsed.String(), "/"),
+		serviceToken: strings.TrimSpace(serviceToken),
+		httpClient:   httpClient,
 	}, nil
 }
 
@@ -57,7 +63,7 @@ func (c *Client) CreateFile(ctx context.Context, reqCtx service.RequestContext, 
 		return service.FileObject{}, service.NewError(service.CodeDependency, "file service request failed", err)
 	}
 	req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
-	setContextHeaders(req, reqCtx)
+	c.setContextHeaders(req, reqCtx)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -112,7 +118,7 @@ func (c *Client) DeleteFile(ctx context.Context, reqCtx service.RequestContext, 
 	if err != nil {
 		return service.NewError(service.CodeDependency, "file service request failed", err)
 	}
-	setContextHeaders(req, reqCtx)
+	c.setContextHeaders(req, reqCtx)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return service.NewError(service.CodeDependency, "file service unavailable", err)
@@ -136,7 +142,7 @@ func (c *Client) ReadFileContent(ctx context.Context, reqCtx service.RequestCont
 	if err != nil {
 		return service.FileContent{}, service.NewError(service.CodeDependency, "file service request failed", err)
 	}
-	setContextHeaders(req, reqCtx)
+	c.setContextHeaders(req, reqCtx)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return service.FileContent{}, service.NewError(service.CodeDependency, "file service unavailable", err)
@@ -194,7 +200,7 @@ func filenameFromContentDisposition(value string) string {
 	return params["filename"]
 }
 
-func setContextHeaders(req *http.Request, reqCtx service.RequestContext) {
+func (c *Client) setContextHeaders(req *http.Request, reqCtx service.RequestContext) {
 	if strings.TrimSpace(reqCtx.RequestID) != "" {
 		req.Header.Set("X-Request-Id", strings.TrimSpace(reqCtx.RequestID))
 	}
@@ -206,8 +212,12 @@ func setContextHeaders(req *http.Request, reqCtx service.RequestContext) {
 	} else {
 		req.Header.Set("X-Caller-Service", "document")
 	}
-	if strings.TrimSpace(reqCtx.ServiceToken) != "" {
-		req.Header.Set("X-Service-Token", strings.TrimSpace(reqCtx.ServiceToken))
+	serviceToken := strings.TrimSpace(reqCtx.ServiceToken)
+	if serviceToken == "" {
+		serviceToken = c.serviceToken
+	}
+	if serviceToken != "" {
+		req.Header.Set("X-Service-Token", serviceToken)
 	}
 	if len(reqCtx.Roles) > 0 {
 		req.Header.Set("X-User-Roles", strings.Join(reqCtx.Roles, ","))
