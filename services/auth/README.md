@@ -107,7 +107,7 @@ service callers.
 
 ## Repository Notes
 
-- PostgreSQL access uses `pgx/v4`.
+- PostgreSQL access uses `pgx/v5`.
 - Query files must not use `SELECT *`.
 - Repository methods return service-domain structs, not generated SQL row
   structs.

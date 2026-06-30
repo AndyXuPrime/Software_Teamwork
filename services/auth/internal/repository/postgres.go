@@ -2,16 +2,15 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgconn"
-	"github.com/jackc/pgtype"
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/auth/internal/repository/sqlc"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/auth/internal/service"
@@ -123,11 +122,11 @@ func (r *PostgresRepository) CreateUserWithCredential(ctx context.Context, param
 		ID:          params.ID,
 		Username:    params.Username,
 		DisplayName: params.DisplayName,
-		Email:       nullableString(params.Email),
-		Phone:       nullableString(params.Phone),
+		Email:       textFromPtr(params.Email),
+		Phone:       textFromPtr(params.Phone),
 		Status:      status,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		CreatedAt:   timestamptzFromTime(now),
+		UpdatedAt:   timestamptzFromTime(now),
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -148,9 +147,9 @@ func (r *PostgresRepository) CreateUserWithCredential(ctx context.Context, param
 		PasswordHashAlg:           params.PasswordHashAlg,
 		PasswordHashParamsVersion: params.PasswordHashParamsVersion,
 		Column7:                   jsonbFromString(paramsJSON),
-		PasswordChangedAt:         now,
-		CreatedAt:                 now,
-		UpdatedAt:                 now,
+		PasswordChangedAt:         timestamptzFromTime(now),
+		CreatedAt:                 timestamptzFromTime(now),
+		UpdatedAt:                 timestamptzFromTime(now),
 	}); err != nil {
 		if isUniqueViolation(err) {
 			return service.UserRecord{}, service.ErrConflict
@@ -163,9 +162,9 @@ func (r *PostgresRepository) CreateUserWithCredential(ctx context.Context, param
 			ID:         params.RoleAssignmentID,
 			UserID:     user.ID,
 			Code:       params.DefaultRoleCode,
-			AssignedBy: nullableString(&params.AssignedBy),
-			AssignedAt: now,
-			CreatedAt:  now,
+			AssignedBy: textFromPtr(&params.AssignedBy),
+			AssignedAt: timestamptzFromTime(now),
+			CreatedAt:  timestamptzFromTime(now),
 		}); err != nil {
 			return service.UserRecord{}, classifyNoRows("assign default role", err)
 		}
@@ -193,13 +192,13 @@ func (r *PostgresRepository) CreateSession(ctx context.Context, params service.C
 		AccessTokenHash:           params.AccessTokenHash,
 		AccessTokenHashAlg:        params.AccessTokenHashAlg,
 		AccessTokenHashKeyVersion: params.AccessTokenHashKeyVersion,
-		IssuedAt:                  issuedAt,
-		ExpiresAt:                 params.ExpiresAt,
-		ClientIp:                  nullableString(params.ClientIP),
-		UserAgent:                 nullableString(params.UserAgent),
-		CreatedRequestID:          nullableString(params.RequestID),
-		CreatedAt:                 issuedAt,
-		UpdatedAt:                 issuedAt,
+		IssuedAt:                  timestamptzFromTime(issuedAt),
+		ExpiresAt:                 timestamptzFromTime(params.ExpiresAt),
+		ClientIp:                  textFromPtr(params.ClientIP),
+		UserAgent:                 textFromPtr(params.UserAgent),
+		CreatedRequestID:          textFromPtr(params.RequestID),
+		CreatedAt:                 timestamptzFromTime(issuedAt),
+		UpdatedAt:                 timestamptzFromTime(issuedAt),
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -228,13 +227,13 @@ func (r *PostgresRepository) createSessionTx(ctx context.Context, params service
 		AccessTokenHash:           params.AccessTokenHash,
 		AccessTokenHashAlg:        params.AccessTokenHashAlg,
 		AccessTokenHashKeyVersion: params.AccessTokenHashKeyVersion,
-		IssuedAt:                  issuedAt,
-		ExpiresAt:                 params.ExpiresAt,
-		ClientIp:                  nullableString(params.ClientIP),
-		UserAgent:                 nullableString(params.UserAgent),
-		CreatedRequestID:          nullableString(params.RequestID),
-		CreatedAt:                 issuedAt,
-		UpdatedAt:                 issuedAt,
+		IssuedAt:                  timestamptzFromTime(issuedAt),
+		ExpiresAt:                 timestamptzFromTime(params.ExpiresAt),
+		ClientIp:                  textFromPtr(params.ClientIP),
+		UserAgent:                 textFromPtr(params.UserAgent),
+		CreatedRequestID:          textFromPtr(params.RequestID),
+		CreatedAt:                 timestamptzFromTime(issuedAt),
+		UpdatedAt:                 timestamptzFromTime(issuedAt),
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -244,7 +243,7 @@ func (r *PostgresRepository) createSessionTx(ctx context.Context, params service
 	}
 	if err := q.UpdateUserLastLoginAt(ctx, sqlc.UpdateUserLastLoginAtParams{
 		ID:          params.UserID,
-		LastLoginAt: sql.NullTime{Time: issuedAt, Valid: true},
+		LastLoginAt: timestamptzFromTime(issuedAt),
 	}); err != nil {
 		return service.SessionIdentity{}, fmt.Errorf("update user last login: %w", err)
 	}
@@ -265,9 +264,9 @@ func (r *PostgresRepository) RevokeSession(ctx context.Context, params service.R
 	}
 	session, err := r.queries.RevokeSession(ctx, sqlc.RevokeSessionParams{
 		ID:               params.SessionID,
-		RevokedAt:        sql.NullTime{Time: revokedAt, Valid: true},
-		RevokeReason:     sql.NullString{String: params.Reason, Valid: params.Reason != ""},
-		RevokedRequestID: nullableString(params.RequestID),
+		RevokedAt:        timestamptzFromTime(revokedAt),
+		RevokeReason:     textFromOptionalString(params.Reason),
+		RevokedRequestID: textFromPtr(params.RequestID),
 	})
 	if err != nil {
 		return service.Session{}, classifyNoRows("revoke session", err)
@@ -289,9 +288,9 @@ func (r *PostgresRepository) revokeSessionTx(ctx context.Context, params service
 	}
 	session, err := q.RevokeSession(ctx, sqlc.RevokeSessionParams{
 		ID:               params.SessionID,
-		RevokedAt:        sql.NullTime{Time: revokedAt, Valid: true},
-		RevokeReason:     sql.NullString{String: params.Reason, Valid: params.Reason != ""},
-		RevokedRequestID: nullableString(params.RequestID),
+		RevokedAt:        timestamptzFromTime(revokedAt),
+		RevokeReason:     textFromOptionalString(params.Reason),
+		RevokedRequestID: textFromPtr(params.RequestID),
 	})
 	if err != nil {
 		return service.Session{}, classifyNoRows("revoke session", err)
@@ -301,9 +300,9 @@ func (r *PostgresRepository) revokeSessionTx(ctx context.Context, params service
 		SessionID: session.ID,
 		UserID:    session.UserID,
 		Reason:    params.Reason,
-		RevokedBy: sql.NullString{String: session.UserID, Valid: session.UserID != ""},
-		RequestID: nullableString(params.RequestID),
-		RevokedAt: revokedAt,
+		RevokedBy: textFromOptionalString(session.UserID),
+		RequestID: textFromPtr(params.RequestID),
+		RevokedAt: timestamptzFromTime(revokedAt),
 	}); err != nil {
 		return service.Session{}, fmt.Errorf("create session revocation: %w", err)
 	}
@@ -325,17 +324,17 @@ func (r *PostgresRepository) RecordSecurityEvent(ctx context.Context, params ser
 	if err := r.queries.CreateSecurityEvent(ctx, sqlc.CreateSecurityEventParams{
 		ID:               params.ID,
 		EventType:        params.EventType,
-		UserID:           nullableString(params.UserID),
-		SessionID:        nullableString(params.SessionID),
-		UsernameSnapshot: nullableString(params.UsernameSnapshot),
-		RequestID:        nullableString(params.RequestID),
-		ClientIp:         nullableString(params.ClientIP),
-		UserAgent:        nullableString(params.UserAgent),
-		CallerService:    nullableString(params.CallerService),
+		UserID:           textFromPtr(params.UserID),
+		SessionID:        textFromPtr(params.SessionID),
+		UsernameSnapshot: textFromPtr(params.UsernameSnapshot),
+		RequestID:        textFromPtr(params.RequestID),
+		ClientIp:         textFromPtr(params.ClientIP),
+		UserAgent:        textFromPtr(params.UserAgent),
+		CallerService:    textFromPtr(params.CallerService),
 		Status:           params.Status,
-		ReasonCode:       nullableString(params.ReasonCode),
+		ReasonCode:       textFromPtr(params.ReasonCode),
 		Column12:         jsonbFromString(metadata),
-		CreatedAt:        createdAt,
+		CreatedAt:        timestamptzFromTime(createdAt),
 	}); err != nil {
 		if isUniqueViolation(err) {
 			return service.ErrConflict
@@ -384,8 +383,8 @@ func mapUser(user sqlc.AuthUser) service.User {
 		Status:      user.Status,
 		LockedUntil: timePtr(user.LockedUntil),
 		LastLoginAt: timePtr(user.LastLoginAt),
-		CreatedAt:   user.CreatedAt,
-		UpdatedAt:   user.UpdatedAt,
+		CreatedAt:   timeFromTimestamptz(user.CreatedAt),
+		UpdatedAt:   timeFromTimestamptz(user.UpdatedAt),
 		DeletedAt:   timePtr(user.DeletedAt),
 	}
 }
@@ -399,12 +398,12 @@ func mapCredential(credential sqlc.AuthCredential) service.Credential {
 		PasswordHashAlg:           credential.PasswordHashAlg,
 		PasswordHashParamsVersion: credential.PasswordHashParamsVersion,
 		PasswordHashParamsJSON:    normalizeJSONB(credential.PasswordHashParamsJson),
-		PasswordChangedAt:         credential.PasswordChangedAt,
+		PasswordChangedAt:         timeFromTimestamptz(credential.PasswordChangedAt),
 		PasswordExpiresAt:         timePtr(credential.PasswordExpiresAt),
 		FailedAttemptCount:        credential.FailedAttemptCount,
 		LastFailedAt:              timePtr(credential.LastFailedAt),
-		CreatedAt:                 credential.CreatedAt,
-		UpdatedAt:                 credential.UpdatedAt,
+		CreatedAt:                 timeFromTimestamptz(credential.CreatedAt),
+		UpdatedAt:                 timeFromTimestamptz(credential.UpdatedAt),
 	}
 }
 
@@ -417,8 +416,8 @@ func mapSession(session sqlc.AuthSession) service.Session {
 		AccessTokenHashKeyVersion: session.AccessTokenHashKeyVersion,
 		TokenType:                 session.TokenType,
 		Status:                    session.Status,
-		IssuedAt:                  session.IssuedAt,
-		ExpiresAt:                 session.ExpiresAt,
+		IssuedAt:                  timeFromTimestamptz(session.IssuedAt),
+		ExpiresAt:                 timeFromTimestamptz(session.ExpiresAt),
 		LastSeenAt:                timePtr(session.LastSeenAt),
 		RevokedAt:                 timePtr(session.RevokedAt),
 		RevokeReason:              stringPtr(session.RevokeReason),
@@ -426,47 +425,68 @@ func mapSession(session sqlc.AuthSession) service.Session {
 		UserAgent:                 stringPtr(session.UserAgent),
 		CreatedRequestID:          stringPtr(session.CreatedRequestID),
 		RevokedRequestID:          stringPtr(session.RevokedRequestID),
-		CreatedAt:                 session.CreatedAt,
-		UpdatedAt:                 session.UpdatedAt,
+		CreatedAt:                 timeFromTimestamptz(session.CreatedAt),
+		UpdatedAt:                 timeFromTimestamptz(session.UpdatedAt),
 	}
 }
 
-func nullableString(value *string) sql.NullString {
+func textFromPtr(value *string) pgtype.Text {
 	if value == nil {
-		return sql.NullString{}
+		return pgtype.Text{}
 	}
-	return sql.NullString{String: *value, Valid: true}
+	return pgtype.Text{String: *value, Valid: true}
 }
 
-func stringPtr(value sql.NullString) *string {
+func textFromOptionalString(value string) pgtype.Text {
+	if value == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: value, Valid: true}
+}
+
+func stringPtr(value pgtype.Text) *string {
 	if !value.Valid {
 		return nil
 	}
 	return &value.String
 }
 
-func timePtr(value sql.NullTime) *time.Time {
+func timestamptzFromTime(value time.Time) pgtype.Timestamptz {
+	if value.IsZero() {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: value, Valid: true}
+}
+
+func timeFromTimestamptz(value pgtype.Timestamptz) time.Time {
+	if !value.Valid {
+		return time.Time{}
+	}
+	return value.Time
+}
+
+func timePtr(value pgtype.Timestamptz) *time.Time {
 	if !value.Valid {
 		return nil
 	}
 	return &value.Time
 }
 
-func jsonbFromString(raw string) pgtype.JSONB {
-	return pgtype.JSONB{Bytes: []byte(raw), Status: pgtype.Present}
+func jsonbFromString(raw string) []byte {
+	return []byte(raw)
 }
 
-func normalizeJSONB(value pgtype.JSONB) string {
-	if value.Status != pgtype.Present || len(value.Bytes) == 0 {
+func normalizeJSONB(value []byte) string {
+	if len(value) == 0 {
 		return "{}"
 	}
 	var decoded any
-	if err := json.Unmarshal(value.Bytes, &decoded); err != nil {
-		return string(value.Bytes)
+	if err := json.Unmarshal(value, &decoded); err != nil {
+		return string(value)
 	}
 	normalized, err := json.Marshal(decoded)
 	if err != nil {
-		return string(value.Bytes)
+		return string(value)
 	}
 	return string(normalized)
 }

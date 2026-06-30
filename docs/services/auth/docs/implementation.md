@@ -58,7 +58,7 @@
 | 出入点 | 文档要求 | 当前实现 | 风险 | 建议处理 |
 | --- | --- | --- | --- | --- |
 | README 状态记录 | README 曾称 `services/auth/` 代码尚未落地 | 实际已有 Go module、migrations、repository、HTTP routes；本次已回写 README | 后续若重复写实现状态，容易再次漂移 | README 只链接 implementation，当前状态在本文维护。 |
-| 技术选型 pgx 版本 | 技术基线已统一目标为 `pgx/v5@v5.7.6` | Auth 仍使用 `pgx/v4`，其他 PostgreSQL 服务多已使用 `pgx/v5` | Auth 与目标基线不一致，后续迁移时可能触及 repository、tests 和 go.mod | 将 Auth 迁移到 `pgx/v5`；迁移完成前不得把 Auth 的 v4 用法复制到新服务。 |
+| 技术选型 pgx 版本 | 技术基线要求 PostgreSQL 服务统一使用 `pgx/v5@v5.7.6` | Auth 已迁移到 `pgx/v5@v5.7.6`，sqlc 生成代码和 repository 适配层同步更新 | 已对齐 | 后续新增 PostgreSQL 服务沿用 `pgx/v5`，不得复制旧 v4 用法。 |
 | 无 DB 时 runtime | README 允许无 `AUTH_DATABASE_URL` 启动但 ready 503 | 当前 handlers 无 auth service 时业务 routes 会依赖缺失服务 | 本地误以为可用 | README/implementation 说明无 DB 仅用于进程启动检查。 |
 
 ## 6. MVP / mock / memory backend / 占位
@@ -74,7 +74,7 @@
 | --- | --- | --- |
 | 启动命令 | `cd services/auth && AUTH_HTTP_ADDR=:8001 go run ./cmd/server` | 业务可用需配置 DB、token secret、service token。 |
 | 环境变量 | `AUTH_DATABASE_URL`、`AUTH_INTERNAL_SERVICE_TOKEN`、`AUTH_TOKEN_HASH_SECRET`、session TTL、default role、timeouts | 需要部署 secret 注入说明。 |
-| PostgreSQL / migration | `migrations/0001` + `0002`，`sqlc.yaml`，runtime repository | 需 migration CI/smoke 证据。 |
+| PostgreSQL / migration | `migrations/0001` + `0002`，`sqlc.yaml`，runtime repository | 本地 PostgreSQL smoke 已验证 goose apply 到 version 2。 |
 | Redis / queue | Auth 不使用 Redis；Gateway 使用 Redis session cache | 无。 |
 | Object storage / vector store / AI provider | 不涉及 | 无。 |
 
@@ -82,8 +82,8 @@
 
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
-| 单元测试 | `cd services/auth && go test ./...` | pass（本次执行） | 无真实 DB apply。 |
-| 集成测试 | goose apply + create user/session smoke | missing | 需要 PostgreSQL 环境。 |
+| 单元测试 | `cd services/auth && go test ./...` | pass（本次执行） | 无。 |
+| 集成测试 | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up` | pass（2026-06-30，本地 Docker PostgreSQL 16，迁移到 version 2） | 未跑 gateway 端到端 smoke。 |
 | 契约测试 | HTTP handler tests + Gateway auth proxy tests | partial | 未从 OpenAPI 自动生成校验。 |
 | 手工 smoke | 注册、登录、`/users/me` through gateway | not run | 需要 gateway + Redis + auth。 |
 
@@ -93,7 +93,7 @@
 | --- | --- | --- | --- | --- |
 | 补 Auth DB migration smoke | 新任务 | P0 | Auth 是 gateway 鉴权上游 | 验证 migrations、seed roles、create session。 |
 | 补管理员账号初始化说明 | 新任务 | P1 | 管理端需要管理员身份 | 形成本地和演示环境 bootstrap。 |
-| 迁移 Auth 到 pgx/v5 | 实现任务 | P1 | 技术基线已统一为 `pgx/v5@v5.7.6` | 更新 `services/auth/go.mod`、repository/import、测试和迁移 smoke。 |
+| 保持 pgx v5 基线 | 维护约束 | P1 | Auth 已与其他 PostgreSQL 服务统一到 pgx/v5 | 后续升级 pgx 或 sqlc 时同步更新技术基线和服务文档。 |
 
 ## 10. 最近检查记录
 

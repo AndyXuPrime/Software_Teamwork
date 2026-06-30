@@ -7,10 +7,8 @@ package sqlc
 
 import (
 	"context"
-	"database/sql"
-	"time"
 
-	"github.com/jackc/pgtype"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const assignRoleByCode = `-- name: AssignRoleByCode :one
@@ -47,12 +45,12 @@ RETURNING
 `
 
 type AssignRoleByCodeParams struct {
-	ID         string         `db:"id" json:"id"`
-	UserID     string         `db:"user_id" json:"user_id"`
-	Code       string         `db:"code" json:"code"`
-	AssignedBy sql.NullString `db:"assigned_by" json:"assigned_by"`
-	AssignedAt time.Time      `db:"assigned_at" json:"assigned_at"`
-	CreatedAt  time.Time      `db:"created_at" json:"created_at"`
+	ID         string             `db:"id" json:"id"`
+	UserID     string             `db:"user_id" json:"user_id"`
+	Code       string             `db:"code" json:"code"`
+	AssignedBy pgtype.Text        `db:"assigned_by" json:"assigned_by"`
+	AssignedAt pgtype.Timestamptz `db:"assigned_at" json:"assigned_at"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
 func (q *Queries) AssignRoleByCode(ctx context.Context, arg AssignRoleByCodeParams) (UserRole, error) {
@@ -111,17 +109,17 @@ RETURNING
 `
 
 type CreateCredentialParams struct {
-	ID                        string       `db:"id" json:"id"`
-	UserID                    string       `db:"user_id" json:"user_id"`
-	CredentialType            string       `db:"credential_type" json:"credential_type"`
-	PasswordHash              string       `db:"password_hash" json:"password_hash"`
-	PasswordHashAlg           string       `db:"password_hash_alg" json:"password_hash_alg"`
-	PasswordHashParamsVersion string       `db:"password_hash_params_version" json:"password_hash_params_version"`
-	Column7                   pgtype.JSONB `db:"column_7" json:"column_7"`
-	PasswordChangedAt         time.Time    `db:"password_changed_at" json:"password_changed_at"`
-	PasswordExpiresAt         sql.NullTime `db:"password_expires_at" json:"password_expires_at"`
-	CreatedAt                 time.Time    `db:"created_at" json:"created_at"`
-	UpdatedAt                 time.Time    `db:"updated_at" json:"updated_at"`
+	ID                        string             `db:"id" json:"id"`
+	UserID                    string             `db:"user_id" json:"user_id"`
+	CredentialType            string             `db:"credential_type" json:"credential_type"`
+	PasswordHash              string             `db:"password_hash" json:"password_hash"`
+	PasswordHashAlg           string             `db:"password_hash_alg" json:"password_hash_alg"`
+	PasswordHashParamsVersion string             `db:"password_hash_params_version" json:"password_hash_params_version"`
+	Column7                   []byte             `db:"column_7" json:"column_7"`
+	PasswordChangedAt         pgtype.Timestamptz `db:"password_changed_at" json:"password_changed_at"`
+	PasswordExpiresAt         pgtype.Timestamptz `db:"password_expires_at" json:"password_expires_at"`
+	CreatedAt                 pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt                 pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) CreateCredential(ctx context.Context, arg CreateCredentialParams) (AuthCredential, error) {
@@ -177,19 +175,19 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13)
 `
 
 type CreateSecurityEventParams struct {
-	ID               string         `db:"id" json:"id"`
-	EventType        string         `db:"event_type" json:"event_type"`
-	UserID           sql.NullString `db:"user_id" json:"user_id"`
-	SessionID        sql.NullString `db:"session_id" json:"session_id"`
-	UsernameSnapshot sql.NullString `db:"username_snapshot" json:"username_snapshot"`
-	RequestID        sql.NullString `db:"request_id" json:"request_id"`
-	ClientIp         sql.NullString `db:"client_ip" json:"client_ip"`
-	UserAgent        sql.NullString `db:"user_agent" json:"user_agent"`
-	CallerService    sql.NullString `db:"caller_service" json:"caller_service"`
-	Status           string         `db:"status" json:"status"`
-	ReasonCode       sql.NullString `db:"reason_code" json:"reason_code"`
-	Column12         pgtype.JSONB   `db:"column_12" json:"column_12"`
-	CreatedAt        time.Time      `db:"created_at" json:"created_at"`
+	ID               string             `db:"id" json:"id"`
+	EventType        string             `db:"event_type" json:"event_type"`
+	UserID           pgtype.Text        `db:"user_id" json:"user_id"`
+	SessionID        pgtype.Text        `db:"session_id" json:"session_id"`
+	UsernameSnapshot pgtype.Text        `db:"username_snapshot" json:"username_snapshot"`
+	RequestID        pgtype.Text        `db:"request_id" json:"request_id"`
+	ClientIp         pgtype.Text        `db:"client_ip" json:"client_ip"`
+	UserAgent        pgtype.Text        `db:"user_agent" json:"user_agent"`
+	CallerService    pgtype.Text        `db:"caller_service" json:"caller_service"`
+	Status           string             `db:"status" json:"status"`
+	ReasonCode       pgtype.Text        `db:"reason_code" json:"reason_code"`
+	Column12         []byte             `db:"column_12" json:"column_12"`
+	CreatedAt        pgtype.Timestamptz `db:"created_at" json:"created_at"`
 }
 
 func (q *Queries) CreateSecurityEvent(ctx context.Context, arg CreateSecurityEventParams) error {
@@ -255,18 +253,18 @@ RETURNING
 `
 
 type CreateSessionParams struct {
-	ID                        string         `db:"id" json:"id"`
-	UserID                    string         `db:"user_id" json:"user_id"`
-	AccessTokenHash           string         `db:"access_token_hash" json:"access_token_hash"`
-	AccessTokenHashAlg        string         `db:"access_token_hash_alg" json:"access_token_hash_alg"`
-	AccessTokenHashKeyVersion string         `db:"access_token_hash_key_version" json:"access_token_hash_key_version"`
-	IssuedAt                  time.Time      `db:"issued_at" json:"issued_at"`
-	ExpiresAt                 time.Time      `db:"expires_at" json:"expires_at"`
-	ClientIp                  sql.NullString `db:"client_ip" json:"client_ip"`
-	UserAgent                 sql.NullString `db:"user_agent" json:"user_agent"`
-	CreatedRequestID          sql.NullString `db:"created_request_id" json:"created_request_id"`
-	CreatedAt                 time.Time      `db:"created_at" json:"created_at"`
-	UpdatedAt                 time.Time      `db:"updated_at" json:"updated_at"`
+	ID                        string             `db:"id" json:"id"`
+	UserID                    string             `db:"user_id" json:"user_id"`
+	AccessTokenHash           string             `db:"access_token_hash" json:"access_token_hash"`
+	AccessTokenHashAlg        string             `db:"access_token_hash_alg" json:"access_token_hash_alg"`
+	AccessTokenHashKeyVersion string             `db:"access_token_hash_key_version" json:"access_token_hash_key_version"`
+	IssuedAt                  pgtype.Timestamptz `db:"issued_at" json:"issued_at"`
+	ExpiresAt                 pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
+	ClientIp                  pgtype.Text        `db:"client_ip" json:"client_ip"`
+	UserAgent                 pgtype.Text        `db:"user_agent" json:"user_agent"`
+	CreatedRequestID          pgtype.Text        `db:"created_request_id" json:"created_request_id"`
+	CreatedAt                 pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt                 pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (AuthSession, error) {
@@ -323,13 +321,13 @@ ON CONFLICT (session_id) DO NOTHING
 `
 
 type CreateSessionRevocationParams struct {
-	ID        string         `db:"id" json:"id"`
-	SessionID string         `db:"session_id" json:"session_id"`
-	UserID    string         `db:"user_id" json:"user_id"`
-	Reason    string         `db:"reason" json:"reason"`
-	RevokedBy sql.NullString `db:"revoked_by" json:"revoked_by"`
-	RequestID sql.NullString `db:"request_id" json:"request_id"`
-	RevokedAt time.Time      `db:"revoked_at" json:"revoked_at"`
+	ID        string             `db:"id" json:"id"`
+	SessionID string             `db:"session_id" json:"session_id"`
+	UserID    string             `db:"user_id" json:"user_id"`
+	Reason    string             `db:"reason" json:"reason"`
+	RevokedBy pgtype.Text        `db:"revoked_by" json:"revoked_by"`
+	RequestID pgtype.Text        `db:"request_id" json:"request_id"`
+	RevokedAt pgtype.Timestamptz `db:"revoked_at" json:"revoked_at"`
 }
 
 func (q *Queries) CreateSessionRevocation(ctx context.Context, arg CreateSessionRevocationParams) error {
@@ -375,16 +373,16 @@ RETURNING
 `
 
 type CreateUserParams struct {
-	ID          string         `db:"id" json:"id"`
-	Username    string         `db:"username" json:"username"`
-	DisplayName string         `db:"display_name" json:"display_name"`
-	Email       sql.NullString `db:"email" json:"email"`
-	Phone       sql.NullString `db:"phone" json:"phone"`
-	Status      string         `db:"status" json:"status"`
-	LockedUntil sql.NullTime   `db:"locked_until" json:"locked_until"`
-	LastLoginAt sql.NullTime   `db:"last_login_at" json:"last_login_at"`
-	CreatedAt   time.Time      `db:"created_at" json:"created_at"`
-	UpdatedAt   time.Time      `db:"updated_at" json:"updated_at"`
+	ID          string             `db:"id" json:"id"`
+	Username    string             `db:"username" json:"username"`
+	DisplayName string             `db:"display_name" json:"display_name"`
+	Email       pgtype.Text        `db:"email" json:"email"`
+	Phone       pgtype.Text        `db:"phone" json:"phone"`
+	Status      string             `db:"status" json:"status"`
+	LockedUntil pgtype.Timestamptz `db:"locked_until" json:"locked_until"`
+	LastLoginAt pgtype.Timestamptz `db:"last_login_at" json:"last_login_at"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error) {
@@ -739,10 +737,10 @@ RETURNING
 `
 
 type RevokeSessionParams struct {
-	ID               string         `db:"id" json:"id"`
-	RevokedAt        sql.NullTime   `db:"revoked_at" json:"revoked_at"`
-	RevokeReason     sql.NullString `db:"revoke_reason" json:"revoke_reason"`
-	RevokedRequestID sql.NullString `db:"revoked_request_id" json:"revoked_request_id"`
+	ID               string             `db:"id" json:"id"`
+	RevokedAt        pgtype.Timestamptz `db:"revoked_at" json:"revoked_at"`
+	RevokeReason     pgtype.Text        `db:"revoke_reason" json:"revoke_reason"`
+	RevokedRequestID pgtype.Text        `db:"revoked_request_id" json:"revoked_request_id"`
 }
 
 func (q *Queries) RevokeSession(ctx context.Context, arg RevokeSessionParams) (AuthSession, error) {
@@ -785,8 +783,8 @@ WHERE id = $1
 `
 
 type UpdateUserLastLoginAtParams struct {
-	ID          string       `db:"id" json:"id"`
-	LastLoginAt sql.NullTime `db:"last_login_at" json:"last_login_at"`
+	ID          string             `db:"id" json:"id"`
+	LastLoginAt pgtype.Timestamptz `db:"last_login_at" json:"last_login_at"`
 }
 
 func (q *Queries) UpdateUserLastLoginAt(ctx context.Context, arg UpdateUserLastLoginAtParams) error {

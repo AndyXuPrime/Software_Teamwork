@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,8 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgtype"
-	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/auth/internal/repository/sqlc"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/auth/internal/service"
@@ -121,11 +119,11 @@ func (q *fakeQueries) GetCredentialByUserID(_ context.Context, arg sqlc.GetCrede
 		PasswordHash:              "$argon2id$...",
 		PasswordHashAlg:           "argon2id",
 		PasswordHashParamsVersion: "argon2id-v1",
-		PasswordHashParamsJson:    pgtype.JSONB{Bytes: []byte(`{"memory":65536}`), Status: pgtype.Present},
-		PasswordChangedAt:         q.now,
+		PasswordHashParamsJson:    []byte(`{"memory":65536}`),
+		PasswordChangedAt:         timestamptzFromTime(q.now),
 		FailedAttemptCount:        0,
-		CreatedAt:                 q.now,
-		UpdatedAt:                 q.now,
+		CreatedAt:                 timestamptzFromTime(q.now),
+		UpdatedAt:                 timestamptzFromTime(q.now),
 	}, nil
 }
 
@@ -183,8 +181,8 @@ func (q *fakeQueries) user() sqlc.AuthUser {
 		Username:    "alice",
 		DisplayName: "Alice",
 		Status:      service.UserStatusActive,
-		CreatedAt:   q.now,
-		UpdatedAt:   q.now,
+		CreatedAt:   timestamptzFromTime(q.now),
+		UpdatedAt:   timestamptzFromTime(q.now),
 	}
 }
 
@@ -197,10 +195,10 @@ func (q *fakeQueries) session() sqlc.AuthSession {
 		AccessTokenHashKeyVersion: "v1",
 		TokenType:                 service.TokenTypeBearer,
 		Status:                    service.SessionStatusActive,
-		IssuedAt:                  q.now,
-		ExpiresAt:                 q.now.Add(time.Hour),
-		CreatedRequestID:          sql.NullString{String: "req_123", Valid: true},
-		CreatedAt:                 q.now,
-		UpdatedAt:                 q.now,
+		IssuedAt:                  timestamptzFromTime(q.now),
+		ExpiresAt:                 timestamptzFromTime(q.now.Add(time.Hour)),
+		CreatedRequestID:          textFromOptionalString("req_123"),
+		CreatedAt:                 timestamptzFromTime(q.now),
+		UpdatedAt:                 timestamptzFromTime(q.now),
 	}
 }

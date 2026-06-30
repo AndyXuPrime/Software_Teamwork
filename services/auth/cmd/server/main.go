@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/auth/internal/config"
 	authhttp "github.com/Sakayori-Iroha-168/Software_Teamwork/services/auth/internal/http"
@@ -33,8 +33,13 @@ func main() {
 	var readinessChecker authhttp.ReadinessChecker
 	var authService authhttp.AuthService
 	if cfg.DatabaseURL != "" {
-		pool, err = pgxpool.Connect(ctx, cfg.DatabaseURL)
+		pool, err = pgxpool.New(ctx, cfg.DatabaseURL)
 		if err != nil {
+			logger.Error("postgres connection failed", "service", "auth", "dependency", "postgres", "error", err)
+			os.Exit(1)
+		}
+		if err := pool.Ping(ctx); err != nil {
+			pool.Close()
 			logger.Error("postgres connection failed", "service", "auth", "dependency", "postgres", "error", err)
 			os.Exit(1)
 		}

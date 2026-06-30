@@ -23,10 +23,10 @@ Confirmed Go infrastructure target stack:
 
 Current repository facts from `docs/architecture/technology-decisions.md`:
 
-- Auth currently uses `pgx/v4@v4.18.3`; Knowledge, QA, Document, and AI Gateway
-  use `pgx/v5@v5.7.6`. New services must not introduce a third pgx major
-  version. A separate decision should align existing services on one major
-  version.
+- Auth, Knowledge, QA, Document, and AI Gateway use `pgx/v5@v5.7.6`. New
+  PostgreSQL services should reuse that major version and must not reintroduce
+  `pgx/v4` or a third pgx major version without updating the technology
+  baseline.
 - Gateway directly uses `go-redis/v9@v9.21.0`; Knowledge indirectly uses
   `go-redis/v9@v9.14.1` through asynq. Aligning Redis client versions is a
   follow-up decision, not an implementation-PR side effect.
@@ -102,6 +102,107 @@ func (r *UserRepository) FindByID(ctx context.Context, id UserID) (User, error) 
 - Pass transaction handles into repositories through explicit interfaces.
 - Roll back on every error and wrap rollback failures only when they add useful context.
 - Do not perform slow external calls while holding a PostgreSQL transaction.
+
+## Scenario: PostgreSQL pgx v5 Service Baseline
+
+### 1. Scope / Trigger
+
+- Trigger: adding a PostgreSQL-backed Go service, changing a service's pgx/sqlc
+  dependency, regenerating sqlc code, or touching repository pool/transaction
+  wiring.
+- Applies to `services/<service>/go.mod`, `services/<service>/sqlc.yaml`,
+  `services/<service>/internal/repository/**`, generated sqlc code, service
+  startup wiring, and service implementation docs.
+
+### 2. Signatures
+
+- Module dependency: `github.com/jackc/pgx/v5 v5.7.6`.
+- sqlc config: `sql_package: "pgx/v5"`.
+- Pool import: `github.com/jackc/pgx/v5/pgxpool`.
+- Pool constructor: `pgxpool.New(ctx, databaseURL)`.
+- Startup reachability check: `pool.Ping(ctx)` when the service is expected to
+  fail fast on PostgreSQL unavailability.
+- Transaction handle: `github.com/jackc/pgx/v5.Tx`.
+- Error type: `github.com/jackc/pgx/v5/pgconn.PgError`.
+- Generated pgtype package: `github.com/jackc/pgx/v5/pgtype`.
+
+### 3. Contracts
+
+- Repository adapters may import pgx, pgxpool, pgconn, pgtype, and service-local
+  generated sqlc packages.
+- HTTP handlers, service business logic, gateway code, and other services must
+  not import another service's generated sqlc package.
+- Generated sqlc rows and pgtype values must be mapped to service-domain structs
+  before leaving `internal/repository`.
+- New PostgreSQL services must not introduce `github.com/jackc/pgx/v4` or a
+  third pgx major version without updating `docs/architecture/technology-decisions.md`.
+- Migrating from `pgxpool.Connect` to `pgxpool.New` must not silently change
+  startup behavior. If the old service failed startup when PostgreSQL was
+  unreachable, call `pool.Ping(ctx)` before registering the repository.
+- Migration behavior is part of the repository contract; changing pgx/sqlc
+  wiring still requires goose apply validation for services with migrations.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required response |
+| --- | --- |
+| `go.mod` or module graph contains `github.com/jackc/pgx/v4` | Remove the v4 dependency or document a formal technology-baseline exception before merging. |
+| `sqlc.yaml` uses `sql_package: "pgx/v4"` | Regenerate sqlc with `pgx/v5` and update repository mapping code. |
+| Startup code calls a removed/old pool API | Use the pgx v5 pool API, for example `pgxpool.New(ctx, databaseURL)`. |
+| Startup must fail fast but only calls `pgxpool.New` | Add `pool.Ping(ctx)` during startup and close the pool on ping failure. |
+| HTTP handler imports pgx or generated sqlc | Move database access behind the repository/service boundary. |
+| pgtype values leak into service or HTTP response models | Add repository mapping helpers that return domain structs. |
+| Migrations fail against an empty PostgreSQL database | Fix migrations or document the remaining risk before PR. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: service `go.mod` requires `pgx/v5@v5.7.6`, `sqlc.yaml` uses
+  `pgx/v5`, startup preserves required PostgreSQL reachability checks,
+  repository maps `pgtype.Text` / `pgtype.Timestamptz` to domain fields,
+  handlers import only service interfaces, and goose applies cleanly.
+- Base: an existing service migration preserves public/internal API semantics
+  and only changes dependency/import/mapping code plus docs.
+- Bad: leaving v4 in `go.mod`, hand-editing generated sqlc code without
+  updating `sqlc.yaml`, returning generated sqlc rows from handlers, or
+  treating unit tests as a substitute for migration apply validation.
+
+### 6. Tests Required
+
+- Run `go test ./...` from the changed service directory.
+- Run `go build ./cmd/server` for runnable services.
+- Run `go list -m all` and scan for `github.com/jackc/pgx/v4`.
+- Scan `services/<service>/internal/http` for pgx and generated sqlc imports.
+- Run `git diff --check`.
+- For services with migrations, run:
+
+```bash
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up
+```
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```go
+import "github.com/jackc/pgx/v4/pgxpool"
+
+pool, err := pgxpool.Connect(ctx, databaseURL)
+```
+
+#### Correct
+
+```go
+import "github.com/jackc/pgx/v5/pgxpool"
+
+pool, err := pgxpool.New(ctx, databaseURL)
+if err != nil {
+    return err
+}
+if err := pool.Ping(ctx); err != nil {
+    pool.Close()
+    return err
+}
+```
 
 ---
 
