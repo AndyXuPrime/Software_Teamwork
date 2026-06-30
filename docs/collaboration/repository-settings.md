@@ -79,8 +79,8 @@ check 名称补入 `contexts`。
   `blocked`，并将本次 workflow run 标记为失败，方便维护者发现权限问题。
 
 新任务 issue 默认使用 [.github/ISSUE_TEMPLATE/issue.md](../../.github/ISSUE_TEMPLATE/issue.md)。
-模板标题采用 `[F-001] 中文任务标题` 格式，并内置任务前缀和模块枚举，
-以便 Task Issue Sync 识别和同步 Project 字段。
+模板标题采用 `[A/B/C/F/S-001] 中文任务标题` 格式，正文包含任务信息、依赖字段和
+`Project sync` 字段，以便 Task Issue Sync 识别和同步 Project 字段。
 
 GitHub user-level Projects v2 通常需要额外 token。维护者应创建一个有 Project
 读写权限的 fine-grained token 或 classic token，并在仓库 Secrets 中配置：
