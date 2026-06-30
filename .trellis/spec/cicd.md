@@ -611,6 +611,7 @@ services/auth/Dockerfile
 services/file/Dockerfile
 services/qa/Dockerfile
 services/knowledge/Dockerfile
+services/parser/Dockerfile
 services/document/Dockerfile
 services/ai-gateway/Dockerfile
 ```
