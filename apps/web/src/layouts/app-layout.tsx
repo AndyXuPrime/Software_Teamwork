@@ -1,12 +1,13 @@
 import { Link, useRouter, useRouterState } from '@tanstack/react-router'
 import { Loader2, LogOut, RefreshCw, ShieldAlert } from 'lucide-react'
-import type { PropsWithChildren, ReactNode } from 'react'
+import { type PropsWithChildren, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { apiClient } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import type { PermissionRequirement } from '@/lib/permissions'
 import { canAccess } from '@/lib/permissions'
 import { useAuthStore } from '@/stores/auth-store'
+import { usePageTransitionStore } from '@/stores/page-transition-store'
 
 const pathLabels: Record<string, string> = {
   '/chat': '智能问答',
@@ -73,6 +74,45 @@ export function AppLayout({ children }: PropsWithChildren) {
   const error = useAuthStore((state) => state.error)
   const restoreSession = useAuthStore((state) => state.restoreSession)
 
+  // Page transition entrance
+  useEffect(() => {
+    usePageTransitionStore.getState().reveal()
+  }, [])
+
+  // ── Nav slider position ──
+  const visibleNavItems = useMemo(
+    () => navItems.filter((item) => canAccess(user, item.requirement)),
+    [user],
+  )
+  const navRefs = useRef<Record<string, HTMLAnchorElement | null>>({})
+  const [sliderStyle, setSliderStyle] = useState<{ left: number; width: number }>({
+    left: 0,
+    width: 0,
+  })
+
+  useEffect(() => {
+    const id = pathname.startsWith('/chat')
+      ? '/chat'
+      : pathname.startsWith('/reports')
+        ? '/reports'
+        : '/admin'
+    const raf = requestAnimationFrame(() => {
+      const el = navRefs.current[id]
+      if (el) {
+        const parentRect = el.parentElement!.getBoundingClientRect()
+        const elRect = el.getBoundingClientRect()
+        const newLeft = elRect.left - parentRect.left
+        const newWidth = elRect.width
+        setSliderStyle((prev) =>
+          prev.left === newLeft && prev.width === newWidth
+            ? prev
+            : { left: newLeft, width: newWidth },
+        )
+      }
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [pathname, visibleNavItems])
+
   if (status === 'restoring' || status === 'idle') {
     return (
       <FullPageState title="正在恢复会话">
@@ -100,8 +140,6 @@ export function AppLayout({ children }: PropsWithChildren) {
     )
   }
 
-  const visibleNavItems = navItems.filter((item) => canAccess(user, item.requirement))
-
   const handleLogout = () => {
     const token = apiClient.getToken()
     useAuthStore.getState().clearSession()
@@ -128,13 +166,23 @@ export function AppLayout({ children }: PropsWithChildren) {
           <span className="truncate text-sm font-semibold">{currentLabel}</span>
         </div>
 
-        <nav className="flex items-center gap-1 text-sm">
+        <nav className="relative flex items-center gap-1 rounded-lg bg-muted/50 p-1 text-sm">
+          {/* Sliding pill */}
+          <div
+            aria-hidden
+            className="absolute top-1 h-[calc(100%-8px)] rounded-md bg-background shadow-sm transition-all duration-300 ease-out"
+            style={{ left: sliderStyle.left, width: sliderStyle.width }}
+          />
           {visibleNavItems.map((item) => (
             <Link
               key={item.to}
               to={item.to}
-              className="rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              activeProps={{ className: 'text-primary bg-primary/10' }}
+              ref={(el) => {
+                navRefs.current[item.to] = el as HTMLAnchorElement | null
+              }}
+              className="relative z-10 rounded-md px-3 py-1.5 transition-colors hover:text-foreground"
+              activeProps={{ className: 'text-foreground font-medium' }}
+              inactiveProps={{ className: 'text-muted-foreground' }}
             >
               {item.label}
             </Link>
@@ -166,7 +214,13 @@ export function AppLayout({ children }: PropsWithChildren) {
         </div>
       </header>
 
-      <main className="flex-1 overflow-hidden">{children}</main>
+      <main
+        key={pathname}
+        className="page-enter-right flex-1 overflow-y-auto overflow-x-hidden"
+        style={{ scrollbarGutter: 'stable' }}
+      >
+        {children}
+      </main>
     </div>
   )
 }

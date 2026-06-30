@@ -206,12 +206,23 @@ export function ReportGeneratePage() {
   const effectiveJob = jobQuery.data ?? lastJob
   const selectedTemplate = templates.find((template) => template.id === form.templateId)
 
-  const contractWarning = useMemo(() => {
-    if (typeQuery.isError || templateQuery.isError || materialQuery.isError) {
-      return 'gateway 暂未联通或未返回报告配置，当前展示本地原型数据；请求路径仍按 /api/v1 最新契约组织。'
-    }
-    return null
-  }, [materialQuery.isError, templateQuery.isError, typeQuery.isError])
+  const usingFallback = useMemo(
+    () =>
+      typeQuery.isError ||
+      templateQuery.isError ||
+      materialQuery.isError ||
+      !typeQuery.data?.length ||
+      !templateQuery.data?.items?.length ||
+      !materialQuery.data?.items?.length,
+    [
+      typeQuery.isError,
+      templateQuery.isError,
+      materialQuery.isError,
+      typeQuery.data,
+      templateQuery.data,
+      materialQuery.data,
+    ],
+  )
 
   useEffect(() => {
     const firstTemplate = templates[0]
@@ -480,7 +491,12 @@ export function ReportGeneratePage() {
           </div>
         </div>
 
-        {(contractWarning || notice || formError) && (
+        {usingFallback && (
+          <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+            报告配置接口暂未联通，当前展示本地示例数据。报告类型、模板和材料以服务端实际配置为准。
+          </div>
+        )}
+        {(notice || formError) && (
           <div
             className={cn(
               'mt-4 rounded-lg border px-4 py-3 text-sm',
@@ -489,7 +505,7 @@ export function ReportGeneratePage() {
                 : 'border-border bg-card text-muted-foreground',
             )}
           >
-            {formError ?? notice ?? contractWarning}
+            {formError ?? notice}
           </div>
         )}
       </div>
@@ -822,7 +838,7 @@ export function ReportGeneratePage() {
           )}
         </div>
 
-        <aside className="space-y-4">
+        <aside className="flex flex-col space-y-4">
           <section className="rounded-lg border border-border bg-card p-4">
             <h2 className="text-sm font-semibold">当前报告</h2>
             <div className="mt-3 space-y-2 text-sm">
@@ -913,7 +929,7 @@ export function ReportGeneratePage() {
           {eventsQuery.data && eventsQuery.data.length > 0 && (
             <section className="rounded-lg border border-border bg-card p-4">
               <h2 className="text-sm font-semibold">事件日志</h2>
-              <div className="mt-3 max-h-48 space-y-2 overflow-auto">
+              <div className="mt-3 max-h-96 space-y-2 overflow-auto">
                 {eventsQuery.data
                   .slice(-10)
                   .reverse()
@@ -932,27 +948,6 @@ export function ReportGeneratePage() {
               </div>
             </section>
           )}
-
-          <section className="rounded-lg border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">接口契约</h2>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {[
-                'POST /api/v1/reports',
-                'POST /api/v1/reports/{reportId}/jobs',
-                'PATCH /api/v1/reports/{reportId}/outlines/{outlineId}',
-                'PATCH /api/v1/reports/{reportId}/sections/{sectionId}',
-                'POST /api/v1/report-files',
-                'GET /api/v1/report-files/{reportFileId}/content',
-              ].map((path) => (
-                <span
-                  key={path}
-                  className="rounded-full border border-border bg-background px-2 py-1 text-xs text-muted-foreground"
-                >
-                  {path}
-                </span>
-              ))}
-            </div>
-          </section>
         </aside>
       </div>
     </div>

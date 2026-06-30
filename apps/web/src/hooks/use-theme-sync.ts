@@ -113,7 +113,6 @@ export function useThemeSync() {
         `  --primary: ${preset.light};`,
         '  --primary-foreground: oklch(0.985 0 0);',
         `  --radius: ${radius}rem;`,
-        `  --font-size-scale: ${FONT_SIZE_SCALES[fontSize]};`,
         '}',
         '.dark {',
         `  --primary: ${preset.dark};`,
@@ -121,5 +120,8 @@ export function useThemeSync() {
         '}',
       ].join('\n')
     }
+
+    // Apply font-size scale to <html> so all rem-based sizes scale globally
+    document.documentElement.style.fontSize = `${100 * FONT_SIZE_SCALES[fontSize]}%`
   }, [mode, primaryColor, radius, fontSize])
 }
