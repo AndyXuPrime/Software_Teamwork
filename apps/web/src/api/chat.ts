@@ -122,17 +122,26 @@ export function streamChat(
   signal?: AbortSignal,
 ): { abort: () => void } {
   let fallbackSeq = 0
-  let maxDispatchedSeq = 0
+  let maxDispatchedSeq: number | undefined
   let didAbort = false
   let didReceiveTerminalEvent = false
 
   const recordDispatchedSeq = (seq: number) => {
-    maxDispatchedSeq = Math.max(maxDispatchedSeq, seq)
+    maxDispatchedSeq = maxDispatchedSeq === undefined ? seq : Math.max(maxDispatchedSeq, seq)
   }
 
   const nextSyntheticSeq = () => {
-    maxDispatchedSeq += 1
+    maxDispatchedSeq = maxDispatchedSeq === undefined ? 1 : maxDispatchedSeq + 1
     return maxDispatchedSeq
+  }
+
+  const isTerminalEvent = (
+    event: QASseEventType,
+    payload: Record<string, unknown> & { seq: number },
+  ): boolean => {
+    if (event === 'answer.completed') return true
+    if (event !== 'error') return false
+    return payload.fatal !== false
   }
 
   const stream = streamGateway(`/qa-sessions/${encodeURIComponent(sessionId)}/messages`, {
@@ -158,9 +167,9 @@ export function streamChat(
       try {
         const qaEvent = event as QASseEventType
         const payload = normalizeSsePayload(qaEvent, parseSsePayload(data, fallbackSeq, id))
-        const isStaleEvent = payload.seq <= maxDispatchedSeq
+        const isStaleEvent = maxDispatchedSeq !== undefined && payload.seq <= maxDispatchedSeq
         recordDispatchedSeq(payload.seq)
-        if (!isStaleEvent && (qaEvent === 'answer.completed' || qaEvent === 'error')) {
+        if (!isStaleEvent && isTerminalEvent(qaEvent, payload)) {
           didReceiveTerminalEvent = true
         }
         dispatch(qaEvent, payload, handlers)

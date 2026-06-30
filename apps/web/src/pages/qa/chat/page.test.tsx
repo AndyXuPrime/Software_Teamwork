@@ -193,4 +193,80 @@ describe('ChatPage stream sequencing', () => {
       status: 'failed',
     })
   })
+
+  it('keeps streaming after non-fatal QA error events', async () => {
+    const encoder = new TextEncoder()
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (request.method === 'GET' && url.pathname.endsWith('/qa-sessions')) {
+        return pageResponse([createSession()])
+      }
+      if (request.method === 'GET' && url.pathname.endsWith('/qa-sessions/session-1/messages')) {
+        return pageResponse([])
+      }
+      if (request.method === 'POST' && url.pathname.endsWith('/qa-sessions/session-1/messages')) {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            streamController = controller
+          },
+        })
+        return new Response(stream, {
+          headers: { 'Content-Type': 'text/event-stream' },
+          status: 200,
+        })
+      }
+
+      return jsonResponse({ data: {}, requestId: 'req-default' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithProviders(<ChatPage />)
+
+    const input = screen.getByRole('textbox')
+    fireEvent.change(input, { target: { value: 'question' } })
+    fireEvent.keyDown(input, { code: 'Enter', key: 'Enter' })
+
+    await waitFor(() => expect(streamController).toBeDefined())
+    await waitFor(() => expect(input).toBeDisabled())
+
+    const emit = async (event: string, data: Record<string, unknown>, id?: number) => {
+      await act(async () => {
+        const idLine = id === undefined ? '' : `id: ${id}\n`
+        streamController?.enqueue(
+          encoder.encode(`event: ${event}\n${idLine}data: ${JSON.stringify(data)}\n\n`),
+        )
+        await new Promise((resolve) => window.setTimeout(resolve, 0))
+      })
+    }
+
+    await emit(
+      'error',
+      { code: 'dependency_error', fatal: false, message: 'retrieval degraded' },
+      1,
+    )
+    await waitFor(() => expect(useChatStore.getState().error).toContain('retrieval degraded'))
+
+    expect(input).toBeDisabled()
+    expect(useChatStore.getState().streaming).toBe(true)
+    expect(useChatStore.getState().lastFailedMsg).toBeNull()
+    expect(getLastAssistantMessage()).toMatchObject({
+      content: '',
+      status: 'streaming',
+    })
+
+    await emit('answer.delta', { content: 'answer' }, 2)
+    await waitFor(() => expect(getLastAssistantMessage().content).toBe('answer'))
+
+    await emit('answer.completed', { responseRunId: 'run-1' }, 3)
+    await waitFor(() => expect(useChatStore.getState().streaming).toBe(false))
+
+    expect(input).not.toBeDisabled()
+    expect(getLastAssistantMessage()).toMatchObject({
+      content: 'answer',
+      status: 'completed',
+    })
+  })
 })

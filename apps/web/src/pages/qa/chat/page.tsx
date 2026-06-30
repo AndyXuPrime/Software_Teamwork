@@ -330,19 +330,7 @@ export function ChatPage() {
           const message = formatQAStreamError(streamError)
           setError(message)
 
-          if (streamError.fatal) {
-            setStreaming(false)
-            abortRef.current = null
-            setLastFailedMsg(trimmed)
-            patchAssistant({
-              citations: [...citations],
-              content,
-              status: 'failed',
-              thinking: [...steps],
-            })
-            return
-          }
-
+          if (streamError.fatal === false) return
           setStreaming(false)
           abortRef.current = null
           setLastFailedMsg(trimmed)

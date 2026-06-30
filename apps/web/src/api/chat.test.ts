@@ -220,6 +220,86 @@ describe('chat stream API', () => {
     )
   })
 
+  it('accepts zero as the first dispatched terminal stream seq', async () => {
+    const onAnswerCompleted = vi.fn()
+    const onError = vi.fn()
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        streamResponse(
+          ['event: answer.completed', 'id: 0', 'data: {"responseRunId":"run-1"}', '', ''].join(
+            '\n',
+          ),
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    streamChat('session-1', 'question', {
+      onAnswerCompleted,
+      onError,
+    })
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(onAnswerCompleted).toHaveBeenCalledTimes(1))
+
+    expect(onAnswerCompleted).toHaveBeenCalledWith(
+      expect.objectContaining({ responseRunId: 'run-1', seq: 0 }),
+    )
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('continues dispatching after non-fatal QA error events', async () => {
+    const onAnswerCompleted = vi.fn()
+    const onAnswerDelta = vi.fn()
+    const onError = vi.fn()
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        streamResponse(
+          [
+            'event: error',
+            'id: 1',
+            'data: {"code":"dependency_error","message":"retrieval degraded","fatal":false}',
+            '',
+            'event: answer.delta',
+            'id: 2',
+            'data: {"content":"answer"}',
+            '',
+            'event: answer.completed',
+            'id: 3',
+            'data: {"responseRunId":"run-1"}',
+            '',
+            '',
+          ].join('\n'),
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    streamChat('session-1', 'question', {
+      onAnswerCompleted,
+      onAnswerDelta,
+      onError,
+    })
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(onAnswerCompleted).toHaveBeenCalledTimes(1))
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'dependency_error',
+        fatal: false,
+        message: 'retrieval degraded',
+        seq: 1,
+      }),
+    )
+    expect(onAnswerDelta).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'answer', seq: 2 }),
+    )
+    expect(onAnswerCompleted).toHaveBeenCalledWith(
+      expect.objectContaining({ responseRunId: 'run-1', seq: 3 }),
+    )
+  })
+
   it('stops dispatching events after a malformed SSE payload', async () => {
     const onAnswerCompleted = vi.fn()
     const onAnswerDelta = vi.fn()
