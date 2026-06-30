@@ -67,6 +67,24 @@ func TestParserConfigAdminCRUDValidationAndSnapshot(t *testing.T) {
 	}
 }
 
+func TestResolveParserConfigFallsBackToBuiltinWhenEmpty(t *testing.T) {
+	svc := service.New(repository.NewMemoryRepository())
+
+	snapshot, err := svc.ResolveParserConfig(context.Background(), "application/pdf")
+	if err != nil {
+		t.Fatalf("ResolveParserConfig() error = %v", err)
+	}
+	if snapshot.ParserConfigID != "" {
+		t.Fatalf("fallback parser config id = %q", snapshot.ParserConfigID)
+	}
+	if snapshot.Backend != service.ParserBackendBuiltin || snapshot.Concurrency != 4 {
+		t.Fatalf("fallback snapshot = %+v", snapshot)
+	}
+	if !json.Valid(snapshot.DefaultParameters) {
+		t.Fatalf("fallback default parameters = %s", snapshot.DefaultParameters)
+	}
+}
+
 func validParserInput(backend string, isDefault bool) service.CreateParserConfigInput {
 	return service.CreateParserConfigInput{Name: "Parser " + backend, Backend: service.ParserBackend(backend), Concurrency: 4, IsDefault: &isDefault, SupportedContentTypes: []string{"application/pdf"}, DefaultParameters: json.RawMessage(`{"language":"auto"}`)}
 }

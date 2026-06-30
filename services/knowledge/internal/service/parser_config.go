@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"sort"
 	"strings"
@@ -139,6 +140,9 @@ func (s *Service) DeleteParserConfig(ctx context.Context, reqCtx RequestContext,
 func (s *Service) ResolveParserConfig(ctx context.Context, contentType string) (ParserConfigSnapshot, error) {
 	config, err := s.repo.GetEffectiveParserConfig(ctx, strings.TrimSpace(contentType))
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return defaultBuiltinParserSnapshot(), nil
+		}
 		return ParserConfigSnapshot{}, repositoryError(err)
 	}
 	if fields := validateParserConfig(config); len(fields) > 0 {
@@ -147,6 +151,15 @@ func (s *Service) ResolveParserConfig(ctx context.Context, contentType string) (
 	return ParserConfigSnapshot{ParserConfigID: config.ID, Backend: config.Backend, Concurrency: config.Concurrency,
 		SupportedContentTypes: append([]string(nil), config.SupportedContentTypes...), EndpointURL: cloneString(config.EndpointURL),
 		DefaultParameters: cloneRaw(config.DefaultParameters)}, nil
+}
+
+func defaultBuiltinParserSnapshot() ParserConfigSnapshot {
+	return ParserConfigSnapshot{
+		Backend:               ParserBackendBuiltin,
+		Concurrency:           4,
+		SupportedContentTypes: []string{"application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/markdown", "text/plain"},
+		DefaultParameters:     json.RawMessage(`{}`),
+	}
 }
 
 func marshalParserConfigSnapshot(snapshot ParserConfigSnapshot) (json.RawMessage, error) {

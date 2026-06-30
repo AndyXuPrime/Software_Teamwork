@@ -275,6 +275,71 @@ func TestUploadDocumentCreatesDocumentJobAndQueuesIngestion(t *testing.T) {
 	}
 }
 
+func TestUploadDocumentUsesBuiltinFallbackWhenParserConfigsEmpty(t *testing.T) {
+	now := time.Date(2026, 6, 29, 11, 15, 0, 0, time.UTC)
+	repo := &uploadRepository{
+		MemoryRepository: repository.NewMemoryRepository(),
+	}
+	repo.SeedKnowledgeBase(service.KnowledgeBase{
+		ID:                "kb_1",
+		Name:              "knowledge base",
+		Description:       "",
+		DocType:           "GENERAL",
+		ChunkStrategy:     json.RawMessage(`{}`),
+		RetrievalStrategy: json.RawMessage(`{}`),
+		CreatedBy:         "usr_1",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	files := &uploadFileClient{
+		createFn: func(context.Context, service.RequestContext, service.UploadedFile) (service.FileObject, error) {
+			return service.FileObject{
+				ID:             "file_1",
+				Filename:       "knowledge-guide.pdf",
+				ContentType:    "application/pdf",
+				SizeBytes:      9,
+				ChecksumSHA256: "abc123",
+				CreatedAt:      now,
+			}, nil
+		},
+	}
+	queue := &uploadQueue{}
+	svc := service.NewWithDependencies(repo, files, queue, func() time.Time { return now }, func(prefix string) string {
+		return prefix + "_test"
+	})
+
+	doc, err := svc.UploadDocument(context.Background(), service.RequestContext{
+		RequestID:     "req_upload",
+		UserID:        "usr_1",
+		Permissions:   []string{service.PermissionKnowledgeWrite},
+		CallerService: "gateway",
+	}, service.UploadDocumentInput{
+		KnowledgeBaseID: "kb_1",
+		File: service.UploadedFile{
+			Filename:    "knowledge-guide.pdf",
+			ContentType: "application/pdf",
+			SizeBytes:   9,
+			Content:     bytes.NewReader([]byte("pdf-bytes")),
+		},
+	})
+	if err != nil {
+		t.Fatalf("UploadDocument() error = %v", err)
+	}
+	if doc.Status != service.DocumentStatusUploaded || queue.calls != 1 {
+		t.Fatalf("doc = %+v queue calls = %d", doc, queue.calls)
+	}
+	if repo.lastCreate.ParserConfigID != "" {
+		t.Fatalf("fallback parser config id = %q", repo.lastCreate.ParserConfigID)
+	}
+	var snapshot service.ParserConfigSnapshot
+	if err := json.Unmarshal(repo.lastCreate.ParserConfigSnapshot, &snapshot); err != nil {
+		t.Fatalf("unmarshal parser snapshot: %v", err)
+	}
+	if snapshot.Backend != service.ParserBackendBuiltin || snapshot.Concurrency != 4 {
+		t.Fatalf("fallback snapshot = %+v", snapshot)
+	}
+}
+
 func TestUploadDocumentCompensatesWhenRepositoryFails(t *testing.T) {
 	now := time.Date(2026, 6, 29, 11, 30, 0, 0, time.UTC)
 	repo := &uploadRepository{

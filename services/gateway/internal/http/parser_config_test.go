@@ -129,6 +129,48 @@ func TestParserConfigProxyRejectsModelProfileOnlyPermission(t *testing.T) {
 	}
 }
 
+func TestParserConfigProxyPreservesConflict(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_parser_admin",
+		UserID:      "usr_parser_admin",
+		Username:    "parser-admin",
+		Roles:       []string{},
+		Permissions: []string{"admin:parser-config:write"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+
+	knowledge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = io.WriteString(w, `{"error":{"code":"conflict","message":"resource already exists","requestId":"downstream"}}`)
+	}))
+	defer knowledge.Close()
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		store:         store,
+		hasher:        hasher,
+		ownerBaseURLs: map[string]string{"knowledge": knowledge.URL},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/parser-configs", strings.NewReader(`{"name":"Default builtin parser"}`))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("X-Request-Id", "req_conflict")
+	res := httptest.NewRecorder()
+	server.ServeHTTP(res, req)
+	if res.Code != http.StatusConflict {
+		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+	}
+	var body errorBody
+	decodeJSON(t, res.Body, &body)
+	if body.Error.Code != "conflict" {
+		t.Fatalf("error body = %+v", body.Error)
+	}
+}
+
 func TestParserConfigProxyPreservesSafeValidationFields(t *testing.T) {
 	hasher := testHasher(t)
 	store := newMemorySessionStore()

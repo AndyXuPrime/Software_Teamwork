@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -641,6 +642,10 @@ func processingJobFromRow(row sqlc.ProcessingJob) service.ProcessingJob {
 func wrapPostgresError(operation string, err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return service.ErrNotFound
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return service.ErrConflict
 	}
 	return fmt.Errorf("%s: %w", operation, err)
 }

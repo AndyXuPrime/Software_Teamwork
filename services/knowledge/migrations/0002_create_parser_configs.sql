@@ -19,6 +19,37 @@ CREATE UNIQUE INDEX uq_parser_configs_live_name ON parser_configs (lower(name)) 
 CREATE UNIQUE INDEX uq_parser_configs_single_default ON parser_configs (is_default) WHERE is_default AND enabled AND deleted_at IS NULL;
 CREATE INDEX idx_parser_configs_enabled ON parser_configs (enabled, created_at DESC) WHERE deleted_at IS NULL;
 
+INSERT INTO parser_configs (
+  id,
+  name,
+  backend,
+  enabled,
+  is_default,
+  concurrency,
+  supported_content_types,
+  endpoint_url,
+  default_parameters,
+  created_at,
+  updated_at
+) VALUES (
+  'parser_config_builtin_default',
+  'Default builtin parser',
+  'builtin',
+  true,
+  true,
+  4,
+  ARRAY[
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/markdown',
+    'text/plain'
+  ],
+  NULL,
+  '{}'::jsonb,
+  now(),
+  now()
+);
+
 CREATE TABLE parser_config_audits (
   id text PRIMARY KEY,
   parser_config_id text NOT NULL REFERENCES parser_configs(id),

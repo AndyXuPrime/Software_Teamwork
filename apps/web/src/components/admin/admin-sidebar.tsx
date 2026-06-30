@@ -88,12 +88,6 @@ const menuItems: AdminNavigationItem[] = [
         requirement: { any: ['knowledge:read'] },
       },
       {
-        key: 'parser-configs',
-        label: '解析器配置',
-        path: '/admin/parser-configs',
-        requirement: { any: ['admin:parser-config:write', 'system:admin'] },
-      },
-      {
         key: 'qa-settings',
         label: 'QA / LLM 配置',
         path: '/admin/qa-settings',
