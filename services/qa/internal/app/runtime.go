@@ -63,6 +63,7 @@ func New(ctx context.Context, cfg config.Config, observer agent.Observer) (*Runt
 		ProfileID:   cfg.AIGatewayProfileID,
 		MaxTokens:   cfg.MaxTokens,
 		Timeout:     cfg.ModelTimeout,
+		Stream:      cfg.AIGatewayStream,
 	})
 	if err != nil {
 		closeRemote(remoteTools)

@@ -27,15 +27,15 @@ func TestCompleteSendsFunctionToolsAndParsesToolCalls(t *testing.T) {
 		if got := r.Header.Get("X-User-Id"); got != "user-model-test" {
 			t.Errorf("X-User-Id = %q", got)
 		}
-		if got := r.Header.Get("Accept"); got != "text/event-stream" {
+		if got := r.Header.Get("Accept"); got != "application/json" {
 			t.Errorf("Accept = %q", got)
 		}
 		var request completionRequest
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Fatal(err)
 		}
-		if !request.Stream {
-			t.Errorf("stream = false, want true for function-calling requests")
+		if request.Stream {
+			t.Errorf("stream = true, want false by default")
 		}
 		if request.ToolChoice != "auto" || len(request.Tools) != 1 {
 			t.Errorf("unexpected tool request: %+v", request)
@@ -139,7 +139,7 @@ data: [DONE]
 	}))
 	defer server.Close()
 
-	client, err := New(Config{Endpoint: server.URL, TokenHeader: "X-Service-Token", Model: "test", MaxTokens: 100, Timeout: time.Second})
+	client, err := New(Config{Endpoint: server.URL, TokenHeader: "X-Service-Token", Model: "test", MaxTokens: 100, Timeout: time.Second, Stream: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,5 +167,36 @@ data: [DONE]
 	}
 	if completion.Usage.PromptTokens != 7 || completion.Usage.CompletionTokens != 3 || completion.Usage.ReasoningTokens != 2 || completion.Usage.TotalTokens != 12 {
 		t.Fatalf("unexpected usage: %+v", completion.Usage)
+	}
+}
+
+func TestCompleteRejectsInterruptedStreamWithPartialDelta(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request completionRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if !request.Stream {
+			t.Fatal("stream = false, want true")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"partial answer"},"finish_reason":null}]}
+`))
+	}))
+	defer server.Close()
+
+	client, err := New(Config{Endpoint: server.URL, TokenHeader: "X-Service-Token", Model: "test", MaxTokens: 100, Timeout: time.Second, Stream: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Complete(context.Background(), []agent.Message{{Role: agent.RoleUser, Content: "hi"}}, []agent.ToolDefinition{{
+		Type: "function", Function: agent.FunctionTool{Name: "search_knowledge", Parameters: map[string]any{"type": "object"}},
+	}})
+	appErr, ok := service.Classify(err)
+	if !ok || appErr.Code != service.CodeDependency || appErr.Message != "AI gateway request failed" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(err.Error(), "partial answer") {
+		t.Fatalf("interrupted stream leaked partial delta: %v", err)
 	}
 }

@@ -78,6 +78,7 @@ func run() error {
 		ProfileID:   cfg.AIGatewayProfileID,
 		MaxTokens:   cfg.MaxTokens,
 		Timeout:     cfg.ModelTimeout,
+		Stream:      cfg.AIGatewayStream,
 	})
 	if err != nil {
 		return err

@@ -462,6 +462,39 @@ func TestAskPersistsModelFailureReason(t *testing.T) {
 	}
 }
 
+func TestAskPreservesGatewayValidationErrorClassification(t *testing.T) {
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"}}
+	modelErr := NewError(CodeValidation, "AI gateway rejected model request", errors.New("AI gateway returned HTTP 400"))
+	qa, err := NewQAService(repository, fakeRuntimeProvider{runner: errorAgentRunner{err: modelErr}, prompt: "system"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []ProgressEvent
+	_, err = qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "hello"}, func(event ProgressEvent) {
+		events = append(events, event)
+	})
+	appErr, ok := Classify(err)
+	if !ok || appErr.Code != CodeValidation || appErr.Message != "AI gateway rejected model request" {
+		t.Fatalf("error=%v, want validation_error", err)
+	}
+	if repository.finalization.Status != "failed" || repository.finalization.TerminationReason != string(CodeValidation) {
+		t.Fatalf("finalization=%+v", repository.finalization)
+	}
+	if len(repository.invocations) != 1 || repository.invocations[0].ErrorCode != string(CodeValidation) {
+		t.Fatalf("invocations=%+v", repository.invocations)
+	}
+	if len(repository.savedEvents) == 0 {
+		t.Fatal("expected saved stream events")
+	}
+	last := repository.savedEvents[len(repository.savedEvents)-1]
+	if last.EventType != "error" || last.Payload["code"] != string(CodeValidation) {
+		t.Fatalf("last saved event=%+v, want validation error event", last)
+	}
+	if len(events) == 0 || events[len(events)-1].Payload["code"] != string(CodeValidation) {
+		t.Fatalf("observed events=%+v, want validation error event", events)
+	}
+}
+
 func TestAskReturnsPersistenceErrorWhenFailureFinalizationFails(t *testing.T) {
 	repository := &fakeRepository{
 		conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"},

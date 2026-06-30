@@ -47,6 +47,7 @@ func main() {
 			TokenHeader: cfg.AIGatewayTokenHeader, Model: cfg.ModelID,
 			ProfileID: cfg.AIGatewayProfileID,
 			Timeout:   cfg.ModelTimeout, MaxTokens: cfg.MaxTokens,
+			Stream: cfg.AIGatewayStream,
 		},
 		SystemPrompt: cfg.SystemPrompt,
 	}

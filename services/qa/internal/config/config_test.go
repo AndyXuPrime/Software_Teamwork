@@ -11,6 +11,7 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("AI_GATEWAY_TOKEN", "")
 	t.Setenv("AI_GATEWAY_TOKEN_HEADER", "")
 	t.Setenv("AI_GATEWAY_PROFILE_ID", "")
+	t.Setenv("AI_GATEWAY_STREAM", "")
 	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-service-token")
 	t.Setenv("MODEL_ID", "")
 	t.Setenv("MCP_TRANSPORT", "stdio")
@@ -36,7 +37,8 @@ func TestLoadStdioConfiguration(t *testing.T) {
 	if cfg.AIGatewayURL != defaultAIGatewayURL ||
 		cfg.AIGatewayToken != "test-service-token" ||
 		cfg.AIGatewayTokenHeader != defaultAIGatewayTokenHeader ||
-		cfg.ModelID != "deepseek-chat" {
+		cfg.ModelID != "deepseek-chat" ||
+		cfg.AIGatewayStream {
 		t.Fatalf("unexpected AI Gateway defaults: %+v", cfg)
 	}
 }
@@ -75,6 +77,7 @@ func TestLoadAcceptsExplicitAIGatewayEndpoint(t *testing.T) {
 	t.Setenv("AI_GATEWAY_TOKEN", "explicit-token")
 	t.Setenv("AI_GATEWAY_TOKEN_HEADER", "X-Service-Token")
 	t.Setenv("AI_GATEWAY_PROFILE_ID", "profile-chat")
+	t.Setenv("AI_GATEWAY_STREAM", "true")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +85,8 @@ func TestLoadAcceptsExplicitAIGatewayEndpoint(t *testing.T) {
 	if cfg.AIGatewayURL != "https://ai-gateway.example.test/internal/v1/chat/completions" ||
 		cfg.AIGatewayToken != "explicit-token" ||
 		cfg.AIGatewayTokenHeader != "X-Service-Token" ||
-		cfg.AIGatewayProfileID != "profile-chat" {
+		cfg.AIGatewayProfileID != "profile-chat" ||
+		!cfg.AIGatewayStream {
 		t.Fatalf("unexpected AI Gateway override: %+v", cfg)
 	}
 }

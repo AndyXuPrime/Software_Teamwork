@@ -32,6 +32,9 @@ type Config struct {
 	ParallelToolCalls bool
 	MaxTokens         int
 	Timeout           time.Duration
+	// Stream opts into AI Gateway server-sent events. Function calling itself
+	// does not require streaming, so the default request path remains JSON.
+	Stream bool
 }
 
 type Client struct {
@@ -40,6 +43,7 @@ type Client struct {
 	profileID string
 	parallel  bool
 	maxTokens int
+	stream    bool
 	http      *http.Client
 }
 
@@ -63,6 +67,7 @@ func New(cfg Config) (*Client, error) {
 		profileID: cfg.ProfileID,
 		parallel:  cfg.ParallelToolCalls,
 		maxTokens: cfg.MaxTokens,
+		stream:    cfg.Stream,
 		http: &http.Client{
 			Timeout: cfg.Timeout,
 			Transport: httpclient.HeaderTransport{
@@ -109,7 +114,7 @@ func (c *Client) Complete(ctx context.Context, messages []agent.Message, tools [
 		Tools:             tools,
 		ParallelToolCalls: c.parallel,
 		MaxTokens:         c.maxTokens,
-		Stream:            len(tools) > 0,
+		Stream:            c.stream,
 	}
 	if len(tools) > 0 {
 		payload.ToolChoice = "auto"
@@ -228,6 +233,7 @@ func decodeStreamCompletion(body io.Reader) (agent.Completion, error) {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
 	var totalBytes int
+	sawDone := false
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
 		totalBytes += len(line) + 1
@@ -242,6 +248,7 @@ func decodeStreamCompletion(body io.Reader) (agent.Completion, error) {
 		}
 		payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
 		if bytes.Equal(payload, []byte("[DONE]")) {
+			sawDone = true
 			break
 		}
 		var chunk streamChunk
@@ -264,6 +271,9 @@ func decodeStreamCompletion(body io.Reader) (agent.Completion, error) {
 	}
 	if err := scanner.Err(); err != nil {
 		return agent.Completion{}, fmt.Errorf("read completion stream: %w", err)
+	}
+	if !sawDone {
+		return agent.Completion{}, service.NewError(service.CodeDependency, "AI gateway request failed", errors.New("AI gateway stream ended before done"))
 	}
 	message.ToolCalls = accumulator.calls
 	return agent.Completion{Message: message, FinishReason: finishReason, Usage: usage}, nil

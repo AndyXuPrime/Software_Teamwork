@@ -16,6 +16,7 @@ func (Tester) TestLLM(ctx context.Context, config service.RuntimeLLMConfig) (ser
 	client, err := modelclient.New(modelclient.Config{
 		Endpoint: config.Endpoint, Token: config.Token, TokenHeader: config.TokenHeader,
 		Model: config.Model, ProfileID: config.ProfileID, MaxTokens: min(config.MaxTokens, 32), Timeout: config.Timeout,
+		Stream: config.Stream,
 	})
 	if err != nil {
 		return service.LLMConnectionTestResult{}, err

@@ -39,6 +39,7 @@ type Config struct {
 	ModelID              string
 	ModelTimeout         time.Duration
 	MaxTokens            int
+	AIGatewayStream      bool
 
 	MCPTransport         string
 	MCPServerCommand     string
@@ -121,6 +122,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.SettingsOpen, err = boolEnv("QA_SETTINGS_OPEN", false); err != nil {
+		return Config{}, err
+	}
+	if cfg.AIGatewayStream, err = boolEnv("AI_GATEWAY_STREAM", false); err != nil {
 		return Config{}, err
 	}
 

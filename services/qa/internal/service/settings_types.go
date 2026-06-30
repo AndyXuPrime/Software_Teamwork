@@ -178,6 +178,7 @@ type RuntimeLLMConfig struct {
 	Model       string
 	Timeout     time.Duration
 	MaxTokens   int
+	Stream      bool
 }
 
 type RuntimeMCPConfig struct {

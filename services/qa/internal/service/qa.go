@@ -450,7 +450,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 		runErr = fmt.Errorf("save model invocation: %w", invocationErr)
 	}
 	if runErr != nil {
-		status, reason, publicMessage := classifyRunError(runErr)
+		status, reason, errorCode, publicMessage := classifyRunError(runErr)
 		assistantMessage.Status = "failed"
 		if status == "cancelled" {
 			assistantMessage.Status = "cancelled"
@@ -458,9 +458,9 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if shouldRecordFailedModelInvocation(reason, iterationStartedAt, completedIterations) {
-			s.saveFailedModelInvocation(cleanupCtx, userID, run.ID, runtime, profileID, reason, iterationStartedAt)
+			s.saveFailedModelInvocation(cleanupCtx, userID, run.ID, runtime, profileID, reason, errorCode, iterationStartedAt)
 		}
-		emit("error", map[string]any{"responseRunId": run.ID, "code": "dependency_error", "message": publicMessage})
+		emit("error", map[string]any{"responseRunId": run.ID, "code": string(errorCode), "message": publicMessage})
 		finalized, finalizeErr := s.repository.FinalizeResponseRun(cleanupCtx, userID, ResponseRunFinalization{
 			RunID: run.ID, AssistantMessage: assistantMessage, ReasoningSteps: steps, StreamEvents: events,
 			Status: status, TerminationReason: reason, CurrentIteration: maxStartedIteration(iterationStartedAt),
@@ -481,12 +481,12 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 					return AskResult{}, NewError(CodeDependency, "answer state persistence failed", fmt.Errorf("save replay records after finalization conflict: %w", saveErr))
 				}
 				run = finalized
-				return AskResult{UserMessage: userMessage, AssistantMessage: assistantMessage, ResponseRun: run, Citations: []any{}, ReasoningSteps: steps}, NewError(CodeDependency, publicMessage, runErr)
+				return AskResult{UserMessage: userMessage, AssistantMessage: assistantMessage, ResponseRun: run, Citations: []any{}, ReasoningSteps: steps}, NewError(errorCode, publicMessage, runErr)
 			}
 			return AskResult{}, NewError(CodeDependency, "answer state persistence failed", fmt.Errorf("finalize failed response run after agent error: %w", finalizeErr))
 		}
 		run = finalized
-		return AskResult{UserMessage: userMessage, AssistantMessage: assistantMessage, ResponseRun: run, Citations: []any{}, ReasoningSteps: steps}, NewError(CodeDependency, publicMessage, runErr)
+		return AskResult{UserMessage: userMessage, AssistantMessage: assistantMessage, ResponseRun: run, Citations: []any{}, ReasoningSteps: steps}, NewError(errorCode, publicMessage, runErr)
 	}
 	assistantMessage.Content = result.Final.Content
 	assistantMessage.Status = "completed"
@@ -529,7 +529,7 @@ func shouldRecordFailedModelInvocation(reason string, started map[int]time.Time,
 	return !done
 }
 
-func (s *QAService) saveFailedModelInvocation(ctx context.Context, userID, runID string, runtime RuntimeSnapshot, profileID string, reason string, started map[int]time.Time) {
+func (s *QAService) saveFailedModelInvocation(ctx context.Context, userID, runID string, runtime RuntimeSnapshot, profileID string, reason string, errorCode Code, started map[int]time.Time) {
 	iteration := maxStartedIteration(started)
 	if iteration == 0 {
 		iteration = 1
@@ -546,21 +546,29 @@ func (s *QAService) saveFailedModelInvocation(ctx context.Context, userID, runID
 	_, _ = s.repository.SaveModelInvocation(ctx, userID, ModelInvocation{
 		ResponseRunID: runID, IterationNo: iteration, Provider: "ai-gateway",
 		ProfileID: profileID, ModelName: runtime.LLMModel, Status: status,
-		ErrorCode: "dependency_error", ErrorMessage: publicRunErrorMessage(reason),
+		ErrorCode: string(errorCode), ErrorMessage: publicRunErrorMessage(reason),
 		StartedAt: startedAt, FinishedAt: &finishedAt, LatencyMS: finishedAt.Sub(startedAt).Milliseconds(),
 	})
 }
 
-func classifyRunError(err error) (status, reason, publicMessage string) {
+func classifyRunError(err error) (status, reason string, code Code, publicMessage string) {
 	switch {
 	case errors.Is(err, context.Canceled):
-		return "cancelled", "cancelled", publicRunErrorMessage("cancelled")
+		return "cancelled", "cancelled", CodeDependency, publicRunErrorMessage("cancelled")
 	case errors.Is(err, context.DeadlineExceeded):
-		return "failed", "timeout", publicRunErrorMessage("timeout")
+		return "failed", "timeout", CodeDependency, publicRunErrorMessage("timeout")
 	case errors.Is(err, agent.ErrMaxIterations):
-		return "failed", "max_iterations", publicRunErrorMessage("max_iterations")
+		return "failed", "max_iterations", CodeDependency, publicRunErrorMessage("max_iterations")
 	default:
-		return "failed", "model_error", publicRunErrorMessage("model_error")
+		if appErr, ok := Classify(err); ok {
+			reason := string(appErr.Code)
+			message := appErr.Message
+			if message == "" {
+				message = publicRunErrorMessage(reason)
+			}
+			return "failed", reason, appErr.Code, message
+		}
+		return "failed", "model_error", CodeDependency, publicRunErrorMessage("model_error")
 	}
 }
 
@@ -572,6 +580,8 @@ func publicRunErrorMessage(reason string) string {
 		return "answer generation timed out"
 	case "max_iterations":
 		return "answer generation reached the maximum iterations"
+	case "validation_error":
+		return "AI gateway rejected model request"
 	default:
 		return "answer generation failed"
 	}

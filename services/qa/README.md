@@ -49,6 +49,7 @@ AI Gateway variables:
 | `AI_GATEWAY_URL` | AI Gateway chat completions endpoint; defaults to `http://localhost:8086/internal/v1/chat/completions`. |
 | `AI_GATEWAY_TOKEN` | Internal service token for AI Gateway. When empty, QA reuses `INTERNAL_SERVICE_TOKEN`. |
 | `AI_GATEWAY_TOKEN_HEADER` | Credential header; defaults to `X-Service-Token`. |
+| `AI_GATEWAY_STREAM` | Optional `true` to request AI Gateway `text/event-stream` completions; defaults to non-streaming JSON. |
 | `MODEL_ID` | Chat model name sent in the OpenAI-compatible request; defaults to `deepseek-chat`. |
 
 QA does not store provider API keys or provider base URLs. Runtime provider
@@ -292,8 +293,9 @@ Send `Accept: text/event-stream` to the same
 Events use the documented names such as `message.created`,
 `agent.iteration.started`, `tool.started`, `reasoning.step`, `answer.delta`,
 `answer.completed`, and `error`; resumable events are persisted for the replay
-resource. The provider call itself remains non-streaming, so the completed model
-answer is currently emitted as one safe `answer.delta`.
+resource. By default the AI Gateway provider call remains non-streaming, so the
+completed model answer is emitted as one safe `answer.delta`; set
+`AI_GATEWAY_STREAM=true` only for profiles that support streaming completions.
 
 ## Run the CLI
 

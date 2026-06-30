@@ -154,6 +154,7 @@ func (m *Manager) buildState(ctx context.Context, runtimeConfig service.RuntimeC
 		Endpoint: runtimeConfig.LLM.Endpoint, Token: runtimeConfig.LLM.Token,
 		TokenHeader: runtimeConfig.LLM.TokenHeader, Model: runtimeConfig.LLM.Model,
 		ProfileID: runtimeConfig.LLM.ProfileID, MaxTokens: runtimeConfig.LLM.MaxTokens, Timeout: runtimeConfig.LLM.Timeout,
+		Stream: runtimeConfig.LLM.Stream,
 	})
 	if err != nil {
 		closeClients(clients)
