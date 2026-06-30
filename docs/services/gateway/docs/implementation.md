@@ -27,7 +27,7 @@
 | --- | --- | --- |
 | 文档状态 | active | README、OpenAPI、active owner map 和数据模型文档存在。 |
 | 代码状态 | partial | Go gateway、auth public routes、Redis session cache、proxy route matrix、中间件和错误归一化已实现。 |
-| 契约对齐 | drifted | route matrix 覆盖 97 个 active operations，但多个 Knowledge active routes 被标为 `NotImplemented`。 |
+| 契约对齐 | guarded / partial | route matrix 覆盖 97 个 active operations，并校验 method/path/owner/operationId 与 OpenAPI 一致；多个 Knowledge active routes 仍被标为 `NotImplemented`。 |
 | 数据持久化 | redis / none | Gateway 不持久化业务数据库；使用 Redis 保存 session cache。 |
 | 测试状态 | partial | 单元测试覆盖 route matrix、auth proxy、headers、binary/SSE proxy、中间件；缺真实 Redis/downstream 集成测试。 |
 | 建议动作 | 补实现 / 回写文档 | 处理 active 但 501 的 routes，并补端到端联调验证。 |
@@ -40,10 +40,11 @@
 | 用户/会话公开入口 | `services/gateway/internal/http/auth.go` | Gateway OpenAPI auth paths | `TestCreateSessionCachesSessionWithoutRawToken` | 转发 auth，成功后写 Redis session cache。 |
 | Redis session cache | `services/gateway/internal/platform/redis/session_store.go` | `docs/services/gateway/README.md` | config/auth proxy tests | 使用 token hash key，不缓存原始 token。 |
 | 认证上下文注入 | `services/gateway/internal/http/proxy.go` | `frontend-backend-contract.md` | `TestProxyInjectsAuthenticatedContextHeaders` | 注入 `X-User-*`、`X-Request-Id`、`X-Service-Token`。 |
-| active proxy route matrix | `services/gateway/internal/http/routes.go` | Gateway OpenAPI / owner map | `TestActiveRouteMatrixCoversGatewayOwnerMap` | `activeOperationCount() == 97`。 |
+| active route matrix | `services/gateway/internal/http/routes.go` | Gateway OpenAPI / owner map | `TestActiveRouteMatrixCoversGatewayOwnerMap` | 覆盖 gateway/auth 直接路由和 owner proxy routes；校验 97 个 active operations 的 method/path/owner/operationId。 |
 | binary content proxy | `services/gateway/internal/http/proxy.go` | Gateway OpenAPI file content paths | `TestProxyStreamsBinaryContentWithoutJSONEnvelope` | 文件流成功响应不包 JSON。 |
 | SSE proxy | `services/gateway/internal/http/proxy.go` | QA SSE contract | `TestProxyStreamsSSEWithoutFixedTimeout` | `Accept: text/event-stream` 使用 streaming client。 |
 | CORS / body limit / timeout / recover / request id | `services/gateway/internal/middleware/` | 前后端集成契约 | middleware/server tests | 覆盖基础 edge policy。 |
+| 服务边界导入守卫 | `services/gateway/internal/http/routes_internal_test.go` | 服务边界 / 技术基线 | `TestGatewayDoesNotImportBusinessInfrastructureClients` | 防止 Gateway 生产代码引入 SQL、MinIO、Qdrant 或 provider SDK。 |
 
 ## 4. 未实现
 
@@ -86,7 +87,7 @@
 | --- | --- | --- | --- |
 | 单元测试 | `cd services/gateway && go test ./...` | pass（本次执行） | 不覆盖真实 Redis/downstreams。 |
 | 集成测试 | Gateway + Redis + auth + owner services smoke | missing | 需要本地 Compose 或脚本。 |
-| 契约测试 | `TestActiveRouteMatrixCoversGatewayOwnerMap` | partial | 只校验数量/owner，不校验 OpenAPI schema。 |
+| 契约测试 | `TestActiveRouteMatrixCoversGatewayOwnerMap`、`TestNotImplementedRoutesReturnStableGatewayError`、`TestGatewayDoesNotImportBusinessInfrastructureClients` | pass（本次执行） | 仍不覆盖真实 Redis/downstreams。 |
 | 手工 smoke | 登录、访问 knowledge/report/qa route | not run | 需要完整依赖环境。 |
 
 ## 9. 建议任务
@@ -95,10 +96,11 @@
 | --- | --- | --- | --- | --- |
 | 清零 Gateway active 501 routes | 修改既有任务 | P0 | Active contract 可调用性 | 按 owner service 实现或回写契约状态。 |
 | 增加 Gateway integration smoke | 新任务 | P1 | readyz 和 proxy 依赖真实服务 | 覆盖 Redis/auth/owner base URL。 |
-| 补 OpenAPI schema-level route test | 新任务 | P1 | 当前 route matrix 只校验数量 | 防止 operation/path/schema 漂移。 |
+| 扩展 OpenAPI schema-level route test | 后续增强 | P2 | 当前已校验 method/path/owner/operationId | 可继续补充参数、响应 content type 和 security 字段漂移检查。 |
 
 ## 10. 最近检查记录
 
 | 日期 | 检查人/工具 | 代码基准 | 结论 |
 | --- | --- | --- | --- |
 | 2026-06-29 | Codex goal | `eddf917` + working tree | Gateway 架构边界清晰，route matrix 覆盖 97 active operations；主要风险是 active contract 中仍有多条 501 占位。 |
+| 2026-06-30 | Codex | `8f294ec` + 本分支改动 | route matrix 已显式覆盖 gateway/auth 直接路由和 owner proxy routes，并与 OpenAPI 的 method/path/owner/operationId 对齐；501 占位和 Gateway 不直连业务基础设施均有回归测试。 |
