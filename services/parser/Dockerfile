@@ -16,7 +16,7 @@ RUN apt-get update \
 
 RUN python -m pip install --no-cache-dir uv==0.11.6
 
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --extra paddleocr --no-install-project
 
 COPY src ./src

@@ -192,6 +192,35 @@ func TestReadSourceMapsDownstreamFailuresToSanitizedDependencyError(t *testing.T
 	}
 }
 
+func TestReadSourcePreservesUnknownContentLength(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.(http.Flusher).Flush()
+		_, _ = w.Write([]byte("streamed content"))
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "svc-token", server.Client())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	source, err := client.ReadSource(context.Background(), service.RequestContext{RequestID: "req_read", UserID: "usr"}, "file_001")
+	if err != nil {
+		t.Fatalf("ReadSource() error = %v", err)
+	}
+	defer source.Body.Close()
+	if source.SizeBytes != -1 {
+		t.Fatalf("SizeBytes = %d, want unknown length -1", source.SizeBytes)
+	}
+	body, err := io.ReadAll(source.Body)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	if string(body) != "streamed content" {
+		t.Fatalf("body = %q", string(body))
+	}
+}
+
 func TestReadSourceDoesNotFollowRedirects(t *testing.T) {
 	redirectedHeaders := make(chan http.Header, 1)
 	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -77,10 +77,14 @@ func (c *ServiceClient) Parse(ctx context.Context, input service.ParseInput) (se
 	if len(data) > maxParserPayloadBytes {
 		return service.ParsedDocument{}, fmt.Errorf("document is too large for parser")
 	}
+	var sizeBytes *int64
+	if input.SizeBytes >= 0 {
+		sizeBytes = &input.SizeBytes
+	}
 	parsed, err := c.parseBytes(ctx, parserRequest{
 		DocumentName: strings.TrimSpace(input.Name),
 		ContentType:  strings.TrimSpace(input.ContentType),
-		SizeBytes:    input.SizeBytes,
+		SizeBytes:    sizeBytes,
 		DataBase64:   base64.StdEncoding.EncodeToString(data),
 	}, input.RequestID, input.UserID)
 	if err != nil {
@@ -154,7 +158,7 @@ func (c *ServiceClient) parseBytes(ctx context.Context, payload parserRequest, r
 type parserRequest struct {
 	DocumentName string `json:"documentName,omitempty"`
 	ContentType  string `json:"contentType,omitempty"`
-	SizeBytes    int64  `json:"sizeBytes,omitempty"`
+	SizeBytes    *int64 `json:"sizeBytes,omitempty"`
 	DataBase64   string `json:"dataBase64"`
 }
 
