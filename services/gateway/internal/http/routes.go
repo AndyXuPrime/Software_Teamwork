@@ -104,6 +104,15 @@ var activeProxyRoutes = []routeSpec{
 	{Method: "GET", Pattern: "/api/v1/qa-metrics/intent-distribution", Owner: "qa", OperationID: "listQAIntentDistribution"},
 }
 
+var activeDirectRoutes = []routeSpec{
+	{Method: "GET", Pattern: "/healthz", Owner: "gateway", OperationID: "getHealthz"},
+	{Method: "GET", Pattern: "/readyz", Owner: "gateway", OperationID: "getReadyz"},
+	{Method: "POST", Pattern: "/api/v1/users", Owner: "auth", OperationID: "createUser"},
+	{Method: "POST", Pattern: "/api/v1/sessions", Owner: "auth", OperationID: "createSession"},
+	{Method: "DELETE", Pattern: "/api/v1/sessions/current", Owner: "auth", OperationID: "deleteCurrentSession"},
+	{Method: "GET", Pattern: "/api/v1/users/me", Owner: "auth", OperationID: "getCurrentUser"},
+}
+
 func activeOperationCount() int {
-	return len(activeProxyRoutes) + 6
+	return len(activeDirectRoutes) + len(activeProxyRoutes)
 }
