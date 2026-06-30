@@ -280,6 +280,18 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   or enterprise registry is required, expose it through image variables such as
   `POSTGRES_IMAGE`, `REDIS_IMAGE`, `QDRANT_IMAGE`, `MINIO_IMAGE`, and
   `MINIO_MC_IMAGE`; do not replace pinned defaults with `latest`.
+- Docker policy regressions must be machine-checkable. When changing Dockerfile,
+  Compose, image tags, mirror args, Go proxy/sumdb, Parser package sources, or
+  `.dockerignore`, update and run `python3 scripts/check_docker_policy.py`
+  before relying on `docker build`.
+- Parser runtime Dockerfiles must use `COPY --chown` for `/app` ownership and
+  must not do recursive `chown -R /app`; recursive ownership fixes on the Python
+  virtualenv are slow, grow layers, and can fail late in project-level builds.
+- For mainland China Docker usage, prefer `deploy/.env.china.example` or an
+  equivalent explicit registry rewrite over daemon mirrors and proxies. Existing
+  daemon mirrors or proxies are acceptable only after
+  `python3 scripts/check_docker_environment.py --profile all --clean-env`
+  proves their manifest path is healthy.
 - Local Docker image tags must stay pinned and version-aligned across Compose,
   Dockerfiles, README/runbooks, and `docs/architecture/technology-decisions.md`.
   The current backend baseline is `postgres:16-alpine`, `redis:7-alpine`,
@@ -305,11 +317,12 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | Condition | Required handling |
 | --- | --- |
 | Compose YAML or env interpolation is invalid | `docker compose ... config --quiet` must fail before merge. |
+| Docker policy checker fails | Fix the Dockerfile/Compose regression or update `scripts/check_docker_policy.py` and the Docker runbook in the same PR when the policy intentionally changes. |
 | Required Docker image is unavailable locally | Document `docker pull` commands and report Docker runtime validation as skipped. |
 | Same component appears with multiple Docker tags | Use the documented baseline or, absent a special reason, the higher explicit version; if code cannot be changed in the same task, record the implementation/documentation mismatch in the service implementation document. |
 | Docker build times out on `proxy.golang.org` | Rebuild with explicit build args `GOPROXY=https://goproxy.cn,direct` and `GOSUMDB=sum.golang.google.cn`; keep checksum verification enabled. |
 | Go migration image fails while verifying goose dependencies through a proxy sumdb path | Avoid the broken third-party sumdb proxy path by setting `GOSUMDB=sum.golang.google.cn`; do not default to `GOSUMDB=off`. |
-| Compose infrastructure image pull is slow or blocked | Fix the Docker daemon registry mirror first; if using an enterprise registry rewrite, set the matching `*_IMAGE` variable to a complete pinned image name. |
+| Compose infrastructure image pull is slow or blocked | Prefer explicit registry rewrite through `DOCKER_IMAGE_REGISTRY_PREFIX` and `*_IMAGE`; if using daemon mirror, prove it with `scripts/check_docker_environment.py`; use Docker daemon proxy only when registry rewrite and mirror paths are unavailable. |
 | Migration jobs fail with `connect: connection refused` immediately after PostgreSQL init | Ensure Postgres healthcheck uses `pg_isready -h localhost`, then recreate containers without deleting volumes unless seed state requires it. |
 | Qdrant stays `health: starting` while `http://localhost:6333/readyz` works | Inspect Docker health output for missing probe tools and switch to an in-image TCP probe. |
 | File calls return `401 unauthorized` while `file /readyz` is healthy | Verify `FILE_INTERNAL_SERVICE_TOKEN` on file and matching `KNOWLEDGE_SERVICE_TOKEN`, `DOCUMENT_FILE_SERVICE_TOKEN`, or propagated `X-Service-Token` on callers. |

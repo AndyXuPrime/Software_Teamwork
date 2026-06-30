@@ -74,10 +74,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app /app
-
 RUN useradd --system --uid 10001 --create-home parser \
-    && chown -R parser:parser /app /tmp/parser-cache
+    && mkdir -p /tmp/parser-cache \
+    && chown parser:parser /tmp/parser-cache
+
+COPY --from=builder --chown=parser:parser /app /app
+
 USER parser
 
 EXPOSE 8080

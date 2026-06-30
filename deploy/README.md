@@ -19,6 +19,29 @@ Copy-Item .env.example .env
 docker compose up -d --build
 ```
 
+Mainland China recommended overlay:
+
+```powershell
+cd deploy
+Copy-Item .env.example .env
+Get-Content .env.china.example | Add-Content .env
+$env:DOCKER_BUILDKIT = "1"
+docker compose up -d --build
+```
+
+For Bash:
+
+```bash
+cd deploy
+cp .env.example .env
+cat .env.china.example >> .env
+DOCKER_BUILDKIT=1 docker compose up -d --build
+```
+
+This overlay uses explicit registry rewrites and package mirrors. It is the
+preferred path for users with no Docker mirror/proxy configured, and it avoids
+depending on daemon-level mirror behavior.
+
 Optional AI Gateway:
 
 ```powershell
@@ -98,6 +121,15 @@ Optional build args for local acceleration:
 Detailed setup, mirror diagnostics, and storage cleanup are documented in
 [`docs/runbooks/docker-build-environment.md`](../docs/runbooks/docker-build-environment.md).
 
+Before changing daemon mirrors or proxies, run:
+
+```powershell
+python3 ../scripts/check_docker_environment.py --profile all --clean-env
+```
+
+Use the results to choose: explicit registry rewrite first, working daemon
+mirror second, Docker daemon proxy last.
+
 The local Qdrant, MinIO server, MinIO `mc`, Redis, PostgreSQL, and Alpine
 runtime images are pinned to explicit tags in this repository. MinIO uses one
 server image plus one `mc` initialization image; `minio-init` is not a second
@@ -163,6 +195,11 @@ Override host ports in `deploy/.env`.
 | `AI_GATEWAY_CREDENTIAL_ENCRYPTION_KEY` | ai-gateway | yes | Local encryption key placeholder. |
 
 ## Health And Readiness
+
+If the current shell has `HTTP_PROXY`/`HTTPS_PROXY`/`http_proxy`/`https_proxy`,
+set `NO_PROXY=localhost,127.0.0.1,::1` before local checks, or use
+`curl --noproxy '*'`. Otherwise the request can go through the proxy and return
+the proxy's status instead of the local container's status.
 
 Use gateway for the top-level signal:
 

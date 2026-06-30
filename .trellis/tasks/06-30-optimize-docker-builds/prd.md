@@ -17,6 +17,21 @@ Make the repository's Docker builds runnable first, then faster, smaller, and li
 - At task start, Go service Dockerfiles used `golang:1.25-alpine` build stages, `alpine:3.22` runtime stages, and `GOPROXY=https://goproxy.cn,direct`. The implementation now targets safer defaults with explicit domestic overrides.
 - Current Parser Dockerfile uses `python:3.12-slim` and installs PaddleOCR extras in the same runtime stage.
 - Existing docs already define pinned image tags: `postgres:16-alpine`, `redis:7-alpine`, `qdrant/qdrant:v1.18.2`, `golang:1.25-alpine`, `alpine:3.22`, MinIO server/client tags, and Parser's Debian/Python runtime exception.
+- Follow-up audit after the first Docker commit rebased local work onto `upstream/develop@d003319` and added a machine-checkable Docker policy guard so docs, AI startup context, CI, and PR review guidance all point at the same fastest safe path.
+- Clean-shell validation selected the mainland China path as explicit registry
+  rewrite first: `deploy/.env.china.example` uses `docker.m.daocloud.io/...`
+  full image names, Aliyun package mirrors, `goproxy.cn,direct`, and
+  `sum.golang.google.cn`. The project-level root Compose build/start passed
+  with these values and without shell proxy environment variables.
+- Full project validation also found and fixed a Parser runtime Dockerfile
+  issue: recursive `chown -R /app` was slow and failed because
+  `/tmp/parser-cache` did not exist. Parser now creates the cache directory and
+  uses `COPY --chown`; Docker policy tests block regressions.
+- Local health/readiness validation must bypass shell proxies. A shell with
+  `http_proxy`/`https_proxy` but no localhost `NO_PROXY` can return proxy-owned
+  `503` responses for `localhost` even while all Compose containers are healthy.
+  The diagnostic script now warns about this and the runbooks use
+  `curl --noproxy '*'`/`NO_PROXY=localhost,127.0.0.1,::1`.
 
 ## Requirements
 
@@ -39,20 +54,22 @@ Make the repository's Docker builds runnable first, then faster, smaller, and li
   - how to diagnose broken Docker daemon registry mirrors and Go sumdb mirror paths,
   - which checks prove Docker changes are valid.
 - Update CI Docker build invocation when needed to keep BuildKit-only syntax working.
+- Add a CI policy guard that blocks obvious Docker regressions before daemon-dependent builds run, including `latest`, `GOSUMDB=off`, missing BuildKit cache mounts, missing pinned Compose overrides, Parser runtime command drift, and missing `.dockerignore`.
 - Do not introduce production secrets, unpinned `latest` tags, or runtime-only assumptions into build layers.
 
 ## Acceptance Criteria
 
-- [ ] Go service Dockerfiles support configurable registry prefix and build args without changing default public image names.
-- [ ] Go service Dockerfiles use BuildKit cache mounts for module/build caches.
-- [ ] Parser Dockerfile supports configurable registry prefix plus apt/uv/Python index mirrors and avoids carrying unnecessary build cache into runtime.
-- [ ] Compose infrastructure images support explicit pinned defaults plus override variables for PostgreSQL, Redis, Qdrant, MinIO server, and MinIO client.
-- [ ] QA host-binary Dockerfile supports configurable registry prefix/postgres version without changing the pinned default.
-- [ ] Source-backed Docker contexts have `.dockerignore` coverage for local artifacts.
-- [ ] `docker compose` config validation passes for root default profile, root `ai` profile, QA compose, QA DB compose, and Document compose.
-- [ ] Changed Dockerfiles build at least far enough to validate Dockerfile syntax and build-arg wiring; if large Parser dependencies make a full build impractical, record the exact skipped runtime validation.
-- [ ] `git diff --check` passes.
-- [ ] Documentation points to the new mirror/cache/environment workflow and remains aligned with pinned image baseline.
+- [x] Go service Dockerfiles support configurable registry prefix and build args without changing default public image names.
+- [x] Go service Dockerfiles use BuildKit cache mounts for module/build caches.
+- [x] Parser Dockerfile supports configurable registry prefix plus apt/uv/Python index mirrors and avoids carrying unnecessary build cache into runtime.
+- [x] Compose infrastructure images support explicit pinned defaults plus override variables for PostgreSQL, Redis, Qdrant, MinIO server, and MinIO client.
+- [x] QA host-binary Dockerfile supports configurable registry prefix/postgres version without changing the pinned default.
+- [x] Source-backed Docker contexts have `.dockerignore` coverage for local artifacts.
+- [x] `docker compose` config validation passes for root default profile, root `ai` profile, QA compose, QA DB compose, and Document compose.
+- [x] Changed Dockerfiles build at least far enough to validate Dockerfile syntax and build-arg wiring; if large Parser dependencies make a full build impractical, record the exact skipped runtime validation.
+- [x] CI includes `scripts/check_docker_policy.py` so Docker policy regressions are caught without relying on the local daemon mirror.
+- [x] `git diff --check` passes.
+- [x] Documentation points to the new mirror/cache/environment workflow and remains aligned with pinned image baseline.
 
 ## Definition Of Done
 
@@ -68,15 +85,34 @@ Use a conservative two-family Docker baseline:
 - Go services: keep Alpine runtime for small images, static Go binaries, and existing health probes. Add BuildKit cache mounts and optional mirror/build args to reduce repeated downloads, but keep checksum verification enabled.
 - Parser: keep Debian slim because PaddleOCR/Paddle/native OCR dependencies are more compatible with Debian wheels and system packages than Alpine musl. Convert to a builder/runtime pattern if feasible, keep cache directories out of final layers, and expose mirror args for apt and uv/Python indexes.
 
-Mirror behavior should be opt-in or overridable. Repository defaults stay portable: public images and official package indexes remain the documented neutral baseline, while local users can set build args or Docker daemon registry mirrors for domestic acceleration.
+Mirror behavior should be opt-in or overridable. Repository defaults stay
+portable: public images and official package indexes remain the documented
+neutral baseline. For China mainland users, the documented fastest safe path is
+`deploy/.env.china.example` explicit registry/package-source rewrite. Docker
+daemon mirrors and proxies are secondary paths that must pass
+`scripts/check_docker_environment.py` diagnostics before being trusted.
 
 ## Decision (ADR-lite)
 
 **Context**: Builds are slow and Dockerfiles are similar but not identical. Go services and Parser have different runtime dependency profiles. Hardcoding one domestic mirror would speed up one environment but make CI and international contributors more fragile. `goproxy.cn` can also proxy the Go checksum database and has been observed to fail during goose dependency verification, so mirror selection can break "can run" even when it improves download speed.
 
-**Decision**: Standardize build mechanics and override points, not all images. Keep Go on Alpine, Parser on Debian slim, keep Compose infrastructure pinned, add configurable mirror/image arguments, add BuildKit cache mounts, add `.dockerignore` coverage, and document Docker daemon registry mirrors separately from Dockerfile package mirrors and Compose image overrides. Treat mirrors as opt-in acceleration: default builds should preserve checksum verification and avoid known broken sumdb mirror paths. Avoid an external Dockerfile frontend image requirement because a broken daemon mirror can fail before the repository Dockerfile is parsed.
+**Decision**: Standardize build mechanics and override points, not all images.
+Keep Go on Alpine, Parser on Debian slim, keep Compose infrastructure pinned,
+add configurable mirror/image arguments, add BuildKit cache mounts, add
+`.dockerignore` coverage, and document Docker daemon registry mirrors separately
+from Dockerfile package mirrors and Compose image overrides. For China mainland
+usage, choose explicit registry rewrite over daemon mirror mode because the same
+registry can work as a full image name while failing as a Docker Hub mirror
+through `?ns=docker.io`. Keep checksum verification enabled and avoid known
+broken third-party sumdb paths. Avoid an external Dockerfile frontend image
+requirement because a broken daemon mirror can fail before the repository
+Dockerfile is parsed.
 
-**Consequences**: Default builds remain portable and safer. Domestic builds become faster when users configure a verified mirror/sumdb combination. BuildKit becomes the expected Docker builder. Parser image will still be the largest image because PaddleOCR/Paddle dependencies dominate, but cache and layer shape should improve.
+**Consequences**: Default builds remain portable and safer. China mainland builds
+have a documented one-file overlay that was validated with full root Compose
+startup. BuildKit becomes the expected Docker builder. Parser image will still
+be the largest image because PaddleOCR/Paddle dependencies dominate, but cache,
+layer shape, and runtime ownership handling are now guarded.
 
 ## Out Of Scope
 
