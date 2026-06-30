@@ -221,8 +221,8 @@ func (r *PostgresRepository) CreateReportTemplate(ctx context.Context, value ser
 		value.FileRef,
 		value.Filename,
 		value.FileSize,
-		string(structure.OutlineSchema),
-		string(structure.StyleConfig),
+		jsonRawStringOrDefault(structure.OutlineSchema, "[]"),
+		jsonRawStringOrDefault(structure.StyleConfig, "{}"),
 		value.Description,
 		value.Enabled,
 		value.CreatedBy,
@@ -357,8 +357,8 @@ func (r *PostgresRepository) UpdateReportTemplateStructure(ctx context.Context, 
 		WHERE id = $1 AND deleted_at IS NULL
 		RETURNING structure_json, style_config_json`,
 		templateID,
-		string(structure.OutlineSchema),
-		string(structure.StyleConfig),
+		jsonRawStringOrDefault(structure.OutlineSchema, "[]"),
+		jsonRawStringOrDefault(structure.StyleConfig, "{}"),
 		updatedAt,
 	).Scan(&outline, &style); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -582,21 +582,25 @@ func (r *PostgresRepository) CreateReportJob(ctx context.Context, value service.
 	if err != nil {
 		return service.ReportJob{}, err
 	}
+	requestPayload, err := json.Marshal(jsonObjectOrEmpty(value.RequestPayload))
+	if err != nil {
+		return service.ReportJob{}, fmt.Errorf("encode report job request payload: %w", err)
+	}
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO report_jobs (
 			id, request_id, source, job_type, target_type, target_id, asynq_task_id,
-			queue_name, report_id, template_id, status, error_code, error_message,
+			queue_name, report_id, template_id, request_payload_json, status, error_code, error_message,
 			retry_count, max_attempts, started_at, finished_at, created_at
 		)
 		VALUES (
 			$1, NULLIF($2, ''), $3, $4, $5, $6, NULLIF($7, ''),
-			$8, $9, NULLIF($10, '')::uuid, $11, NULLIF($12, ''), NULLIF($13, ''),
-			$14, $15, $16, $17, $18
+			$8, $9, NULLIF($10, '')::uuid, $11::jsonb, $12, NULLIF($13, ''), NULLIF($14, ''),
+			$15, $16, $17, $18, $19
 		)
 		RETURNING
 			id::text, COALESCE(request_id, ''), source, job_type, target_type,
 			target_id, COALESCE(asynq_task_id, ''), queue_name, report_id::text,
-			COALESCE(template_id::text, ''), status, progress_json,
+			COALESCE(template_id::text, ''), request_payload_json, status, progress_json,
 			COALESCE(error_code, ''), COALESCE(error_message, ''), retry_count,
 			max_attempts, started_at, finished_at, created_at`,
 		value.ID,
@@ -609,6 +613,7 @@ func (r *PostgresRepository) CreateReportJob(ctx context.Context, value service.
 		value.QueueName,
 		value.ReportID,
 		templateID,
+		requestPayload,
 		string(value.Status),
 		value.ErrorCode,
 		value.ErrorMessage,
@@ -637,7 +642,7 @@ func (r *PostgresRepository) FindReportJobByID(ctx context.Context, id string) (
 		SELECT
 			id::text, COALESCE(request_id, ''), source, job_type, target_type,
 			target_id, COALESCE(asynq_task_id, ''), queue_name, report_id::text,
-			COALESCE(template_id::text, ''), status, progress_json,
+			COALESCE(template_id::text, ''), request_payload_json, status, progress_json,
 			COALESCE(error_code, ''), COALESCE(error_message, ''), retry_count,
 			max_attempts, started_at, finished_at, created_at
 		FROM report_jobs
@@ -732,7 +737,7 @@ func (r *PostgresRepository) ListReportJobsByReportID(ctx context.Context, repor
 		SELECT
 			id::text, COALESCE(request_id, ''), source, job_type, target_type,
 			target_id, COALESCE(asynq_task_id, ''), queue_name, report_id::text,
-			COALESCE(template_id::text, ''), status, progress_json,
+			COALESCE(template_id::text, ''), request_payload_json, status, progress_json,
 			COALESCE(error_code, ''), COALESCE(error_message, ''), retry_count,
 			max_attempts, started_at, finished_at, created_at
 		FROM report_jobs
@@ -762,8 +767,21 @@ func (r *PostgresRepository) UpdateReportJobStatus(ctx context.Context, id strin
 			status = $2,
 			progress_json = CASE
 				WHEN $2 = 'running' THEN jsonb_build_object('completed', 0, 'total', 1)
-				WHEN $2 IN ('succeeded', 'partial_succeeded') THEN jsonb_build_object('completed', 1, 'total', 1)
-				WHEN $2 IN ('failed', 'canceled') THEN jsonb_build_object('completed', 0, 'total', 1)
+				WHEN $2 IN ('succeeded', 'partial_succeeded') THEN
+					CASE
+						WHEN progress_json ? 'completed'
+							AND progress_json ? 'total'
+							AND (
+								COALESCE((progress_json ->> 'completed')::int, 0) > 0
+								OR COALESCE((progress_json ->> 'total')::int, 0) > 1
+							) THEN progress_json
+						ELSE jsonb_build_object('completed', 1, 'total', 1)
+					END
+				WHEN $2 IN ('failed', 'canceled') THEN
+					CASE
+						WHEN progress_json ? 'completed' AND progress_json ? 'total' THEN progress_json
+						ELSE jsonb_build_object('completed', 0, 'total', 1)
+					END
 				ELSE progress_json
 			END,
 			error_code = NULLIF($3, ''),
@@ -774,7 +792,7 @@ func (r *PostgresRepository) UpdateReportJobStatus(ctx context.Context, id strin
 		RETURNING
 			id::text, COALESCE(request_id, ''), source, job_type, target_type,
 			target_id, COALESCE(asynq_task_id, ''), queue_name, report_id::text,
-			COALESCE(template_id::text, ''), status, progress_json,
+			COALESCE(template_id::text, ''), request_payload_json, status, progress_json,
 			COALESCE(error_code, ''), COALESCE(error_message, ''), retry_count,
 			max_attempts, started_at, finished_at, created_at`,
 		id,
@@ -789,6 +807,30 @@ func (r *PostgresRepository) UpdateReportJobStatus(ctx context.Context, id strin
 		return service.ReportJob{}, fmt.Errorf("update report job status: %w", err)
 	}
 	return job, nil
+}
+
+func (r *PostgresRepository) UpdateReportJobProgress(ctx context.Context, id string, completed, total int) error {
+	if completed < 0 {
+		completed = 0
+	}
+	if total < completed {
+		total = completed
+	}
+	jobID, err := parseUUID(id)
+	if err != nil {
+		return service.NewError(service.CodeValidation, "invalid job id", err)
+	}
+	tag, err := r.db.Exec(ctx, `
+		UPDATE report_jobs
+		SET progress_json = jsonb_build_object('completed', $2::int, 'total', $3::int)
+		WHERE id = $1`, jobID, completed, total)
+	if err != nil {
+		return fmt.Errorf("update report job progress: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return service.NewError(service.CodeNotFound, "report job not found", nil)
+	}
+	return nil
 }
 
 func (r *PostgresRepository) UpdateJobAsynqTaskID(ctx context.Context, id, taskID string) error {
@@ -817,6 +859,15 @@ func (r *PostgresRepository) SetJobSucceeded(ctx context.Context, id string) err
 	_, err := r.UpdateReportJobStatus(ctx, id, service.JobStatusSucceeded, "", "", nil, &now)
 	if err == nil {
 		_ = r.recordJobEvent(ctx, id, "job.succeeded", "report job succeeded")
+	}
+	return err
+}
+
+func (r *PostgresRepository) SetJobPartialSucceeded(ctx context.Context, id string) error {
+	now := time.Now().UTC()
+	_, err := r.UpdateReportJobStatus(ctx, id, service.JobStatusPartialSucceeded, "", "", nil, &now)
+	if err == nil {
+		_ = r.recordJobEvent(ctx, id, "job.partial_succeeded", "report job partially succeeded")
 	}
 	return err
 }
@@ -868,7 +919,7 @@ func (r *PostgresRepository) IncrementJobRetryCount(ctx context.Context, id stri
 		RETURNING
 			id::text, COALESCE(request_id, ''), source, job_type, target_type,
 			target_id, COALESCE(asynq_task_id, ''), queue_name, report_id::text,
-			COALESCE(template_id::text, ''), status, progress_json,
+			COALESCE(template_id::text, ''), request_payload_json, status, progress_json,
 			COALESCE(error_code, ''), COALESCE(error_message, ''), retry_count,
 			max_attempts, started_at, finished_at, created_at`, jobID)
 	job, err := scanReportJob(row)
@@ -982,6 +1033,21 @@ func (r *PostgresRepository) SetAttemptSucceeded(ctx context.Context, attemptID 
 	)
 	if err != nil {
 		return fmt.Errorf("set attempt succeeded: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) SetAttemptPartialSucceeded(ctx context.Context, attemptID string) error {
+	id, err := parseUUID(attemptID)
+	if err != nil {
+		return service.NewError(service.CodeValidation, "invalid attempt id", err)
+	}
+	_, err = r.db.Exec(ctx,
+		`UPDATE report_job_attempts SET status = 'partial_succeeded', finished_at = $2 WHERE id = $1`,
+		id, time.Now().UTC(),
+	)
+	if err != nil {
+		return fmt.Errorf("set attempt partial succeeded: %w", err)
 	}
 	return nil
 }
@@ -1169,7 +1235,7 @@ func scanReportMaterial(row scanner) (service.ReportMaterial, error) {
 func scanReportJob(row scanner) (service.ReportJob, error) {
 	var value service.ReportJob
 	var jobType, status string
-	var progressRaw []byte
+	var requestPayloadRaw, progressRaw []byte
 	if err := row.Scan(
 		&value.ID,
 		&value.RequestID,
@@ -1181,6 +1247,7 @@ func scanReportJob(row scanner) (service.ReportJob, error) {
 		&value.QueueName,
 		&value.ReportID,
 		&value.TemplateID,
+		&requestPayloadRaw,
 		&status,
 		&progressRaw,
 		&value.ErrorCode,
@@ -1195,6 +1262,14 @@ func scanReportJob(row scanner) (service.ReportJob, error) {
 	}
 	value.JobType = service.JobType(jobType)
 	value.Status = service.JobStatus(status)
+	if len(requestPayloadRaw) > 0 {
+		if err := json.Unmarshal(requestPayloadRaw, &value.RequestPayload); err != nil {
+			return service.ReportJob{}, err
+		}
+	}
+	if value.RequestPayload == nil {
+		value.RequestPayload = map[string]any{}
+	}
 	if len(progressRaw) > 0 {
 		if err := json.Unmarshal(progressRaw, &value.Progress); err != nil {
 			return service.ReportJob{}, err
@@ -1204,6 +1279,20 @@ func scanReportJob(row scanner) (service.ReportJob, error) {
 		value.Progress = map[string]any{}
 	}
 	return value, nil
+}
+
+func jsonObjectOrEmpty(value map[string]any) map[string]any {
+	if value == nil {
+		return map[string]any{}
+	}
+	return value
+}
+
+func jsonRawStringOrDefault(value json.RawMessage, fallback string) string {
+	if len(value) == 0 || strings.TrimSpace(string(value)) == "" {
+		return fallback
+	}
+	return string(value)
 }
 
 func scanReportJobAttempt(row scanner) (service.ReportJobAttempt, error) {
@@ -1246,25 +1335,26 @@ func scanReportEvent(row scanner) (service.ReportEvent, error) {
 
 func reportJobFromSQLC(row sqlc.GetReportJobByIDRow) service.ReportJob {
 	return service.ReportJob{
-		ID:           uuidToString(row.ID),
-		RequestID:    textToString(row.RequestID),
-		Source:       row.Source,
-		JobType:      service.JobType(row.JobType),
-		TargetType:   row.TargetType,
-		TargetID:     row.TargetID,
-		AsynqTaskID:  textToString(row.AsynqTaskID),
-		QueueName:    row.QueueName,
-		ReportID:     uuidToString(row.ReportID),
-		TemplateID:   uuidToString(row.TemplateID),
-		Status:       service.JobStatus(row.Status),
-		Progress:     map[string]any{},
-		ErrorCode:    textToString(row.ErrorCode),
-		ErrorMessage: textToString(row.ErrorMessage),
-		RetryCount:   int(row.RetryCount),
-		MaxAttempts:  int(row.MaxAttempts),
-		StartedAt:    timestamptzToTimePtr(row.StartedAt),
-		FinishedAt:   timestamptzToTimePtr(row.FinishedAt),
-		CreatedAt:    timestamptzToTime(row.CreatedAt),
+		ID:             uuidToString(row.ID),
+		RequestID:      textToString(row.RequestID),
+		Source:         row.Source,
+		JobType:        service.JobType(row.JobType),
+		TargetType:     row.TargetType,
+		TargetID:       row.TargetID,
+		AsynqTaskID:    textToString(row.AsynqTaskID),
+		QueueName:      row.QueueName,
+		ReportID:       uuidToString(row.ReportID),
+		TemplateID:     uuidToString(row.TemplateID),
+		RequestPayload: map[string]any{},
+		Status:         service.JobStatus(row.Status),
+		Progress:       map[string]any{},
+		ErrorCode:      textToString(row.ErrorCode),
+		ErrorMessage:   textToString(row.ErrorMessage),
+		RetryCount:     int(row.RetryCount),
+		MaxAttempts:    int(row.MaxAttempts),
+		StartedAt:      timestamptzToTimePtr(row.StartedAt),
+		FinishedAt:     timestamptzToTimePtr(row.FinishedAt),
+		CreatedAt:      timestamptzToTime(row.CreatedAt),
 	}
 }
 

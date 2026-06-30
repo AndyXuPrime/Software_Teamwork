@@ -120,6 +120,52 @@ func TestJobServiceCreateJobRecordsOperationLog(t *testing.T) {
 	}
 }
 
+func TestJobServiceCreateSectionRegenerationTargetsSectionAndPersistsGenerationPayload(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeJobRepository{
+		report: Report{ID: "report-1", CreatorID: "user-1"},
+	}
+	svc := NewJobService(repo, &fakeTaskEnqueuer{})
+
+	job, err := svc.CreateJob(ctx, RequestContext{UserID: "user-1", RequestID: "req-section"}, CreateJobInput{
+		RequestID:    "req-section",
+		UserID:       "user-1",
+		ReportID:     "report-1",
+		JobType:      JobTypeSectionRegeneration,
+		SectionID:    "section-1",
+		Requirements: "focus on overload risks",
+		MaterialIDs:  []string{"material-1", "material-2"},
+		Options: map[string]any{
+			"knowledgeBaseIds": []any{"kb-1"},
+			"topK":             float64(3),
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateJob() error = %v", err)
+	}
+	if job.TargetType != "section" || job.TargetID != "section-1" {
+		t.Fatalf("job target = %s/%s, want section/section-1", job.TargetType, job.TargetID)
+	}
+	if repo.createdJob.TargetType != "section" || repo.createdJob.TargetID != "section-1" {
+		t.Fatalf("persisted job target = %+v", repo.createdJob)
+	}
+	if repo.createdJob.RequestPayload["requirements"] != "focus on overload risks" {
+		t.Fatalf("request payload requirements = %#v", repo.createdJob.RequestPayload)
+	}
+	target, ok := repo.createdJob.RequestPayload["target"].(map[string]any)
+	if !ok || target["scope"] != "section" || target["sectionId"] != "section-1" {
+		t.Fatalf("request payload target = %#v", repo.createdJob.RequestPayload["target"])
+	}
+	materials, ok := repo.createdJob.RequestPayload["materialIds"].([]string)
+	if !ok || len(materials) != 2 || materials[0] != "material-1" || materials[1] != "material-2" {
+		t.Fatalf("request payload materialIds = %#v", repo.createdJob.RequestPayload["materialIds"])
+	}
+	options, ok := repo.createdJob.RequestPayload["options"].(map[string]any)
+	if !ok || options["topK"] != float64(3) {
+		t.Fatalf("request payload options = %#v", repo.createdJob.RequestPayload["options"])
+	}
+}
+
 func TestJobServiceCreateJobRecordsFailedOperationLogWhenEnqueueFails(t *testing.T) {
 	ctx := context.Background()
 	repo := &fakeJobRepository{
@@ -247,6 +293,7 @@ func TestRetryJobRejectsReportWithDeletedAtSet(t *testing.T) {
 type fakeJobRepository struct {
 	report        Report
 	job           ReportJob
+	createdJob    ReportJob
 	reportFile    ReportFile
 	operationLogs []OperationLog
 	taskIDErr     error
@@ -268,6 +315,7 @@ func (f *fakeJobRepository) CreateReportJob(_ context.Context, value ReportJob) 
 	if value.CreatedAt.IsZero() {
 		value.CreatedAt = time.Now().UTC()
 	}
+	f.createdJob = value
 	return value, nil
 }
 

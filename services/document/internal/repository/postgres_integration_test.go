@@ -149,6 +149,105 @@ func TestPostgresRepositoryPersistsReportJobAttemptAndEvent(t *testing.T) {
 	}
 }
 
+func TestPostgresRepositoryTerminalStatusPreservesDetailedProgress(t *testing.T) {
+	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DOCUMENT_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	pool := newTestPool(t, ctx, databaseURL)
+	defer pool.Close()
+	applyMigration(t, ctx, pool)
+
+	repo := NewPostgresRepository(pool)
+	now := time.Date(2026, 6, 30, 11, 0, 0, 0, time.UTC)
+	reportType, err := repo.UpsertReportType(ctx, service.ReportType{
+		Code:      "progress_report",
+		Name:      "Progress Report",
+		Enabled:   true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("UpsertReportType() error = %v", err)
+	}
+	report, err := repo.CreateReport(ctx, service.Report{
+		ID:         "00000000-0000-0000-0000-000000000801",
+		Name:       "progress report",
+		ReportType: reportType.Code,
+		Topic:      "progress",
+		Status:     service.ReportStatusDraft,
+		Source:     "backend",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("CreateReport() error = %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		jobID      string
+		markFinal  func(context.Context, string) error
+		wantStatus service.JobStatus
+	}{
+		{
+			name:       "partial succeeded",
+			jobID:      "00000000-0000-0000-0000-000000000802",
+			markFinal:  repo.SetJobPartialSucceeded,
+			wantStatus: service.JobStatusPartialSucceeded,
+		},
+		{
+			name:       "succeeded",
+			jobID:      "00000000-0000-0000-0000-000000000803",
+			markFinal:  repo.SetJobSucceeded,
+			wantStatus: service.JobStatusSucceeded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			job, err := repo.CreateReportJob(ctx, service.ReportJob{
+				ID:          tt.jobID,
+				RequestID:   "req_progress",
+				Source:      "api",
+				JobType:     service.JobTypeContentGeneration,
+				TargetType:  "report",
+				TargetID:    report.ID,
+				QueueName:   "document",
+				ReportID:    report.ID,
+				Status:      service.JobStatusPending,
+				MaxAttempts: 3,
+				CreatedAt:   now,
+			})
+			if err != nil {
+				t.Fatalf("CreateReportJob() error = %v", err)
+			}
+			if err := repo.SetJobRunning(ctx, job.ID); err != nil {
+				t.Fatalf("SetJobRunning() error = %v", err)
+			}
+			if err := repo.UpdateReportJobProgress(ctx, job.ID, 1, 2); err != nil {
+				t.Fatalf("UpdateReportJobProgress() error = %v", err)
+			}
+			if err := tt.markFinal(ctx, job.ID); err != nil {
+				t.Fatalf("mark final status error = %v", err)
+			}
+
+			completedJob, err := repo.FindReportJobByID(ctx, job.ID)
+			if err != nil {
+				t.Fatalf("FindReportJobByID() error = %v", err)
+			}
+			if completedJob.Status != tt.wantStatus {
+				t.Fatalf("Status = %q, want %q", completedJob.Status, tt.wantStatus)
+			}
+			if completedJob.Progress["completed"] != float64(1) || completedJob.Progress["total"] != float64(2) {
+				t.Fatalf("Progress = %#v, want completed/total 1/2", completedJob.Progress)
+			}
+		})
+	}
+}
+
 func TestPostgresRepositoryClaimRetryUsesNextAttemptNumber(t *testing.T) {
 	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
 	if databaseURL == "" {

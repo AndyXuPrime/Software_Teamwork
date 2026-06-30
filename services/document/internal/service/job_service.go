@@ -70,10 +70,16 @@ func (s *JobService) ListJobs(ctx context.Context, rctx RequestContext, reportID
 }
 
 type CreateJobInput struct {
-	RequestID string
-	UserID    string
-	ReportID  string
-	JobType   JobType
+	RequestID    string
+	UserID       string
+	ReportID     string
+	JobType      JobType
+	TargetScope  string
+	SectionID    string
+	Requirements string
+	MaterialIDs  []string
+	Options      map[string]any
+	Retrieval    map[string]any
 }
 
 func (s *JobService) CreateJob(ctx context.Context, rctx RequestContext, input CreateJobInput) (ReportJob, error) {
@@ -89,19 +95,24 @@ func (s *JobService) CreateJob(ctx context.Context, rctx RequestContext, input C
 	if input.JobType == JobTypeReportFileCreation && (report.Status == ReportStatusDeleted || report.DeletedAt != nil) {
 		return ReportJob{}, NewError(CodeConflict, "report has been deleted", nil)
 	}
+	targetType, targetID, err := resolveCreateJobTarget(input)
+	if err != nil {
+		return ReportJob{}, err
+	}
 	now := time.Now().UTC()
 	job := ReportJob{
-		ID:          newID(),
-		RequestID:   input.RequestID,
-		Source:      "api",
-		JobType:     input.JobType,
-		TargetType:  "report",
-		TargetID:    input.ReportID,
-		QueueName:   "document",
-		ReportID:    input.ReportID,
-		Status:      JobStatusPending,
-		MaxAttempts: 3,
-		CreatedAt:   now,
+		ID:             newID(),
+		RequestID:      input.RequestID,
+		Source:         "api",
+		JobType:        input.JobType,
+		TargetType:     targetType,
+		TargetID:       targetID,
+		QueueName:      "document",
+		ReportID:       input.ReportID,
+		RequestPayload: createJobRequestPayload(input, targetType, targetID),
+		Status:         JobStatusPending,
+		MaxAttempts:    3,
+		CreatedAt:      now,
 	}
 	created, err := s.repo.CreateReportJob(ctx, job)
 	if err != nil {
@@ -177,6 +188,68 @@ func (s *JobService) CreateJob(ctx context.Context, rctx RequestContext, input C
 		CreatedAt: now,
 	})
 	return created, nil
+}
+
+func resolveCreateJobTarget(input CreateJobInput) (string, string, error) {
+	scope := strings.TrimSpace(input.TargetScope)
+	sectionID := strings.TrimSpace(input.SectionID)
+	if scope == "" {
+		scope = "report"
+	}
+	if input.JobType == JobTypeSectionRegeneration {
+		if sectionID == "" {
+			return "", "", ValidationError(map[string]string{"target.sectionId": "is required for section_regeneration"})
+		}
+		scope = "section"
+	}
+	switch scope {
+	case "report":
+		return "report", input.ReportID, nil
+	case "section":
+		if sectionID == "" {
+			return "", "", ValidationError(map[string]string{"target.sectionId": "is required"})
+		}
+		return "section", sectionID, nil
+	default:
+		return "", "", ValidationError(map[string]string{"target.scope": "unsupported target scope"})
+	}
+}
+
+func createJobRequestPayload(input CreateJobInput, targetType, targetID string) map[string]any {
+	payload := map[string]any{}
+	if requirements := strings.TrimSpace(input.Requirements); requirements != "" {
+		payload["requirements"] = requirements
+	}
+	if len(input.MaterialIDs) > 0 {
+		payload["materialIds"] = append([]string(nil), input.MaterialIDs...)
+	}
+	if len(input.Options) > 0 {
+		payload["options"] = cloneJSONLikeMap(input.Options)
+	}
+	if len(input.Retrieval) > 0 {
+		payload["retrieval"] = cloneJSONLikeMap(input.Retrieval)
+	}
+	if input.TargetScope != "" || input.SectionID != "" || targetType != "report" {
+		target := map[string]any{
+			"scope": targetType,
+		}
+		if targetType == "section" {
+			target["sectionId"] = targetID
+		}
+		payload["target"] = target
+	}
+	return payload
+}
+
+func cloneJSONLikeMap(input map[string]any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	clone := make(map[string]any, len(input))
+	for key, value := range input {
+		clone[key] = value
+	}
+	return clone
 }
 
 func (s *JobService) RetryJob(ctx context.Context, rctx RequestContext, id, reason string) (ReportJobAttempt, error) {
