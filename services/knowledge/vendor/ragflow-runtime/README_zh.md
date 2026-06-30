@@ -1,55 +1,149 @@
-# RAGFlow Runtime Vendor 说明
+# RAGFlow
 
-本目录是从上游 RAGFlow 拉取的隔离源码快照，供 Knowledge/RAG 后续适配文档解析、检索、MCP 能力时参考和复用。它不是当前项目的可运行服务，也没有接入现有 Knowledge、Parser、Gateway 或 QA 微服务。
+<p align="center">
+    <a href="https://x.com/intent/follow?screen_name=infiniflowai" target="_blank">
+        <img src="https://img.shields.io/twitter/follow/infiniflow?logo=X&color=%20%23f5f5f5" alt="follow on X(Twitter)">
+    </a>
+    <a href="https://cloud.ragflow.io" target="_blank">
+        <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
+    </a>
+    <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.2">
+    </a>
+    <a href="https://github.com/infiniflow/ragflow/releases/latest">
+        <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
+    </a>
+    <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
+        <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
+    </a>
+    <a href="https://deepwiki.com/infiniflow/ragflow">
+        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
+    </a>
+</p>
 
-## 上游来源
+<h4 align="center">
+  <a href="https://cloud.ragflow.io">Cloud</a> |
+  <a href="https://ragflow.io/docs/dev/">Document</a> |
+  <a href="https://github.com/infiniflow/ragflow/issues/12241">Roadmap</a> |
+  <a href="https://discord.gg/NjYzJD3GM3">Discord</a>
+</h4>
 
-- 上游仓库：https://github.com/infiniflow/ragflow
-- 导入分支：`main`
-- 导入提交：`45fc7feab4a0da6fec2d0fecbae67fabdc9bb3a2`
-- 导入时间：2026-07-01
-- 许可证：Apache License 2.0，见 `LICENSE`
-- 本地来源记录：`UPSTREAM.md`
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
+</div>
 
-## 当前保留重点
+<div align="center">
+<a href="https://trendshift.io/repositories/9064" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9064" alt="infiniflow%2Fragflow | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+</div>
 
-- `deepdoc/`：文档解析、版面分析、OCR/TSR 相关源码。
-- `rag/`：RAG、检索、切片、LLM 适配和 GraphRAG 相关源码。
-- `api/`、`common/`、`conf/`：上游运行时、配置和服务代码参考。
-- `mcp/`：MCP server/client 相关实现，后续需要为 QA 和 agent 编排团队提供能力时保留参考。
-- `sdk/`、`docs/`：暂作为 API、MCP、dataset、DeepDoc 和配置参考资料保留。
-- `docker/`、`Dockerfile_deepdoc_oss`：仅作为后续容器化设计参考；当前快照不能直接按上游完整产品启动。
-- `test/unit_test/deepdoc/`、`test/unit_test/rag/`、`test/unit_test/mcp/`、`test/fixtures/`：保留作为解析、RAG、MCP 行为参考。
+<details open>
+<summary><b>📕 目录</b></summary>
 
-## 已清理内容
+- 💡 [RAGFlow 是什么？](#-RAGFlow-是什么)
+- 🎮 [快速开始](#-快速开始)
+- 📌 [近期更新](#-近期更新)
+- 🌟 [主要功能](#-主要功能)
+- 📚 [技术文档](#-技术文档)
+- 📜 [路线图](#-路线图)
+- 🏄 [贡献指南](#-贡献指南)
+- 🙌 [加入社区](#-加入社区)
+- 🤝 [商务合作](#-商务合作)
 
-为避免误导后续开发，本地快照已清理与当前适配目标无关或已不再可运行的上游内容：
+</details>
 
-- `web/`：上游前端 UI，本项目前端由 `apps/web/` 负责。
-- `helm/`：上游 Helm chart，本项目部署编排另行维护。
-- `.github/`：上游 GitHub workflow、模板和元数据。
-- `agent/`：上游 Python agent runtime；agent 编排不是 Knowledge/RAG 团队职责。
-- `admin/`：上游 Python admin 服务和 CLI。
-- `tools/`：上游独立插件、迁移、安装和开发辅助工具。
-- `example/`：上游 demo 和示例调用脚本。
-- 部分 `test/`：已删除针对上游 Web/Admin/Agent 表面的测试。
-- 部分 `docker/`：已删除非核心 compose 变体和 OceanBase 专用启动内容。
-- 其他语言 README：仅保留本文件作为本地中文说明。
+## 💡 RAGFlow 是什么？
 
-## 使用边界
+[RAGFlow](https://ragflow.io/) 是一款领先的开源检索增强生成（[RAG](https://ragflow.io/basics/what-is-rag)）引擎，为大型语言模型提供高质量上下文层。它提供可适配任意规模企业的端到端 RAG 工作流，助力开发者以较高效率与精度将复杂数据转化为高可信、生产级的人工智能系统。
 
-- 不要在现有 Go Knowledge 服务中直接 import 这里的源码。
-- 不要在 vendor 清理阶段把 RAGFlow 接入 Knowledge、Parser、Gateway、QA 或 CI。
-- 后续适配应优先明确 HTTP/runtime 边界，再决定哪些能力迁移到项目自己的服务目录。
-- 如果要做容器化，应基于本项目服务边界重新设计 Dockerfile/Compose/部署配置；这里保留的上游 Docker 文件只作为参考。
+## 🎮 快速开始
 
-## 注意事项
+请登录网址 [https://cloud.ragflow.io](https://cloud.ragflow.io) 体验云服务。
 
-- 当前目录是 trimmed snapshot，不是完整 RAGFlow 产品源码。
-- 上游完整 Docker Compose、Web UI、Agent、Admin 等路径已经被删除或部分断开。
-- 若未来需要恢复完整上游产品能力，应重新从上游仓库拉取对应版本，而不是在当前 trimmed snapshot 上补齐。
-- 每轮删除都应独立提交，便于审计。
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
+</div>
 
-## 刷新方式
+## 🔥 近期更新
 
-如需重新同步上游，请先阅读 `UPSTREAM.md`。刷新后需要重新评估本地保留/删除边界，并更新导入提交号、许可证和清理记录。
+- 2026-06-15 支持飞书、Discord、Telegram、Line 等多种聊天渠道。
+- 2026-04-24 支持 DeepSeek v4.
+- 2026-03-24 发布 [RAGFlow 官方 Skill](https://clawhub.ai/yingfeng/ragflow-skill) — 提供官方 Skill 以通过 OpenClaw 访问 RAGFlow 数据集。
+- 2025-11-19 支持 Gemini 3 Pro。
+- 2025-11-12 支持从 Confluence、S3、Notion、Discord、Google Drive 进行数据同步。
+- 2025-10-23 支持 MinerU 和 Docling 作为文档解析方法。
+- 2025-10-15 支持可编排的数据管道。
+- 2025-08-08 支持 OpenAI 最新的 GPT-5 系列模型。
+- 2025-08-01 支持 MCP。
+- 2025-03-19 PDF 和 DOCX 中的图支持用多模态大模型去解析得到描述。
+
+
+## 🎉 关注项目
+
+⭐️ 点击右上角的 Star 关注 RAGFlow，可以获取最新发布的实时通知 !🌟
+
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+</div>
+
+## 🌟 主要功能
+
+### 🍭 **"Quality in, quality out"**
+
+- 基于[深度文档理解](./deepdoc/README.md)，能够从各类复杂格式的非结构化数据中提取真知灼见。
+- 真正在无限上下文（token）的场景下快速完成大海捞针测试。
+
+### 🍱 **基于模板的文本切片**
+
+- 不仅仅是智能，更重要的是可控可解释。
+- 多种文本模板可供选择
+
+### 🌱 **有理有据、最大程度降低幻觉（hallucination）**
+
+- 有理有据：答案提供关键引用的快照并支持追根溯源。
+
+### 🍔 **兼容各类异构数据源**
+
+- 支持丰富的文件类型，包括 Word 文档、PPT、excel 表格、txt 文件、图片、PDF、影印件、复印件、结构化数据、网页等。
+
+### 🛀 **全程无忧、自动化的 RAG 工作流**
+
+- 全面优化的 RAG 工作流可以支持从个人应用乃至超大型企业的各类生态系统。
+- 大语言模型 LLM 以及向量模型均支持配置。
+- 基于多路召回、融合重排序。
+- 提供易用的 API，可以轻松集成到各类企业系统。
+
+## 📚 技术文档
+
+- [Quickstart](https://ragflow.io/docs/dev/)
+- [Configuration](https://ragflow.io/docs/dev/configurations)
+- [Release notes](https://ragflow.io/docs/dev/release_notes)
+- [User guides](https://ragflow.io/docs/category/user-guides)
+- [Developer guides](https://ragflow.io/docs/category/developer-guides)
+- [References](https://ragflow.io/docs/dev/category/references)
+- [FAQs](https://ragflow.io/docs/dev/faq)
+
+## 📜 路线图
+
+详见 [RAGFlow Roadmap 2026](https://github.com/infiniflow/ragflow/issues/12241) 。
+
+## 🏄 开源社区
+
+- [Discord](https://discord.gg/NjYzJD3GM3)
+- [X](https://x.com/infiniflowai)
+- [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
+
+## 🙌 贡献指南
+
+RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们欢迎来自社区的各种贡献。如果您有意参与其中,请查阅我们的 [贡献者指南](https://ragflow.io/docs/dev/contributing) 。
+
+## 🤝 商务合作
+
+- [预约咨询](https://aao615odquw.feishu.cn/share/base/form/shrcnjw7QleretCLqh1nuPo1xxh)
+
+## 👥 加入社区
+
+扫二维码添加 RAGFlow 小助手，进 RAGFlow 交流群。
+
+<p align="center">
+  <img src="https://github.com/infiniflow/ragflow/assets/7248/bccf284f-46f2-4445-9809-8f1030fb7585" width=50% height=50%>
+</p>
