@@ -17,7 +17,7 @@ import (
 )
 
 func TestPostgresRepositoryDocumentUploadLifecycle(t *testing.T) {
-	repo, cleanup := newPostgresRepositoryForTest(t)
+	repo, pool, cleanup := newPostgresRepositoryForTest(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -93,9 +93,27 @@ func TestPostgresRepositoryDocumentUploadLifecycle(t *testing.T) {
 		failedDoc.ErrorMessage == nil || *failedDoc.ErrorMessage != "queue failed" {
 		t.Fatalf("failed document = %+v", failedDoc)
 	}
+
+	var jobStatus, jobErrorCode, jobErrorMessage string
+	var jobFinishedAt, jobUpdatedAt time.Time
+	if err := pool.QueryRow(ctx, `
+		SELECT status, COALESCE(error_code, ''), COALESCE(error_message, ''), finished_at, updated_at
+		FROM processing_jobs
+		WHERE id = $1
+	`, job.ID).Scan(&jobStatus, &jobErrorCode, &jobErrorMessage, &jobFinishedAt, &jobUpdatedAt); err != nil {
+		t.Fatalf("query failed processing job: %v", err)
+	}
+	if jobStatus != string(service.JobStatusFailed) ||
+		jobErrorCode != "dependency_error" ||
+		jobErrorMessage != "queue failed" ||
+		!jobFinishedAt.Equal(failedAt) ||
+		!jobUpdatedAt.Equal(failedAt) {
+		t.Fatalf("failed job status = %q errorCode = %q errorMessage = %q finishedAt = %s updatedAt = %s",
+			jobStatus, jobErrorCode, jobErrorMessage, jobFinishedAt, jobUpdatedAt)
+	}
 }
 
-func newPostgresRepositoryForTest(t *testing.T) (*repository.PostgresRepository, func()) {
+func newPostgresRepositoryForTest(t *testing.T) (*repository.PostgresRepository, *pgxpool.Pool, func()) {
 	t.Helper()
 
 	databaseURL := strings.TrimSpace(os.Getenv("KNOWLEDGE_TEST_DATABASE_URL"))
@@ -137,7 +155,7 @@ func newPostgresRepositoryForTest(t *testing.T) (*repository.PostgresRepository,
 		_, _ = adminPool.Exec(ctx, "DROP SCHEMA "+quotedSchema+" CASCADE")
 		adminPool.Close()
 	}
-	return repository.NewPostgresRepository(pool), cleanup
+	return repository.NewPostgresRepository(pool), pool, cleanup
 }
 
 func applyKnowledgeMigration(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
