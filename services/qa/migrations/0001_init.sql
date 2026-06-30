@@ -144,6 +144,7 @@ CREATE TABLE response_stream_events (
 CREATE TABLE citations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    response_run_id UUID REFERENCES response_runs(id) ON DELETE CASCADE,
     citation_no INTEGER NOT NULL,
     char_start INTEGER,
     char_end INTEGER,
@@ -153,15 +154,24 @@ CREATE TABLE citations (
     doc_name TEXT NOT NULL,
     section_path TEXT,
     quote_text TEXT,
+    content_preview TEXT,
     context TEXT,
     page_number INTEGER,
     score NUMERIC(8,7),
     rerank_score NUMERIC(8,7),
     chunk_type TEXT,
+    is_source_available BOOLEAN NOT NULL DEFAULT TRUE,
+    source_unavailable_reason TEXT,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (message_id, citation_no)
 );
+
+CREATE INDEX idx_citations_response_run_id
+    ON citations(response_run_id);
+
+CREATE INDEX idx_citations_external_doc
+    ON citations(external_doc_id);
 
 CREATE TABLE retrieval_test_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
