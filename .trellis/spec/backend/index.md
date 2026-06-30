@@ -20,7 +20,6 @@ Backend services:
 | File | `services/file/` | Uploads, file metadata, MinIO object orchestration |
 | QA | `services/qa/` | AI question answering over retrieved knowledge |
 | Knowledge | `services/knowledge/` | Knowledge ingestion, indexing, retrieval coordination |
-| Parser | `services/parser/` | Internal document parser runtime and PaddleOCR backend boundary |
 | Document | `services/document/` | Report and document generation workflows |
 | AI Gateway | `services/ai-gateway/` | Internal model profiles, provider credentials, OpenAI-compatible chat/embedding/rerank APIs |
 
@@ -30,6 +29,10 @@ Infrastructure dependencies:
 - Redis for cache, sessions, lightweight queues, or short-lived coordination.
 - Qdrant for vector search.
 - MinIO for object storage.
+
+`services/parser/` is a backend runtime boundary but is not a Go microservice in
+the PaddleOCR implementation path. Keep PaddleOCR runtime code in a Python
+service and let Go services call it over the documented internal HTTP API.
 
 ---
 

@@ -44,6 +44,10 @@ The docs baseline separates service contracts under `docs/services/parser/api/`:
 future Parser runtime scaffold and should stay aligned with the docs internal
 contract.
 
+The intended implementation language is Python because PaddleOCR's maintained
+runtime and examples are Python-first. Go should stay on the Knowledge side as
+an HTTP client to this service, not as the PaddleOCR runtime host.
+
 ## Internal Contract
 
 Knowledge calls parser through the internal HTTP API instead of importing parser

@@ -198,6 +198,7 @@ public/internal 命名落位。
 | 服务 | 偏离项 | 原因 |
 | --- | --- | --- |
 | `knowledge` | 无。 | Knowledge 现在与仓库 Go 1.25 baseline 一致；仍沿用标准库 `net/http` / `http.ServeMux` 路由形态。 |
+| `parser` | 非 Go runtime scaffold。 | Parser 的目标后端是 PaddleOCR，当前主流运行时应使用 Python/PaddleOCR；Go 只作为 Knowledge HTTP client，不承载 PaddleOCR 运行时。 |
 
 ## 三选一决策记录
 
