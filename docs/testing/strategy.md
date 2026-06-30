@@ -16,7 +16,7 @@
 - OpenAPI 是协作源；改 Gateway active API 时必须跑契约校验和前端类型同步检查。
 - 数据库 migration 必须能从空库 apply。
 - env-gated integration tests 默认可能跳过；如果本次改动触碰 repository、SQL 或 migration，应尽量提供本地数据库执行记录。
-- 当前没有完整跨服务 E2E smoke；不要用单服务测试或前端 mock E2E 替代跨服务验收。
+- 当前有前端 Playwright 基础 smoke，但没有后端跨服务完整 E2E smoke；不要用单服务测试或前端 mock E2E 替代跨服务验收。
 - Parser runtime、Dockerfile 和 Parser Service CI 已落地；当前 CI 使用 fake OCR backend 覆盖 lint/test/compile，并在 PaddleOCR 依赖、锁文件或 Dockerfile 变化时校验 extra lock，不等同于真实 PaddleOCR 模型 smoke。
 - open PR、未合入 issue 和草案不能写成当前 `develop` 已实现；测试记录也不能把未稳定依赖的检查写成 required。
 
@@ -24,15 +24,16 @@
 
 | Workflow | 覆盖 | 当前说明 |
 | --- | --- | --- |
-| `go-services.yml` | `services/{ai-gateway,auth,document,file,gateway,knowledge,qa}` | 执行 `go test ./...`、`go build ./cmd/server`；QA 额外 build `./cmd/agent`；Knowledge 额外用 PostgreSQL 16 和 `KNOWLEDGE_TEST_DATABASE_URL` 执行 repository lifecycle integration test。 |
-| `go-migrations.yml` | `services/{ai-gateway,auth,document,file,knowledge,qa}` | 校验 migration 文件名并用 `goose@v3.27.1` 对 PostgreSQL 16 apply；Gateway 和 Parser 当前没有 SQL migration。 |
+| `frontend.yml` | `apps/web/**`、根前端依赖文件和 workflow | 执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`build`、`test:unit` 和 Playwright E2E smoke。 |
+| `go-services.yml` | `services/{ai-gateway,auth,document,file,gateway,knowledge,qa}` | 根据变更路径只选择受影响服务，执行 `go test ./...`、`go build ./cmd/server`；QA 额外 build `./cmd/agent`；Knowledge 或 workflow 变更时额外用 PostgreSQL 16 和 `KNOWLEDGE_TEST_DATABASE_URL` 执行 repository lifecycle integration test。 |
+| `go-migrations.yml` | 有 SQL migration 的后端服务 | 校验 migration 文件名并用 `goose@v3.27.1` 对 PostgreSQL 16 apply。 |
 | `parser-service.yml` | `services/parser/**` | 执行 `uv sync --frozen --group dev`、`uv run ruff check .`、`uv run pytest` 和 `uv run python -m compileall src tests`；当 `services/parser/pyproject.toml`、`uv.lock` 或 `Dockerfile` 变化时额外执行 PaddleOCR extra lock dry-run；测试使用 fake OCR backend，不下载真实 PaddleOCR 模型。 |
-| `frontend.yml` | `apps/web/**`、根前端依赖文件和 workflow | 执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`build`、`test:unit`、安装 Chromium 后执行 `test:e2e`。 |
+| `docker-deploy-checks.yml` | 已有服务 Dockerfile、服务 Compose、`deploy/**` | 对变更的可构建 Dockerfile 执行 `docker build`，对变更的 Compose 文件执行 `docker compose ... config --quiet`；不 push 镜像、不部署。 |
 | `gateway-contract.yml` | Gateway OpenAPI active API | 执行 verifier unit tests 和 `python3 scripts/verify_gateway_active_api.py`。 |
 | `check-api-types.yml` | 前端 Gateway 类型漂移 | 在 `apps/web` 执行 `bun run api:generate`，本地等价命令为 `bun run --cwd apps/web api:generate`，并要求 generated diff 干净。 |
 | `commitlint.yml` / `pr-guard.yml` | 协作规则 | 检查提交格式、PR body、issue 关联和 base 更新要求。 |
 
-当前可作为 required checks 的优先候选是 Go service tests、goose migration apply、Parser Service、Frontend check/build/unit/E2E、Gateway contract/API drift 和 API type drift。Parser 真实 PaddleOCR 模型 smoke、后端路径过滤矩阵和跨服务 E2E smoke 仍未落地；在稳定依赖和脚本提供前只能作为 PR 前建议或缺口登记。
+当前可作为 required checks 的优先候选是 Frontend、Go service tests、goose migration apply、Parser Service、Docker/Compose config、Gateway contract/API drift 和 API type drift。Parser 真实 PaddleOCR 模型 smoke、完整 DB integration jobs 和后端跨服务 E2E smoke 仍未落地；在 CI 提供稳定依赖前只能作为 PR 前建议或缺口登记。
 
 ## 本地命令矩阵
 
@@ -40,10 +41,12 @@
 | --- | --- |
 | 文档 | `git diff --check`；检查新增链接和实现事实。 |
 | Gateway OpenAPI / owner map | `python3 -m unittest scripts.tests.test_verify_gateway_active_api`；`python3 scripts/verify_gateway_active_api.py`。 |
-| 前端 | `bun install --frozen-lockfile`；`bun run --cwd apps/web check`；`bun run --cwd apps/web build`；`bun run --cwd apps/web test:unit`；`bun run --cwd apps/web test:e2e`。 |
+| 前端 | `bun install --frozen-lockfile`；`bun run --cwd apps/web check`；`bun run --cwd apps/web build`；`bun run --cwd apps/web test:unit`；关键页面改动再跑 `bun run --cwd apps/web test:e2e`。 |
 | 前端 API 类型 | `bun run --cwd apps/web api:generate`；确认 generated diff 符合预期。 |
 | 单个 Go 服务 | `cd services/<service> && go test ./...`；`go build ./cmd/server`。 |
 | QA 服务 | `cd services/qa && go test ./...`；`go build ./cmd/server`；`go build ./cmd/agent`。 |
+| Dockerfile | 对变更的可构建 Dockerfile 执行 `docker build --file <Dockerfile> <context>`；不 push 镜像。 |
+| Compose | `docker compose -f <compose-file> config --quiet`。 |
 | Knowledge repository / SQL | `cd services/knowledge && KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' go test ./internal/repository -count=1`。 |
 | migration | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up`。 |
 | Parser 契约 / 文档 / runtime | 检查 `services/parser/api/openapi.yaml` 与 `docs/services/parser/README.md`、Knowledge ingestion 文档一致；如改 runtime，执行 `cd services/parser && uv run ruff check . && uv run pytest && uv run python -m compileall src tests`，并说明是否仅覆盖 fake OCR backend。 |
@@ -84,7 +87,7 @@ KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgre
 | Build | 已落地 | `bun run --cwd apps/web build`。 |
 | API type generation | 已落地 | `bun run --cwd apps/web api:generate`，以 Gateway OpenAPI 为源。 |
 | Component/unit tests | 已落地 | `bun run --cwd apps/web test:unit`，使用 Vitest + React Testing Library。 |
-| Browser/E2E tests | 已落地 | `bun run --cwd apps/web test:e2e`，CI 先安装 Playwright Chromium 后执行。 |
+| Browser/E2E tests | 已落地 / smoke | `bun run --cwd apps/web test:e2e`，使用 Playwright 覆盖基础应用 smoke；完整业务 E2E 仍需随页面能力扩展。 |
 
 前端不得直接调用服务内部地址。涉及 QA SSE、上传、报告任务进度或 admin model/parser configuration 的改动，应同时检查 `docs/architecture/frontend-backend-contract.md` 和 Gateway OpenAPI。
 
@@ -97,7 +100,7 @@ KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgre
 | 技术选型基线 | 引入新运行时依赖、镜像、CLI、SDK、队列、数据库或工具链。 |
 | 本地联调手册 | 新增 Compose、env template、seed data、跨服务 smoke 或端口约定。 |
 | Parser 契约一致性 | 改 `services/parser/api/openapi.yaml`、Parser README、Knowledge ingestion 对 Parser 的调用约定或 parser runtime configuration。 |
-| 测试策略 | 新增 CI workflow、测试框架、E2E smoke 或 required check。 |
+| 测试策略 | 新增 CI workflow、测试框架、E2E smoke、路径过滤规则或 required check。 |
 
 文档同步检查：
 
@@ -111,7 +114,7 @@ KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgre
 
 ## 跨服务 smoke 目标
 
-当前还没有统一脚本。#125 完成后至少应覆盖：
+当前还没有统一 E2E 脚本。#125 完成后至少应覆盖：
 
 1. Auth 创建会话，Gateway 写入 Redis session cache。
 2. Gateway 使用认证上下文代理一个 Knowledge/QA/Document active path。

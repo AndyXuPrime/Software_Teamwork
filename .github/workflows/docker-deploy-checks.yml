@@ -1,0 +1,178 @@
+name: Docker and Deploy Checks
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'apps/web/Dockerfile*'
+      - 'apps/web/.dockerignore'
+      - 'services/**/Dockerfile*'
+      - 'services/**/.dockerignore'
+      - 'services/**/docker-compose*.yml'
+      - 'services/**/docker-compose*.yaml'
+      - 'deploy/**'
+      - '.github/workflows/docker-deploy-checks.yml'
+  push:
+    branches: [develop]
+    paths:
+      - 'apps/web/Dockerfile*'
+      - 'apps/web/.dockerignore'
+      - 'services/**/Dockerfile*'
+      - 'services/**/.dockerignore'
+      - 'services/**/docker-compose*.yml'
+      - 'services/**/docker-compose*.yaml'
+      - 'deploy/**'
+      - '.github/workflows/docker-deploy-checks.yml'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      dockerfiles: ${{ steps.changed.outputs.dockerfiles }}
+      has-dockerfiles: ${{ steps.changed.outputs.has-dockerfiles }}
+      compose-files: ${{ steps.changed.outputs.compose-files }}
+      has-compose-files: ${{ steps.changed.outputs.has-compose-files }}
+    steps:
+      - name: Detect Docker and Compose changes
+        id: changed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const currentBuildableDockerfiles = new Set([
+              'deploy/Dockerfile.migrate',
+              'services/ai-gateway/Dockerfile',
+              'services/auth/Dockerfile',
+              'services/document/Dockerfile',
+              'services/document/Dockerfile.migrate',
+              'services/file/Dockerfile',
+              'services/gateway/Dockerfile',
+              'services/knowledge/Dockerfile',
+              'services/qa/Dockerfile',
+              'services/qa/Dockerfile.migrate',
+            ]);
+            const knownComposeFiles = new Set([
+              'deploy/docker-compose.yml',
+              'services/document/docker-compose.yml',
+              'services/qa/docker-compose.db.yml',
+              'services/qa/docker-compose.yml',
+            ]);
+            const composeFilePattern =
+              /^(deploy|services\/[^/]+)\/.*docker-compose[^/]*\.ya?ml$/u;
+            const buildableDockerfilePattern =
+              /^(apps\/web|deploy|services\/[^/]+)\/Dockerfile(?:\.migrate)?$/u;
+            const workflowPath = '.github/workflows/docker-deploy-checks.yml';
+
+            const changedFiles = new Set();
+
+            if (context.eventName === 'pull_request') {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+                per_page: 100,
+              });
+              for (const file of files) {
+                changedFiles.add(file.filename);
+              }
+            } else if (context.eventName === 'push') {
+              const response = await github.rest.repos.compareCommitsWithBasehead({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                basehead: `${context.payload.before}...${context.payload.after}`,
+              });
+              for (const file of response.data.files || []) {
+                changedFiles.add(file.filename);
+              }
+            }
+
+            const files = [...changedFiles];
+            const workflowChanged = files.includes(workflowPath);
+            const dockerfiles = new Set();
+
+            const addBuildableDockerfilesForService = (service) => {
+              const prefix = `services/${service}/`;
+              for (const dockerfile of currentBuildableDockerfiles) {
+                if (dockerfile.startsWith(prefix)) {
+                  dockerfiles.add(dockerfile);
+                }
+              }
+            };
+
+            if (workflowChanged) {
+              for (const dockerfile of currentBuildableDockerfiles) {
+                dockerfiles.add(dockerfile);
+              }
+            } else {
+              for (const file of files) {
+                if (buildableDockerfilePattern.test(file)) {
+                  dockerfiles.add(file);
+                  continue;
+                }
+
+                const dockerignoreMatch = file.match(/^services\/([^/]+)\/\.dockerignore$/u);
+                if (dockerignoreMatch) {
+                  addBuildableDockerfilesForService(dockerignoreMatch[1]);
+                }
+              }
+            }
+            const composeFiles = workflowChanged
+              ? [...knownComposeFiles]
+              : files.filter((file) => composeFilePattern.test(file));
+
+            core.info(`Changed files: ${files.join(', ') || '(none)'}`);
+            core.info(`Dockerfiles: ${[...dockerfiles].join(', ') || '(none)'}`);
+            core.info(`Compose files: ${composeFiles.join(', ') || '(none)'}`);
+            core.setOutput('dockerfiles', JSON.stringify([...dockerfiles].sort()));
+            core.setOutput(
+              'has-dockerfiles',
+              dockerfiles.size > 0 ? 'true' : 'false'
+            );
+            core.setOutput('compose-files', JSON.stringify(composeFiles.sort()));
+            core.setOutput(
+              'has-compose-files',
+              composeFiles.length > 0 ? 'true' : 'false'
+            );
+
+  docker-build:
+    needs: detect
+    if: needs.detect.outputs.has-dockerfiles == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: ${{ fromJSON(needs.detect.outputs.dockerfiles) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Dockerfile
+        run: |
+          dockerfile="${{ matrix.dockerfile }}"
+          context="$(dirname "$dockerfile")"
+          docker build --file "$dockerfile" "$context"
+
+  compose-config:
+    needs: detect
+    if: needs.detect.outputs.has-compose-files == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compose-file: ${{ fromJSON(needs.detect.outputs.compose-files) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Compose config
+        run: |
+          compose_file="${{ matrix.compose-file }}"
+          if [ "$compose_file" = "deploy/docker-compose.yml" ]; then
+            docker compose -f "$compose_file" --env-file deploy/.env.example config --quiet
+            docker compose -f "$compose_file" --env-file deploy/.env.example --profile ai config --quiet
+          else
+            docker compose -f "$compose_file" config --quiet
+          fi

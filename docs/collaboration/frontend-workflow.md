@@ -202,17 +202,19 @@ bunx commitlint --edit "$1"
 
 ## CI
 
-前端 CI 应在以下场景运行：
+前端 CI 已由 `.github/workflows/frontend.yml` 落地，并在以下场景运行：
 
 ```txt
 pull_request -> develop
 push         -> develop
 ```
 
-推荐 CI 命令：
+CI 命令：
 
 ```bash
 bun install --frozen-lockfile
 bun run --cwd apps/web check
 bun run --cwd apps/web build
+bun run --cwd apps/web test:unit
+bun run --cwd apps/web test:e2e
 ```

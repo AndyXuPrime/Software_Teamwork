@@ -34,6 +34,23 @@
 env all_proxy=socks5://127.0.0.1:10808 http_proxy=http://127.0.0.1:10808 https_proxy=http://127.0.0.1:10808 <command>
 ```
 
+## 根级本地栈
+
+```bash
+cd deploy
+cp .env.example .env
+docker compose up -d --build
+```
+
+可选 AI Gateway profile：
+
+```bash
+cd deploy
+docker compose --profile ai up -d --build
+```
+
+根级 Compose 详情见 [`deploy/README.md`](../../deploy/README.md)。
+
 ## 服务级启动
 
 ### QA + Auth + Gateway 局部环境
@@ -124,10 +141,11 @@ go run ./cmd/server
 | 跨服务契约测试和 E2E smoke 缺失 | 不能自动证明前端 -> Gateway -> 多服务链路可用。 | #125 |
 | Parser 真实 OCR smoke 缺失 | Parser runtime 和 fake OCR 测试已落地，但不能自动证明真实 PaddleOCR 模型加载、OCR 解析质量或部署资源配置。 | 待拆分 |
 | Knowledge retrieval/rerank 与对象存储跨服务 smoke 缺失 | Knowledge 已有 Qdrant/in-memory vector index 写入和 File handoff，但 content、knowledge-queries、rerank、真实对象存储和跨服务内容读取 smoke 仍缺。 | #152、#154 |
+| 生产部署基线缺失 | 当前 `deploy/docker-compose.yml` 是本地/演示基线，不能直接当生产部署。 | #150 |
 | Document 真实 AI 生成和富 DOCX 工具链未落地 | 报告 job 状态机和基础 DOCX 导出可用；真实大纲/正文生成、Pandoc/LibreOffice 富 DOCX 转换和跨服务内容读取 smoke 仍需补齐。 | #160、#223 |
 | Document 跨服务 smoke 仍缺失 | settings/statistics/logs 已在服务端落地，但管理端、Gateway、File Service、Document worker 串联 smoke 仍未一键化。 | #159、#221 |
 | QA Agent Run MVP 和权限一致性仍在推进 | QA 会话/消息基础可用，完整 Agent 编排和 403 一致性仍需收口。 | #157、#217 |
-| 前端跨后端真实 E2E smoke 缺失 | 前端 CI 已覆盖 check/build、Vitest unit/component tests 和 Playwright E2E smoke；但浏览器测试仍以 mock/前端关键流为主，不能替代真实 Gateway/多服务联调。 | #125 |
+| 前端业务 E2E 覆盖不足 | 已有 Playwright 基础 smoke；Knowledge、QA、Document 等完整业务流程仍需随页面能力扩展。 | #117、#163 |
 
 ## PR 前判断
 
@@ -136,4 +154,4 @@ go run ./cmd/server
 - 改 migration：执行 goose apply；如果服务有 env-gated repository integration tests，尽量使用本地 PostgreSQL 跑一遍。
 - 改 Parser 契约或运行时：检查 `services/parser/api/openapi.yaml`、Parser README、Knowledge ingestion 文档和 `parser-service.yml` 是否一致；区分 fake OCR 测试结果与真实 PaddleOCR 模型 smoke。
 - 改 Gateway OpenAPI：执行 `python3 scripts/verify_gateway_active_api.py`，前端类型相关改动还要执行 `bun run --cwd apps/web api:generate` 并检查生成 diff。
-- 改前端：执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`bun run --cwd apps/web build`、`bun run --cwd apps/web test:unit`；涉及关键浏览器流程时执行 `bun run --cwd apps/web playwright install --with-deps chromium` 和 `bun run --cwd apps/web test:e2e`。
+- 改前端：执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`bun run --cwd apps/web build`、`bun run --cwd apps/web test:unit`；关键页面改动再跑 `bun run --cwd apps/web test:e2e`。

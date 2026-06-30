@@ -43,7 +43,7 @@
 | `services/qa` | 已落地 Go QA 服务、PostgreSQL repository、会话/消息/SSE、配置、引用、工具/MCP/model client 基础；默认走 AI Gateway chat，真实 Knowledge retrieval 和跨服务 smoke 仍待补齐。 | `services/qa/go.mod`、`services/qa/migrations/`、`docs/services/qa/docs/implementation.md` |
 | `services/document` | 已落地 Go document 服务、PostgreSQL repository、模板/材料/报告/大纲/章节 API、report jobs/attempts/events、report files、statistics、settings 和 asynq worker 状态机；真实 AI 生成和 Pandoc/LibreOffice 富 DOCX 工具链仍未落地。 | `services/document/go.mod`、`services/document/migrations/`、`docs/services/document/docs/implementation.md` |
 | `services/ai-gateway` | 已落地 Go AI Gateway、PostgreSQL repository、model profile CRUD、credential encryption、service-token auth、OpenAI-compatible chat completions、embeddings、rerankings、provider invocation 记录和 usage aggregate；真实 provider/跨服务 smoke 仍待补齐。 | `services/ai-gateway/go.mod`、`services/ai-gateway/migrations/`、`docs/services/ai-gateway/docs/implementation.md` |
-| CI | 已有 PR guard、commitlint、auto-label、Go service build/test workflow 和 goose migration apply workflow；前端流水线尚未落地。 | `.github/workflows/*.yml` |
+| CI | 已有 PR guard、commitlint、auto-label、前端 check/build/unit/E2E smoke workflow、Go service path-filtered build/test workflow、goose migration apply workflow、Docker/Compose config 检查、Gateway contract workflow 和 API type drift workflow。 | `.github/workflows/*.yml` |
 
 ## 当前事实与目标基线
 
@@ -78,7 +78,7 @@
 | 前端 class 工具 | `clsx` + `class-variance-authority` | `clsx@2.1.1`，`cva@0.7.1` | 已固定 | UI variant 和 class 合并基础。 |
 | 前端 API 类型 | `openapi-typescript` + typed fetch wrapper | `openapi-typescript@7.13.0` | 已固定 | `api:generate` 已进入 `apps/web/package.json`；生成目录为 `apps/web/src/api/generated/`。 |
 | 前端 SSE | `fetch` stream wrapper | Web 标准 | 标准库 / 协议 | QA 消息创建使用 POST + `text/event-stream`，支持 `AbortController`。 |
-| 前端测试 | Vitest + React Testing Library + Playwright | 待固定 | 已选型，待固定 | 当前未加入 `apps/web/package.json`。 |
+| 前端测试 | Vitest + React Testing Library + Playwright | Vitest `4.1.9`；Testing Library 见前端明细；Playwright `1.61.1` | 已固定 | 已加入 `apps/web/package.json` 和 `.github/workflows/frontend.yml`。 |
 | 前端代码质量 | ESLint Flat Config + Prettier | ESLint `9.39.4`，Prettier `3.9.0` | 已固定 | 插件版本见前端明细。 |
 | Parser 运行时语言 | Python | `3.12` | 已固定 | `services/parser` 使用 Python 3.12、`uv`、FastAPI/Uvicorn 和 PaddleOCR；这是 PaddleOCR 运行时边界，不是 Go 服务。 |
 | Parser 包管理 | `uv` | `uv@0.11.6` | 已固定 | `services/parser/uv.lock` 为 Parser 服务锁文件；CI 和 Dockerfile 使用同一版本。 |
@@ -108,12 +108,12 @@
 | OpenAPI | OpenAPI | `3.0.3` | 已固定 | Gateway、Auth、Knowledge、QA、Document、AI Gateway 契约均使用 3.0.3。 |
 | API 版本前缀 | `/api/v1` / `/internal/v1` | `v1` | 已固定 | 公开入口以 gateway OpenAPI 为准；内部服务使用服务级契约。 |
 | 后端测试 | Go `testing` + `httptest` | Go `1.25` 标准库 | 已固定 | 默认不引入 BDD 测试框架。 |
-| CI | GitHub Actions | `actions/github-script@v7`；runner `ubuntu-latest` | 部分已固定 | 已有协作类 workflow、Go service build/test workflow 和 goose migration apply workflow；前端 workflow 尚待落地。 |
+| CI | GitHub Actions | `actions/github-script@v7`；runner `ubuntu-latest`；Bun `1.3.12`；Go `1.25.x` | 部分已固定 | 已有协作类 workflow、前端 check/build/unit/E2E smoke、Go service path-filtered build/test、goose migration apply、Docker/Compose config、Gateway contract 和 API type drift workflow。 |
 | Parser CI | GitHub Actions + uv | `uv@0.11.6`；runner `ubuntu-latest` | 已固定 | `.github/workflows/parser-service.yml` 运行 `uv sync --frozen --group dev`、Ruff、pytest 和 compileall。 |
 | 观测 | `slog` + Prometheus metrics；关键链路 OpenTelemetry tracing | `github.com/prometheus/client_golang@v1.23.2`；`go.opentelemetry.io/otel@v1.44.0`；`go.opentelemetry.io/otel/sdk@v1.44.0`；`go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.44.0`；`go.opentelemetry.io/otel/exporters/prometheus@v0.66.0` | 已选型，待固定 | 第一阶段先保证结构化日志和低基数字段指标；首次落地 metrics/tracing 时必须写入对应服务 `go.mod` 并同步本文状态。 |
 | DOCX 生成 | Document worker 当前使用内置 Go `SimpleDOCXGenerator`；Pandoc/LibreOffice 作为后续富 DOCX 工具链 | 内置 Go 生成器：标准库；Pandoc 候选基线 `3.10`；LibreOffice 待 worker image 落地固定 tag + digest | 部分已固定 | 当前不依赖外部 CLI；引入 Pandoc/LibreOffice 前必须固定 worker 镜像或 CLI 版本和摘要。 |
 | MCP 集成 | 官方 MCP Go SDK；暂不拆独立 sidecar | `github.com/modelcontextprotocol/go-sdk@v1.1.0` | 已固定 | QA 负责工具白名单、权限、参数校验、超时和脱敏记录；SDK 升级或 sidecar 化另开兼容性任务。 |
-| 本地部署 | Docker Compose | Compose 文件格式无 top-level version | 已选型 | 根 `deploy/docker-compose.yml` 已提供本地/演示联调基线；服务本地 Compose 可继续用于单服务调试。 |
+| 本地部署 | Docker Compose | Compose 文件格式无 top-level version | 部分已落地 | 根 `deploy/docker-compose.yml` 已提供本地/演示联调基线；服务本地 Compose 可继续用于单服务调试。 |
 
 ## 前端版本明细
 
@@ -308,10 +308,10 @@ services/<service>/
 
 - 当前 GitHub Actions 已固定 `actions/github-script@v7`，用于 PR guard、commitlint 和 auto-label。
 - 当前 runner 使用 `ubuntu-latest`，这是 GitHub 托管滚动版本；如需完全可复现 CI，后续应改为团队认可的固定 runner 镜像或自托管 runner。
-- Frontend CI 后续应执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`bun run --cwd apps/web build`。
-- Go Service CI 按服务路径执行 `go test ./...` 和 `go build ./cmd/server`。
+- Frontend CI 对 `apps/web/**`、根前端依赖文件和自身 workflow 变更执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`bun run --cwd apps/web build`、`bun run --cwd apps/web test:unit` 和 Playwright smoke。
+- Go Service CI 按服务路径选择受影响服务，执行 `go test ./...` 和 `go build ./cmd/server`；QA 额外执行 `go build ./cmd/agent`。
 - Goose migration CI 对有 SQL migration 的服务执行 `goose@v3.27.1` apply 校验。
-- Docker 构建和部署流水线应按服务路径拆分，避免无关变更触发全量检查。
+- Docker / Deploy Checks 对已有可构建 Dockerfile 执行 `docker build`，对服务 Compose 执行 `docker compose config --quiet`；PR 不 push 镜像、不部署。
 
 ## 后续需要同步的实现任务
 

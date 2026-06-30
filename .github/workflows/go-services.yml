@@ -14,14 +14,95 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.changed.outputs.services }}
+      has-services: ${{ steps.changed.outputs.has-services }}
+      knowledge-integration: ${{ steps.changed.outputs.knowledge-integration }}
+    steps:
+      - name: Detect changed services
+        id: changed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const knownServices = [
+              'ai-gateway',
+              'auth',
+              'document',
+              'file',
+              'gateway',
+              'knowledge',
+              'qa',
+            ];
+            const workflowPath = '.github/workflows/go-services.yml';
+
+            const changedFiles = new Set();
+
+            if (context.eventName === 'pull_request') {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+                per_page: 100,
+              });
+              for (const file of files) {
+                changedFiles.add(file.filename);
+              }
+            } else if (context.eventName === 'push') {
+              const response = await github.rest.repos.compareCommitsWithBasehead({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                basehead: `${context.payload.before}...${context.payload.after}`,
+              });
+              for (const file of response.data.files || []) {
+                changedFiles.add(file.filename);
+              }
+            }
+
+            const files = [...changedFiles];
+            const workflowChanged = files.includes(workflowPath);
+            const changedServices = new Set();
+
+            if (workflowChanged) {
+              for (const service of knownServices) {
+                changedServices.add(service);
+              }
+            } else {
+              for (const file of files) {
+                const match = file.match(/^services\/([^/]+)\//u);
+                if (match && knownServices.includes(match[1])) {
+                  changedServices.add(match[1]);
+                }
+              }
+            }
+
+            const services = [...changedServices].sort((a, b) =>
+              knownServices.indexOf(a) - knownServices.indexOf(b)
+            );
+            const knowledgeIntegration =
+              workflowChanged || services.includes('knowledge');
+
+            core.info(`Changed files: ${files.join(', ') || '(none)'}`);
+            core.info(`Selected services: ${services.join(', ') || '(none)'}`);
+            core.setOutput('services', JSON.stringify(services));
+            core.setOutput('has-services', services.length > 0 ? 'true' : 'false');
+            core.setOutput(
+              'knowledge-integration',
+              knowledgeIntegration ? 'true' : 'false'
+            );
+
   service:
+    needs: detect
+    if: needs.detect.outputs.has-services == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        service: [ai-gateway, auth, document, file, gateway, knowledge, qa]
+        service: ${{ fromJSON(needs.detect.outputs.services) }}
     defaults:
       run:
         working-directory: services/${{ matrix.service }}
@@ -46,6 +127,8 @@ jobs:
         run: go build ./cmd/agent
 
   knowledge-repository-integration:
+    needs: detect
+    if: needs.detect.outputs.knowledge-integration == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
