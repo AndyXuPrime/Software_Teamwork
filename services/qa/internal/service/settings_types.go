@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -13,6 +14,36 @@ type RetrievalSettings struct {
 	UseRerank           bool    `json:"useRerank,omitempty"`
 	RerankThreshold     float64 `json:"rerankThreshold"`
 	RerankTopN          int     `json:"rerankTopN"`
+	enableRerankSet     bool
+	useRerankSet        bool
+}
+
+type retrievalSettingsJSON struct {
+	TopK                int      `json:"topK"`
+	ScoreThreshold      float64  `json:"scoreThreshold"`
+	SimilarityThreshold float64  `json:"similarityThreshold,omitempty"`
+	EnableRerank        *bool    `json:"enableRerank"`
+	UseRerank           *bool    `json:"useRerank,omitempty"`
+	RerankThreshold     float64  `json:"rerankThreshold"`
+	RerankTopN          int      `json:"rerankTopN"`
+	TagFilters          struct{} `json:"tagFilters,omitempty"`
+}
+
+func (s *RetrievalSettings) UnmarshalJSON(data []byte) error {
+	var raw retrievalSettingsJSON
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	s.TopK = raw.TopK
+	s.ScoreThreshold = raw.ScoreThreshold
+	s.SimilarityThreshold = raw.SimilarityThreshold
+	s.EnableRerank = raw.EnableRerank != nil && *raw.EnableRerank
+	s.UseRerank = raw.UseRerank != nil && *raw.UseRerank
+	s.RerankThreshold = raw.RerankThreshold
+	s.RerankTopN = raw.RerankTopN
+	s.enableRerankSet = raw.EnableRerank != nil
+	s.useRerankSet = raw.UseRerank != nil
+	return nil
 }
 
 type StoredLLMConfig struct {

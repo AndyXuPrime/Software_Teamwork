@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
@@ -134,6 +135,56 @@ func TestCreateRetrievalTestRunMergesActiveConfigAndOverrides(t *testing.T) {
 	}
 	if run.Status != "completed" || run.ResultCount != 1 {
 		t.Fatalf("run=%+v", run)
+	}
+}
+
+func TestCreateRetrievalTestRunCanDisableActiveRerank(t *testing.T) {
+	repository := &resourceRepositoryStub{activeQAConfig: QAConfigVersion{
+		ID:        "qa-config-id",
+		Retrieval: RetrievalSettings{TopK: 5, ScoreThreshold: .7, EnableRerank: true, RerankTopN: 3},
+	}}
+	retriever := &knowledgeRetrieverStub{results: []RetrievalTestResult{{DocumentID: "doc-1", Metadata: map[string]any{}}}}
+	resources, err := NewResourceService(repository, retriever, llmTesterStub{}, RuntimeLLMConfig{}, runCancellerStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var input RetrievalTestInput
+	if err := json.Unmarshal([]byte(`{"question":"query","overrides":{"enableRerank":false}}`), &input); err != nil {
+		t.Fatal(err)
+	}
+	run, err := resources.CreateRetrievalTestRun(context.Background(), "user-1", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantRetrieval := RetrievalSettings{TopK: 5, ScoreThreshold: .7, EnableRerank: false, RerankTopN: 3}
+	if !reflect.DeepEqual(retriever.input.Retrieval, wantRetrieval) {
+		t.Fatalf("retrieval=%+v, want %+v", retriever.input.Retrieval, wantRetrieval)
+	}
+	if run.Status != "completed" {
+		t.Fatalf("run=%+v", run)
+	}
+}
+
+func TestCreateRetrievalTestRunRejectsRerankTopNGreaterThanTopK(t *testing.T) {
+	repository := &resourceRepositoryStub{activeQAConfig: QAConfigVersion{ID: "qa-config-id", Retrieval: RetrievalSettings{TopK: 5}}}
+	retriever := &knowledgeRetrieverStub{results: []RetrievalTestResult{{DocumentID: "doc-1", Metadata: map[string]any{}}}}
+	resources, err := NewResourceService(repository, retriever, llmTesterStub{}, RuntimeLLMConfig{}, runCancellerStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = resources.CreateRetrievalTestRun(context.Background(), "user-1", RetrievalTestInput{
+		Question:  "query",
+		Overrides: RetrievalSettings{RerankTopN: 6},
+	})
+	appErr, ok := Classify(err)
+	if !ok || appErr.Code != CodeValidation || appErr.Fields["retrieval.rerankTopN"] == "" {
+		t.Fatalf("error=%v, want retrieval.rerankTopN validation", err)
+	}
+	if repository.saveCalled || retriever.input.Question != "" {
+		t.Fatalf("unexpected retrieval or save: input=%+v saveCalled=%v", retriever.input, repository.saveCalled)
 	}
 }
 
