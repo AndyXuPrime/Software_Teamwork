@@ -3946,6 +3946,13 @@ components:
           - ai
         requirements:
           type: string
+        content:
+          type: string
+        tables:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
     ReportSectionVersion:
       type: object
       required:

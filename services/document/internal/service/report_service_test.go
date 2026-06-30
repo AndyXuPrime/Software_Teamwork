@@ -16,6 +16,7 @@ type fakeReportRepository struct {
 	sectionVersion   map[string][]ReportSectionVersion
 	operationLogs    []OperationLog
 	updateSectionErr error
+	beforeTx         func(*fakeReportRepository)
 }
 
 func newFakeReportRepository() *fakeReportRepository {
@@ -132,6 +133,10 @@ func (f *fakeReportRepository) GetReportSectionByID(_ context.Context, id string
 	return section, nil
 }
 
+func (f *fakeReportRepository) GetReportSectionByIDForUpdate(ctx context.Context, id string) (ReportSection, error) {
+	return f.GetReportSectionByID(ctx, id)
+}
+
 func (f *fakeReportRepository) UpdateReportSection(_ context.Context, value ReportSection) (ReportSection, error) {
 	if f.updateSectionErr != nil {
 		return ReportSection{}, f.updateSectionErr
@@ -144,6 +149,11 @@ func (f *fakeReportRepository) UpdateReportSection(_ context.Context, value Repo
 }
 
 func (f *fakeReportRepository) WithinTx(ctx context.Context, fn func(ReportRepository) error) error {
+	if f.beforeTx != nil {
+		beforeTx := f.beforeTx
+		f.beforeTx = nil
+		beforeTx(f)
+	}
 	snapshot := f.snapshot()
 	if err := fn(f); err != nil {
 		f.restore(snapshot)
@@ -789,6 +799,41 @@ func TestCreateSectionVersionConflictsWhileGenerationRunning(t *testing.T) {
 	}
 	if len(repo.sectionVersion[section.ID]) != 0 {
 		t.Fatalf("section versions were created despite conflict: %+v", repo.sectionVersion[section.ID])
+	}
+}
+
+func TestCreateSectionVersionRechecksRunningStatusInsideTransaction(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	section, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{Title: "Intro", Content: "v1"})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+	repo.beforeTx = func(repo *fakeReportRepository) {
+		current := repo.sections[section.ID]
+		current.GenerationStatus = JobStatusRunning
+		repo.sections[section.ID] = current
+	}
+
+	content := "should not apply"
+	_, err = svc.CreateSectionVersion(context.Background(), actor, report.ID, section.ID, CreateSectionVersionInput{
+		Source:  ContentSourceAI,
+		Content: &content,
+	})
+	if code := errorCode(t, err); code != CodeConflict {
+		t.Fatalf("error code = %q, want %q", code, CodeConflict)
+	}
+	current := repo.sections[section.ID]
+	if current.GenerationStatus != JobStatusRunning {
+		t.Fatalf("generation status = %q, want %q", current.GenerationStatus, JobStatusRunning)
+	}
+	if current.Content != section.Content || current.Version != section.Version {
+		t.Fatalf("section was modified despite transaction conflict: %+v", current)
+	}
+	if len(repo.sectionVersion[section.ID]) != 0 {
+		t.Fatalf("section versions were created despite transaction conflict: %+v", repo.sectionVersion[section.ID])
 	}
 }
 

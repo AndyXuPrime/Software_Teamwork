@@ -1911,6 +1911,10 @@ export interface components {
             /** @enum {string} */
             source: "manual" | "ai";
             requirements?: string;
+            content?: string;
+            tables?: {
+                [key: string]: unknown;
+            }[];
         };
         ReportSectionVersion: {
             id: string;
@@ -1943,7 +1947,7 @@ export interface components {
             jobType: components["schemas"]["ReportJobType"];
             target?: {
                 /** @enum {string} */
-                scope?: "report" | "outline" | "section" | "file";
+                scope?: "report" | "section";
                 sectionId?: string;
             };
             requirements?: string;

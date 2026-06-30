@@ -26,6 +26,7 @@ type ReportRepository interface {
 	CreateReportSection(ctx context.Context, value ReportSection) (ReportSection, error)
 	ListReportSections(ctx context.Context, reportID string) ([]ReportSection, error)
 	GetReportSectionByID(ctx context.Context, id string) (ReportSection, error)
+	GetReportSectionByIDForUpdate(ctx context.Context, id string) (ReportSection, error)
 	UpdateReportSection(ctx context.Context, value ReportSection) (ReportSection, error)
 
 	CreateReportSectionVersion(ctx context.Context, value ReportSectionVersion) (ReportSectionVersion, error)
@@ -1005,26 +1006,37 @@ func (s *ReportService) CreateSectionVersion(ctx context.Context, reqCtx Request
 		return ReportSectionVersion{}, NewError(CodeConflict, "section content generation is in progress", nil)
 	}
 
-	content := section.Content
-	if input.Content != nil {
-		content = *input.Content
-	}
-	tables := section.Tables
-	if input.Tables != nil {
-		tables = *input.Tables
-	}
-
 	now := s.now()
 	var created ReportSectionVersion
 	err = s.repo.WithinTx(ctx, func(txRepo ReportRepository) error {
+		currentSection, err := txRepo.GetReportSectionByIDForUpdate(ctx, sectionID)
+		if err != nil {
+			return mapRepositoryReadError(err, "report section not found")
+		}
+		if currentSection.ReportID != reportID {
+			return NewError(CodeNotFound, "report section not found", nil)
+		}
+		if currentSection.GenerationStatus == JobStatusRunning {
+			return NewError(CodeConflict, "section content generation is in progress", nil)
+		}
+
+		content := currentSection.Content
+		if input.Content != nil {
+			content = *input.Content
+		}
+		tables := currentSection.Tables
+		if input.Tables != nil {
+			tables = *input.Tables
+		}
+
 		existing, err := txRepo.ListReportSectionVersions(ctx, sectionID)
 		if err != nil {
 			return dependencyError("list report section versions", err)
 		}
-		nextVersion := nextReportSectionVersion(section, existing)
+		nextVersion := nextReportSectionVersion(currentSection, existing)
 		version := ReportSectionVersion{
 			ID:           newID(),
-			ReportID:     reportID,
+			ReportID:     currentSection.ReportID,
 			SectionID:    sectionID,
 			Version:      nextVersion,
 			Source:       input.Source,
@@ -1038,7 +1050,7 @@ func (s *ReportService) CreateSectionVersion(ctx context.Context, reqCtx Request
 		if err != nil {
 			return mapRepositoryReadError(err, "create report section version failed")
 		}
-		current := section
+		current := currentSection
 		current.Content = content
 		current.Tables = tables
 		current.Version = nextVersion

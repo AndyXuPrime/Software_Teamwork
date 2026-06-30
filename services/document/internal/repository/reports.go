@@ -464,11 +464,19 @@ func (r *PostgresRepository) ListReportSections(ctx context.Context, reportID st
 }
 
 func (r *PostgresRepository) GetReportSectionByID(ctx context.Context, id string) (service.ReportSection, error) {
+	return r.getReportSectionByID(ctx, id, false)
+}
+
+func (r *PostgresRepository) GetReportSectionByIDForUpdate(ctx context.Context, id string) (service.ReportSection, error) {
+	return r.getReportSectionByID(ctx, id, true)
+}
+
+func (r *PostgresRepository) getReportSectionByID(ctx context.Context, id string, lockForUpdate bool) (service.ReportSection, error) {
 	sectionID, err := parseUUID(id)
 	if err != nil {
 		return service.ReportSection{}, service.NewError(service.CodeValidation, "invalid report section id", err)
 	}
-	row := r.db.QueryRow(ctx, `
+	query := `
 		SELECT
 			id::text, report_id::text, COALESCE(outline_id::text, ''), COALESCE(parent_id::text, ''),
 			COALESCE(outline_node_id, ''), section_path, title, level, sort_order,
@@ -476,7 +484,11 @@ func (r *PostgresRepository) GetReportSectionByID(ctx context.Context, id string
 			generation_status, COALESCE(content_source, ''), manual_edited, version,
 			COALESCE(last_job_id::text, ''), generated_at, created_at, updated_at
 		FROM report_sections
-		WHERE id = $1`, sectionID)
+		WHERE id = $1`
+	if lockForUpdate {
+		query += " FOR UPDATE"
+	}
+	row := r.db.QueryRow(ctx, query, sectionID)
 	section, err := scanReportSection(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
