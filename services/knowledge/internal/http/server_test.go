@@ -147,6 +147,49 @@ func TestDocumentListAndDetail(t *testing.T) {
 	}
 }
 
+func TestDocumentLifecycleRoutes(t *testing.T) {
+	repo, now := seedHTTPKnowledgeDocumentWithChunk(t)
+	knowledge := service.NewWithDependencies(repo, nil, nil, func() time.Time { return now.Add(time.Hour) }, func(prefix string) string {
+		return prefix + "_test"
+	})
+	server := knowledgehttp.NewServer(knowledge, knowledgehttp.Config{})
+
+	patchReq := authorizedRequest(http.MethodPatch, "/internal/v1/documents/doc_1", strings.NewReader(`{"tags":["updated","updated","final"]}`), service.PermissionKnowledgeWrite)
+	patchReq.Header.Set("X-Request-Id", "req_patch_doc")
+	patchRes := httptest.NewRecorder()
+	server.ServeHTTP(patchRes, patchReq)
+	if patchRes.Code != http.StatusOK {
+		t.Fatalf("patch status = %d, body = %s", patchRes.Code, patchRes.Body.String())
+	}
+	var patchBody documentResponse
+	decodeJSON(t, patchRes.Body, &patchBody)
+	if patchBody.RequestID != "req_patch_doc" || len(patchBody.Data.Tags) != 2 || patchBody.Data.Tags[0] != "updated" || patchBody.Data.Tags[1] != "final" {
+		t.Fatalf("patch body = %+v", patchBody)
+	}
+
+	invalidReq := authorizedRequest(http.MethodPatch, "/internal/v1/documents/doc_1", strings.NewReader(`{"name":"ignored"}`), service.PermissionKnowledgeWrite)
+	invalidRes := httptest.NewRecorder()
+	server.ServeHTTP(invalidRes, invalidReq)
+	if invalidRes.Code != http.StatusBadRequest {
+		t.Fatalf("invalid patch status = %d, body = %s", invalidRes.Code, invalidRes.Body.String())
+	}
+
+	deleteReq := authorizedRequest(http.MethodDelete, "/internal/v1/documents/doc_1", nil, service.PermissionKnowledgeWrite)
+	deleteReq.Header.Set("X-Request-Id", "req_delete_doc")
+	deleteRes := httptest.NewRecorder()
+	server.ServeHTTP(deleteRes, deleteReq)
+	if deleteRes.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, body = %s", deleteRes.Code, deleteRes.Body.String())
+	}
+
+	getReq := authorizedRequest(http.MethodGet, "/internal/v1/documents/doc_1", nil)
+	getRes := httptest.NewRecorder()
+	server.ServeHTTP(getRes, getReq)
+	if getRes.Code != http.StatusNotFound {
+		t.Fatalf("get deleted status = %d, body = %s", getRes.Code, getRes.Body.String())
+	}
+}
+
 func TestDocumentChunksAndContentContract(t *testing.T) {
 	repo, now := seedHTTPKnowledgeDocumentWithChunk(t)
 	source := &httpContentSource{
@@ -177,6 +220,10 @@ func TestDocumentChunksAndContentContract(t *testing.T) {
 	}
 	if chunk.SectionPath == nil || *chunk.SectionPath != "1. 总则" || chunk.EmbeddingDimension == nil || *chunk.EmbeddingDimension != 384 {
 		t.Fatalf("chunk detail = %+v", chunk)
+	}
+	rawChunksBody := chunksRes.Body.String()
+	if strings.Contains(rawChunksBody, "qdrantPointId") || strings.Contains(rawChunksBody, "embeddingModel") {
+		t.Fatalf("chunk response leaked internal fields: %s", rawChunksBody)
 	}
 	if _, exists := chunksBody.Data[0].Metadata["internalUrl"]; exists {
 		t.Fatalf("metadata leaked unexpected internal URL: %+v", chunksBody.Data[0].Metadata)
@@ -590,7 +637,8 @@ type knowledgeBase struct {
 }
 
 type documentResponse struct {
-	Data document `json:"data"`
+	Data      document `json:"data"`
+	RequestID string   `json:"requestId"`
 }
 
 type documentListResponse struct {
@@ -599,9 +647,10 @@ type documentListResponse struct {
 }
 
 type document struct {
-	ID         string `json:"id"`
-	JobID      string `json:"jobId"`
-	ChunkCount int64  `json:"chunkCount"`
+	ID         string   `json:"id"`
+	JobID      string   `json:"jobId"`
+	ChunkCount int64    `json:"chunkCount"`
+	Tags       []string `json:"tags"`
 }
 
 type documentChunkListResponse struct {
@@ -702,7 +751,9 @@ func seedHTTPKnowledgeDocumentWithChunk(t *testing.T) (*repository.MemoryReposit
 	sectionPath := "1. 总则"
 	chunkType := "text"
 	tokenCount := int32(42)
+	qdrantPointID := "qdrant_point_internal"
 	embeddingProvider := "local_hashing"
+	embeddingModel := "internal-embedding-model"
 	embeddingDimension := int32(384)
 	if err := repo.ReplaceDocumentChunks(context.Background(), "doc_1", []service.DocumentChunk{{
 		ID:                 "chunk_1",
@@ -713,7 +764,9 @@ func seedHTTPKnowledgeDocumentWithChunk(t *testing.T) (*repository.MemoryReposit
 		Content:            "本规程适用于 breaker policy",
 		TokenCount:         &tokenCount,
 		ChunkType:          &chunkType,
+		QdrantPointID:      &qdrantPointID,
 		EmbeddingProvider:  &embeddingProvider,
+		EmbeddingModel:     &embeddingModel,
 		EmbeddingDimension: &embeddingDimension,
 		Metadata:           map[string]any{"page": 3},
 		CreatedAt:          now,
@@ -753,6 +806,10 @@ func (c *httpUploadFileClient) CreateFile(context.Context, service.RequestContex
 
 func (c *httpUploadFileClient) DeleteFile(context.Context, service.RequestContext, string) error {
 	return nil
+}
+
+func (c *httpUploadFileClient) GetFileContent(context.Context, service.RequestContext, string) (service.FileContent, error) {
+	return service.FileContent{}, service.NotFoundError("file content not found")
 }
 
 type httpUploadQueue struct{}
