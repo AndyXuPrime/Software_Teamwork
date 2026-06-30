@@ -2539,6 +2539,12 @@ export interface components {
             query?: string;
             /** @enum {string} */
             status: "running" | "completed" | "failed";
+            /** @description Number of sanitized retrieval result snapshots saved for this test run. */
+            resultCount?: number;
+            /** @description End-to-end latency of the retrieval test call. */
+            latencyMs?: number;
+            /** @description Sanitized failure summary only. */
+            errorMessage?: string;
             results?: components["schemas"]["QARetrievalTestResult"][];
             /** Format: date-time */
             createdAt: string;
