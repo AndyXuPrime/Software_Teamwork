@@ -1,7 +1,7 @@
 ---
 name: Task Issue
 about: Create a tracked task for issue-driven development
-title: 'F-001 中文任务标题'
+title: '[F-001] 中文任务标题'
 labels: ''
 assignees: ''
 ---
@@ -9,7 +9,7 @@ assignees: ''
 ## 标题要求
 
 - Issue 标题和描述都使用中文。
-- 标题格式：`F-001 中文任务标题`
+- 标题格式：`[F-001] 中文任务标题`
 - 编号规则：每个字母组内独立顺序编号，从 `001` 起三位补零，例如 `A-001`、`A-002`、`B-001`。
 - 任务前缀：
   - `S` = Special

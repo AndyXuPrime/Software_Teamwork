@@ -62,7 +62,7 @@ check 名称补入 `contexts`。
 [.github/workflows/task-issue-sync.yml](../../.github/workflows/task-issue-sync.yml)
 会在任务 issue 创建、编辑或重新打开时自动执行：
 
-- 识别标题形如 `A-001 ...`、`B-001 ...`、`C-001 ...`、`F-001 ...` 或 `S-001 ...`，且正文写明
+- 识别标题形如 `[A-001] ...`、`[B-001] ...`、`[C-001] ...`、`[F-001] ...` 或 `[S-001] ...`，且正文写明
   `GitHub Project：Software Teamwork` 的任务 issue。
 - 根据 issue 标题前缀强制同步 `Group`，并根据任务正文的 `优先级`、
   `批次`、`模块`、`Risk`、`依赖任务` 同步 GitHub Project 字段。
@@ -71,10 +71,10 @@ check 名称补入 `contexts`。
   `frontend`、`ci`、`deployment`、`service:<name>` 等模块 label 标记。仓库不存在的
   label 会跳过并在日志中提示。
 - 同步成功后把正文中的 `Project sync` 改为 `synced`；同步失败则改为
-  `blocked`。
+  `blocked`，并将本次 workflow run 标记为失败，方便维护者发现权限问题。
 
 新任务 issue 默认使用 [.github/ISSUE_TEMPLATE/issue.md](../../.github/ISSUE_TEMPLATE/issue.md)。
-模板标题采用 `F-001 中文任务标题` 格式，并内置任务前缀和模块枚举，
+模板标题采用 `[F-001] 中文任务标题` 格式，并内置任务前缀和模块枚举，
 以便 Task Issue Sync 识别和同步 Project 字段。
 
 GitHub user-level Projects v2 通常需要额外 token。维护者应创建一个有 Project
@@ -108,7 +108,8 @@ Issue label、Assignee 和正文更新仍使用默认 `GITHUB_TOKEN`，`PROJECTS
 - 若正文包含任务模板字段，会把 `状态` 从 `Draft` 或 `Ready` 改为
   `In Progress`，并把 Project `Status` 同步为 `In Progress`。
 - 若 Project 同步成功，正文中的 `Project sync` 会写为 `synced`；同步失败会写为
-  `blocked`，此时维护者需要检查 `PROJECTS_TOKEN`。
+  `blocked`，并将本次 workflow run 标记为失败，此时维护者需要检查
+  `PROJECTS_TOKEN`。
 
 ## main 分支保护
 
