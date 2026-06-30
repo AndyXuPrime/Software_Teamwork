@@ -30,7 +30,7 @@
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
 | 12 | 2026-06-30 | Address PR 290 review | `e6223fd` | `Frontend/feat/report-real-document-api` |
-| 11 | 2026-06-30 | F-014 Report real Document API | `4ead93e` | `Frontend/feat/report-real-document-api` |
+| 11 | 2026-06-30 | F-014 Report real Document API | `3528e6f` | `Frontend/feat/report-real-document-api` |
 | 10 | 2026-06-30 | Address report base resources PR review | `b13a4e0` | `PrimeTeam/feat/report-base-resources` |
 | 9 | 2026-06-30 | Report base resources OpenAPI alignment | `3a23a61` | `PrimeTeam/feat/report-base-resources` |
 | 8 | 2026-06-30 | File MinIO storage self-check | `add1229` | `L1nggTeam/feat/file-minio-storage` |

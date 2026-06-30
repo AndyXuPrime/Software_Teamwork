@@ -186,8 +186,18 @@ export function useCreateReportFileMutation() {
 }
 
 export function useRetryReportJobMutation() {
+  const queryClient = useQueryClient()
+
   return useMutation({
-    mutationFn: (jobId: string) => createReportJobAttempt(jobId),
+    mutationFn: ({ jobId }: { jobId: string; reportId?: string }) => createReportJobAttempt(jobId),
+    onSuccess: (attempt, variables) => {
+      void queryClient.invalidateQueries({ queryKey: reportKeys.job(attempt.jobId) })
+      if (variables.reportId) {
+        void queryClient.invalidateQueries({
+          queryKey: reportKeys.events(variables.reportId),
+        })
+      }
+    },
   })
 }
 

@@ -314,10 +314,14 @@ export function ReportGeneratePage() {
   }
 
   const handleRetry = async () => {
-    if (lastJob?.id) {
+    const retryJob = effectiveJob ?? lastJob
+    if (retryJob?.id) {
       try {
-        const attempt = await retryJobMutation.mutateAsync(lastJob.id)
-        setNotice(`已创建重试尝试：${attempt.id}`)
+        const attempt = await retryJobMutation.mutateAsync({
+          jobId: retryJob.id,
+          reportId: retryJob.reportId,
+        })
+        setNotice(`已创建重试尝试：${attempt.id}，当前状态：${attempt.status}`)
       } catch (error) {
         setNotice(formatReportGatewayError(error, '创建重试尝试失败'))
       }

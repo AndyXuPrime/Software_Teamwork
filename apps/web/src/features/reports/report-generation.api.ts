@@ -1,4 +1,10 @@
-import { buildQuery, gatewayFileRequest, gatewayPageRequest, gatewayRequest } from '@/api/client'
+import {
+  buildQuery,
+  gatewayFileRequest,
+  gatewayPageRequest,
+  gatewayRequest,
+  requestVoid,
+} from '@/api/client'
 
 import type {
   CreateReportJobPayload,
@@ -8,6 +14,7 @@ import type {
   ReportEvent,
   ReportFile,
   ReportJob,
+  ReportJobAttempt,
   ReportMaterial,
   ReportOutline,
   ReportSection,
@@ -115,8 +122,8 @@ export function getReportJob(jobId: string): Promise<ReportJob> {
   return gatewayRequest<ReportJob>(`/report-jobs/${encodeURIComponent(jobId)}`)
 }
 
-export function createReportJobAttempt(jobId: string): Promise<ReportJob> {
-  return gatewayRequest<ReportJob>(`/report-jobs/${encodeURIComponent(jobId)}/attempts`, {
+export function createReportJobAttempt(jobId: string): Promise<ReportJobAttempt> {
+  return gatewayRequest<ReportJobAttempt>(`/report-jobs/${encodeURIComponent(jobId)}/attempts`, {
     method: 'POST',
     body: { reason: 'frontend_retry' },
   })
@@ -151,7 +158,7 @@ export function getReport(reportId: string): Promise<Report> {
 }
 
 export function deleteReport(reportId: string): Promise<void> {
-  return gatewayRequest<void>(`/reports/${encodeURIComponent(reportId)}`, {
+  return requestVoid(`/reports/${encodeURIComponent(reportId)}`, {
     method: 'DELETE',
   })
 }
@@ -176,7 +183,7 @@ export function updateReportTemplateStructure(
 }
 
 export function deleteReportTemplate(templateId: string): Promise<void> {
-  return gatewayRequest<void>(`/report-templates/${encodeURIComponent(templateId)}`, {
+  return requestVoid(`/report-templates/${encodeURIComponent(templateId)}`, {
     method: 'DELETE',
   })
 }

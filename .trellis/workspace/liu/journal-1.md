@@ -351,17 +351,24 @@ Removed report frontend fallback data, routed report pages through Gateway Docum
 
 ### Main Changes
 
-(Add details)
+- Removed local fallback data from report generation, records, and template pages.
+- Routed report bootstrap, records, outline, section, job, event, and file actions through Gateway Document API wrappers.
+- Added Gateway error formatting so report errors include `message` and `requestId`.
+- Added regression coverage for fallback removal and Gateway error display.
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
-| `4ead93e` | (see git log) |
+| `3528e6f` | feat(frontend): use real document api for reports |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `bun run --cwd apps/web test:unit`
+- [OK] `bun run --cwd apps/web typecheck`
+- [OK] `bun run --cwd apps/web typecheck:test`
+- [OK] `bun run --cwd apps/web lint`
+- [OK] `bun run --cwd apps/web build`
 
 ### Status
 
@@ -384,17 +391,23 @@ Handled PR #290 review feedback by reusing draft reports after outline job failu
 
 ### Main Changes
 
-(Add details)
+- Reused an existing server report draft when outline job creation failed.
+- Surfaced report and template delete mutation failures with Gateway `message/requestId`.
+- Added regression tests for draft reuse and delete failure visibility.
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
-| `e6223fd` | (see git log) |
+| `e6223fd` | fix(frontend): handle report review failures |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `bun run --cwd apps/web test:unit`
+- [OK] `bun run --cwd apps/web typecheck`
+- [OK] `bun run --cwd apps/web typecheck:test`
+- [OK] `bun run --cwd apps/web lint`
+- [OK] `bun run --cwd apps/web build`
 
 ### Status
 
