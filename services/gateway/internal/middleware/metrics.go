@@ -30,15 +30,36 @@ func Metrics(reg *metrics.Registry, mux *http.ServeMux) Middleware {
 	}
 }
 
-// responseWriter wraps http.ResponseWriter to capture the written status code.
+// responseWriter wraps http.ResponseWriter to capture the HTTP status code.
+// It records only the first status written (matching net/http semantics),
+// captures the implicit 200 on the first Write call, and forwards Flush so
+// SSE / streaming proxy paths that assert http.Flusher continue to work.
 type responseWriter struct {
 	http.ResponseWriter
-	status int
+	status      int
+	wroteHeader bool
 }
 
 func (w *responseWriter) WriteHeader(code int) {
-	w.status = code
+	if !w.wroteHeader {
+		w.status = code
+		w.wroteHeader = true
+	}
 	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *responseWriter) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		w.status = http.StatusOK
+		w.wroteHeader = true
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *responseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func (w *responseWriter) Unwrap() http.ResponseWriter {
