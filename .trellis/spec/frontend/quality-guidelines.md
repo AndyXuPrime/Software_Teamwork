@@ -10,8 +10,10 @@ For non-trivial frontend changes, run the relevant available checks:
 - `bun run --cwd apps/web lint`.
 - `bun run --cwd apps/web format:check`.
 - `bun run --cwd apps/web build`.
-- Unit/component tests for touched logic.
-- Playwright or equivalent E2E coverage for critical flows when implemented.
+- `bun run --cwd apps/web test:unit` for unit/component coverage.
+- `bun run --cwd apps/web test:e2e` for Playwright critical-flow smoke coverage
+  when browser dependencies are available and the touched area is covered by
+  those flows.
 
 Report checks that were not run and why.
 

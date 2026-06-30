@@ -20,6 +20,37 @@ bun run check
 bun run build
 ```
 
+## Frontend tests
+
+Run unit and component tests from the repository root:
+
+```bash
+bun run --cwd apps/web test:unit
+```
+
+Run the Playwright critical-flow smoke tests from the repository root:
+
+```bash
+bun run --cwd apps/web test:e2e
+```
+
+If Playwright browsers are not installed on the machine yet, install Chromium first:
+
+```bash
+bunx playwright install chromium
+```
+
+Before opening a frontend PR, run:
+
+```bash
+bun install --frozen-lockfile
+bun run --cwd apps/web check
+bun run --cwd apps/web test:unit
+bun run --cwd apps/web build
+bun run --cwd apps/web test:e2e
+git diff --check
+```
+
 ## 当前骨架
 
 - `src/app`：应用入口、Provider、Query Client、路由占位。

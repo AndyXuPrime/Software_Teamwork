@@ -283,3 +283,102 @@ Implemented and verified shared frontend state UI for issue #116.
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: F-10 frontend critical flow tests
+
+**Date**: 2026-06-30
+**Task**: F-10 frontend critical flow tests
+**Branch**: `Frontend/test/frontend-critical-flows`
+
+### Summary
+
+Added Vitest/RTL frontend unit and component coverage, Playwright critical-flow smoke tests, local test scripts, frontend README PR checklist, and matching quality spec updates for issue #117.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7d36635` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 9: Update PR 266 after develop rebase
+
+**Date**: 2026-06-30
+**Task**: Update PR 266 after develop rebase
+**Branch**: `Frontend/test/frontend-critical-flows`
+
+### Summary
+
+Rebased PR 266 onto latest upstream/develop, fixed archived Trellis context metadata, reran frontend check, unit, build, e2e, and diff validation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b6c606d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 10: Finalize PR 266 archive metadata
+
+**Date**: 2026-06-30
+**Task**: Finalize PR 266 archive metadata
+**Branch**: `Frontend/test/frontend-critical-flows`
+
+### Summary
+
+Corrected the archived F-10 task commit reference after rebasing PR 266 onto latest upstream/develop and rechecked Trellis metadata formatting.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f220499` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

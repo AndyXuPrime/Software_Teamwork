@@ -6,10 +6,13 @@ export default defineConfig({
   expect: {
     timeout: 5_000,
   },
+  forbidOnly: Boolean(process.env.CI),
   fullyParallel: true,
-  reporter: process.env.CI ? [['github'], ['list']] : 'list',
+  reporter: process.env.CI ? [['github'], ['list']] : [['list'], ['html', { open: 'never' }]],
+  retries: process.env.CI ? 2 : 0,
   use: {
     baseURL: 'http://127.0.0.1:5173',
+    screenshot: 'only-on-failure',
     trace: 'on-first-retry',
   },
   projects: [
@@ -24,4 +27,5 @@ export default defineConfig({
     timeout: 60_000,
     url: 'http://127.0.0.1:5173/login',
   },
+  workers: process.env.CI ? 1 : undefined,
 })

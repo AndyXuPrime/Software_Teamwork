@@ -1,14 +1,61 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { apiClient, ApiError, gatewayRequest, resetApiClientForTests } from './client'
+import {
+  apiClient,
+  ApiError,
+  gatewayPageRequest,
+  gatewayRequest,
+  requestBinary,
+  requestVoid,
+  resetApiClientForTests,
+  streamGateway,
+} from './client'
 
 function setGatewayBaseUrl() {
   vi.stubEnv('VITE_API_BASE_URL', 'http://gateway.test/api/v1')
 }
 
-describe('gatewayRequest', () => {
-  it('maps gateway error envelopes to ApiError details', async () => {
+function jsonResponse(body: unknown, init?: ResponseInit) {
+  return new Response(JSON.stringify(body), {
+    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    status: init?.status ?? 200,
+    statusText: init?.statusText,
+  })
+}
+
+function streamResponse(body: string, init?: ResponseInit) {
+  return new Response(new TextEncoder().encode(body), {
+    headers: { 'Content-Type': 'text/event-stream', ...init?.headers },
+    status: init?.status ?? 200,
+  })
+}
+
+describe('gateway API client', () => {
+  beforeEach(() => {
     setGatewayBaseUrl()
+  })
+
+  it('unwraps success and paginated envelopes', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ data: { id: 'kb-1' }, requestId: 'req-1' }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [{ id: 'kb-1' }],
+          page: { page: 1, pageSize: 20, total: 1 },
+          requestId: 'req-2',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(gatewayRequest('/knowledge-bases/kb-1')).resolves.toEqual({ id: 'kb-1' })
+    await expect(gatewayPageRequest('/knowledge-bases')).resolves.toEqual({
+      items: [{ id: 'kb-1' }],
+      page: { page: 1, pageSize: 20, total: 1 },
+    })
+  })
+
+  it('maps gateway error envelopes to ApiError details', async () => {
     apiClient.setToken('token-123')
     const fetchMock = vi.fn(
       async (_request: Request) =>
@@ -48,34 +95,147 @@ describe('gatewayRequest', () => {
     expect(request.headers.get('Content-Type')).toBe('application/json')
   })
 
-  it('clears the stored token when gateway returns unauthorized', async () => {
-    setGatewayBaseUrl()
-    apiClient.setToken('expired-token')
-    const fetchMock = vi.fn(
-      async (_request: Request) =>
-        new Response(
-          JSON.stringify({
+  it('maps gateway error envelopes and clears stale tokens on unauthorized responses', async () => {
+    apiClient.setToken('stale-token')
+    const onUnauthorized = vi.fn()
+    apiClient.setUnauthorizedHandler(onUnauthorized)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        jsonResponse(
+          {
             error: {
               code: 'unauthorized',
+              fields: { token: 'expired' },
               message: 'session expired',
-              requestId: 'req-auth',
+              requestId: 'req-expired',
             },
-          }),
-          {
-            headers: { 'Content-Type': 'application/json' },
-            status: 401,
           },
+          { status: 401 },
         ),
+      ),
     )
-    vi.stubGlobal('fetch', fetchMock)
 
-    await expect(gatewayRequest('/users/me')).rejects.toBeInstanceOf(ApiError)
+    await expect(requestVoid('/sessions/current', { method: 'DELETE' })).rejects.toMatchObject({
+      code: 'unauthorized',
+      fields: { token: 'expired' },
+      message: 'session expired',
+      requestId: 'req-expired',
+      status: 401,
+    })
     expect(apiClient.getToken()).toBeNull()
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
     expect(localStorage.getItem('auth_token')).toBeNull()
   })
 
+  it('does not force JSON content-type for FormData uploads', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: { id: 'doc-1' },
+        requestId: 'req-upload',
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const form = new FormData()
+    form.set('file', new File(['hello'], 'guide.txt', { type: 'text/plain' }))
+
+    await gatewayRequest('/knowledge-bases/kb-1/documents', {
+      body: form,
+      method: 'POST',
+    })
+
+    const request = fetchMock.mock.calls[0]?.[0] as Request
+    expect(request.headers.get('Content-Type')).not.toBe('application/json')
+    expect(request.headers.get('Content-Type')).toContain('multipart/form-data')
+    expect(request.headers.get('Accept')).toBe('application/json')
+  })
+
+  it('returns binary responses without parsing JSON envelopes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response('docx', {
+          headers: { 'Content-Type': 'application/octet-stream' },
+          status: 200,
+        }),
+      ),
+    )
+
+    const blob = await requestBinary('/report-files/file-1/content')
+
+    expect(await blob.text()).toBe('docx')
+  })
+
+  it('parses managed SSE events and supports abortable streams', async () => {
+    const onEvent = vi.fn()
+    const onDone = vi.fn()
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          streamResponse(
+            [
+              'id: event-1',
+              'event: answer.delta',
+              'retry: 1500',
+              'data: {"content":"hello"}',
+              '',
+              ': heartbeat',
+              'event: answer.completed',
+              'data: {"done":true}',
+              '',
+              '',
+            ].join('\n'),
+          ),
+        ),
+    )
+
+    const stream = streamGateway('/qa-sessions/session-1/messages', {
+      body: { content: 'hello', stream: true },
+      onDone,
+      onEvent,
+    })
+
+    await vi.waitFor(() => expect(onDone).toHaveBeenCalledTimes(1))
+
+    expect(stream.signal.aborted).toBe(false)
+    expect(onEvent).toHaveBeenNthCalledWith(1, {
+      data: '{"content":"hello"}',
+      event: 'answer.delta',
+      id: 'event-1',
+      retry: 1500,
+    })
+    expect(onEvent).toHaveBeenNthCalledWith(2, {
+      data: '{"done":true}',
+      event: 'answer.completed',
+      id: undefined,
+      retry: undefined,
+    })
+
+    stream.abort()
+    expect(stream.signal.aborted).toBe(true)
+  })
+
+  it('reports invalid stream responses through the provided error callback', async () => {
+    const onError = vi.fn()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ data: {}, requestId: 'req-json' })),
+    )
+
+    streamGateway('/qa-sessions/session-1/messages', {
+      onError,
+      onEvent: vi.fn(),
+    })
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+    expect(onError.mock.calls[0]?.[0]).toBeInstanceOf(ApiError)
+    expect(onError.mock.calls[0]?.[0]).toMatchObject({ code: 'invalid_stream_response' })
+  })
+
   it('resets module-level client state for test isolation', async () => {
-    setGatewayBaseUrl()
     vi.stubEnv('VITE_API_MOCKS', 'true')
     const unauthorizedHandler = vi.fn()
     apiClient.setToken('stored-token')

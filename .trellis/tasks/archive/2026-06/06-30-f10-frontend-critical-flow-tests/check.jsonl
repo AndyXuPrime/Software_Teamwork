@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend required checks, test type boundaries, and review checklist used for final verification."}
+{"file": "docs/collaboration/frontend-workflow.md", "reason": "Repository frontend PR workflow and Bun command requirements used before checking and pushing."}
