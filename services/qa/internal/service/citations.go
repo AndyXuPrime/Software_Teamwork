@@ -56,7 +56,9 @@ func isCitationToolName(name string) bool {
 	return strings.HasSuffix(name, "__search_knowledge") ||
 		strings.HasSuffix(name, ".search_knowledge") ||
 		strings.HasSuffix(name, "__get_citation_source") ||
-		strings.HasSuffix(name, ".get_citation_source")
+		strings.HasSuffix(name, ".get_citation_source") ||
+		strings.HasSuffix(name, "__knowledge_query") ||
+		strings.HasSuffix(name, ".knowledge_query")
 }
 
 func collectCitationRecords(value any) []map[string]any {
@@ -113,13 +115,13 @@ func citationFromRecord(record map[string]any) (Citation, bool) {
 	citation.Text = truncateRunes(citation.Text, maxCitationSnapshotTextRunes)
 	citation.ContentPreview = truncateRunes(citation.ContentPreview, maxCitationSnapshotTextRunes)
 	citation.Context = truncateRunes(citation.Context, maxCitationSnapshotContextRunes)
-	if page, ok := firstInt(record, "pageNumber", "page_number", "page"); ok {
+	if page, ok := firstInt(record, "pageNumber", "page_number", "page"); ok && page > 0 {
 		citation.PageNumber = &page
 	}
-	if score, ok := firstFloat(record, "score", "vectorScore", "vector_score"); ok {
+	if score, ok := firstFloat(record, "score", "vectorScore", "vector_score"); ok && validScore(score) {
 		citation.Score = &score
 	}
-	if score, ok := firstFloat(record, "rerankScore", "rerank_score"); ok {
+	if score, ok := firstFloat(record, "rerankScore", "rerank_score"); ok && validScore(score) {
 		citation.RerankScore = &score
 	}
 	if available, ok := firstBool(record, "isSourceAvailable", "sourceAvailable", "source_available"); ok {
@@ -264,4 +266,11 @@ func boolValue(value any) (bool, bool) {
 	default:
 		return false, false
 	}
+}
+
+func validScore(value float64) bool {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return false
+	}
+	return value >= 0 && value <= 1
 }
