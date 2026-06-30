@@ -83,6 +83,16 @@ export class ApiError extends Error {
   isNotFound(): boolean {
     return this.status === 404 || this.code === 'not_found'
   }
+
+  /** Check if the route is active in the contract but not implemented yet. */
+  isNotImplemented(): boolean {
+    return this.status === 501 || this.code === 'not_implemented' || this.code === 'http_501'
+  }
+
+  /** Check if a downstream service or infrastructure dependency failed. */
+  isDependencyError(): boolean {
+    return this.status === 502 || this.code === 'dependency_error'
+  }
 }
 
 // ---------------------------------------------------------------------------

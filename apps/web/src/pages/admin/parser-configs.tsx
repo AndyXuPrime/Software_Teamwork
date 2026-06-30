@@ -1,6 +1,7 @@
 import { Edit, FileCode, Loader2, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
+import { InlineNotice, StateBlock } from '@/components/common'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,6 +19,7 @@ import {
   useParserConfigs,
   useUpdateParserConfig,
 } from '@/features/admin-config'
+import { formatGatewayCapabilityError, getGatewayCapabilityIssue } from '@/features/knowledge'
 import type { ParserBackend, ParserConfig } from '@/lib/types'
 
 // ── Constants ──
@@ -244,7 +246,10 @@ export function ParserConfigsPage() {
           setCreateOpen(false)
         },
         onError: (err: Error) => {
-          setNotification({ type: 'error', text: `创建失败: ${err.message}` })
+          setNotification({
+            type: 'error',
+            text: formatGatewayCapabilityError(err, '解析器配置创建'),
+          })
         },
       },
     )
@@ -264,7 +269,10 @@ export function ParserConfigsPage() {
           setEditingConfig(null)
         },
         onError: (err: Error) => {
-          setNotification({ type: 'error', text: `更新失败: ${err.message}` })
+          setNotification({
+            type: 'error',
+            text: formatGatewayCapabilityError(err, '解析器配置更新'),
+          })
         },
       },
     )
@@ -279,7 +287,10 @@ export function ParserConfigsPage() {
         setDeletingConfig(null)
       },
       onError: (err: Error) => {
-        setNotification({ type: 'error', text: `删除失败: ${err.message}` })
+        setNotification({
+          type: 'error',
+          text: formatGatewayCapabilityError(err, '解析器配置删除'),
+        })
       },
     })
   }, [deletingConfig, deleteMutation])
@@ -288,6 +299,7 @@ export function ParserConfigsPage() {
 
   const items = data ?? []
   const isEmpty = !isLoading && !isError && items.length === 0
+  const parserConfigIssue = isError ? getGatewayCapabilityIssue(error, '解析器配置') : null
 
   // ── Render ──
 
@@ -309,16 +321,9 @@ export function ParserConfigsPage() {
 
       {/* Toast notification */}
       {notification && (
-        <div
-          role="alert"
-          className={`toast-enter mb-4 rounded-lg border px-4 py-3 text-sm ${
-            notification.type === 'success'
-              ? 'border-emerald-500/50 bg-emerald-50 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-950 dark:text-emerald-300'
-              : 'border-destructive/50 bg-destructive/10 text-destructive'
-          }`}
-        >
+        <InlineNotice className="toast-enter mb-4" variant={notification.type}>
           {notification.text}
-        </div>
+        </InlineNotice>
       )}
 
       {/* Loading state */}
@@ -326,15 +331,22 @@ export function ParserConfigsPage() {
 
       {/* Error state */}
       {isError && !isLoading && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center">
-          <p className="mb-3 text-sm text-destructive">
-            加载解析器配置失败: {error instanceof Error ? error.message : '未知错误'}
-          </p>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <Loader2 aria-hidden="true" className="mr-1.5 size-3.5" />
-            重试
-          </Button>
-        </div>
+        <StateBlock
+          action={
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <Loader2 aria-hidden="true" className="mr-1.5 size-3.5" />
+              重试
+            </Button>
+          }
+          description={parserConfigIssue?.description ?? '未知错误'}
+          size="compact"
+          title={parserConfigIssue?.title ?? '加载解析器配置失败'}
+          variant={
+            parserConfigIssue?.kind === 'forbidden'
+              ? 'forbidden'
+              : (parserConfigIssue?.variant ?? 'error')
+          }
+        />
       )}
 
       {/* Empty state */}

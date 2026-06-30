@@ -6,7 +6,7 @@ import { InlineNotice, StateBlock } from '@/components/common'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useKnowledgeSearch } from '@/features/knowledge'
+import { getGatewayCapabilityIssue, useKnowledgeSearch } from '@/features/knowledge'
 import type { KnowledgeBaseSummary, KnowledgeQueryResult } from '@/lib/types'
 
 // ── Constants ──
@@ -83,7 +83,7 @@ export function KnowledgeSearchPage() {
       })
       .catch((err) => {
         if (!cancelled) {
-          setKbsError(err instanceof Error ? err.message : '加载失败')
+          setKbsError(getGatewayCapabilityIssue(err, '知识库列表').description)
         }
       })
       .finally(() => {
@@ -111,6 +111,7 @@ export function KnowledgeSearchPage() {
 
   const handleSearch = useCallback(() => {
     if (!query.trim()) return
+    setResultSummary(null)
 
     const tags = tagFilter
       .split(',')
@@ -138,6 +139,10 @@ export function KnowledgeSearchPage() {
       },
     )
   }, [query, selectedKbIds, topK, scoreThreshold, tagFilter, useRerank, searchMutation])
+
+  const searchIssue = searchMutation.isError
+    ? getGatewayCapabilityIssue(searchMutation.error, '知识检索')
+    : null
 
   // Handle Enter key
   const handleKeyDown = useCallback(
@@ -362,10 +367,9 @@ export function KnowledgeSearchPage() {
       )}
 
       {/* Error */}
-      {searchMutation.isError && (
-        <InlineNotice variant="error">
-          检索失败:{' '}
-          {searchMutation.error instanceof Error ? searchMutation.error.message : '未知错误'}
+      {searchIssue && (
+        <InlineNotice title={searchIssue.title} variant={searchIssue.variant}>
+          {searchIssue.description}
         </InlineNotice>
       )}
 

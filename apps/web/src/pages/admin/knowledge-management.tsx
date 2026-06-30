@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
+import { InlineNotice, StateBlock } from '@/components/common'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -24,6 +25,8 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
+  formatGatewayCapabilityError,
+  getGatewayCapabilityIssue,
   useCreateKnowledgeBase,
   useDeleteKnowledgeBase,
   useKnowledgeBases,
@@ -193,7 +196,10 @@ export function KnowledgeManagement() {
           setPage(1)
         },
         onError: (err: Error) => {
-          setNotification({ type: 'error', text: `创建失败: ${err.message}` })
+          setNotification({
+            type: 'error',
+            text: formatGatewayCapabilityError(err, '知识库创建'),
+          })
         },
       },
     )
@@ -216,7 +222,10 @@ export function KnowledgeManagement() {
           setEditingKb(null)
         },
         onError: (err: Error) => {
-          setNotification({ type: 'error', text: `更新失败: ${err.message}` })
+          setNotification({
+            type: 'error',
+            text: formatGatewayCapabilityError(err, '知识库更新'),
+          })
         },
       },
     )
@@ -231,7 +240,10 @@ export function KnowledgeManagement() {
         setDeletingKb(null)
       },
       onError: (err: Error) => {
-        setNotification({ type: 'error', text: `删除失败: ${err.message}` })
+        setNotification({
+          type: 'error',
+          text: formatGatewayCapabilityError(err, '知识库删除'),
+        })
       },
     })
   }, [deletingKb, deleteMutation])
@@ -251,6 +263,7 @@ export function KnowledgeManagement() {
   const totalPages = data ? Math.max(1, Math.ceil(data.page.total / PAGE_SIZE)) : 1
   const showPagination = totalPages > 1
   const isEmpty = !isLoading && !isError && data && data.items.length === 0
+  const knowledgeBaseIssue = isError ? getGatewayCapabilityIssue(error, '知识库列表') : null
 
   // ── Render ──
 
@@ -272,16 +285,9 @@ export function KnowledgeManagement() {
 
       {/* Toast notification */}
       {notification && (
-        <div
-          role="alert"
-          className={`toast-enter mb-4 rounded-lg border px-4 py-3 text-sm ${
-            notification.type === 'success'
-              ? 'border-emerald-500/50 bg-emerald-50 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-950 dark:text-emerald-300'
-              : 'border-destructive/50 bg-destructive/10 text-destructive'
-          }`}
-        >
+        <InlineNotice className="toast-enter mb-4" variant={notification.type}>
           {notification.text}
-        </div>
+        </InlineNotice>
       )}
 
       {/* Loading state */}
@@ -289,15 +295,22 @@ export function KnowledgeManagement() {
 
       {/* Error state */}
       {isError && !isLoading && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center">
-          <p className="mb-3 text-sm text-destructive">
-            加载知识库失败: {error instanceof Error ? error.message : '未知错误'}
-          </p>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <Loader2 aria-hidden="true" className="mr-1.5 size-3.5" />
-            重试
-          </Button>
-        </div>
+        <StateBlock
+          action={
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <Loader2 aria-hidden="true" className="mr-1.5 size-3.5" />
+              重试
+            </Button>
+          }
+          description={knowledgeBaseIssue?.description ?? '未知错误'}
+          size="compact"
+          title={knowledgeBaseIssue?.title ?? '加载知识库失败'}
+          variant={
+            knowledgeBaseIssue?.kind === 'forbidden'
+              ? 'forbidden'
+              : (knowledgeBaseIssue?.variant ?? 'error')
+          }
+        />
       )}
 
       {/* Data area */}

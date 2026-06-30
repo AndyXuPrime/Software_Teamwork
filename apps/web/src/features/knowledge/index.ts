@@ -1,4 +1,11 @@
 export {
+  formatGatewayCapabilityError,
+  type GatewayCapabilityIssue,
+  type GatewayCapabilityIssueKind,
+  getGatewayCapabilityIssue,
+  isCapabilityUnavailable,
+} from './capability'
+export {
   documentKeys,
   useChunks,
   useDeleteDocument,

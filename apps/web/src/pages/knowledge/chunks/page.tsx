@@ -2,9 +2,10 @@ import { ChevronLeft, ChevronRight, FileText, Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { getDocument, getKnowledgeBase } from '@/api/admin'
+import { StateBlock } from '@/components/common'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { useChunks } from '@/features/knowledge'
+import { getGatewayCapabilityIssue, useChunks } from '@/features/knowledge'
 import type { DocumentStatus, DocumentSummary } from '@/lib/types'
 
 // ── Constants ──
@@ -116,7 +117,9 @@ export function KnowledgeChunksPage({ documentId, onNavigateBack }: KnowledgeChu
         })
       })
       .catch((err) => {
-        if (!cancelled) setDocError(err instanceof Error ? err.message : '加载文档信息失败')
+        if (!cancelled) {
+          setDocError(getGatewayCapabilityIssue(err, '文档详情').description)
+        }
       })
       .finally(() => {
         if (!cancelled) setDocLoading(false)
@@ -132,6 +135,7 @@ export function KnowledgeChunksPage({ documentId, onNavigateBack }: KnowledgeChu
   const totalPages = data ? Math.max(1, Math.ceil(data.page.total / PAGE_SIZE)) : 1
   const showPagination = totalPages > 1
   const isEmpty = !isLoading && !isError && data && data.items.length === 0
+  const chunksIssue = isError ? getGatewayCapabilityIssue(error, '文档分块') : null
 
   // ── Render ──
 
@@ -157,9 +161,13 @@ export function KnowledgeChunksPage({ documentId, onNavigateBack }: KnowledgeChu
           </div>
         )}
         {docError && (
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
-            加载文档信息失败: {docError}
-          </div>
+          <StateBlock
+            className="mb-4"
+            description={docError}
+            size="compact"
+            title="加载文档信息失败"
+            variant="error"
+          />
         )}
         {docInfo && !docLoading && (
           <div>
@@ -193,15 +201,20 @@ export function KnowledgeChunksPage({ documentId, onNavigateBack }: KnowledgeChu
 
       {/* Error state */}
       {isError && !isLoading && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center">
-          <p className="mb-3 text-sm text-destructive">
-            加载分块列表失败: {error instanceof Error ? error.message : '未知错误'}
-          </p>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <Loader2 aria-hidden="true" className="mr-1.5 size-3.5" />
-            重试
-          </Button>
-        </div>
+        <StateBlock
+          action={
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <Loader2 aria-hidden="true" className="mr-1.5 size-3.5" />
+              重试
+            </Button>
+          }
+          description={chunksIssue?.description ?? '未知错误'}
+          size="compact"
+          title={chunksIssue?.title ?? '加载分块列表失败'}
+          variant={
+            chunksIssue?.kind === 'forbidden' ? 'forbidden' : (chunksIssue?.variant ?? 'error')
+          }
+        />
       )}
 
       {/* Data area */}
