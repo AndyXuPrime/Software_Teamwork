@@ -54,6 +54,33 @@ func TestLoadValidatesDocumentDependencies(t *testing.T) {
 	}
 }
 
+func TestLoadUsesDocumentFileServiceTokenFallback(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("DOCUMENT_DATABASE_URL", "postgres://document:document@localhost:5432/document?sslmode=disable")
+	t.Setenv("DOCUMENT_REDIS_ADDR", "localhost:6379")
+	t.Setenv("DOCUMENT_FILE_SERVICE_URL", "http://localhost:8082")
+	t.Setenv("DOCUMENT_AI_GATEWAY_URL", "http://localhost:8086")
+	t.Setenv("DOCUMENT_AI_GATEWAY_PROFILE_ID", "default-chat")
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "shared-token")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.FileServiceToken != "shared-token" {
+		t.Fatalf("FileServiceToken = %q, want shared-token", cfg.FileServiceToken)
+	}
+
+	t.Setenv("DOCUMENT_FILE_SERVICE_TOKEN", "document-file-token")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() with document file token error = %v", err)
+	}
+	if cfg.FileServiceToken != "document-file-token" {
+		t.Fatalf("FileServiceToken = %q, want document-file-token", cfg.FileServiceToken)
+	}
+}
+
 func TestLoadUsesDocumentAIGatewayServiceTokenFallback(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("DOCUMENT_DATABASE_URL", "postgres://document:document@localhost:5432/document?sslmode=disable")
@@ -88,6 +115,7 @@ func clearEnv(t *testing.T) {
 		"DOCUMENT_DATABASE_URL",
 		"DOCUMENT_REDIS_ADDR",
 		"DOCUMENT_FILE_SERVICE_URL",
+		"DOCUMENT_FILE_SERVICE_TOKEN",
 		"DOCUMENT_AI_GATEWAY_URL",
 		"DOCUMENT_AI_GATEWAY_PROFILE_ID",
 		"DOCUMENT_AI_GATEWAY_SERVICE_TOKEN",

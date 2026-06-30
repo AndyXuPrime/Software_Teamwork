@@ -141,6 +141,125 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 
 ---
 
+## Scenario: Local Integration Compose Baseline
+
+### 1. Scope / Trigger
+
+- Trigger: adding or changing `deploy/docker-compose.yml`, local demo seed
+  data, service Dockerfiles, service port mappings, health checks, readiness
+  wiring, service tokens, or `.env.example` files for the backend integration
+  environment.
+- Applies to `deploy/**`, service-local Dockerfiles, migration wiring, and
+  documentation that tells frontend or new contributors how to start services.
+
+### 2. Signatures
+
+- Compose entrypoint:
+  - `docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config --quiet`
+  - `docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example --profile ai config --quiet`
+- Runtime entrypoint:
+  - `cd deploy && docker compose up -d --build`
+  - `cd deploy && docker compose --profile ai up -d --build`
+- Public browser/API entrypoint:
+  - `http://localhost:8080` through gateway.
+- Operational routes:
+  - `GET /healthz`
+  - `GET /readyz`
+
+### 3. Contracts
+
+- Frontend and browser-facing documentation must route traffic through gateway;
+  internal service ports may be exposed only for local debugging.
+- `.env.example` values must be local placeholders and must not contain real
+  provider keys, tokens, passwords, or production credentials.
+- Compose must include health checks for infrastructure and service containers
+  where the image has a practical probe command.
+- PostgreSQL health checks used by migration jobs must probe TCP readiness, e.g.
+  `pg_isready -h localhost -U postgres -d postgres`; socket-only checks can pass
+  during the official image's temporary init server and start migrations before
+  port `5432` accepts connections.
+- Qdrant health checks must use commands available inside `qdrant/qdrant`; do
+  not assume `curl` or `wget` exists. A bash TCP probe such as
+  `bash -ec '</dev/tcp/127.0.0.1/6333'` is acceptable when HTTP tooling is absent.
+- Service containers must use service-local Dockerfiles and keep each Go service
+  independently buildable.
+- Go service Dockerfiles should set `GOPROXY=https://goproxy.cn,direct` in the
+  build stage before `go mod download`, matching the local network fallback used
+  by service verification.
+- PostgreSQL seed scripts may create local/demo data only after service-owned
+  migrations have applied; production seed or secret material does not belong in
+  `deploy/seeds`.
+- File Service runs with PostgreSQL metadata in the root local Compose baseline,
+  so it must receive `FILE_INTERNAL_SERVICE_TOKEN` or `INTERNAL_SERVICE_TOKEN`.
+  Callers that may reach File Service without passing through gateway, such as
+  Knowledge and Document background workers, must also receive a matching file
+  service token and send it as `X-Service-Token`.
+- Optional services such as `ai-gateway` may use a Compose profile, but gateway
+  base URL configuration should remain explicit so route failures are
+  diagnosable.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required handling |
+| --- | --- |
+| Compose YAML or env interpolation is invalid | `docker compose ... config --quiet` must fail before merge. |
+| Required Docker image is unavailable locally | Document `docker pull` commands and report Docker runtime validation as skipped. |
+| Docker build times out on `proxy.golang.org` | Set the service Dockerfile build-stage `GOPROXY` to `https://goproxy.cn,direct` and rebuild. |
+| Migration jobs fail with `connect: connection refused` immediately after PostgreSQL init | Ensure Postgres healthcheck uses `pg_isready -h localhost`, then recreate containers without deleting volumes unless seed state requires it. |
+| Qdrant stays `health: starting` while `http://localhost:6333/readyz` works | Inspect Docker health output for missing probe tools and switch to an in-image TCP probe. |
+| File calls return `401 unauthorized` while `file /readyz` is healthy | Verify `FILE_INTERNAL_SERVICE_TOKEN` on file and matching `KNOWLEDGE_SERVICE_TOKEN`, `DOCUMENT_FILE_SERVICE_TOKEN`, or propagated `X-Service-Token` on callers. |
+| Gateway readiness fails | Check Redis and auth first, then search logs by `X-Request-Id`. |
+| Auth/document/ai-gateway readiness fails | Inspect PostgreSQL container, migration job, and service logs. |
+| Seed data insert fails | Keep scripts idempotent with `ON CONFLICT` and verify migrations ran first. |
+| Optional AI Gateway is not running | Core startup may proceed, but QA/model routes should document dependency failure risk. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: `deploy/README.md` documents ports, env keys, image pulls, seed data,
+  request-id troubleshooting, and common dependency failures; Compose config
+  parses for both default and optional profiles.
+- Base: Docker runtime smoke tests are skipped when images are missing, but the
+  exact image pull commands and skipped validation are reported.
+- Bad: frontend documentation points to `http://localhost:8083` for Knowledge,
+  `.env.example` contains a real provider API key, a seed script writes data
+  before the owning service migration job completes, or File Service runs in DB
+  mode without matching service tokens for direct internal callers.
+
+### 6. Tests Required
+
+- Run Compose config parsing for default and optional profiles.
+- Run `git diff --check`.
+- Run `go test ./...` and `go build ./cmd/server` for changed Go services or
+  every service referenced by the integration baseline when feasible.
+- For QA, also run `go build ./cmd/agent` when `services/qa/cmd/agent` exists.
+- Run Docker image build/start smoke tests when the required local images are
+  available; otherwise document the missing image installation commands.
+- Runtime smoke tests must include `docker compose ps` and at least one host
+  `/readyz` call for gateway, each core service, Qdrant, and optional
+  `ai-gateway` when the `ai` profile is enabled.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+frontend -> http://localhost:8083/internal/v1/knowledge-bases
+deploy/.env.example -> real provider API key
+document worker -> file /internal/v1/files without X-Service-Token
+seed SQL -> inserts model_profiles before ai-gateway migrations
+```
+
+#### Correct
+
+```text
+frontend -> gateway http://localhost:8080/api/v1/knowledge-bases
+deploy/.env.example -> local placeholder secrets only
+document worker -> file /internal/v1/files with DOCUMENT_FILE_SERVICE_TOKEN
+seed SQL -> idempotent local/demo data after service migrations
+```
+
+---
+
 ## Forbidden Patterns
 
 - Root-level Go module used to build all microservices together.

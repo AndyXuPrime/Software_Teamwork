@@ -21,6 +21,7 @@ type Config struct {
 	DatabaseURL           string
 	RedisAddr             string
 	FileServiceURL        string
+	FileServiceToken      string
 	AIGatewayURL          string
 	AIGatewayProfileID    string
 	AIGatewayServiceToken string
@@ -35,6 +36,7 @@ func Load() (Config, error) {
 		DatabaseURL:           strings.TrimSpace(os.Getenv("DOCUMENT_DATABASE_URL")),
 		RedisAddr:             strings.TrimSpace(os.Getenv("DOCUMENT_REDIS_ADDR")),
 		FileServiceURL:        strings.TrimSpace(os.Getenv("DOCUMENT_FILE_SERVICE_URL")),
+		FileServiceToken:      firstEnv("DOCUMENT_FILE_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
 		AIGatewayURL:          strings.TrimSpace(os.Getenv("DOCUMENT_AI_GATEWAY_URL")),
 		AIGatewayProfileID:    strings.TrimSpace(os.Getenv("DOCUMENT_AI_GATEWAY_PROFILE_ID")),
 		AIGatewayServiceToken: firstEnv("DOCUMENT_AI_GATEWAY_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
