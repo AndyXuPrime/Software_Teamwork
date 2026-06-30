@@ -139,6 +139,12 @@ export function ParserConfigsPage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['admin', 'parser-configs'] }),
   })
 
+  const toggleMutation = useMutation({
+    mutationFn: (config: ParserConfig) =>
+      updateParserConfig(config.id, { enabled: !config.enabled }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['admin', 'parser-configs'] }),
+  })
+
   const handleSubmit = () => {
     const parsed = parseForm(form)
     if (typeof parsed === 'string') {
@@ -156,10 +162,12 @@ export function ParserConfigsPage() {
   }
 
   const handleToggle = (config: ParserConfig) => {
-    saveMutation.mutate({ enabled: !config.enabled })
+    toggleMutation.mutate(config)
   }
 
-  const requestError = errorMessage(saveMutation.error ?? deleteMutation.error ?? configsQuery.error)
+  const requestError = errorMessage(
+    saveMutation.error ?? toggleMutation.error ?? deleteMutation.error ?? configsQuery.error,
+  )
 
   return (
     <div className="space-y-6">
@@ -283,7 +291,12 @@ export function ParserConfigsPage() {
                   <Button size="sm" variant="outline" onClick={() => handleEdit(config)}>
                     Edit
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => handleToggle(config)}>
+                  <Button
+                    disabled={toggleMutation.isPending}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleToggle(config)}
+                  >
                     {config.enabled ? 'Disable' : 'Enable'}
                   </Button>
                   <Button

@@ -202,6 +202,7 @@ func TestUploadDocumentCreatesDocumentJobAndQueuesIngestion(t *testing.T) {
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	})
+	seedUploadParserConfig(repo, now)
 
 	files := &uploadFileClient{
 		createFn: func(ctx context.Context, reqCtx service.RequestContext, file service.UploadedFile) (service.FileObject, error) {
@@ -291,6 +292,7 @@ func TestUploadDocumentCompensatesWhenRepositoryFails(t *testing.T) {
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	})
+	seedUploadParserConfig(repo.MemoryRepository, now)
 	files := &uploadFileClient{
 		createFn: func(context.Context, service.RequestContext, service.UploadedFile) (service.FileObject, error) {
 			return service.FileObject{
@@ -330,6 +332,9 @@ func TestUploadDocumentCompensatesWhenRepositoryFails(t *testing.T) {
 	}
 	if queue.calls != 0 {
 		t.Fatalf("queue calls = %d", queue.calls)
+	}
+	if repo.lastCreate.ParserConfigID != "parser_default" || !json.Valid(repo.lastCreate.ParserConfigSnapshot) {
+		t.Fatalf("parser config snapshot = id:%q body:%s", repo.lastCreate.ParserConfigID, string(repo.lastCreate.ParserConfigSnapshot))
 	}
 }
 
@@ -383,6 +388,7 @@ func TestUploadDocumentMarksFailureWhenQueueHandoffFails(t *testing.T) {
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	})
+	seedUploadParserConfig(repo.MemoryRepository, now)
 	files := &uploadFileClient{
 		createFn: func(context.Context, service.RequestContext, service.UploadedFile) (service.FileObject, error) {
 			return service.FileObject{
@@ -468,6 +474,7 @@ func (q *uploadQueue) EnqueueDocumentIngestion(ctx context.Context, task service
 type uploadRepository struct {
 	*repository.MemoryRepository
 	createErr       error
+	lastCreate      service.CreateDocumentWithJobRecord
 	markFailedCalls []markFailedCall
 }
 
@@ -479,6 +486,7 @@ type markFailedCall struct {
 }
 
 func (r *uploadRepository) CreateDocumentWithJob(ctx context.Context, input service.CreateDocumentWithJobRecord, scope service.AccessScope) (service.KnowledgeDocument, service.ProcessingJob, error) {
+	r.lastCreate = input
 	if r.createErr != nil {
 		return service.KnowledgeDocument{}, service.ProcessingJob{}, r.createErr
 	}
@@ -507,6 +515,21 @@ func fixedClock() service.Clock {
 	return func() time.Time {
 		return time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
 	}
+}
+
+func seedUploadParserConfig(repo *repository.MemoryRepository, now time.Time) {
+	repo.SeedParserConfig(service.ParserConfig{
+		ID:                    "parser_default",
+		Name:                  "Default builtin parser",
+		Backend:               service.ParserBackendBuiltin,
+		Enabled:               true,
+		IsDefault:             true,
+		Concurrency:           4,
+		SupportedContentTypes: []string{"application/pdf"},
+		DefaultParameters:     json.RawMessage(`{}`),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	})
 }
 
 func hasCode(err error, code service.Code) bool {

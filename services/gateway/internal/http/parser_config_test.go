@@ -99,3 +99,77 @@ func TestParserConfigProxyRejectsNonAdmin(t *testing.T) {
 		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
 	}
 }
+
+func TestParserConfigProxyRejectsModelProfileOnlyPermission(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_model_admin",
+		UserID:      "usr_model_admin",
+		Username:    "model-admin",
+		Roles:       []string{},
+		Permissions: []string{"admin:model-profile:write"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		store:         store,
+		hasher:        hasher,
+		ownerBaseURLs: map[string]string{"knowledge": "http://knowledge.invalid"},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/parser-configs", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	res := httptest.NewRecorder()
+	server.ServeHTTP(res, req)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestParserConfigProxyPreservesSafeValidationFields(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_parser_admin",
+		UserID:      "usr_parser_admin",
+		Username:    "parser-admin",
+		Roles:       []string{},
+		Permissions: []string{"admin:parser-config:write"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+
+	knowledge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":{"code":"validation_error","message":"request validation failed","requestId":"downstream","fields":{"backend":"is not supported","endpointUrl":"must be an absolute URI","secret":"stack at http://knowledge.internal with token"}}}`)
+	}))
+	defer knowledge.Close()
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		store:         store,
+		hasher:        hasher,
+		ownerBaseURLs: map[string]string{"knowledge": knowledge.URL},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/parser-configs", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("X-Request-Id", "req_validation")
+	res := httptest.NewRecorder()
+	server.ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+	}
+	var body errorBody
+	decodeJSON(t, res.Body, &body)
+	if body.Error.Code != "validation_error" || body.Error.Fields["backend"] != "is not supported" || body.Error.Fields["endpointUrl"] == "" {
+		t.Fatalf("error body = %+v", body.Error)
+	}
+	if _, ok := body.Error.Fields["secret"]; ok {
+		t.Fatalf("sensitive field leaked: %+v", body.Error.Fields)
+	}
+}

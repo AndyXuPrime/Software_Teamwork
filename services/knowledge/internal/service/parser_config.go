@@ -149,11 +149,22 @@ func (s *Service) ResolveParserConfig(ctx context.Context, contentType string) (
 		DefaultParameters: cloneRaw(config.DefaultParameters)}, nil
 }
 
+func marshalParserConfigSnapshot(snapshot ParserConfigSnapshot) (json.RawMessage, error) {
+	body, err := json.Marshal(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(body), nil
+}
+
 func requireParserAdmin(reqCtx RequestContext) error {
 	if strings.TrimSpace(reqCtx.UserID) == "" {
 		return UnauthorizedError()
 	}
-	if hasAdminRole(reqCtx.Roles) || hasPermission(reqCtx.Permissions, PermissionKnowledgeAdmin) {
+	if hasAdminRole(reqCtx.Roles) ||
+		hasPermission(reqCtx.Permissions, PermissionSystemAdmin) ||
+		hasPermission(reqCtx.Permissions, PermissionKnowledgeAdmin) ||
+		hasPermission(reqCtx.Permissions, PermissionAdminParserConfig) {
 		return nil
 	}
 	return ForbiddenError("knowledge administration permission is required")

@@ -348,18 +348,23 @@ func (r *MemoryRepository) CreateDocumentWithJob(ctx context.Context, input serv
 	}
 	documentID := input.DocumentID
 	job := service.ProcessingJob{
-		ID:              input.JobID,
-		KnowledgeBaseID: input.KnowledgeBaseID,
-		DocumentID:      &documentID,
-		JobType:         input.JobType,
-		Status:          input.JobStatus,
-		CurrentStage:    &stage,
-		ProgressPercent: 0,
-		Message:         &message,
-		Attempts:        0,
-		MaxAttempts:     input.MaxAttempts,
-		CreatedAt:       input.CreatedAt,
-		UpdatedAt:       input.UpdatedAt,
+		ID:                   input.JobID,
+		KnowledgeBaseID:      input.KnowledgeBaseID,
+		DocumentID:           &documentID,
+		JobType:              input.JobType,
+		Status:               input.JobStatus,
+		CurrentStage:         &stage,
+		ProgressPercent:      0,
+		Message:              &message,
+		Attempts:             0,
+		MaxAttempts:          input.MaxAttempts,
+		ParserConfigSnapshot: cloneRaw(input.ParserConfigSnapshot),
+		CreatedAt:            input.CreatedAt,
+		UpdatedAt:            input.UpdatedAt,
+	}
+	if input.ParserConfigID != "" {
+		parserConfigID := input.ParserConfigID
+		job.ParserConfigID = &parserConfigID
 	}
 	r.documents[doc.ID] = doc
 	r.jobs[job.ID] = job
@@ -545,6 +550,8 @@ func cloneJob(job service.ProcessingJob) service.ProcessingJob {
 	job.Message = cloneStringPtr(job.Message)
 	job.ErrorCode = cloneStringPtr(job.ErrorCode)
 	job.ErrorMessage = cloneStringPtr(job.ErrorMessage)
+	job.ParserConfigID = cloneStringPtr(job.ParserConfigID)
+	job.ParserConfigSnapshot = cloneRaw(job.ParserConfigSnapshot)
 	if job.StartedAt != nil {
 		value := *job.StartedAt
 		job.StartedAt = &value

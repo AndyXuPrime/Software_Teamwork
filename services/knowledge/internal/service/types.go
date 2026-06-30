@@ -8,9 +8,11 @@ import (
 )
 
 const (
-	PermissionKnowledgeRead  = "knowledge:read"
-	PermissionKnowledgeWrite = "knowledge:write"
-	PermissionKnowledgeAdmin = "knowledge:admin"
+	PermissionKnowledgeRead     = "knowledge:read"
+	PermissionKnowledgeWrite    = "knowledge:write"
+	PermissionKnowledgeAdmin    = "knowledge:admin"
+	PermissionSystemAdmin       = "system:admin"
+	PermissionAdminParserConfig = "admin:parser-config:write"
 )
 
 type ParserBackend string
@@ -43,12 +45,12 @@ type ParserConfigList struct {
 }
 
 type ParserConfigSnapshot struct {
-	ParserConfigID        string
-	Backend               ParserBackend
-	Concurrency           int
-	SupportedContentTypes []string
-	EndpointURL           *string
-	DefaultParameters     json.RawMessage
+	ParserConfigID        string          `json:"parserConfigId"`
+	Backend               ParserBackend   `json:"backend"`
+	Concurrency           int             `json:"concurrency"`
+	SupportedContentTypes []string        `json:"supportedContentTypes,omitempty"`
+	EndpointURL           *string         `json:"endpointUrl,omitempty"`
+	DefaultParameters     json.RawMessage `json:"defaultParameters,omitempty"`
 }
 
 type ParserConfigAudit struct {
@@ -168,22 +170,24 @@ type KnowledgeDocument struct {
 }
 
 type ProcessingJob struct {
-	ID              string
-	KnowledgeBaseID string
-	DocumentID      *string
-	JobType         string
-	Status          string
-	CurrentStage    *string
-	ProgressPercent int32
-	Message         *string
-	ErrorCode       *string
-	ErrorMessage    *string
-	Attempts        int32
-	MaxAttempts     int32
-	StartedAt       *time.Time
-	FinishedAt      *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                   string
+	KnowledgeBaseID      string
+	DocumentID           *string
+	JobType              string
+	Status               string
+	CurrentStage         *string
+	ProgressPercent      int32
+	Message              *string
+	ErrorCode            *string
+	ErrorMessage         *string
+	Attempts             int32
+	MaxAttempts          int32
+	ParserConfigID       *string
+	ParserConfigSnapshot json.RawMessage
+	StartedAt            *time.Time
+	FinishedAt           *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 type KnowledgeBaseList struct {
@@ -305,22 +309,24 @@ type UpdateKnowledgeBaseRecord struct {
 }
 
 type CreateDocumentWithJobRecord struct {
-	DocumentID      string
-	KnowledgeBaseID string
-	FileRef         string
-	Name            string
-	ContentType     string
-	SizeBytes       int64
-	Status          DocumentStatus
-	Tags            []string
-	CurrentJobID    string
-	CreatedBy       string
-	JobID           string
-	JobType         string
-	JobStatus       string
-	JobStage        string
-	JobMessage      string
-	MaxAttempts     int32
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	DocumentID           string
+	KnowledgeBaseID      string
+	FileRef              string
+	Name                 string
+	ContentType          string
+	SizeBytes            int64
+	Status               DocumentStatus
+	Tags                 []string
+	CurrentJobID         string
+	CreatedBy            string
+	JobID                string
+	JobType              string
+	JobStatus            string
+	JobStage             string
+	JobMessage           string
+	MaxAttempts          int32
+	ParserConfigID       string
+	ParserConfigSnapshot json.RawMessage
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }

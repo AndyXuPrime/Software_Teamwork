@@ -414,16 +414,18 @@ func (r *PostgresRepository) CreateDocumentWithJob(ctx context.Context, input se
 	}
 
 	jobRow, err := qtx.CreateProcessingJob(ctx, sqlc.CreateProcessingJobParams{
-		ID:              input.JobID,
-		KnowledgeBaseID: input.KnowledgeBaseID,
-		DocumentID:      input.DocumentID,
-		JobType:         input.JobType,
-		Status:          input.JobStatus,
-		CurrentStage:    input.JobStage,
-		Message:         input.JobMessage,
-		MaxAttempts:     input.MaxAttempts,
-		CreatedAt:       pgTime(input.CreatedAt),
-		UpdatedAt:       pgTime(input.UpdatedAt),
+		ID:                   input.JobID,
+		KnowledgeBaseID:      input.KnowledgeBaseID,
+		DocumentID:           input.DocumentID,
+		JobType:              input.JobType,
+		Status:               input.JobStatus,
+		CurrentStage:         input.JobStage,
+		Message:              input.JobMessage,
+		MaxAttempts:          input.MaxAttempts,
+		ParserConfigID:       input.ParserConfigID,
+		ParserConfigSnapshot: []byte(input.ParserConfigSnapshot),
+		CreatedAt:            pgTime(input.CreatedAt),
+		UpdatedAt:            pgTime(input.UpdatedAt),
 	})
 	if err != nil {
 		return service.KnowledgeDocument{}, service.ProcessingJob{}, wrapPostgresError("create processing job", err)
@@ -615,22 +617,24 @@ func documentFromCreateRow(row sqlc.CreateDocumentRow) service.KnowledgeDocument
 
 func processingJobFromRow(row sqlc.ProcessingJob) service.ProcessingJob {
 	return service.ProcessingJob{
-		ID:              row.ID,
-		KnowledgeBaseID: row.KnowledgeBaseID,
-		DocumentID:      textPtr(row.DocumentID),
-		JobType:         row.JobType,
-		Status:          row.Status,
-		CurrentStage:    textPtr(row.CurrentStage),
-		ProgressPercent: row.ProgressPercent,
-		Message:         textPtr(row.Message),
-		ErrorCode:       textPtr(row.ErrorCode),
-		ErrorMessage:    textPtr(row.ErrorMessage),
-		Attempts:        row.Attempts,
-		MaxAttempts:     row.MaxAttempts,
-		StartedAt:       timePtr(row.StartedAt),
-		FinishedAt:      timePtr(row.FinishedAt),
-		CreatedAt:       row.CreatedAt.Time,
-		UpdatedAt:       row.UpdatedAt.Time,
+		ID:                   row.ID,
+		KnowledgeBaseID:      row.KnowledgeBaseID,
+		DocumentID:           textPtr(row.DocumentID),
+		JobType:              row.JobType,
+		Status:               row.Status,
+		CurrentStage:         textPtr(row.CurrentStage),
+		ProgressPercent:      row.ProgressPercent,
+		Message:              textPtr(row.Message),
+		ErrorCode:            textPtr(row.ErrorCode),
+		ErrorMessage:         textPtr(row.ErrorMessage),
+		Attempts:             row.Attempts,
+		MaxAttempts:          row.MaxAttempts,
+		ParserConfigID:       textPtr(row.ParserConfigID),
+		ParserConfigSnapshot: cloneJSON(row.ParserConfigSnapshot, "{}"),
+		StartedAt:            timePtr(row.StartedAt),
+		FinishedAt:           timePtr(row.FinishedAt),
+		CreatedAt:            row.CreatedAt.Time,
+		UpdatedAt:            row.UpdatedAt.Time,
 	}
 }
 
