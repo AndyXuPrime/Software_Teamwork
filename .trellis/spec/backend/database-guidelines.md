@@ -635,6 +635,8 @@ Knowledge upload -> File Service stores raw bytes -> Knowledge transaction creat
 
 - PostgreSQL owns durable report state for report types, templates, materials, reports, outlines, sections, section versions, jobs, attempts, events, files, and operation logs.
 - `report_jobs`, `report_job_attempts`, and `report_events` are the durable authority for job status, retry history, failure summaries, and public progress events.
+- Report job progress JSON must use numeric `completed` and `total` fields. Terminal status updates (`succeeded`, `partial_succeeded`, `failed`, `canceled`) must preserve existing meaningful progress such as `1/2` from multi-step generation, and only write default progress (`1/1` for success-like states, `0/1` for failure-like states) when no detailed progress exists.
+- When building JSON with PostgreSQL parameters, cast ambiguous parameters explicitly, for example `jsonb_build_object('completed', $2::int, 'total', $3::int)`, so pgx/PostgreSQL can infer parameter types in integration tests and production.
 - Redis/asynq may store queue payloads, delivery metadata, and task identifiers only. It must not be the only source of report job or event truth.
 - File bytes for templates, materials, and generated report files belong to the File Service. Document tables may persist only service-internal file references and display metadata, never MinIO object keys or bucket names.
 - Repository methods return service-layer domain structs, not generated sqlc rows or raw driver types.
@@ -661,6 +663,7 @@ Knowledge upload -> File Service stores raw bytes -> Knowledge transaction creat
 - Config tests for required Document Service dependency keys and invalid URL rejection.
 - Handler tests for `/healthz` and `/readyz` response envelopes, request ID propagation, and dependency failure status.
 - Repository integration tests, gated by `DOCUMENT_TEST_DATABASE_URL`, that apply migrations and verify report type, report, job, attempt, event, and transaction behavior.
+- Repository integration tests for multi-step jobs must assert `UpdateReportJobProgress` survives terminal status updates instead of being overwritten by generic `1/1` or `0/1` defaults.
 - Build and package checks from `services/document`: `go test ./...`, `go build ./cmd/server`, `sqlc generate`, and migration apply against an empty PostgreSQL database when migration tooling is available.
 
 ### 7. Wrong vs Correct
