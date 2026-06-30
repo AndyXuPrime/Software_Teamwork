@@ -81,7 +81,7 @@ func TestPostgresRepositoryDocumentUploadLifecycle(t *testing.T) {
 	}
 
 	failedAt := now.Add(time.Minute)
-	if err := repo.MarkDocumentJobFailed(ctx, doc.ID, job.ID, "dependency_error", "queue failed", failedAt); err != nil {
+	if err := repo.MarkDocumentJobFailed(ctx, doc.ID, job.ID, nil, "dependency_error", "queue failed", failedAt); err != nil {
 		t.Fatalf("MarkDocumentJobFailed() error = %v", err)
 	}
 	failedDoc, err := repo.GetDocument(ctx, doc.ID, scope)
