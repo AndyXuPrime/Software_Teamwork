@@ -33,6 +33,7 @@
 | [Knowledge 数据模型文档](services/knowledge/docs/data-models.md) | Knowledge 模块知识库、文档、处理任务、切片、Qdrant payload 和运行时配置逻辑模型。 |
 | [Knowledge 实现说明](services/knowledge/docs/implementation.md) | `services/knowledge/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [Parser Runtime 服务文档](services/parser/README.md) | 内部文档解析运行时、Python/PaddleOCR 边界和 `/internal/v1/parsed-documents` 契约入口。 |
+| [Parser Runtime 实现说明](services/parser/docs/implementation.md) | `services/parser/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [QA 服务接口文档](services/qa/README.md) | 智能问答 Agent Host、会话、消息、ReAct 循环、MCP 工具调用、SSE、引用、配置、检索测试和统计接口说明。 |
 | [QA 数据模型文档](services/qa/docs/data-models.md) | QA 模块逻辑数据模型、核心关系、写入流程、索引和安全约束。 |
 | [QA 实现说明](services/qa/docs/implementation.md) | `services/qa/` 当前实现状态、契约对齐、缺口和最近检查记录。 |

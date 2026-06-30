@@ -1,6 +1,6 @@
 # Knowledge Service 实现说明
 
-版本：v0.6
+版本：v0.7
 日期：2026-06-30
 范围：`services/knowledge/` 当前实现、契约对齐、缺口和后续实现约束
 
@@ -13,7 +13,7 @@
 | 类型 | 权威来源 | 本文档关系 |
 | --- | --- | --- |
 | 服务公开说明 | `docs/services/knowledge/README.md` | 只能补充，不能覆盖 |
-| 服务 OpenAPI | `services/knowledge/api/openapi.yaml` | 只能跟随，不能另起契约 |
+| 服务 OpenAPI | `docs/services/knowledge/api/internal.openapi.yaml`；`services/knowledge/api/openapi.yaml` 是实现本地路由副本 | 只能跟随，不能另起契约 |
 | Gateway 公开契约 | `docs/services/gateway/api/public.openapi.yaml` | 前端稳定契约以 gateway 为准 |
 | 服务边界 | `docs/architecture/service-boundaries.md` | 必须遵守 |
 | 技术基线 | `docs/architecture/technology-decisions.md` | 必须跟随 |
@@ -37,18 +37,18 @@
 
 | 能力 | 代码位置 | 契约来源 | 验证方式 | 备注 |
 | --- | --- | --- | --- | --- |
-| 健康检查 | `services/knowledge/internal/http/server.go` | `services/knowledge/api/openapi.yaml` | `cd services/knowledge && go test ./...` | `GET /healthz`、`GET /readyz`。 |
-| 知识库 CRUD | `services/knowledge/internal/http/server.go`、`internal/service/service.go` | `services/knowledge/api/openapi.yaml` | `TestKnowledgeBaseCRUDAndSoftDelete` | 支持列表、创建、详情、更新、软删除。 |
+| 健康检查 | `services/knowledge/internal/http/server.go` | `docs/services/knowledge/api/internal.openapi.yaml` | `cd services/knowledge && go test ./...` | `GET /healthz`、`GET /readyz`。 |
+| 知识库 CRUD | `services/knowledge/internal/http/server.go`、`internal/service/service.go` | `docs/services/knowledge/api/internal.openapi.yaml` | `TestKnowledgeBaseCRUDAndSoftDelete` | 支持列表、创建、详情、更新、软删除。 |
 | 用户上下文和权限校验 | `services/knowledge/internal/service/service.go` | `docs/services/knowledge/README.md` | service tests | 依赖 gateway 注入的 user/permission context。 |
-| 文档列表和详情 | `services/knowledge/internal/http/server.go` | `services/knowledge/api/openapi.yaml` | `TestDocumentListAndDetailExcludeDeletedKnowledgeBase` | 只覆盖文档元数据/状态。 |
+| 文档列表和详情 | `services/knowledge/internal/http/server.go` | `docs/services/knowledge/api/internal.openapi.yaml` | `TestDocumentListAndDetailExcludeDeletedKnowledgeBase` | 只覆盖文档元数据/状态。 |
 | 文档上传 handoff | `services/knowledge/internal/platform/fileclient/client.go`、`internal/service/service.go` | `docs/services/knowledge/README.md`、`docs/services/file/README.md` | `TestUploadDocumentCreatesDocumentJobAndQueuesIngestion` | multipart 上传后调用 File `/internal/v1/files`，保存 `file_ref`，创建 processing job。 |
 | Parser configs 运行时管理 | `services/knowledge/internal/http/server.go`、`internal/service/parser_config.go`、`internal/repository/postgres.go` | `docs/services/gateway/api/public.openapi.yaml`、`docs/architecture/service-boundaries.md` | `cd services/knowledge && go test ./...`；repository integration CI | 支持 list/get/create/update/delete、默认 builtin seed、上传 parser snapshot、重复名称 conflict、空配置 fallback 和 MIME 匹配选择。 |
 | asynq 入队 | `services/knowledge/internal/platform/queue` | `docs/architecture/technology-decisions.md` | service tests with fake queue | 投递 `knowledge:document:ingest`，retry 次数与 `processing_jobs.max_attempts` 默认值对齐。 |
 | 文档入库 worker | `services/knowledge/internal/worker`、`internal/service/ingestion.go` | `docs/services/knowledge/README.md` | worker/service tests | 消费 A10 payload，读取 File content，解析、切片、embedding、写 vector index 和 chunks，并推进 ready/failed 状态。 |
 | File content reader | `services/knowledge/internal/platform/fileclient/client.go` | `docs/services/file/README.md` | fileclient tests | 调用 `/internal/v1/files/{fileId}/content`，透传 request/user/service headers，失败脱敏为 dependency error。 |
-| 文档 chunks HTTP API | `services/knowledge/internal/http/server.go`、`internal/service/ingestion.go`、`internal/repository/postgres.go` | `docs/services/gateway/api/public.openapi.yaml`、`services/knowledge/api/openapi.yaml` | `TestDocumentChunksAndContentContract`、Gateway proxy tests | 支持 `GET /internal/v1/documents/{documentId}/chunks`，分页返回 Knowledge-owned chunk DTO，不暴露原始向量或 Qdrant payload。 |
+| 文档 chunks HTTP API | `services/knowledge/internal/http/server.go`、`internal/service/ingestion.go`、`internal/repository/postgres.go` | `docs/services/gateway/api/public.openapi.yaml`、`docs/services/knowledge/api/internal.openapi.yaml` | `TestDocumentChunksAndContentContract`、Gateway proxy tests | 支持 `GET /internal/v1/documents/{documentId}/chunks`，分页返回 Knowledge-owned chunk DTO，不暴露原始向量或 Qdrant payload。 |
 | 原始文档 content API | `services/knowledge/internal/http/server.go`、`internal/service/service.go`、`internal/platform/fileclient/client.go` | `docs/services/gateway/api/public.openapi.yaml`、`docs/architecture/service-boundaries.md` | `TestDocumentChunksAndContentContract`、Gateway binary proxy tests | 先校验 Knowledge 文档可见性，再通过 File Service 内部读取 raw bytes；响应为二进制流，不包 JSON envelope，不暴露 `file_ref`、object key 或内部 URL。 |
-| 文档 lifecycle API | `services/knowledge/internal/http/server.go`、`internal/service/service.go`、`internal/repository/postgres.go` | `docs/services/gateway/api/public.openapi.yaml`、`services/knowledge/api/openapi.yaml` | service/http tests、PostgreSQL repository lifecycle integration test、Gateway proxy tests | 支持 `PATCH /internal/v1/documents/{documentId}` 更新 tags，`DELETE /internal/v1/documents/{documentId}` 软删除并创建 `delete_cleanup` job；响应不暴露 `file_ref`、Qdrant point 或 embedding model。 |
+| 文档 lifecycle API | `services/knowledge/internal/http/server.go`、`internal/service/service.go`、`internal/repository/postgres.go` | `docs/services/gateway/api/public.openapi.yaml`、`docs/services/knowledge/api/internal.openapi.yaml` | service/http tests、PostgreSQL repository lifecycle integration test、Gateway proxy tests | 支持 `PATCH /internal/v1/documents/{documentId}` 更新 tags，`DELETE /internal/v1/documents/{documentId}` 软删除并创建 `delete_cleanup` job；响应不暴露 `file_ref`、Qdrant point 或 embedding model。 |
 | Parser Service client / chunker | `services/knowledge/internal/platform/parser`、`internal/service/chunker.go` | `docs/services/knowledge/README.md`、`docs/services/parser/README.md` | parser/client、worker/service tests | Knowledge 以流式 base64 JSON 请求调用独立 Parser Service，消费 `content/title/backend/pages`，并在 Knowledge 内完成 chunking；当前切片仍以 `content` 为主，能映射到单页时会保存 `page_start/page_end/source_pages` 和 parser 质量字段。PaddleOCR runtime 不在 Knowledge Go 进程内。 |
 | embedding / vector index | `services/knowledge/internal/platform/embedding`、`internal/platform/vector` | `docs/architecture/service-boundaries.md` | platform/worker tests | local hashing 默认；可选 AI Gateway embedding；Qdrant HTTP adapter 或 in-memory index。 |
 | `knowledge-queries` 检索 | `services/knowledge/internal/service/retrieval.go`、`internal/http/server.go`、Gateway proxy route | `docs/services/knowledge/docs/api-contract.md`、`docs/services/gateway/api/public.openapi.yaml` | service retrieval tests、`TestKnowledgeQueryContractWithSeededRepositoryAndFakeVector`、`TestKnowledgeQueriesRouteProxiesToKnowledge` | 基于 embedder + vector index 搜索，回 PostgreSQL hydrate chunks/documents，过滤未 ready/不可见文档，支持 tags、metadata filter、可选 AI Gateway rerank 和 local no-op rerank fallback。 |
@@ -67,7 +67,7 @@
 | 出入点 | 文档要求 | 当前实现 | 风险 | 建议处理 |
 | --- | --- | --- | --- | --- |
 | AI Gateway rerank smoke 状态 | AI Gateway 已实现 embeddings/rerankings endpoint，Knowledge 支持 embedding 与 rerank adapter | `knowledge-queries` 可选 rerank 已接入；本地未配置 `RERANK_MODEL` 时使用 no-op fallback | 容易把 no-op fallback 误读为真实 provider rerank 已验收 | 保留 fake/seeded 契约测试，同时补带真实 provider credential 的跨服务 smoke。 |
-| 公开 Knowledge 草案范围 | `docs/services/knowledge/api/public.openapi.yaml` 覆盖 deletion jobs、processing jobs、query tests、support materials、settings、statistics | runtime 已实现 KB CRUD、文档 upload/list/detail/tags/soft delete、chunks/content 和 knowledge-queries；deletion job 查询、processing job 查询、query tests、support materials、settings、statistics 仍是草案/缺口 | 公开草案可能被误读为已落地 | 保留为设计草案，在 implementation 中明确缺口。 |
+| 公开 Knowledge 草案范围 | `docs/services/knowledge/api/public.openapi.yaml` 是服务级 public 设计草案，覆盖 deletion jobs、processing jobs、query tests、support materials、settings、statistics | runtime 已实现 KB CRUD、文档 upload/list/detail/tags/soft delete、chunks/content 和 knowledge-queries；deletion job 查询、processing job 查询、query tests、support materials、settings、statistics 仍是草案/缺口；前端稳定契约以 gateway public OpenAPI 为准 | 文件名里的 `public` 可能被误读为 active browser-facing contract | 草案文件已加说明；进入前端稳定契约前必须先更新 `docs/services/gateway/api/public.openapi.yaml`。 |
 | File handoff 边界 | Knowledge 拥有文档资源，File 只保存基础 file object | 当前已按 `/internal/v1/files` 保存 raw file，并通过 content API 读取；DELETE 已创建 cleanup job，但实际 File/Qdrant 清理 worker 未闭环 | 删除文档后底层 file/vector 清理仍可能滞后 | 实现 delete cleanup worker 幂等消费。 |
 
 ## 6. MVP / mock / memory backend / 占位
@@ -98,9 +98,9 @@
 
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
-| 单元测试 | `cd services/knowledge && go test ./...` | pass（2026-06-30，Docker Go 1.25；本地 ignored `data/` 目录需 root 容器遍历） | 主要使用 memory/fake 依赖，并覆盖 parser-configs 管理、fallback、conflict、上传 snapshot、chunks/content、`knowledge-queries`、错误 envelope 和 request id。 |
-| Repository 集成测试 | `KNOWLEDGE_TEST_DATABASE_URL=... go test ./internal/repository -count=1` | CI 覆盖 repository lifecycle；无 env 时本地跳过 | 只覆盖 PostgreSQL repository，不覆盖 File/Redis/Qdrant。 |
-| Parser 服务测试 | `cd services/parser && uv run ruff check . && uv run pytest && uv run python -m compileall src tests` | not run（A-014 未改 parser） | 使用 fake OCR backend，不下载 PaddleOCR 模型。 |
+| 单元测试 | `cd services/knowledge && go test ./...` | pass（2026-06-30，Docker Go 1.25；本地 ignored `data/` 目录需 root 容器遍历） | 主要使用 memory/fake 依赖，并覆盖 document lifecycle tags/soft delete/cleanup job、parser-configs 管理、fallback、conflict、上传 snapshot、chunks/content、`knowledge-queries`、错误 envelope 和 request id。 |
+| Repository 集成测试 | `KNOWLEDGE_TEST_DATABASE_URL=... go test ./internal/repository -count=1` | CI 覆盖 repository lifecycle；无 env 时本地跳过 | 覆盖 PostgreSQL repository 的 CRUD、tags 更新、软删除可见性和 `delete_cleanup` job 创建；不覆盖 File/Redis/Qdrant。 |
+| Parser 服务测试 | `cd services/parser && uv run ruff check . && uv run pytest && uv run python -m compileall src tests` | available / not run in this documentation pass | Parser 拥有独立 service-local 测试；默认使用 fake OCR backend，不下载 PaddleOCR 模型，真实 PaddleOCR smoke 需显式环境变量。 |
 | 端到端上传联调 | PostgreSQL + File + Redis end-to-end upload | missing | 需要真实依赖联调；A-14 契约测试已用 seeded/fake 依赖覆盖 active operations。 |
 | 契约测试 | gateway route matrix + Knowledge handler tests | pass（2026-06-30） | document lifecycle、chunks、content、knowledge-queries、parser-configs 等 active path 已补 contract/request-id/error envelope 覆盖。 |
 | 手工 smoke | 启动 PostgreSQL、File、Redis 后上传文档 | not run | 需要可复现脚本或 Compose。 |
@@ -111,12 +111,14 @@
 | --- | --- | --- | --- | --- |
 | 实现 delete cleanup worker | 新任务 | P0 | 文档删除副作用一致性 | 消费 `delete_cleanup` job，幂等清理 File Service 原始文件和 Qdrant/vector index，并记录失败状态。 |
 | 补真实 File/Parser/Qdrant/AI Gateway 端到端 smoke | 新任务 | P0 | 当前 worker 与 contract 主要由 fake/memory 依赖覆盖 | 覆盖上传、入队、worker 消费、Parser Service parse、document ready、chunks 可查、content 可读、Qdrant points 存在和 `knowledge-queries` 可命中。 |
+| 补 Knowledge ingestion real deps smoke | 已有开放任务 | P0 | #289 | 使用真实 PostgreSQL、File、Redis、Parser、Qdrant/AI Gateway 可选依赖验证 ingest/query 主链路。 |
 
 ## 10. 最近检查记录
 
 | 日期 | 检查人/工具 | 代码基准 | 结论 |
 | --- | --- | --- | --- |
-| 2026-06-30 | Codex | A-014 working tree | 补齐 chunks/content internal route、Gateway proxy、seeded/fake-backed `knowledge-queries` contract、错误 envelope 和 request id 测试；document PATCH/DELETE 与真实 Qdrant/AI Gateway smoke 仍待后续任务。 |
+| 2026-06-30 | Codex full-day audit | `develop@92d3afc` | 复核今日 PR/issue：Knowledge 已包含 ingestion worker、Parser Service client、parser-configs runtime management、chunks/content、`knowledge-queries`、AI Gateway embedding/rerank adapter、document PATCH/DELETE lifecycle 和 Gateway proxy；Parser PP-StructureV3/runtime readiness 已由 Parser 服务承接。剩余为 delete cleanup worker、#289 真实依赖 ingest/query smoke、真实 Qdrant collection smoke 和真实 AI Gateway embedding/rerank smoke。 |
+| 2026-06-30 | Codex | A-014 working tree | 补齐 chunks/content internal route、Gateway proxy、seeded/fake-backed `knowledge-queries` contract、错误 envelope 和 request id 测试；当时 document PATCH/DELETE 与真实 Qdrant/AI Gateway smoke 仍待后续任务。 |
 | 2026-06-30 | Codex | PR #273 | 文档 PATCH/DELETE lifecycle 已落地：tags 更新、软删除、cleanup job 创建、Gateway proxy 和 PostgreSQL repository lifecycle 集成测试；真实 File/Qdrant cleanup worker 和跨依赖 smoke 仍待后续任务。 |
 | 2026-06-30 | Codex | working tree | 补充 A-11/A-12/A-14 解耦契约：A-12/A-14 可用 seeded chunks、fake vector/AI adapter 做契约和 handler 测试；完整 ingestion runtime 仍由 A-11 交付。 |
 | 2026-06-30 | Codex | A-13 PR #249 | parser-configs 运行时管理已落地并合入：Knowledge 内部 API、Gateway proxy、默认 builtin seed、上传 snapshot、conflict 映射和前端管理入口均已覆盖。 |

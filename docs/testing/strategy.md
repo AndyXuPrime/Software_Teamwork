@@ -49,7 +49,7 @@
 | Compose | `docker compose -f <compose-file> config --quiet`。 |
 | Knowledge repository / SQL | `cd services/knowledge && KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' go test ./internal/repository -count=1`。 |
 | migration | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up`。 |
-| Parser 契约 / 文档 / runtime | 检查 `services/parser/api/openapi.yaml` 与 `docs/services/parser/README.md`、Knowledge ingestion 文档一致；如改 runtime，执行 `cd services/parser && uv run ruff check . && uv run pytest && uv run python -m compileall src tests`，并说明是否仅覆盖 fake OCR backend。触碰 PaddleOCR runtime 时，在具备模型环境下追加 `PARSER_PADDLEOCR_SMOKE=1 PARSER_PADDLEOCR_ALLOW_DOWNLOAD=1 uv run pytest -m paddleocr_smoke -s`。 |
+| Parser 契约 / 文档 / runtime | 检查 `docs/services/parser/api/internal.openapi.yaml`、`services/parser/api/openapi.yaml`（实现本地副本）与 `docs/services/parser/README.md`、Knowledge ingestion 文档一致；如改 runtime，执行 `cd services/parser && uv run ruff check . && uv run pytest && uv run python -m compileall src tests`，并说明是否仅覆盖 fake OCR backend。触碰 PaddleOCR runtime 时，在具备模型环境下追加 `PARSER_PADDLEOCR_SMOKE=1 PARSER_PADDLEOCR_ALLOW_DOWNLOAD=1 uv run pytest -m paddleocr_smoke -s`。 |
 | AI Gateway provider adapter | `cd services/ai-gateway && go test ./...`；尽量加 fake provider case 和真实 provider smoke 记录。 |
 | Document worker/job | `cd services/document && go test ./...`；如改 repository，设置 `DOCUMENT_TEST_DATABASE_URL` 跑 repository integration tests。 |
 
@@ -99,7 +99,7 @@ KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgre
 | 服务 implementation 文档 | 改服务能力、stub/501 状态、runtime dependency、migration、worker 或 provider adapter。 |
 | 技术选型基线 | 引入新运行时依赖、镜像、CLI、SDK、队列、数据库或工具链。 |
 | 本地联调手册 | 新增 Compose、env template、seed data、跨服务 smoke 或端口约定。 |
-| Parser 契约一致性 | 改 `services/parser/api/openapi.yaml`、Parser README、Knowledge ingestion 对 Parser 的调用约定或 parser runtime configuration。 |
+| Parser 契约一致性 | 改 `docs/services/parser/api/internal.openapi.yaml`、`services/parser/api/openapi.yaml`（实现本地副本）、Parser README、Knowledge ingestion 对 Parser 的调用约定或 parser runtime configuration。 |
 | 测试策略 | 新增 CI workflow、测试框架、E2E smoke、路径过滤规则或 required check。 |
 
 文档同步检查：

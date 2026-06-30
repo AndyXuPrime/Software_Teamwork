@@ -197,6 +197,6 @@ go run ./cmd/server
 - 只改文档：至少执行 `git diff --check`，并检查新增链接、相对路径和实现事实。
 - 改后端服务：执行对应服务 `go test ./...` 和 `go build ./cmd/server`；QA 还要 `go build ./cmd/agent`。
 - 改 migration：执行 goose apply；如果服务有 env-gated repository integration tests，尽量使用本地 PostgreSQL 跑一遍。
-- 改 Parser 契约或运行时：检查 `services/parser/api/openapi.yaml`、Parser README、Knowledge ingestion 文档和 `parser-service.yml` 是否一致；运行 `cd services/parser && uv run ruff check . && uv run pytest && uv run python -m compileall src tests`。如触碰 PaddleOCR runtime 或部署资源，尽量追加 `PARSER_PADDLEOCR_SMOKE=1` 的真实模型 smoke，并在 PR 记录中区分 fake OCR 与真实模型结果。
+- 改 Parser 契约或运行时：检查 `docs/services/parser/api/internal.openapi.yaml`、`services/parser/api/openapi.yaml`（实现本地副本）、Parser README、Knowledge ingestion 文档和 `parser-service.yml` 是否一致；运行 `cd services/parser && uv run ruff check . && uv run pytest && uv run python -m compileall src tests`。如触碰 PaddleOCR runtime 或部署资源，尽量追加 `PARSER_PADDLEOCR_SMOKE=1` 的真实模型 smoke，并在 PR 记录中区分 fake OCR 与真实模型结果。
 - 改 Gateway OpenAPI：执行 `python3 scripts/verify_gateway_active_api.py`，前端类型相关改动还要执行 `bun run --cwd apps/web api:generate` 并检查生成 diff。
 - 改前端：执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`bun run --cwd apps/web build`、`bun run --cwd apps/web test:unit`；关键页面改动再跑 `bun run --cwd apps/web test:e2e`。
