@@ -290,21 +290,25 @@ func TestChatSmoke_APIKeyNotExposedToProvider(t *testing.T) {
 }
 
 // TestEmbeddingSmoke_Provider429NormalizesRateLimit verifies that a 429 from the
-// embedding provider is normalized to a rate_limited error.
+// embedding provider HTTP adapter is normalized to a rate_limited error and the raw
+// provider body is not leaked. Uses the real provider.HTTPClient so the full production
+// path (URL assembly, Authorization header, HTTP status normalisation, body discard) is
+// exercised.
 func TestEmbeddingSmoke_Provider429NormalizesRateLimit(t *testing.T) {
 	fakeProvider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/embeddings" {
+			t.Errorf("unexpected provider path = %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") == "" {
+			t.Errorf("provider missing Authorization header")
+		}
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusTooManyRequests)
-		_, _ = w.Write([]byte(`{"error":{"message":"raw-embed-rate-secret"}}`))
+		_, _ = w.Write([]byte(`{"error":{"message":"raw-embed-rate-secret","type":"tokens"}}`))
 	}))
 	defer fakeProvider.Close()
 
-	invoker := &fakeModelInvoker{
-		embeddingFn: func(req service.ProviderEmbeddingRequest) (service.EmbeddingResponse, service.ProviderCallMetadata, error) {
-			statusCode := http.StatusTooManyRequests
-			return service.EmbeddingResponse{}, service.ProviderCallMetadata{StatusCode: statusCode}, service.NewProviderError(service.CodeRateLimited, "provider rate limit exceeded", &statusCode, nil)
-		},
-	}
-	server := newTestServerWithInvoker(t, invoker)
+	server, _ := newTestServerWithProvidersAndRepo(t, nil, provider.NewHTTPClient(fakeProvider.Client()))
 	registerProfile(t, server, embeddingProfileBody(fakeProvider.URL))
 
 	req := authedRequest(http.MethodPost, "/internal/v1/embeddings", strings.NewReader(`{"model":"BAAI/bge-m3","input":["text"]}`))
@@ -325,16 +329,21 @@ func TestEmbeddingSmoke_Provider429NormalizesRateLimit(t *testing.T) {
 }
 
 // TestEmbeddingSmoke_Provider5xxNormalizesError verifies that a 5xx from the embedding
-// provider is normalized to a dependency_error.
+// provider HTTP adapter is normalized to a dependency_error and the raw provider body is
+// not leaked. Uses the real provider.HTTPClient.
 func TestEmbeddingSmoke_Provider5xxNormalizesError(t *testing.T) {
-	invoker := &fakeModelInvoker{
-		embeddingFn: func(req service.ProviderEmbeddingRequest) (service.EmbeddingResponse, service.ProviderCallMetadata, error) {
-			statusCode := http.StatusBadGateway
-			return service.EmbeddingResponse{}, service.ProviderCallMetadata{StatusCode: statusCode}, service.NewProviderError(service.CodeDependency, "provider request failed", &statusCode, nil)
-		},
-	}
-	server := newTestServerWithInvoker(t, invoker)
-	registerProfile(t, server, embeddingProfileBody("https://api.siliconflow.cn"))
+	fakeProvider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/embeddings" {
+			t.Errorf("unexpected provider path = %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"message":"raw-embed-internal-secret"}}`))
+	}))
+	defer fakeProvider.Close()
+
+	server, _ := newTestServerWithProvidersAndRepo(t, nil, provider.NewHTTPClient(fakeProvider.Client()))
+	registerProfile(t, server, embeddingProfileBody(fakeProvider.URL))
 
 	req := authedRequest(http.MethodPost, "/internal/v1/embeddings", strings.NewReader(`{"model":"BAAI/bge-m3","input":["text"]}`))
 	req.Header.Set("X-Caller-Service", "knowledge")
@@ -345,22 +354,33 @@ func TestEmbeddingSmoke_Provider5xxNormalizesError(t *testing.T) {
 		t.Fatalf("status = %d, want non-OK for embedding 5xx", rec.Code)
 	}
 	body := rec.Body.String()
+	if strings.Contains(body, "raw-embed-internal-secret") {
+		t.Fatalf("response leaked raw provider 5xx body: %s", body)
+	}
 	if !strings.Contains(body, `"dependency_error"`) && !strings.Contains(body, `"upstream_error"`) {
 		t.Fatalf("response missing dependency_error: %s", body)
 	}
 }
 
 // TestRerankSmoke_Provider429NormalizesRateLimit verifies that a 429 from the rerank
-// provider is normalized to a rate_limited error.
+// provider HTTP adapter is normalized to a rate_limited error and the raw provider body is
+// not leaked. Uses the real provider.HTTPClient.
 func TestRerankSmoke_Provider429NormalizesRateLimit(t *testing.T) {
-	invoker := &fakeModelInvoker{
-		rerankingFn: func(req service.ProviderRerankingRequest) (service.RerankingResponse, service.ProviderCallMetadata, error) {
-			statusCode := http.StatusTooManyRequests
-			return service.RerankingResponse{}, service.ProviderCallMetadata{StatusCode: statusCode}, service.NewProviderError(service.CodeRateLimited, "provider rate limit exceeded", &statusCode, nil)
-		},
-	}
-	server := newTestServerWithInvoker(t, invoker)
-	registerProfile(t, server, rerankProfileBody("https://api.siliconflow.cn"))
+	fakeProvider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/rerank" {
+			t.Errorf("unexpected provider path = %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") == "" {
+			t.Errorf("provider missing Authorization header")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"raw-rerank-rate-secret"}}`))
+	}))
+	defer fakeProvider.Close()
+
+	server, _ := newTestServerWithProvidersAndRepo(t, nil, provider.NewHTTPClient(fakeProvider.Client()))
+	registerProfile(t, server, rerankProfileBody(fakeProvider.URL))
 
 	reqBody := `{"model":"BAAI/bge-reranker-v2-m3","query":"query","documents":[{"id":"d1","text":"text"}]}`
 	req := authedRequest(http.MethodPost, "/internal/v1/rerankings", strings.NewReader(reqBody))
@@ -372,57 +392,50 @@ func TestRerankSmoke_Provider429NormalizesRateLimit(t *testing.T) {
 		t.Fatalf("status = %d, want non-OK for rerank 429", rec.Code)
 	}
 	body := rec.Body.String()
+	if strings.Contains(body, "raw-rerank-rate-secret") {
+		t.Fatalf("response leaked raw provider rate-limit body: %s", body)
+	}
 	if !strings.Contains(body, `"rate_limited"`) && !strings.Contains(body, `"rate_limit_error"`) {
 		t.Fatalf("response missing rate_limited code: %s", body)
 	}
 }
 
-// TestChatStreamSmoke_CancelRecordsInvocationAsCancelled verifies that when a client
-// disconnects mid-stream, the invocation is recorded as cancelled.
-func TestChatStreamSmoke_CancelRecordsInvocationAsCancelled(t *testing.T) {
-	// This test exercises the case where the reader returns a non-EOF error due to
-	// context cancellation after stream headers have been sent.
-	// We use the existing newTestServerWithChatProviderAndRepo helper and a fake
-	// provider that sends one chunk and then blocks.
+// TestChatStreamSmoke_ProviderEarlyCloseRecordsNonSuccess verifies that when the
+// provider closes the connection before sending [DONE], an invocation is still recorded
+// and its status is failed (not succeeded). This exercises the provider-side EOF path
+// through the real HTTP chat client and stream handler.
+func TestChatStreamSmoke_ProviderEarlyCloseRecordsNonSuccess(t *testing.T) {
 	fakeProvider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
+		// Send one valid chunk then close without [DONE].
 		if f, ok := w.(http.Flusher); ok {
 			_, _ = w.Write([]byte("data: {\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"provider-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n"))
 			f.Flush()
 		}
-		// Block until the client disconnects.
-		<-r.Context().Done()
+		// Return immediately without [DONE] to trigger the incomplete-stream path.
 	}))
 	defer fakeProvider.Close()
 
 	server, repo := newTestServerWithChatProviderAndRepo(t, provider.NewHTTPChatClient(fakeProvider.Client()))
 	registerProfile(t, server, chatProfileBody(fakeProvider.URL))
 
-	// Use a ResponseRecorder that implements CloseNotifier-equivalent via a done channel.
-	// httptest.ResponseRecorder does not support flushing the connection mid-stream, so
-	// we simulate an incomplete stream by not sending [DONE]: the provider blocks after
-	// the first chunk, and httptest.Server closes the connection when fakeProvider stops.
-	// The server will read EOF from the provider side and record a failed (not cancelled)
-	// invocation — which is the observable outcome in unit tests without real TCP.
 	body := `{"model":"provider-model","stream":true,"messages":[{"role":"user","content":"hello"}]}`
 	req := authedRequest(http.MethodPost, "/internal/v1/chat/completions", strings.NewReader(body))
 	req.Header.Set("X-Caller-Service", "qa")
 	req.Header.Set("Accept", "text/event-stream")
 	rec := httptest.NewRecorder()
 
-	// Close the fake provider to trigger an early EOF.
-	fakeProvider.Close()
-
 	server.ServeHTTP(rec, req)
 
 	if len(repo.invocations) != 1 {
 		t.Fatalf("invocations = %d, want 1", len(repo.invocations))
 	}
-	// Either cancelled or failed is acceptable — what matters is that an invocation
-	// was recorded (not missing) and it is not succeeded.
 	if repo.invocations[0].Status == service.InvocationSucceeded {
-		t.Fatalf("invocation status = succeeded, want failed or cancelled for aborted stream")
+		t.Fatalf("invocation status = succeeded, want failed for provider early close")
+	}
+	if repo.invocations[0].Status != service.InvocationFailed {
+		t.Fatalf("invocation status = %s, want failed", repo.invocations[0].Status)
 	}
 }
 

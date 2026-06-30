@@ -25,7 +25,7 @@ TOKEN_HASH="sha256:$(echo -n "$SERVICE_TOKEN" | sha256sum | awk '{print $1}')"
 echo "config value: $TOKEN_HASH"
 ```
 
-将 `$TOKEN_HASH` 写入 AI Gateway 的环境变量 `AI_GATEWAY_SERVICE_TOKEN_HASH`（或对应的 `.env` / Kubernetes Secret）。
+将 `$TOKEN_HASH` 写入 AI Gateway 的环境变量 `AI_GATEWAY_SERVICE_TOKEN_HASHES`（或对应的 `.env` / Kubernetes Secret）。支持逗号分隔多个哈希，用于轮换令牌。
 
 > **注意**：`sha256sum` 的 `-n` 参数确保不附带换行符；如果使用 `openssl`：
 > ```bash
@@ -44,7 +44,11 @@ X-Caller-Service: gateway          # 管理接口使用 gateway
 Content-Type: application/json
 ```
 
-将 `AI_GATEWAY_BASE_URL` 设置为 AI Gateway 服务地址，例如 `http://localhost:8080`。
+将 `AI_GATEWAY_BASE_URL` 设置为 AI Gateway 服务地址。默认监听端口为 `8086`（由 `AI_GATEWAY_HTTP_ADDR` 控制），本地示例：
+
+```bash
+AI_GATEWAY_BASE_URL="http://localhost:8086"
+```
 
 ### 2.1 默认 Chat Profile
 
