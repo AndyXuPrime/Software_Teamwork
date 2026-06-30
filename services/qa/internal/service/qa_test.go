@@ -12,7 +12,10 @@ import (
 
 type fakeRepository struct {
 	conversation             Conversation
+	getConversationErr       error
+	deleteErr                error
 	messages                 []Message
+	listMessagesErr          error
 	messageOptions           MessageListOptions
 	savedSteps               []ReasoningStep
 	savedEvents              []StreamEvent
@@ -33,14 +36,22 @@ func (r *fakeRepository) ListConversations(_ context.Context, _ string, options 
 	return Page[Conversation]{Items: []Conversation{r.conversation}, Page: options.Page, PageSize: options.PageSize, Total: 1}, nil
 }
 func (r *fakeRepository) GetConversation(context.Context, string, string) (Conversation, error) {
+	if r.getConversationErr != nil {
+		return Conversation{}, r.getConversationErr
+	}
 	return r.conversation, nil
 }
 func (r *fakeRepository) UpdateConversation(_ context.Context, _ string, value Conversation) (Conversation, error) {
 	r.conversation = value
 	return value, nil
 }
-func (*fakeRepository) DeleteConversation(context.Context, string, string) error { return nil }
+func (r *fakeRepository) DeleteConversation(context.Context, string, string) error {
+	return r.deleteErr
+}
 func (r *fakeRepository) ListMessages(_ context.Context, _ string, _ string, options MessageListOptions) (Page[Message], error) {
+	if r.listMessagesErr != nil {
+		return Page[Message]{}, r.listMessagesErr
+	}
 	r.messageOptions = options
 	return Page[Message]{Items: append([]Message(nil), r.messages...), Page: options.Page, PageSize: options.PageSize, Total: len(r.messages)}, nil
 }
@@ -282,6 +293,48 @@ func TestListMessagesNormalizesDocumentedOptions(t *testing.T) {
 	}
 	if _, err = qa.ListMessages(context.Background(), "", "conversation-id", MessageListOptions{}); err == nil {
 		t.Fatal("expected missing user to fail")
+	}
+}
+
+func TestSessionOperationsPropagateForbidden(t *testing.T) {
+	forbidden := NewError(CodeForbidden, "conversation access denied", nil)
+	repository := &fakeRepository{getConversationErr: forbidden, deleteErr: forbidden, listMessagesErr: forbidden}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{runner: &fakeAgentRunner{}, prompt: "system"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	operations := []struct {
+		name string
+		call func() error
+	}{
+		{name: "detail", call: func() error {
+			_, err := qa.GetConversation(context.Background(), "user-id", "other-session")
+			return err
+		}},
+		{name: "update", call: func() error {
+			_, err := qa.UpdateConversation(context.Background(), "user-id", "other-session", "private", "active")
+			return err
+		}},
+		{name: "delete", call: func() error {
+			return qa.DeleteConversation(context.Background(), "user-id", "other-session")
+		}},
+		{name: "list messages", call: func() error {
+			_, err := qa.ListMessages(context.Background(), "user-id", "other-session", MessageListOptions{})
+			return err
+		}},
+		{name: "create message", call: func() error {
+			_, err := qa.Ask(context.Background(), "user-id", "other-session", AskInput{Message: "private question"}, nil)
+			return err
+		}},
+	}
+	for _, operation := range operations {
+		t.Run(operation.name, func(t *testing.T) {
+			appErr, ok := Classify(operation.call())
+			if !ok || appErr.Code != CodeForbidden {
+				t.Fatalf("error=%v, want forbidden", appErr)
+			}
+		})
 	}
 }
 

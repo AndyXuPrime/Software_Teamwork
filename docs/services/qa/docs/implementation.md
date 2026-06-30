@@ -38,6 +38,7 @@
 | --- | --- | --- | --- | --- |
 | 健康/就绪检查 | `services/qa/internal/http/server.go` | `services/qa/api/openapi.yaml` | `cd services/qa && go test ./...` | `/readyz` 使用 repo ping。 |
 | QA session CRUD | `services/qa/internal/http/server.go`、`internal/service/qa.go` | Gateway OpenAPI QA paths | HTTP/service tests | 创建、列表、详情、更新、删除。 |
+| QA owner authorization | `internal/repository/postgres.go`、`internal/repository/resources_postgres.go` | Gateway OpenAPI QA `403`/`404` responses | HTTP/service tests；PostgreSQL integration test gated by `QA_TEST_DATABASE_URL` | 有效非 owner session 的详情、更新、删除返回 `403`；message/run/citation 子资源按契约执行 owner 过滤与隐藏。 |
 | 消息创建与 SSE | `services/qa/internal/http/server.go`、`internal/service/qa.go` | Gateway OpenAPI | `TestStreamUsesContractEventNames` | 支持 `Accept: text/event-stream`。 |
 | response runs / tool calls / citations | `services/qa/internal/http/resource_handlers.go`、`internal/service/resources.go` | Gateway OpenAPI | service/repository tests | 返回脱敏资源摘要。 |
 | QA/LLM config versions | `services/qa/internal/http/resource_handlers.go`、`internal/service/settings.go` | Gateway OpenAPI | config/settings tests | 配置版本持久化并加密敏感字段。 |

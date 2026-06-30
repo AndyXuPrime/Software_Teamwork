@@ -214,6 +214,92 @@ gateway -> normalized KnowledgeQueryResponse or ErrorResponse
 - `docs/architecture/service-boundaries.md`
 - `docs/architecture/frontend-backend-contract.md`
 
+## Scenario: QA Owner Authorization
+
+### 1. Scope / Trigger
+
+- Trigger: adding or changing QA session, message, response-run, event,
+  tool-call, or citation reads and mutations.
+- Applies to `services/qa/internal/http`, `services/qa/internal/service`,
+  `services/qa/internal/repository`, the Gateway OpenAPI QA paths, and generated
+  frontend Gateway types.
+
+### 2. Signatures
+
+- Direct session operations:
+  - `GET /api/v1/qa-sessions/{sessionId}`
+  - `PATCH /api/v1/qa-sessions/{sessionId}`
+  - `DELETE /api/v1/qa-sessions/{sessionId}`
+- Session-owned resources include `/qa-sessions/{sessionId}/messages`,
+  `/qa-sessions/{sessionId}/events`, `/response-runs/**`, `/messages/{messageId}/citations`,
+  and `/citations/{citationId}`.
+- QA derives the current owner only from trusted Gateway `X-User-Id` context.
+
+### 3. Contracts
+
+- A live session owned by another authenticated user returns `403 forbidden`
+  for direct detail, update, delete, and session-addressed message list/create
+  operations.
+- Missing and soft-deleted sessions return `404 not_found`.
+- ID-addressed child resources are filtered through their owning session and
+  return `404 not_found` when missing or owned by another user.
+- Empty collections are valid only after the parent message/run/session has
+  been authorized.
+- Administrator roles do not bypass QA ownership until a separate reviewed
+  cross-user administration contract exists.
+- OpenAPI response entries and `apps/web/src/api/generated/gateway.ts` must be
+  regenerated together when the public status-code set changes.
+
+### 4. Validation & Error Matrix
+
+| Condition | Response/error |
+| --- | --- |
+| Missing trusted user context | `401 unauthorized` |
+| Non-owner accesses a live session directly or lists/creates its messages | `403 forbidden` |
+| Session is missing or soft-deleted | `404 not_found` |
+| Message, run, event, tool call, or citation is missing/non-owned | `404 not_found` |
+| Owner cancels a running response run | `200` with cancelled run |
+| Owner cancels an existing terminal response run | `409 conflict` |
+| Non-owner cancels a response run | `404 not_found`, never `409 conflict` |
+
+### 5. Good/Base/Bad Cases
+
+- Good: repository queries filter by `external_user_id`, direct session misses
+  perform a narrow access classification, and handlers preserve typed errors.
+- Base: an owned message or run with no citations/tool calls returns an empty
+  list only after parent authorization succeeds.
+- Bad: returning `200 []` for an unknown/non-owned parent, treating every
+  failed cancellation as `409`, or allowing an admin header to bypass owner checks.
+
+### 6. Tests Required
+
+- Handler tests assert direct non-owner session GET/PATCH/DELETE return the
+  standard `403 forbidden` envelope, including when admin roles are present.
+- Service tests assert session and message operations propagate forbidden
+  errors before writes or model/tool execution.
+- PostgreSQL integration tests assert direct session `403`, hidden child
+  resource `404`, owner terminal-run `409`, and no cross-user citation data.
+- Gateway contract checks and OpenAPI type generation must pass after response
+  status changes.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+non-owner PATCH session -> 404
+non-owner PATCH response run -> 409 conflict
+non-owner list citations -> 200 [] without checking the parent message
+```
+
+#### Correct
+
+```text
+non-owner PATCH session -> 403 forbidden
+non-owner PATCH response run -> 404 not_found
+owned message with no citations -> authorize message -> 200 []
+```
+
 ## Scenario: Internal Service Contract API
 
 ### 1. Scope / Trigger

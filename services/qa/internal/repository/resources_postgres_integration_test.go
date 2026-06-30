@@ -141,6 +141,93 @@ func TestDocumentedResourceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestOwnerAuthorizationBoundaries(t *testing.T) {
+	databaseURL := os.Getenv("QA_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("QA_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	repo, err := NewPostgres(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repo.Close()
+
+	now := time.Now().UTC()
+	suffix := uint64(now.UnixNano()) & 0xffffffffffff
+	conversationID := integrationUUID(suffix)
+	userMessageID := integrationUUID(suffix + 1)
+	assistantMessageID := integrationUUID(suffix + 2)
+	citationID := integrationUUID(suffix + 3)
+	ownerID := "authorization-owner"
+	otherUserID := "authorization-other-user"
+	conversation := service.Conversation{
+		ID: conversationID, OwnerUserID: ownerID, Title: "private session",
+		Status: "active", CreatedAt: now, UpdatedAt: now,
+	}
+	if _, err = repo.CreateConversation(ctx, conversation); err != nil {
+		t.Fatal(err)
+	}
+	run, err := repo.AppendMessages(ctx, ownerID, conversationID,
+		service.ResponseRunStart{RequestID: "req-authorization", MaxIterations: 5},
+		service.Message{ID: userMessageID, ConversationID: conversationID, Role: "user", Content: "private question", Status: "completed", CreatedAt: now},
+		service.Message{ID: assistantMessageID, ConversationID: conversationID, Role: "assistant", Content: "private answer", Status: "generating", CreatedAt: now},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repo.pool.Exec(ctx, `INSERT INTO citations(id,message_id,citation_no,doc_name) VALUES($1,$2,1,$3)`, citationID, assistantMessageID, "private source"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = repo.GetConversation(ctx, otherUserID, conversationID)
+	requireServiceCode(t, err, service.CodeForbidden)
+	_, err = repo.UpdateConversation(ctx, otherUserID, conversation)
+	requireServiceCode(t, err, service.CodeForbidden)
+	requireServiceCode(t, repo.DeleteConversation(ctx, otherUserID, conversationID), service.CodeForbidden)
+	_, err = repo.ListMessages(ctx, otherUserID, conversationID, service.MessageListOptions{Page: 1, PageSize: 50})
+	requireServiceCode(t, err, service.CodeForbidden)
+
+	_, err = repo.GetResponseRun(ctx, otherUserID, run.ID)
+	requireServiceCode(t, err, service.CodeNotFound)
+	_, err = repo.CancelResponseRun(ctx, otherUserID, run.ID)
+	requireServiceCode(t, err, service.CodeNotFound)
+	_, err = repo.ListStreamEvents(ctx, otherUserID, conversationID, run.ID, 0)
+	requireServiceCode(t, err, service.CodeNotFound)
+	_, err = repo.ListToolCalls(ctx, otherUserID, run.ID)
+	requireServiceCode(t, err, service.CodeNotFound)
+	_, err = repo.ListMessageCitations(ctx, otherUserID, assistantMessageID)
+	requireServiceCode(t, err, service.CodeNotFound)
+	_, err = repo.GetCitation(ctx, otherUserID, citationID)
+	requireServiceCode(t, err, service.CodeNotFound)
+	lookup, err := repo.LookupCitations(ctx, otherUserID, []string{citationID})
+	if err != nil || len(lookup) != 0 {
+		t.Fatalf("cross-user citation lookup=%+v err=%v", lookup, err)
+	}
+
+	if _, err = repo.CancelResponseRun(ctx, ownerID, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = repo.CancelResponseRun(ctx, ownerID, run.ID)
+	requireServiceCode(t, err, service.CodeConflict)
+	if err = repo.DeleteConversation(ctx, ownerID, conversationID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = repo.GetConversation(ctx, ownerID, conversationID)
+	requireServiceCode(t, err, service.CodeNotFound)
+	_, err = repo.GetConversation(ctx, ownerID, integrationUUID(suffix+4))
+	requireServiceCode(t, err, service.CodeNotFound)
+}
+
 func integrationUUID(value uint64) string { return fmt.Sprintf("00000000-0000-4000-8000-%012x", value) }
 
 func ptrTime(value time.Time) *time.Time { return &value }
+
+func requireServiceCode(t *testing.T, err error, want service.Code) {
+	t.Helper()
+	appErr, ok := service.Classify(err)
+	if !ok || appErr.Code != want {
+		t.Fatalf("error=%v, want code %q", err, want)
+	}
+}

@@ -504,6 +504,11 @@ func (r *Postgres) CancelResponseRun(ctx context.Context, userID, runID string) 
 	q := r.queries.WithTx(tx)
 	assistantID, err := q.CancelResponseRun(ctx, runID, userID)
 	if errors.Is(err, pgx.ErrNoRows) {
+		if _, accessErr := q.GetResponseRunForUser(ctx, runID, userID); errors.Is(accessErr, pgx.ErrNoRows) {
+			return service.ResponseRun{}, service.NewError(service.CodeNotFound, "response run not found", accessErr)
+		} else if accessErr != nil {
+			return service.ResponseRun{}, fmt.Errorf("authorize response run cancellation: %w", accessErr)
+		}
 		return service.ResponseRun{}, service.NewError(service.CodeConflict, "response run cannot be cancelled", err)
 	}
 	if err != nil {
