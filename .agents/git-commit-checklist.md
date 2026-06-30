@@ -46,3 +46,22 @@ Stop and inspect the repo instead of committing when:
 - The PR target branch is unclear.
 - The only possible commit message would be vague, such as `update`, `wip`,
   `fix bug`, or `changes`.
+
+## PR Creation Gate
+
+Before creating or editing a PR, read:
+
+- [docs/collaboration/repository-settings.md](../docs/collaboration/repository-settings.md)
+- [.github/pull_request_template.md](../.github/pull_request_template.md)
+
+Do not handwrite an English-only PR body. The repository PR Guard requires:
+
+- PR title has no Chinese characters.
+- PR body contains Chinese content.
+- PR body uses the Chinese template sections: `修改内容`, `关联 Issue`, `验证`,
+  `已知风险`, and `检查项`.
+- Issue-backed work includes a closing keyword such as `Closes #117`.
+
+Known failure mode to avoid: checking only `CONTRIBUTING.md` can verify
+base/head/commit rules while missing the stricter PR Guard title/body language
+contract in `docs/collaboration/repository-settings.md`.

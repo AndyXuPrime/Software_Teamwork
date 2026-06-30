@@ -220,6 +220,126 @@ blocked semantics, or `.github/workflows/auto-label.yml` blocked-label logic.
 
 ---
 
+## PR Guard Body Contract
+
+### 1. Scope / Trigger
+
+Update this contract when changing `.github/workflows/pr-guard.yml`,
+`.github/pull_request_template.md`, `docs/collaboration/repository-settings.md`,
+or any agent-facing PR creation workflow.
+
+### 2. Signatures
+
+- Workflow file: `.github/workflows/pr-guard.yml`
+- PR template: `.github/pull_request_template.md`
+- Repository rules: `docs/collaboration/repository-settings.md`
+- PR command shape:
+
+```bash
+gh pr create \
+  --repo Sakayori-Iroha-168/Software_Teamwork \
+  --base develop \
+  --head <owner>:<branch> \
+  --title "<conventional-commit-title>" \
+  --body-file <filled-chinese-template-file>
+```
+
+### 3. Contracts
+
+- PR title must follow Conventional Commit style and must not contain Chinese
+  characters.
+- PR body must contain Chinese content.
+- PR body must preserve the template intent with these filled sections:
+  `修改内容`, `关联 Issue`, `验证`, `已知风险`, and `检查项`.
+- PR body must not leave template placeholder text in `修改内容`, `关联 Issue`,
+  `验证`, or `已知风险`.
+- `关联 Issue` must contain a GitHub closing keyword such as `Closes #118`;
+  if there is no issue, it must explain the reason instead of writing only
+  `无`.
+- Agents must read both `CONTRIBUTING.md` and
+  `docs/collaboration/repository-settings.md` before opening or editing a PR;
+  `CONTRIBUTING.md` covers branch/base/head/commit policy, while
+  `repository-settings.md` contains the PR Guard title/body language contract.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required handling |
+| --- | --- |
+| PR title contains Chinese characters | Rewrite the title to an English Conventional Commit title. |
+| PR body is handwritten in English only | Replace it with the filled Chinese PR template before reporting completion. |
+| PR body omits `Closes #<issue>` for an issue-backed task | Add the closing keyword in `关联 Issue`. |
+| PR body keeps template placeholders | Replace placeholders with concrete Chinese content. |
+| Agent read only `CONTRIBUTING.md` before creating PR | Stop and read `docs/collaboration/repository-settings.md` plus `.github/pull_request_template.md`; then re-check the PR body. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: title is `test(frontend): add critical flow coverage`; body uses the
+  Chinese template sections, lists concrete verification commands, includes
+  `Closes #117`, and records known risks in Chinese.
+- Base: title is English Conventional Commit style; body is mostly Chinese and
+  includes all required template sections and issue linkage.
+- Bad: body is manually written in English because the agent focused only on
+  base/head/commitlint/`Closes #117` and skipped the PR Guard language rules.
+
+### 6. Tests Required
+
+Before reporting a PR as ready:
+
+```bash
+gh pr view <PR_NUMBER> --repo Sakayori-Iroha-168/Software_Teamwork \
+  --json title,body,baseRefName,headRefName,headRepositoryOwner
+gh pr checks <PR_NUMBER> --repo Sakayori-Iroha-168/Software_Teamwork
+```
+
+Review the returned JSON manually for:
+
+- `baseRefName == "develop"`.
+- `headRepositoryOwner.login` is the developer fork owner.
+- Title has no Chinese characters.
+- Body contains Chinese text and the required template sections.
+- Body contains the correct closing keyword or a concrete no-issue reason.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```markdown
+## Summary
+
+- Add tests.
+
+## Verification
+
+- bun run --cwd apps/web check
+
+Closes #117
+```
+
+This is wrong because the body is English-only and does not use the required
+Chinese PR template sections.
+
+#### Correct
+
+```markdown
+## 修改内容
+
+- 新增前端关键流程测试。
+
+## 关联 Issue
+
+- Closes #117
+
+## 验证
+
+- `bun run --cwd apps/web check`：通过。
+
+## 已知风险
+
+- 无。
+```
+
+---
+
 ## Target Product Workflows
 
 Recommended workflow files after the corresponding implementation issues land:

@@ -15,6 +15,18 @@ Use this project-local skill before frontend implementation, review, branch/PR g
 4. `.trellis/spec/frontend/quality-guidelines.md` — required checks, Bun command form, and review checklist.
 5. `.trellis/spec/frontend/directory-structure.md` — `apps/web/src/` layout and module boundaries.
 
+## PR Creation Addendum
+
+Before creating or editing a PR, also read:
+
+1. `docs/collaboration/repository-settings.md` for PR Guard rules.
+2. `.github/pull_request_template.md` for the required Chinese body sections.
+
+Do not handwrite an English-only PR body. PR titles must not contain Chinese
+characters; PR bodies must contain Chinese content, use the template sections
+`修改内容`, `关联 Issue`, `验证`, `已知风险`, and `检查项`, and include a valid
+issue closing keyword such as `Closes #117` when the task has an issue.
+
 ## Fixed Project Rules
 
 - Frontend source lives under `apps/web/src/`; do not create repository-root `src/` for frontend code.
