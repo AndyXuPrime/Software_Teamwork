@@ -130,6 +130,15 @@
     },
     {
       "paths": [
+        "services/parser/**",
+        "docs/services/parser/**"
+      ],
+      "labels": [
+        "service:parser"
+      ]
+    },
+    {
+      "paths": [
         "deploy/**"
       ],
       "labels": [

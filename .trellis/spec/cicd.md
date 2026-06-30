@@ -87,6 +87,7 @@ Each service label must cover both implementation and documentation paths:
 | `service:knowledge` | `services/knowledge/**`, `docs/services/knowledge/**` |
 | `service:document` | `services/document/**`, `docs/services/document/**` |
 | `service:ai-gateway` | `services/ai-gateway/**`, `docs/services/ai-gateway/**` |
+| `service:parser` | `services/parser/**`, `docs/services/parser/**` |
 
 All labels referenced by `.github/labeler.json` must exist in the GitHub
 repository. The workflow skips missing labels rather than failing the PR, so

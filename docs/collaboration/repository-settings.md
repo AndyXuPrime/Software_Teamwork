@@ -23,6 +23,7 @@ service:qa
 service:knowledge
 service:document
 service:ai-gateway
+service:parser
 blocked
 ```
 
