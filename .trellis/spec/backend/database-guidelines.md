@@ -19,7 +19,7 @@ Confirmed Go infrastructure target stack:
 - Qdrant: a short-term hand-written HTTP client until usage justifies an official or generated client.
 - Object storage: File Service owns an `ObjectStore` port. Production target is
   MinIO or an equivalent persistent object-store adapter; the MinIO adapter is
-  not implemented yet.
+  implemented behind the same port.
 
 Current repository facts from `docs/architecture/technology-decisions.md`:
 
@@ -32,7 +32,7 @@ Current repository facts from `docs/architecture/technology-decisions.md`:
   follow-up decision, not an implementation-PR side effect.
 - Knowledge and Document have fixed `asynq v0.26.0`; new asynchronous jobs
   should reuse that version unless a documented decision upgrades it.
-- File Service runtime currently has memory/local object-store adapters.
+- File Service runtime currently has memory/local/MinIO object-store adapters.
   PostgreSQL metadata repository files and migrations exist, but
   `cmd/server` still uses a memory metadata repository until the runtime
   integration lands.
@@ -292,8 +292,14 @@ Rules:
 - Prefer pre-signed URLs only after checking ownership and permission in the service.
 - `FILE_STORAGE_BACKEND=memory` is for tests and early local development only.
   `local` is acceptable for durable local smoke tests. Production must use
-  MinIO or an equivalent persistent object-store adapter after that adapter
-  lands.
+  MinIO or an equivalent persistent object-store adapter.
+- MinIO SDK usage must stay inside the File Service platform/storage adapter and
+  process wiring. Handlers, owner-service clients, and service use cases depend
+  only on the service-owned `ObjectStore` port.
+- When adding an HTTP transport timeout for object-store clients, do not cancel
+  the request context immediately when `RoundTrip` returns. For streaming
+  responses, wrap the response body and cancel on `Body.Close()` so content
+  reads are not interrupted.
 
 ---
 
@@ -319,6 +325,13 @@ Rules:
   - `GET /internal/v1/files/{fileId}`.
   - `DELETE /internal/v1/files/{fileId}`.
   - `GET /internal/v1/files/{fileId}/content`.
+- Runtime environment:
+  - `FILE_STORAGE_BACKEND=memory|local|minio`.
+  - `FILE_LOCAL_STORAGE_DIR` when using `local`.
+  - `FILE_MINIO_ENDPOINT`, `FILE_MINIO_ACCESS_KEY`,
+    `FILE_MINIO_SECRET_KEY`, and `FILE_MINIO_BUCKET` when using `minio`.
+  - Optional `FILE_MINIO_USE_SSL`, `FILE_MINIO_REGION`, and
+    `FILE_MINIO_TIMEOUT`.
 - Database files:
   - `services/file/sqlc.yaml`.
   - `services/file/internal/repository/queries/file_objects.sql`.
@@ -332,6 +345,13 @@ Rules:
 - PostgreSQL is the durable source of metadata, deletion status, purge timestamps, and sanitized purge failure summaries.
 - Object keys are generated server-side from file IDs, never from user filenames.
 - `FILE_STORAGE_BACKEND=memory` is test/local-only; `local` is acceptable for local durable smoke tests; production should use MinIO or an equivalent persistent object store adapter.
+- MinIO adapter errors returned from the storage layer must be sanitized:
+  `NoSuchKey` / missing object maps to `service.ErrNotFound`, timeout and
+  cancellation preserve `context` errors, and other SDK failures map to a
+  dependency error without embedding bucket names, object keys, endpoints, or
+  credentials.
+- MinIO upload calls must preserve content type and enable SDK checksum support
+  such as `PutObjectOptions.SendContentMd5`.
 
 ### 4. Validation & Error Matrix
 
@@ -357,6 +377,8 @@ Rules:
 - Handler tests for malformed multipart, missing file, empty file, oversized file, checksum mismatch, successful content stream headers, and reads after delete.
 - Service tests for checksum computation/validation, object key creation, delete state transitions, and storage dependency error mapping.
 - Storage adapter tests for put/get/delete, size mismatch, context cancellation where practical, and path traversal rejection for local storage.
+- MinIO adapter tests for content type and checksum options, not-found mapping,
+  sanitized dependency errors, size mismatch, and timeout/cancellation behavior.
 - Repository or migration validation once database test tooling is available.
 
 ### 7. Wrong vs Correct
@@ -371,6 +393,18 @@ HTTP handler receives upload -> writes object directly to MinIO -> returns objec
 
 ```text
 HTTP handler parses multipart -> service validates checksum and creates FileObject -> repository stores metadata -> ObjectStore stores bytes -> response returns safe FileObject fields only
+```
+
+#### Wrong
+
+```text
+custom RoundTripper adds context.WithTimeout -> defer cancel() before returning response body -> content reads fail mid-stream
+```
+
+#### Correct
+
+```text
+custom RoundTripper adds context.WithTimeout -> wraps response body -> cancel happens when Body.Close() is called
 ```
 
 ## Scenario: Knowledge Document Upload And Ingestion Job
