@@ -74,9 +74,11 @@ WHERE table_schema = current_schema()
 	AND column_name IN ('response_run_id', 'content_preview', 'is_source_available', 'source_unavailable_reason')`).Scan(&count)
 	ready := err == nil && count == 4
 
-	r.citationSnapshotColumnsMu.Lock()
-	r.citationSnapshotColumnsReady = &ready
-	r.citationSnapshotColumnsMu.Unlock()
+	if ready {
+		r.citationSnapshotColumnsMu.Lock()
+		r.citationSnapshotColumnsReady = &ready
+		r.citationSnapshotColumnsMu.Unlock()
+	}
 	return ready
 }
 

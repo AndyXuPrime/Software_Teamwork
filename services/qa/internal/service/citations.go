@@ -103,7 +103,7 @@ func citationFromRecord(record map[string]any) (Citation, bool) {
 		KnowledgeBaseID:         firstString(record, "knowledgeBaseId", "knowledge_base_id", "externalKbId", "external_kb_id", "kbId"),
 		ChunkID:                 firstString(record, "chunkId", "chunk_id", "externalChunkId", "external_chunk_id"),
 		SectionPath:             firstString(record, "sectionPath", "section_path"),
-		Text:                    firstString(record, "quoteText", "quote_text"),
+		Text:                    firstString(record, "quoteText", "quote_text", "text"),
 		ContentPreview:          firstString(record, "contentPreview", "content_preview", "preview"),
 		Context:                 firstString(record, "context", "surroundingText", "surrounding_text"),
 		ChunkType:               firstString(record, "chunkType", "chunk_type"),
