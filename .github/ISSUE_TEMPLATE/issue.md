@@ -36,7 +36,7 @@ assignees: ''
 
 - 状态：Draft, Ready, Blocked, In Progress, Review, Done
 - 主责小组：L1nggTeam, JerryTeam, PrimeTeam, Frontend, Special
-- 模块：gateway, auth, file, qa, knowledge, document, frontend, deploy, ci, openapi
+- 模块：gateway, auth, file, qa, knowledge, document, ai-gateway, parser, frontend, deploy, ci, openapi
 
 ## 背景
 

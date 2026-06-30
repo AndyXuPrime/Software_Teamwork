@@ -118,7 +118,7 @@ S 契约/专项
 - View：`Platform / QA / Report / Frontend / Special`
 - 优先级：`P0 / P1 / P2`
 - 批次：`Batch 0 / Batch 1 / Batch 2 / Batch 3 / Batch 4`
-- 模块：`gateway / auth / file / knowledge / qa / document / frontend / ai-gateway / openapi / deploy / ci`
+- 模块：`gateway / auth / file / knowledge / qa / document / frontend / ai-gateway / parser / openapi / deploy / ci`
 - Risk：`Normal / Needs Decision / Blocked`
 - 依赖任务：无 / #118 #125
 - 阻塞任务：无 / #126 #127
