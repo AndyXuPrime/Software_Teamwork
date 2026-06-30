@@ -1,6 +1,6 @@
 import { Link, useRouter, useRouterState } from '@tanstack/react-router'
 import { Loader2, LogOut, RefreshCw, ShieldAlert } from 'lucide-react'
-import { type PropsWithChildren, type ReactNode, useEffect, useRef, useState } from 'react'
+import { type PropsWithChildren, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { apiClient } from '@/api/client'
 import { Button } from '@/components/ui/button'
@@ -79,7 +79,10 @@ export function AppLayout({ children }: PropsWithChildren) {
   }, [])
 
   // ── Nav slider position ──
-  const visibleNavItems = navItems.filter((item) => canAccess(user, item.requirement))
+  const visibleNavItems = useMemo(
+    () => navItems.filter((item) => canAccess(user, item.requirement)),
+    [user],
+  )
   const navRefs = useRef<Record<string, HTMLAnchorElement | null>>({})
   const [sliderStyle, setSliderStyle] = useState<{ left: number; width: number }>({
     left: 0,
@@ -97,7 +100,11 @@ export function AppLayout({ children }: PropsWithChildren) {
       if (el) {
         const parentRect = el.parentElement!.getBoundingClientRect()
         const elRect = el.getBoundingClientRect()
-        setSliderStyle({ left: elRect.left - parentRect.left, width: elRect.width })
+        const newLeft = elRect.left - parentRect.left
+        const newWidth = elRect.width
+        setSliderStyle((prev) =>
+          prev.left === newLeft && prev.width === newWidth ? prev : { left: newLeft, width: newWidth },
+        )
       }
     })
     return () => cancelAnimationFrame(raf)
