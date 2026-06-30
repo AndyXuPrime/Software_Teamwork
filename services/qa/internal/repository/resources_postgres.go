@@ -47,6 +47,8 @@ func (r *Postgres) ListStreamEvents(ctx context.Context, userID, sessionID, runI
 
 const citationSelect = `SELECT ci.id::text,ci.message_id::text,COALESCE(ci.response_run_id::text,''),ci.citation_no,COALESCE(ci.external_doc_id,''),ci.doc_name,COALESCE(ci.external_kb_id,''),COALESCE(ci.external_chunk_id,''),COALESCE(ci.section_path,''),COALESCE(ci.quote_text,''),COALESCE(ci.content_preview,ci.quote_text,''),COALESCE(ci.context,''),ci.page_number,ci.score,ci.rerank_score,COALESCE(ci.chunk_type,''),ci.is_source_available,COALESCE(ci.source_unavailable_reason,''),ci.metadata FROM citations ci JOIN messages m ON m.id=ci.message_id JOIN conversations c ON c.id=m.conversation_id`
 
+const messageCitationSelect = `SELECT ci.id::text,ci.message_id::text,'' AS response_run_id,ci.citation_no,COALESCE(ci.external_doc_id,''),ci.doc_name,COALESCE(ci.external_kb_id,''),COALESCE(ci.external_chunk_id,''),COALESCE(ci.section_path,''),COALESCE(ci.quote_text,''),COALESCE(ci.quote_text,''),COALESCE(ci.context,''),ci.page_number,ci.score,ci.rerank_score,COALESCE(ci.chunk_type,''),FALSE AS is_source_available,'' AS source_unavailable_reason,ci.metadata FROM citations ci JOIN messages m ON m.id=ci.message_id JOIN conversations c ON c.id=m.conversation_id`
+
 func (r *Postgres) ListMessageCitations(ctx context.Context, userID, messageID string) ([]service.Citation, error) {
 	rows, err := r.pool.Query(ctx, citationSelect+` WHERE ci.message_id::text=$1 AND c.external_user_id=$2 AND c.deleted_at IS NULL ORDER BY ci.citation_no`, messageID, userID)
 	if err != nil {

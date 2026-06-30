@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"testing"
 	"time"
 
@@ -27,6 +28,8 @@ type fakeRepository struct {
 	failOnCanceledFinalizing bool
 	failOnCanceledInvocation bool
 }
+
+var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 func (r *fakeRepository) CreateConversation(_ context.Context, value Conversation) (Conversation, error) {
 	r.conversation = value
@@ -669,6 +672,9 @@ func TestAskPersistsCitationSnapshotsFromKnowledgeToolResults(t *testing.T) {
 	citation := repository.finalization.Citations[0]
 	if citation.CitationNo != 1 || citation.MessageID != result.AssistantMessage.ID || citation.ResponseRunID != "run-id" {
 		t.Fatalf("unexpected saved citation identity: %+v", citation)
+	}
+	if !uuidPattern.MatchString(citation.ID) {
+		t.Fatalf("citation ID must be a UUID for postgres persistence: %q", citation.ID)
 	}
 	if citation.DocumentID != "doc-1" || citation.DocID != "doc-1" || citation.DocumentName != "Boiler Manual" || citation.DocName != "Boiler Manual" {
 		t.Fatalf("unexpected citation document fields: %+v", citation)

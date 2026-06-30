@@ -25,7 +25,7 @@ func citationsFromAgentMessages(messageID, runID string, messages []agent.Messag
 			if !ok {
 				continue
 			}
-			citation.ID = newID("cit")
+			citation.ID = newUUID()
 			citation.MessageID = messageID
 			citation.ResponseRunID = runID
 			citation.CitationNo = len(citations) + 1

@@ -691,6 +691,10 @@ func emitProgress(observer ProgressObserver, event ProgressEvent) {
 }
 
 func newID(prefix string) string {
+	return newUUID()
+}
+
+func newUUID() string {
 	data := make([]byte, 16)
 	if _, err := rand.Read(data); err != nil {
 		return fmt.Sprintf("00000000-0000-4000-8000-%012x", time.Now().UnixNano()&0xffffffffffff)

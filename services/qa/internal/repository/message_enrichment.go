@@ -86,7 +86,7 @@ ORDER BY rr.assistant_message_id::text, ps.step_order`, messageIDs, conversation
 }
 
 func (r *Postgres) listCitationsForMessages(ctx context.Context, userID, conversationID string, messageIDs []string) (map[string][]service.Citation, error) {
-	rows, err := r.pool.Query(ctx, citationSelect+` WHERE ci.message_id::text = ANY($1::text[]) AND m.conversation_id::text = $2 AND c.external_user_id = $3 AND c.deleted_at IS NULL ORDER BY ci.message_id, ci.citation_no`, messageIDs, conversationID, userID)
+	rows, err := r.pool.Query(ctx, messageCitationSelect+` WHERE ci.message_id::text = ANY($1::text[]) AND m.conversation_id::text = $2 AND c.external_user_id = $3 AND c.deleted_at IS NULL ORDER BY ci.message_id, ci.citation_no`, messageIDs, conversationID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list message citations: %w", err)
 	}
