@@ -139,7 +139,7 @@ export function streamChat(
     body: { message },
     method: 'POST',
     onError: (error) => {
-      if (didAbort) return
+      if (didAbort || didReceiveTerminalEvent) return
       didReceiveTerminalEvent = true
       handlers.onError?.({
         code: error.code,
@@ -152,20 +152,24 @@ export function streamChat(
     },
     onEvent: ({ data, event, id }) => {
       if (event === 'heartbeat') return
+      if (didReceiveTerminalEvent) return
       fallbackSeq += 1
 
       try {
         const qaEvent = event as QASseEventType
         const payload = normalizeSsePayload(qaEvent, parseSsePayload(data, fallbackSeq, id))
+        const isStaleEvent = payload.seq <= maxDispatchedSeq
         recordDispatchedSeq(payload.seq)
-        if (qaEvent === 'answer.completed' || qaEvent === 'error') {
+        if (!isStaleEvent && (qaEvent === 'answer.completed' || qaEvent === 'error')) {
           didReceiveTerminalEvent = true
         }
         dispatch(qaEvent, payload, handlers)
       } catch {
+        didReceiveTerminalEvent = true
+        stream.abort()
         handlers.onError?.({
           code: 'invalid_sse_event',
-          fatal: false,
+          fatal: true,
           message: '收到无法解析的 QA 流式事件',
           seq: nextSyntheticSeq(),
         })

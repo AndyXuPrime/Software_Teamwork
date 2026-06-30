@@ -219,4 +219,51 @@ describe('chat stream API', () => {
       }),
     )
   })
+
+  it('stops dispatching events after a malformed SSE payload', async () => {
+    const onAnswerCompleted = vi.fn()
+    const onAnswerDelta = vi.fn()
+    const onError = vi.fn()
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        streamResponse(
+          [
+            'event: answer.delta',
+            'id: 1',
+            'data: {',
+            '',
+            'event: answer.delta',
+            'id: 2',
+            'data: {"content":"late"}',
+            '',
+            'event: answer.completed',
+            'id: 3',
+            'data: {"responseRunId":"run-1"}',
+            '',
+            '',
+          ].join('\n'),
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    streamChat('session-1', 'question', {
+      onAnswerCompleted,
+      onAnswerDelta,
+      onError,
+    })
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'invalid_sse_event',
+        fatal: true,
+        seq: 1,
+      }),
+    )
+    expect(onAnswerDelta).not.toHaveBeenCalled()
+    expect(onAnswerCompleted).not.toHaveBeenCalled()
+  })
 })
