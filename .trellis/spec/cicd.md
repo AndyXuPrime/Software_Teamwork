@@ -101,7 +101,8 @@ custom fields.
 - Closing a managed issue must calculate `ActualHours` automatically from the
   later of issue `created_at` and the latest closed dependency in `依赖任务`, to
   the current issue `closed_at`, then update the issue body and Project
-  `ActualHours`.
+  `ActualHours`; closed GitHub issues must sync Project `Status` to `Done`
+  regardless of stale body `状态` text.
 - Maintainers may rerun Task Issue Sync with `workflow_dispatch` and
   `issue_number` to backfill a closed managed issue without reopening it.
 - Actual-hours comments must update the issue body `实际工时（小时数）` field

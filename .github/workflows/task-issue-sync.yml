@@ -256,7 +256,9 @@ jobs:
               Review: 'In Progress',
               Done: 'Done',
             };
-            const projectStatus = projectStatusByIssueStatus[issueStatus] || 'Todo';
+            const projectStatus = issue.state === 'closed'
+              ? 'Done'
+              : (projectStatusByIssueStatus[issueStatus] || 'Todo');
 
             const labelsToAdd = new Set();
             if (['L1nggTeam', 'JerryTeam', 'PrimeTeam', 'Test'].includes(group)) {
