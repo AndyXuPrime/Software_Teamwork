@@ -12,6 +12,8 @@ from pathlib import Path
 
 SCAN_ROOTS = ("deploy", "services", "apps")
 EXPECTED_ENV_IMAGE_OVERRIDES = {
+    "DOCKER_IMAGE_REGISTRY_PREFIX": "docker.m.daocloud.io/library/",
+    "RAGFLOW_DEPS_IMAGE": "docker.m.daocloud.io/infiniflow/ragflow_deps:51ce6aab",
     "POSTGRES_IMAGE": "docker.m.daocloud.io/library/postgres:16-alpine",
     "REDIS_IMAGE": "docker.m.daocloud.io/library/redis:7-alpine",
     "QDRANT_IMAGE": "docker.m.daocloud.io/qdrant/qdrant:v1.18.2",
@@ -100,6 +102,7 @@ GO_SUMDB_ARG = "ARG GOSUMDB=sum.golang.org"
 GO_PROXY_COMPOSE = "GOPROXY: ${GO_DOCKER_GOPROXY:-https://proxy.golang.org,direct}"
 GO_SUMDB_COMPOSE = "GOSUMDB: ${GO_DOCKER_GOSUMDB:-sum.golang.org}"
 IMAGE_REGISTRY_COMPOSE = "IMAGE_REGISTRY_PREFIX: ${DOCKER_IMAGE_REGISTRY_PREFIX:-}"
+FULL_IMAGE_ARG_FROM_ALLOWLIST = frozenset({"RAGFLOW_DEPS_IMAGE"})
 
 
 def verify_docker_policy(root: Path) -> list[str]:
@@ -176,6 +179,7 @@ def discover_compose_files(root: Path) -> list[Path]:
 def validate_dockerfile(root: Path, dockerfile: Path) -> list[str]:
     rel = dockerfile.relative_to(root).as_posix()
     content = dockerfile.read_text(encoding="utf-8")
+    arg_defaults = collect_arg_defaults(content)
     issues: list[str] = []
 
     if re.search(r"(?m)^\s*#\s*syntax=", content):
@@ -193,9 +197,15 @@ def validate_dockerfile(root: Path, dockerfile: Path) -> list[str]:
     for line_no, image in from_images:
         if image == "scratch":
             continue
-        if "${IMAGE_REGISTRY_PREFIX}" not in image:
+        full_image_arg = parse_full_image_arg(image)
+        if "${IMAGE_REGISTRY_PREFIX}" not in image and full_image_arg not in FULL_IMAGE_ARG_FROM_ALLOWLIST:
             issues.append(f"{rel}:{line_no}: base image `{image}` must use ${{IMAGE_REGISTRY_PREFIX}}")
         image_without_prefix = image.replace("${IMAGE_REGISTRY_PREFIX}", "")
+        if full_image_arg is not None:
+            default_image = arg_defaults.get(full_image_arg, "")
+            if not default_image:
+                issues.append(f"{rel}:{line_no}: base image `{image}` must have a pinned ARG default")
+            image_without_prefix = default_image
         if uses_latest_tag(image_without_prefix):
             issues.append(f"{rel}:{line_no}: base image `{image}` must not use latest")
         if not has_explicit_tag_or_digest(image_without_prefix):
@@ -212,6 +222,22 @@ def validate_dockerfile(root: Path, dockerfile: Path) -> list[str]:
         issues.append(f"{rel}: Docker build context must have a sibling .dockerignore")
 
     return issues
+
+
+def collect_arg_defaults(content: str) -> dict[str, str]:
+    defaults: dict[str, str] = {}
+    for line in content.splitlines():
+        match = re.match(r"^\s*ARG\s+([A-Z0-9_]+)=(\S+)\s*$", line)
+        if match:
+            defaults[match.group(1)] = match.group(2)
+    return defaults
+
+
+def parse_full_image_arg(image: str) -> str | None:
+    match = re.match(r"^\$\{([A-Z0-9_]+)\}$", image)
+    if not match:
+        return None
+    return match.group(1)
 
 
 def collect_base_from_images(content: str) -> list[tuple[int, str]]:

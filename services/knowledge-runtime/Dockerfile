@@ -1,8 +1,7 @@
 # base stage
 ARG IMAGE_REGISTRY_PREFIX=
-# Pinned deps image (see UPSTREAM.md import commit). Override at build time if needed.
 ARG RAGFLOW_DEPS_IMAGE=infiniflow/ragflow_deps:51ce6aab
-FROM ${IMAGE_REGISTRY_PREFIX}infiniflow/ragflow_deps:51ce6aab AS ragflow_deps
+FROM ${RAGFLOW_DEPS_IMAGE} AS ragflow_deps
 
 FROM ${IMAGE_REGISTRY_PREFIX}ubuntu:24.04 AS base
 USER root
@@ -10,6 +9,7 @@ SHELL ["/bin/bash", "-c"]
 
 ARG RAGFLOW_DEPS_IMAGE=infiniflow/ragflow_deps:51ce6aab
 ARG NEED_MIRROR=0
+ARG TIKA_VERSION=3.3.0
 
 WORKDIR /ragflow
 
@@ -21,14 +21,11 @@ RUN --mount=type=bind,from=ragflow_deps,source=/huggingface.co,target=/huggingfa
         /huggingface.co/InfiniFlow/deepdoc \
         | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
 
-# https://github.com/chrismattmann/tika-python
-# This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.
 RUN --mount=type=bind,from=ragflow_deps,source=/,target=/deps \
     cp -r /deps/nltk_data /root/ && \
-    cp /deps/tika-server-standard-3.3.0.jar /deps/tika-server-standard-3.3.0.jar.md5 /ragflow/ && \
     cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 
-ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.3.0.jar"
+ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-${TIKA_VERSION}.jar"
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Setup apt
@@ -54,6 +51,23 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y \
     libglib2.0-0 libglx-mesa0 libgl1 pkg-config libgdiplus default-jdk libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils libjemalloc-dev gnupg unzip curl wget git vim less ghostscript pandoc texlive texlive-latex-extra texlive-xetex texlive-lang-chinese fonts-freefont-ttf fonts-noto-cjk postgresql-client && \
     rm -rf /var/lib/apt/lists/*
+
+# https://github.com/chrismattmann/tika-python
+# Set TIKA_SERVER_JAR so python-tika does not pull the latest server at runtime.
+# Some pinned upstream deps images do not include the jar, so keep a fixed
+# version download fallback after wget is installed.
+RUN --mount=type=bind,from=ragflow_deps,source=/,target=/deps \
+    if [ -f "/deps/tika-server-standard-${TIKA_VERSION}.jar" ] && [ -f "/deps/tika-server-standard-${TIKA_VERSION}.jar.md5" ]; then \
+        cp "/deps/tika-server-standard-${TIKA_VERSION}.jar" "/deps/tika-server-standard-${TIKA_VERSION}.jar.md5" /ragflow/; \
+    else \
+        if [ "$NEED_MIRROR" == "1" ]; then \
+            tika_base="https://repo.huaweicloud.com/repository/maven/org/apache/tika/tika-server-standard/${TIKA_VERSION}"; \
+        else \
+            tika_base="https://repo1.maven.org/maven2/org/apache/tika/tika-server-standard/${TIKA_VERSION}"; \
+        fi; \
+        wget -O "/ragflow/tika-server-standard-${TIKA_VERSION}.jar" "${tika_base}/tika-server-standard-${TIKA_VERSION}.jar"; \
+        wget -O "/ragflow/tika-server-standard-${TIKA_VERSION}.jar.md5" "${tika_base}/tika-server-standard-${TIKA_VERSION}.jar.md5"; \
+    fi
 
 # Download resource from GitHub to /usr/share/infinity
 RUN mkdir -p /usr/share/infinity/resource && \

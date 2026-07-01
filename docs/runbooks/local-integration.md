@@ -111,9 +111,8 @@ client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue
 
 - `dev-up.sh`：infra pull/up、等待 Compose health checks、Qdrant collection
   初始化、migration、demo seed。
-- `run-backend.sh`：Parser uv 依赖准备、后端进程启动、日志和进程组 PID。uv 的
-  Python 包索引默认来自 `deploy/.env` 里的 `UV_DEFAULT_INDEX`，不走 Docker 镜像源；
-  frozen 同步仍会按 `services/parser/uv.lock` 里的包 URL 下载。
+- `run-backend.sh`：后端进程启动、日志和进程组 PID。Knowledge 使用 `cmd/adapter`
+  调用 RAGFlow runtime；runtime API/worker 可通过 `knowledge-v2` profile 启动。
 - `stop-backend.sh`：按 `.local/run/` 中记录的进程组停止后端，避免只杀掉
   `go run` / `uv run` wrapper 后留下真实服务占用端口。
 - `deploy/.env`：本地配置。脚本不生成、不改写、不维护第二套默认值。
@@ -126,31 +125,29 @@ Infra 拉取慢：
 - 已配置 Docker daemon mirror 时，运行 `python3 scripts/check_docker_environment.py --profile all --clean-env`。
 - 代理只作为最后选择；shell proxy、daemon proxy 和 registry rewrite 是三条不同路径。
 
-Parser uv 依赖慢：
+RAGFlow runtime 构建或启动慢：
 
-- 默认保留 `deploy/.env.example` 里的 `UV_DEFAULT_INDEX`。
-- 默认 `services/parser/uv.lock` 也锁定到清华源；`uv sync --frozen` 不会因为删除或
-  修改 `UV_DEFAULT_INDEX` 而改用官方 PyPI。
-- 如果公司网络只能访问 PyPI 或自建源，需要用同一索引重新生成
-  `services/parser/uv.lock` 作为本机排障路径；提交前必须重锁回清华源并通过
-  `scripts/verify_local_seed_contract.py`。
-- uv 下载的是 Python 包；Docker registry rewrite 不影响它。
-- 第一次准备 PaddleOCR extra 会下载几十个包；确认 `services/parser/uv.lock`
-  里的 URL 也是清华源，而不是 `pypi.org` 或 `files.pythonhosted.org`。
+- 默认保留 `deploy/.env.example` 里的 `DOCKER_IMAGE_REGISTRY_PREFIX` 和
+  `RAGFLOW_DEPS_IMAGE`。
+- runtime Dockerfile 会复用 pinned `infiniflow/ragflow_deps` 镜像；中国大陆网络默认
+  通过显式 DaoCloud registry rewrite 拉取。
+- 不要恢复 `services/parser`；PDF 解析、切块、embedding、索引和检索由 RAGFlow
+  runtime worker 完成。
 
 后端没起来：
 
 - 先看 `.local/logs/<service>.log`。
-- Knowledge ingestion 到 embedding/index 阶段失败时，先确认
-  `QDRANT_URL`、`QDRANT_COLLECTION` 和 `EMBEDDING_DIMENSION` 与 dev-up 初始化一致。
+- Knowledge ingestion 到 embedding/index 阶段失败时，先确认 `VENDOR_RUNTIME_URL`
+  指向可访问的 runtime API，并检查 `knowledge-runtime-worker` 是否在处理任务。
 - Auth、File、Knowledge、QA、Document、AI Gateway 优先查数据库和 migration。
 - Gateway 优先查 Redis、Auth URL 和下游服务端口。
-- File/Knowledge/Parser 内部调用 `401` 时，检查 `INTERNAL_SERVICE_TOKEN` 是否一致。
+- File/Knowledge 内部调用 `401` 时，检查 `INTERNAL_SERVICE_TOKEN` 是否一致。
 
 WSL 内存高：
 
 - 先看 `docker stats`。
-- 当前 Docker 只跑 infra；内存压力主要来自 PostgreSQL、Qdrant、MinIO、Parser OCR 或本机后端进程。
+- 当前默认 Docker 只跑 infra；启用 `knowledge-v2` profile 后，内存压力主要来自
+  PostgreSQL、Qdrant、MinIO、Elasticsearch、RAGFlow runtime 或本机后端进程。
 - 不需要保留环境时先停后端，再执行 `docker compose -f deploy/docker-compose.yml --env-file deploy/.env down -v`。
 
 ```bash

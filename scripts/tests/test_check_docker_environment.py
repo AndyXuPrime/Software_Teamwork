@@ -31,6 +31,20 @@ class DockerEnvironmentTests(unittest.TestCase):
         self.assertNotIn("parser python", images)
         self.assertEqual("docker.m.daocloud.io/library/postgres:16-alpine", images["postgres"])
         self.assertEqual("docker.m.daocloud.io/qdrant/qdrant:v1.18.2", images["qdrant"])
+        self.assertEqual(
+            "docker.m.daocloud.io/infiniflow/ragflow_deps:51ce6aab",
+            images["ragflow deps"],
+        )
+
+    def test_default_profiles_probe_ragflow_deps_image(self) -> None:
+        self.assertEqual(
+            "infiniflow/ragflow_deps:51ce6aab",
+            selected_image_sets("default")[0][1]["ragflow deps"],
+        )
+        self.assertEqual(
+            "registry-1.docker.io/infiniflow/ragflow_deps:51ce6aab",
+            selected_image_sets("dockerhub-direct")[0][1]["ragflow deps"],
+        )
 
     def test_redact_proxy_value_hides_credentials(self) -> None:
         value = redact_proxy_value("http://user:secret@example.com:8080/path")
