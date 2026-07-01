@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 19
+- **Total Sessions**: 20
 - **Last Active**: 2026-07-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~639 | Active |
+| `journal-1.md` | ~675 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 20 | 2026-07-01 | Archive ragflow-runtime-vendor | `7563b29`, `f85b84a`, `805ea5a`, `181dc08` | `L1nggTeam/feat/ragflow-runtime-vendor` |
 | 19 | 2026-07-01 | Knowledge MCP Server (Phases A–C) | `f85b84a` | `L1nggTeam/feat/ragflow-runtime-vendor` |
 | 18 | 2026-07-01 | Phase 4 deepdoc ingestion | `11507f5` | `L1nggTeam/feat/ragflow-runtime-vendor` |
 | 17 | 2026-07-01 | Phase 3b parser-config bridge | `c2fd2b1` | `L1nggTeam/feat/ragflow-runtime-vendor` |

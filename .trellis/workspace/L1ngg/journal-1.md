@@ -637,3 +637,39 @@ Added Streamable HTTP MCP server on services/knowledge with 14 tools: search_kno
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: Archive ragflow-runtime-vendor
+
+**Date**: 2026-07-01
+**Task**: Archive ragflow-runtime-vendor
+**Branch**: `L1nggTeam/feat/ragflow-runtime-vendor`
+
+### Summary
+
+Archived parent task after Phase 6 runtime promotion and child MCP task. Delivered knowledge adapter + knowledge-runtime (api/worker) + compose knowledge-v2. Follow-ups documented in closure.md (E2E, docs sync, parser-config bridge).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7563b29` | (see git log) |
+| `f85b84a` | (see git log) |
+| `805ea5a` | (see git log) |
+| `181dc08` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
