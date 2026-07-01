@@ -60,7 +60,7 @@
 | --- | --- | --- | --- |
 | Document MCP tools | Document README / requirements | QA / tool integration | 注册工具、权限校验、参数校验、脱敏输出和调用链路仍未实现。 |
 | 更多报告类型生成策略 | Document README / requirements | worker / report content | 当前基础 AI 闭环覆盖 `summer_peak_inspection`；`coal_inventory_audit` 仍需补业务 prompt、模板和验收样例后再开放。 |
-| Pandoc rich DOCX generation（运行时接入） | Document README / 技术基线 / C-011 | rich DOCX | 工具链选型已由 C-011 固定（`pandoc/core:3.10`）；调用边界、smoke 验证和 fallback 策略见 `docs/services/document/docs/rich-docx-worker.md`；Dockerfile 接入和运行时调用是后续任务，当前不得承诺富 DOCX 转换已可用。 |
+| Pandoc rich DOCX generation（运行时接入） | Document README / 技术基线 / C-011 | rich DOCX | 工具链选型已由 C-011 固定（`pandoc/core:3.10`）；调用边界、smoke 验证和 fallback 策略见 [rich-docx-worker.md](rich-docx-worker.md)；Dockerfile 接入和运行时调用是后续任务，当前不得承诺富 DOCX 转换已可用。 |
 
 ## 5. 文档与实现出入
 

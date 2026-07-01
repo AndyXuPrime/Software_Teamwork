@@ -255,7 +255,7 @@ Document 相关接口使用项目统一错误码：
 ## 实现与验证要求
 
 - 服务代码放在 `services/document/`，使用独立 Go module；通用数据库、迁移、HTTP、配置、日志、测试和观测规则见 [技术选型基线](../../architecture/technology-decisions.md)。
-- 启动时必须校验 PostgreSQL、Redis、file client、AI Gateway 配置和监听地址；Knowledge 服务配置是可选项，仅在生成请求要求检索上下文时使用；`DOCUMENT_PANDOC_PATH` 和 `DOCUMENT_LIBREOFFICE_PATH` 是富 DOCX 工具链预留配置，工具链选型已由 C-011 固定（见 `docs/services/document/docs/rich-docx-worker.md`），当前 Dockerfile 不安装对应 CLI。
+- 启动时必须校验 PostgreSQL、Redis、file client、AI Gateway 配置和监听地址；Knowledge 服务配置是可选项，仅在生成请求要求检索上下文时使用；`DOCUMENT_PANDOC_PATH` 和 `DOCUMENT_LIBREOFFICE_PATH` 是富 DOCX 工具链预留配置，工具链选型已由 C-011 固定（见 [rich-docx-worker.md](docs/rich-docx-worker.md)），当前 Dockerfile 不安装对应 CLI。
 - Gateway 只做公开入口、认证上下文、统一 envelope、错误归一化和路由转发，不承载报告生成业务逻辑。
 - Redis 只通过 `asynq` 承载任务队列和短期协调；PostgreSQL 中的 `ReportJob`、`ReportJobAttempt`、`ReportEvent` 是权威业务状态。
 - 任务最多自动重试 3 次，失败后保留最近尝试摘要；手动重试通过 `report-jobs/{jobId}/attempts` 创建新资源。

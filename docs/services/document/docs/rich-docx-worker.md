@@ -44,7 +44,7 @@ docker inspect pandoc/core:3.10 --format '{{.RepoDigests}}'
 # 输出示例：[pandoc/core@sha256:abcdef1234567890...]
 ```
 
-中国大陆环境请参考 `deploy/.env.china.example` 中的 registry rewrite 策略，或配置 daemon mirror 后重新 pull。
+中国大陆环境请优先使用显式 registry rewrite（参考 `deploy/.env.china.example`）；如需诊断本机网络情况，可运行 `scripts/check_docker_environment.py --profile all --clean-env`；daemon mirror 在部分 `?ns=docker.io` manifest 路径不稳定，不作为首选路径。
 
 ## 3. Document Service ↔ 富 DOCX Worker 调用边界
 
@@ -67,12 +67,12 @@ docker inspect pandoc/core:3.10 --format '{{.RepoDigests}}'
 
 ### 3.3 错误处理
 
-| 错误场景 | 处理方式 |
-| --- | --- |
-| subprocess 非零退出码 | 返回 `CodeDependency` 错误；日志只记录 `reportID`、`jobID`；不记录章节正文内容 |
-| 输出文件为空或小于 1 KB | 返回 `CodeDependency` 错误，标注"空 DOCX 输出" |
-| context 超时 | 返回 `CodeDependency` timeout 错误；强制终止 subprocess |
-| Pandoc binary 不可用（PATH 查找失败） | 回退到 `SimpleDOCXGenerator`；写 `warn` 日志（含 `reportID`，不含内容）；见 [4.1 节](#41-fallback-策略) |
+| 错误场景 | 类别 | 处理方式 |
+| --- | --- | --- |
+| subprocess 非零退出码（内容处理失败） | 硬错误 | 返回 `CodeDependency` 错误；日志只记录 `reportID`、`jobID`；不记录章节正文内容；**不触发 fallback** |
+| binary 不可用（PATH 查找失败）、超时、输出为空（< 1 KB） | 基础设施失败 | 触发 fallback 降级到 `SimpleDOCXGenerator`，见 [4.1 节](#41-fallback-策略) |
+
+**语义说明**：非零退出码属于 Pandoc 无法处理输入内容，`SimpleDOCXGenerator` 同样可能产生错误结果，故不降级；binary 不可用、超时、空输出属于基础设施失败，`SimpleDOCXGenerator` 可提供有效降级结果。
 
 错误响应和日志不得包含：章节正文内容、prompt、`file_ref`、object key、API key、provider 原始错误或完整临时文件路径。
 
@@ -116,10 +116,13 @@ docker inspect pandoc/core:3.10 --format '{{.RepoDigests}}'
 以下策略在 Dockerfile 接入时实现，C-011 仅记录约束。
 
 ```
-触发条件（任一）：
+触发条件（任一，属于基础设施失败）：
   1. exec.LookPath(pandocPath) 返回错误（binary 不可用）
   2. Pandoc subprocess context 超时
   3. Pandoc 输出文件为空（< 1 KB）
+
+不触发 fallback（硬错误）：
+  - subprocess 非零退出码 → 返回 CodeDependency，任务失败
 
 fallback 行为：
   - 使用 SimpleDOCXGenerator 生成基础 DOCX
