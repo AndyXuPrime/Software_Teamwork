@@ -2,7 +2,7 @@
 
 本文记录 Document 服务富 DOCX 生成 worker 工具链的选型决策、版本固定、调用边界、`SimpleDOCXGenerator` 职责分工和本地 smoke 验证步骤。
 
-本文是 C-011（#307）的主要交付物。技术基线权威来源见 [`technology-decisions.md`](../../architecture/technology-decisions.md)；服务实现状态见 [`implementation.md`](implementation.md)。
+本文是 C-011（#307）的主要交付物。技术基线权威来源见 [`technology-decisions.md`](../../../architecture/technology-decisions.md)；服务实现状态见 [`implementation.md`](implementation.md)。
 
 ## 1. 工具链选型决策
 
