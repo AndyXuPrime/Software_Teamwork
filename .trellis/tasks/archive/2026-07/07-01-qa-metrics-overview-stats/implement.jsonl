@@ -1,8 +1,0 @@
-{"step":"修改 MetricsOverview 结构体，添加 KnowledgeBaseCount/DocumentCount","files":["services/qa/internal/service/resources.go"]}
-{"step":"新增 KnowledgeStatsProvider 接口和 ResourceService 字段","files":["services/qa/internal/service/resources.go"]}
-{"step":"知识客户端新增 GetStats 方法","files":["services/qa/internal/platform/knowledgeclient/client.go"]}
-{"step":"新增 metricsDaysQuery，days 校验 1-366","files":["services/qa/internal/http/resource_handlers.go"]}
-{"step":"创建迁移 0007 添加指标索引","files":["services/qa/migrations/0007_metrics_indexes.sql"]}
-{"step":"新增 service 层 metrics 测试","files":["services/qa/internal/service/resources_test.go"]}
-{"step":"新增 HTTP handler metrics 测试","files":["services/qa/internal/http/server_test.go"]}
-{"step":"运行测试验证","command":"go test ./internal/... -count=1"}

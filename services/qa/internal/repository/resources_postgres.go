@@ -562,7 +562,7 @@ func retrievalResultWithAliases(item service.RetrievalTestResult) service.Retrie
 	return item
 }
 
-func (r *Postgres) GetMetricsOverview(ctx context.Context, days int) (service.MetricsOverview, error) {
+func (r *Postgres) GetMetricsOverview(ctx context.Context, _ string, days int) (service.MetricsOverview, error) {
 	if days <= 0 {
 		days = 1
 	}

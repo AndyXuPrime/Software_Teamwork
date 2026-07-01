@@ -165,10 +165,12 @@ func (c *Client) CheckCitationSources(ctx context.Context, userID string, docume
 }
 
 // GetStats fetches knowledge base and document counts from the knowledge
-// service by paginating through all knowledge bases. This is a best-effort
-// call: errors are returned to the caller so the ResourceService can fall
-// back to zero counts.
-func (c *Client) GetStats(ctx context.Context, userID string) (int, int, error) {
+// service by paginating through all knowledge bases. It uses service-level
+// authentication (X-Service-Token) rather than forwarding the caller's
+// user context, so that admin users without knowledge permissions still
+// see global counts. This is a best-effort call: errors are returned to
+// the caller so the ResourceService can fall back to zero counts.
+func (c *Client) GetStats(ctx context.Context, _ string) (int, int, error) {
 	const pageSize = 100
 	var (
 		kbCount  int
@@ -181,7 +183,7 @@ func (c *Client) GetStats(ctx context.Context, userID string) (int, int, error) 
 		if err != nil {
 			return 0, 0, fmt.Errorf("create knowledge stats request: %w", err)
 		}
-		c.setTrustedHeaders(ctx, req, userID)
+		c.setServiceHeaders(req)
 		resp, err := c.http.Do(req)
 		if err != nil {
 			return 0, 0, fmt.Errorf("knowledge stats request: %w", err)
@@ -223,6 +225,11 @@ func (c *Client) GetStats(ctx context.Context, userID string) (int, int, error) 
 		kbCount = docCount
 	}
 	return kbCount, docCount, nil
+}
+
+func (c *Client) setServiceHeaders(req *http.Request) {
+	req.Header.Set("X-Service-Token", c.serviceToken)
+	req.Header.Set("X-Caller-Service", "qa")
 }
 
 func (c *Client) setTrustedHeaders(ctx context.Context, req *http.Request, userID string) {

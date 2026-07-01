@@ -1,7 +1,0 @@
-{"check":"knowledgeBaseCount/documentCount 字段已添加到 MetricsOverview","status":"pass"}
-{"check":"KnowledgeStatsProvider 接口和 GetStats 实现","status":"pass"}
-{"check":"days 参数校验 1-366","status":"pass"}
-{"check":"迁移 0007 索引已创建","status":"pass"}
-{"check":"service 层测试（有/无/失败降级）","status":"pass"}
-{"check":"HTTP handler 测试（权限拒绝、参数校验、响应格式、防泄漏）","status":"pass"}
-{"check":"go test 全部通过","status":"pass"}
