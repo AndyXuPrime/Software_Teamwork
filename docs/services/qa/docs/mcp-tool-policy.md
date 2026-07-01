@@ -201,7 +201,7 @@ for _, toolName := range qaConfig.Agent.EnabledToolNames {
 
 ### agent_tool_calls 表
 
-参见 [migration 0003](file:///d:/Software_Teamwork/services/qa/migrations/0003_align_documented_api.sql) 和 [migration 0006](file:///d:/Software_Teamwork/services/qa/migrations/0006_add_tool_call_fields.sql)。
+参见 [migration 0003](../../../../services/qa/migrations/0003_align_documented_api.sql) 和 [migration 0007](../../../../services/qa/migrations/0007_add_tool_call_fields.sql)。
 
 **关键字段**：
 - `tool_name`: 工具名（如 search_knowledge）

@@ -33,3 +33,24 @@ func TestMessageCitationLegacySelectDoesNotRequireSnapshotMigrationColumns(t *te
 		t.Fatalf("legacy message citation query should not hard-code source availability to false: %s", messageCitationLegacySelect)
 	}
 }
+
+func TestAgentConfigFromCreateInputPreservesExplicitEmptyToolWhitelist(t *testing.T) {
+	config := agentConfigFromCreateInput(service.CreateQAConfigVersionInput{
+		Agent:            service.AgentConfig{EnabledToolNames: []string{}},
+		EnabledToolNames: []string{"search_knowledge"},
+	})
+
+	if config.EnabledToolNames == nil || len(config.EnabledToolNames) != 0 {
+		t.Fatalf("enabledToolNames=%#v, want explicit empty whitelist", config.EnabledToolNames)
+	}
+}
+
+func TestAgentConfigFromCreateInputFallsBackToLegacyToolNamesWhenUnset(t *testing.T) {
+	config := agentConfigFromCreateInput(service.CreateQAConfigVersionInput{
+		EnabledToolNames: []string{"search_knowledge"},
+	})
+
+	if !reflect.DeepEqual(config.EnabledToolNames, []string{"search_knowledge"}) {
+		t.Fatalf("enabledToolNames=%#v, want legacy tool names", config.EnabledToolNames)
+	}
+}

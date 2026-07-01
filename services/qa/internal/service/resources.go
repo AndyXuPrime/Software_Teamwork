@@ -231,7 +231,9 @@ func NormalizeAgentConfig(config AgentConfig) AgentConfig {
 	if config.EnabledToolNames == nil {
 		config.EnabledToolNames = []string{}
 	} else {
-		config.EnabledToolNames = append([]string(nil), config.EnabledToolNames...)
+		enabledToolNames := make([]string, len(config.EnabledToolNames))
+		copy(enabledToolNames, config.EnabledToolNames)
+		config.EnabledToolNames = enabledToolNames
 	}
 	return config
 }
