@@ -33,7 +33,7 @@ internal/cpp/cmake-build-debug/
 target/
 
 # ── ragflow_deps build context (built as a separate image, mounted ──
-# ── from infiniflow/ragflow_deps:latest by the main Dockerfile)     ──
+# ── from RAGFLOW_DEPS_IMAGE by the main Dockerfile)                 ──
 # Excluding the entire directory keeps the main build context small
 # regardless of which deps files download_deps.py currently fetches.
 # The deps image is built from this directory with:
