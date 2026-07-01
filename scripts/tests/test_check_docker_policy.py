@@ -6,6 +6,43 @@ from pathlib import Path
 from scripts.check_docker_policy import verify_docker_policy
 
 
+VALID_GO_DOCKERFILE = textwrap.dedent(
+    """
+    ARG IMAGE_REGISTRY_PREFIX=
+    ARG GO_VERSION=1.25
+    ARG ALPINE_VERSION=3.22
+
+    FROM ${IMAGE_REGISTRY_PREFIX}golang:${GO_VERSION}-alpine AS build
+    ARG GOPROXY=https://proxy.golang.org,direct
+    ARG GOSUMDB=sum.golang.org
+    ARG ALPINE_MIRROR=
+    ENV GOPROXY=${GOPROXY} GOSUMDB=${GOSUMDB}
+    COPY go.mod go.sum ./
+    RUN --mount=type=cache,target=/go/pkg/mod go mod download
+    COPY . .
+    RUN --mount=type=cache,target=/go/pkg/mod \\
+        --mount=type=cache,target=/root/.cache/go-build \\
+        CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/auth ./cmd/server
+
+    FROM ${IMAGE_REGISTRY_PREFIX}alpine:${ALPINE_VERSION}
+    ARG ALPINE_MIRROR=
+    RUN --mount=type=cache,target=/var/cache/apk apk add --update-cache --cache-dir /var/cache/apk ca-certificates
+    COPY --from=build /out/auth /usr/local/bin/auth
+    ENTRYPOINT ["auth"]
+    """
+)
+
+
+VALID_RUNTIME_DOCKERFILE = textwrap.dedent(
+    """
+    ARG IMAGE_REGISTRY_PREFIX=
+    FROM ${IMAGE_REGISTRY_PREFIX}ubuntu:24.04 AS base
+    RUN uv sync --python 3.13 --frozen
+    CMD ["./entrypoint.sh"]
+    """
+)
+
+
 VALID_COMPOSE = textwrap.dedent(
     """
     services:
@@ -19,6 +56,26 @@ VALID_COMPOSE = textwrap.dedent(
         image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-09-07T16-13-09Z}
       minio-init:
         image: ${MINIO_MC_IMAGE:-minio/mc:RELEASE.2025-08-13T08-35-41Z}
+      knowledge-minio-init:
+        profiles: ["knowledge-v2"]
+        image: ${MINIO_MC_IMAGE:-minio/mc:RELEASE.2025-08-13T08-35-41Z}
+      elasticsearch:
+        profiles: ["knowledge-v2"]
+        image: ${ELASTICSEARCH_IMAGE:-docker.elastic.co/elasticsearch/elasticsearch:8.11.3}
+      knowledge-runtime-api:
+        profiles: ["knowledge-v2"]
+        build:
+          context: ../services/knowledge-runtime
+          dockerfile: Dockerfile
+          args:
+            IMAGE_REGISTRY_PREFIX: ${DOCKER_IMAGE_REGISTRY_PREFIX:-}
+      knowledge-runtime-worker:
+        profiles: ["knowledge-v2"]
+        build:
+          context: ../services/knowledge-runtime
+          dockerfile: Dockerfile
+          args:
+            IMAGE_REGISTRY_PREFIX: ${DOCKER_IMAGE_REGISTRY_PREFIX:-}
     """
 )
 
@@ -40,12 +97,14 @@ class DockerPolicyTests(unittest.TestCase):
             files={
                 "deploy/docker-compose.yml": VALID_COMPOSE,
                 "deploy/.env.example": VALID_ENV,
+                "services/knowledge-runtime/Dockerfile": VALID_RUNTIME_DOCKERFILE,
+                "services/knowledge-runtime/.dockerignore": ".git\n",
             }
         )
 
         self.assertEqual([], issues)
 
-    def test_root_compose_must_be_infra_only(self) -> None:
+    def test_root_compose_default_must_be_infra_only(self) -> None:
         compose = VALID_COMPOSE.replace(
             "  qdrant:\n",
             "  gateway:\n    image: ${GATEWAY_IMAGE:-registry.example.com/gateway:local}\n  qdrant:\n",
@@ -53,10 +112,10 @@ class DockerPolicyTests(unittest.TestCase):
 
         issues = self.verify(files={"deploy/docker-compose.yml": compose})
 
-        self.assertIssueContains(issues, "local Docker must only define infrastructure services")
+        self.assertIssueContains(issues, "local Docker default must only define infrastructure services")
         self.assertIssueContains(issues, "business service `gateway` must run on the host")
 
-    def test_root_compose_must_not_build(self) -> None:
+    def test_root_compose_default_must_not_build_business_services(self) -> None:
         compose = VALID_COMPOSE.replace(
             "  minio-init:\n    image:",
             "  parser:\n    build:\n      context: ../services/parser\n  minio-init:\n    image:",
@@ -64,8 +123,18 @@ class DockerPolicyTests(unittest.TestCase):
 
         issues = self.verify(files={"deploy/docker-compose.yml": compose})
 
-        self.assertIssueContains(issues, "must not contain build entries")
+        self.assertIssueContains(issues, "local Docker default must only define infrastructure services")
         self.assertIssueContains(issues, "business service `parser` must run on the host")
+
+    def test_profile_services_must_be_allowlisted(self) -> None:
+        compose = VALID_COMPOSE.replace(
+            '  elasticsearch:\n    profiles: ["knowledge-v2"]\n',
+            '  gateway:\n    profiles: ["knowledge-v2"]\n    image: ${GATEWAY_IMAGE:-registry.example.com/gateway:local}\n  elasticsearch:\n    profiles: ["knowledge-v2"]\n',
+        )
+
+        issues = self.verify(files={"deploy/docker-compose.yml": compose})
+
+        self.assertIssueContains(issues, "profile service `gateway` is not allowed")
 
     def test_compose_image_defaults_must_stay_pinned_and_overridable(self) -> None:
         compose = VALID_COMPOSE.replace(
@@ -77,6 +146,44 @@ class DockerPolicyTests(unittest.TestCase):
 
         self.assertIssueContains(issues, "must not use latest")
         self.assertIssueContains(issues, "must be exposed through")
+
+    def test_dockerfile_regressions_are_reported(self) -> None:
+        dockerfile = VALID_GO_DOCKERFILE.replace(
+            "FROM ${IMAGE_REGISTRY_PREFIX}alpine:${ALPINE_VERSION}",
+            "FROM alpine:latest",
+        ).replace("ARG GOSUMDB=sum.golang.org", "ARG GOSUMDB=off")
+
+        issues = self.verify(files={"services/auth/Dockerfile": "# syntax=docker/dockerfile:1\n" + dockerfile})
+
+        self.assertIssueContains(issues, "business service Dockerfile")
+        self.assertIssueContains(issues, "external Dockerfile frontend")
+        self.assertIssueContains(issues, "GOSUMDB=off")
+        self.assertIssueContains(issues, "base image `alpine:latest` must use ${IMAGE_REGISTRY_PREFIX}")
+        self.assertIssueContains(issues, "must not use latest")
+        self.assertIssueContains(issues, "sibling .dockerignore")
+
+    def test_ragflow_uv_sync_does_not_trigger_parser_policy(self) -> None:
+        issues = self.verify(
+            files={
+                "services/knowledge-runtime/Dockerfile": VALID_RUNTIME_DOCKERFILE,
+                "services/knowledge-runtime/.dockerignore": ".git\n",
+            }
+        )
+
+        parser_issues = [issue for issue in issues if "services/parser is retired" in issue]
+        self.assertEqual([], parser_issues)
+
+    def test_parser_dockerfile_is_reported(self) -> None:
+        issues = self.verify(
+            files={
+                "services/parser/Dockerfile": "FROM python:3.12\nCMD [\"parser-service\"]\n",
+                "services/parser/.dockerignore": ".venv/\n",
+            }
+        )
+
+        self.assertIssueContains(issues, "services/parser/Dockerfile")
+        self.assertIssueContains(issues, "business service Dockerfile")
+        self.assertIssueContains(issues, "services/parser is retired")
 
     def test_env_example_regressions_are_reported(self) -> None:
         env = VALID_ENV.replace(

@@ -1,5 +1,6 @@
 # base stage
-FROM ubuntu:24.04 AS base
+ARG IMAGE_REGISTRY_PREFIX=
+FROM ${IMAGE_REGISTRY_PREFIX}ubuntu:24.04 AS base
 USER root
 SHELL ["/bin/bash", "-c"]
 
