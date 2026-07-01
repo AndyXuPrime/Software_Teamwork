@@ -2496,7 +2496,7 @@ export interface components {
             requestId: string;
         };
         CreateQARetrievalTestRunRequest: {
-            question: string;
+            question?: string;
             /**
              * @deprecated
              * @description Backward-compatible alias for `question`.
@@ -2509,7 +2509,15 @@ export interface components {
              * @description Backward-compatible alias for `retrieval`.
              */
             overrides?: components["schemas"]["QARetrievalOptions"];
-        };
+        } & ({
+            question: string;
+        } | {
+            /**
+             * @deprecated
+             * @description Backward-compatible alias for `question`.
+             */
+            query: string;
+        });
         QARetrievalTestResult: {
             rankNo: number;
             knowledgeBaseId?: string;
@@ -2539,6 +2547,12 @@ export interface components {
             query?: string;
             /** @enum {string} */
             status: "running" | "completed" | "failed";
+            /** @description Number of sanitized retrieval result snapshots saved for this test run. */
+            resultCount?: number;
+            /** @description End-to-end latency of the retrieval test call. */
+            latencyMs?: number;
+            /** @description Sanitized failure summary only. */
+            errorMessage?: string;
             results?: components["schemas"]["QARetrievalTestResult"][];
             /** Format: date-time */
             createdAt: string;
@@ -4944,7 +4958,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description QA retrieval test run created. */
+            /** @description QA retrieval test run created. Knowledge dependency failures are saved and returned as `status: failed` runs with a sanitized `errorMessage`. */
             201: {
                 headers: {
                     [name: string]: unknown;
