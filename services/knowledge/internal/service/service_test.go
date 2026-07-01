@@ -12,6 +12,7 @@ import (
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/repository"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/worker"
 )
 
 func TestKnowledgeBaseCRUDAndSoftDelete(t *testing.T) {
@@ -618,6 +619,54 @@ func TestDeleteCleanupReconcilerRequeuesQueueHandoffFailure(t *testing.T) {
 	_, err = svc.GetDocument(context.Background(), readContext("usr_1"), "doc_1")
 	if !hasCode(err, service.CodeNotFound) {
 		t.Fatalf("GetDocument() after requeue error = %v", err)
+	}
+}
+
+func TestDeleteDocumentQueuesDecodableCleanupTaskWithoutRequestID(t *testing.T) {
+	now := time.Date(2026, 6, 30, 8, 40, 0, 0, time.UTC)
+	repo := repository.NewMemoryRepository()
+	fileRef := "file_1"
+	repo.SeedKnowledgeBase(service.KnowledgeBase{
+		ID:                "kb_1",
+		Name:              "规程库",
+		Description:       "",
+		DocType:           "GENERAL",
+		ChunkStrategy:     json.RawMessage(`{}`),
+		RetrievalStrategy: json.RawMessage(`{}`),
+		CreatedBy:         "usr_1",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	repo.SeedDocument(service.KnowledgeDocument{
+		ID:              "doc_1",
+		KnowledgeBaseID: "kb_1",
+		FileRef:         &fileRef,
+		Name:            "规程.pdf",
+		Status:          service.DocumentStatusReady,
+		CreatedBy:       "usr_1",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	queue := &uploadQueue{}
+	svc := service.NewWithDependencies(repo, nil, queue, func() time.Time {
+		return now.Add(time.Hour)
+	}, func(prefix string) string {
+		return prefix + "_test"
+	})
+
+	if err := svc.DeleteDocument(context.Background(), writeContext("usr_1"), "doc_1"); err != nil {
+		t.Fatalf("DeleteDocument() error = %v", err)
+	}
+	payload, err := json.Marshal(queue.cleanupTask)
+	if err != nil {
+		t.Fatalf("marshal cleanup task: %v", err)
+	}
+	decoded, err := worker.DecodeDeleteCleanupPayload(payload)
+	if err != nil {
+		t.Fatalf("DecodeDeleteCleanupPayload(%s) error = %v", string(payload), err)
+	}
+	if decoded.RequestID == "" || decoded.JobID != "job_test" || decoded.DocumentID != "doc_1" || decoded.KnowledgeBaseID != "kb_1" || decoded.UserID != "usr_1" {
+		t.Fatalf("decoded cleanup task = %+v", decoded)
 	}
 }
 

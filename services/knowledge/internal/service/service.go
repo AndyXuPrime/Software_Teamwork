@@ -534,8 +534,12 @@ func (s *Service) DeleteDocument(ctx context.Context, reqCtx RequestContext, id 
 		_ = s.repo.MarkDocumentJobFailed(ctx, id, jobID, nil, string(CodeDependency), "delete cleanup queue is not configured", s.now())
 		return DependencyError("delete cleanup queue is not configured", nil)
 	}
+	requestID := strings.TrimSpace(reqCtx.RequestID)
+	if requestID == "" {
+		requestID = "delete_cleanup_" + jobID
+	}
 	if err := s.queue.EnqueueDocumentDeleteCleanup(ctx, DocumentDeleteCleanupTask{
-		RequestID:       strings.TrimSpace(reqCtx.RequestID),
+		RequestID:       requestID,
 		JobID:           jobID,
 		DocumentID:      id,
 		KnowledgeBaseID: doc.KnowledgeBaseID,
