@@ -9,9 +9,10 @@
 3. 实现服务或前端工程能力前，阅读 [技术选型基线](architecture/technology-decisions.md)。
 4. 开始前后端联调前，阅读 [前后端集成契约](architecture/frontend-backend-contract.md)、[本地联调运行手册](runbooks/local-integration.md) 和 [Gateway OpenAPI 契约](services/gateway/api/public.openapi.yaml)。
 5. 提 PR 前，阅读 [测试策略](testing/strategy.md)，选择与改动范围匹配的检查。
-6. 需要实现具体后端服务时，阅读对应服务接口文档。
-7. 新增或调整文档时，先读 [文档维护工作流](collaboration/documentation-workflow.md)，确认内容应落在架构、协作还是服务细则中。
-8. 创建或认领 GitHub Issue 任务、参与协作、分支、PR 或仓库维护时，阅读协作维护文档。
+6. 本地 Docker 构建变慢、镜像源异常或 Compose 启动卡住时，阅读 [Docker 构建环境与镜像源](runbooks/docker-build-environment.md)。中国大陆网络优先从 `deploy/.env.china.example` 和 `python3 scripts/check_docker_environment.py --profile all --clean-env` 开始。
+7. 需要实现具体后端服务时，阅读对应服务接口文档。
+8. 新增或调整文档时，先读 [文档维护工作流](collaboration/documentation-workflow.md)，确认内容应落在架构、协作还是服务细则中。
+9. 创建或认领 GitHub Issue 任务、参与协作、分支、PR 或仓库维护时，阅读协作维护文档。
 
 ## 架构与接口契约
 
@@ -21,13 +22,14 @@
 | [Discussion #48 决策同步清单](requirements-analysis/decision-sync-checklist.md) | 整体需求分析和 API 契约中原先未定稿问题的确认结果。 |
 | [服务边界矩阵](architecture/service-boundaries.md) | `gateway`、`auth`、`file`、`knowledge`、`qa`、`document`、`ai-gateway` 的职责边界、公开契约状态和缺失契约登记。 |
 | [当前能力矩阵](architecture/current-capability-matrix.md) | 根据当前 `develop`、今日 issue/PR 和实现说明汇总已实现、部分实现、占位和缺失能力。 |
+| [系统链路条件覆盖文档](architecture/system-link-condition-coverage.md) | 按主要用户、管理员和系统后台链路记录跨服务参与方、正常路径、条件分支、状态输出和当前实现缺口。 |
 | [技术选型基线](architecture/technology-decisions.md) | 后端数据库访问、迁移、日志、HTTP、配置、队列、认证、前端 API client、测试、CI、观测和 DOCX/MCP 等工程技术选型。 |
 | [Gateway 服务规划](services/gateway/README.md) | Gateway 的设计原则、公开 API、认证上下文、响应约定和后续扩展。 |
 | [Gateway 实现说明](services/gateway/docs/implementation.md) | `services/gateway/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [Auth 服务接口文档](services/auth/README.md) | 用户、会话、权限上下文和 auth 内部服务接口草案。 |
 | [Auth 实现说明](services/auth/docs/implementation.md) | `services/auth/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [File 服务接口文档](services/file/README.md) | 后端内部基础文件对象、元数据、原文件内容读取和 file 内部服务接口草案。 |
-| [File 数据模型文档](services/file/docs/data-models.md) | File 模块基础文件对象元数据、对象存储引用、删除清理和服务间 file reference 约束。 |
+| [File 数据模型文档](services/file/docs/data-models.md) | File 模块基础文件对象元数据、对象存储引用、删除清理和服务间 `file_ref` 约束。 |
 | [File 实现说明](services/file/docs/implementation.md) | `services/file/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [Knowledge 服务接口文档](services/knowledge/README.md) | 知识库、文档处理状态、切片、向量索引和检索接口契约。 |
 | [Knowledge 数据模型文档](services/knowledge/docs/data-models.md) | Knowledge 模块知识库、文档、处理任务、切片、Qdrant payload 和运行时配置逻辑模型。 |
@@ -57,6 +59,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [本地联调运行手册](runbooks/local-integration.md) | 根级本地/演示 Compose、服务级 Compose、host-run 依赖、冒烟顺序、已知缺口和 PR 前联调判断。 |
+| [Docker 构建环境与镜像源](runbooks/docker-build-environment.md) | Docker build 优先级、镜像源、Go sumdb、BuildKit cache、Compose 镜像覆盖和 Docker daemon mirror 排障。 |
 | [测试策略](testing/strategy.md) | Go、migration、Gateway contract、前端、env-gated integration tests 和跨服务 smoke 的当前测试策略。 |
 
 ## 协作与维护

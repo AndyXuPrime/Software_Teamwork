@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend product scope, Gateway integration contract, and generated OpenAPI source rules for Knowledge work."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Typed Gateway transport, generated DTO, envelope, FormData, and capability error requirements."}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "Knowledge module boundaries and file placement under apps/web/src."}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "TanStack Query hook ownership, mutation invalidation, and API wrapper placement guidance."}

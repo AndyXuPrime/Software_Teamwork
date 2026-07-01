@@ -7,14 +7,14 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import type { UpdateKnowledgeBaseRequest } from '@/api/knowledge'
 import {
   createKnowledgeBase,
   deleteKnowledgeBase,
   getKnowledgeBase,
   listKnowledgeBases,
   updateKnowledgeBase,
-} from '@/api/admin'
-import type { UpdateKnowledgeBaseRequest } from '@/lib/types'
+} from '@/api/knowledge'
 
 // ── Query keys ──
 

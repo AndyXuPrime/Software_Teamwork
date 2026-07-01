@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight, FileText, Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { getDocument, getKnowledgeBase } from '@/api/admin'
+import { getDocument, getKnowledgeBase } from '@/api/knowledge'
 import { StateBlock } from '@/components/common'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'

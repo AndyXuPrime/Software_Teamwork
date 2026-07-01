@@ -7,16 +7,10 @@
  */
 
 import type {
-  CreateKnowledgeBaseRequest,
   CreateModelProfileRequest,
   CreateParserConfigRequest,
   CreateQAConfigVersionRequest,
   CreateQALLMConfigVersionRequest,
-  DocumentChunk,
-  DocumentSummary,
-  KnowledgeBaseSummary,
-  KnowledgeQueryRequest,
-  KnowledgeQuerySummary,
   ModelProfile,
   ParserConfig,
   QAConfigVersion,
@@ -29,21 +23,30 @@ import type {
   QARetrievalTestRun,
   QARetrievalTestRunRequest,
   QATopQuery,
-  UpdateDocumentRequest,
-  UpdateKnowledgeBaseRequest,
   UpdateModelProfileRequest,
   UpdateParserConfigRequest,
 } from '@/lib/types'
 
-import {
-  buildQuery,
-  gatewayFileRequest,
-  gatewayPageRequest,
-  gatewayRequest,
-  requestVoid,
-} from './client'
+import { buildQuery, gatewayRequest, requestVoid } from './client'
 
 export { createUserSession as createUser, getCurrentUser } from './auth'
+export {
+  createKnowledgeBase,
+  deleteDocument,
+  deleteKnowledgeBase,
+  getDocument,
+  getDocumentContent,
+  getKnowledgeBase,
+  listChunks,
+  listDocuments,
+  type ListDocumentsParams,
+  listKnowledgeBases,
+  type ListKnowledgeBasesParams,
+  runKnowledgeQuery,
+  updateDocument,
+  updateKnowledgeBase,
+  uploadDocument,
+} from './knowledge'
 
 // =========================================================================
 // LLM Configuration
@@ -134,61 +137,6 @@ export async function getQAIntentDistribution(days?: number): Promise<QAIntentDi
 }
 
 // =========================================================================
-// Knowledge Bases
-// =========================================================================
-
-/** GET /knowledge-bases?page=&pageSize= */
-export interface ListKnowledgeBasesParams {
-  page?: number
-  pageSize?: number
-}
-
-export async function listKnowledgeBases(params: ListKnowledgeBasesParams = {}): Promise<{
-  items: KnowledgeBaseSummary[]
-  page: { page: number; pageSize: number; total: number }
-}> {
-  return gatewayPageRequest<KnowledgeBaseSummary>(
-    `/knowledge-bases${buildQuery({ page: params.page, pageSize: params.pageSize })}`,
-  )
-}
-
-/** POST /knowledge-bases */
-export async function createKnowledgeBase(
-  params: CreateKnowledgeBaseRequest,
-): Promise<KnowledgeBaseSummary> {
-  return gatewayRequest<KnowledgeBaseSummary>('/knowledge-bases', {
-    method: 'POST',
-    body: params,
-  })
-}
-
-/** GET /knowledge-bases/{knowledgeBaseId} */
-export async function getKnowledgeBase(knowledgeBaseId: string): Promise<KnowledgeBaseSummary> {
-  return gatewayRequest<KnowledgeBaseSummary>(
-    `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}`,
-  )
-}
-
-/** PATCH /knowledge-bases/{knowledgeBaseId} */
-export async function updateKnowledgeBase(
-  knowledgeBaseId: string,
-  params: UpdateKnowledgeBaseRequest,
-): Promise<KnowledgeBaseSummary> {
-  return gatewayRequest<KnowledgeBaseSummary>(
-    `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}`,
-    {
-      method: 'PATCH',
-      body: params,
-    },
-  )
-}
-
-/** DELETE /knowledge-bases/{knowledgeBaseId} */
-export async function deleteKnowledgeBase(id: string): Promise<void> {
-  await requestVoid(`/knowledge-bases/${encodeURIComponent(id)}`, { method: 'DELETE' })
-}
-
-// =========================================================================
 // User Management — gateway auth paths
 //
 // The gateway exposes only these auth resources through /api/v1:
@@ -200,107 +148,6 @@ export async function deleteKnowledgeBase(id: string): Promise<void> {
 // There are no list-all-users, update-user, delete-user, or role CRUD
 // endpoints in the current gateway contract.
 // =========================================================================
-
-// =========================================================================
-// Documents
-// =========================================================================
-
-/** GET /knowledge-bases/{knowledgeBaseId}/documents?page=&pageSize=&status= */
-export interface ListDocumentsParams {
-  page?: number
-  pageSize?: number
-  status?: string
-}
-
-export async function listDocuments(
-  knowledgeBaseId: string,
-  params: ListDocumentsParams = {},
-): Promise<{
-  items: DocumentSummary[]
-  page: { page: number; pageSize: number; total: number }
-}> {
-  return gatewayPageRequest<DocumentSummary>(
-    `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents${buildQuery({
-      page: params.page,
-      pageSize: params.pageSize,
-      status: params.status,
-    })}`,
-  )
-}
-
-/** POST /knowledge-bases/{knowledgeBaseId}/documents (multipart/form-data) */
-export async function uploadDocument(
-  knowledgeBaseId: string,
-  file: File,
-  tags?: string[],
-): Promise<DocumentSummary> {
-  const formData = new FormData()
-  formData.append('file', file)
-  if (tags && tags.length > 0) {
-    tags.forEach((tag) => formData.append('tags', tag))
-  }
-  return gatewayRequest<DocumentSummary>(
-    `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents`,
-    { method: 'POST', body: formData },
-  )
-}
-
-/** GET /documents/{documentId} */
-export async function getDocument(documentId: string): Promise<DocumentSummary> {
-  return gatewayRequest<DocumentSummary>(`/documents/${encodeURIComponent(documentId)}`)
-}
-
-/** PATCH /documents/{documentId} */
-export async function updateDocument(
-  documentId: string,
-  params: UpdateDocumentRequest,
-): Promise<DocumentSummary> {
-  return gatewayRequest<DocumentSummary>(`/documents/${encodeURIComponent(documentId)}`, {
-    method: 'PATCH',
-    body: params,
-  })
-}
-
-/** DELETE /documents/{documentId} */
-export async function deleteDocument(documentId: string): Promise<void> {
-  await requestVoid(`/documents/${encodeURIComponent(documentId)}`, { method: 'DELETE' })
-}
-
-/** GET /documents/{documentId}/chunks?page=&pageSize= */
-export interface ListChunksParams {
-  page?: number
-  pageSize?: number
-}
-
-export async function listChunks(
-  documentId: string,
-  params: ListChunksParams = {},
-): Promise<{
-  items: DocumentChunk[]
-  page: { page: number; pageSize: number; total: number }
-}> {
-  return gatewayPageRequest<DocumentChunk>(
-    `/documents/${encodeURIComponent(documentId)}/chunks${buildQuery({
-      page: params.page,
-      pageSize: params.pageSize,
-    })}`,
-  )
-}
-
-/** GET /documents/{documentId}/content — returns the original file as a Blob */
-export function getDocumentContent(documentId: string): Promise<Blob> {
-  return gatewayFileRequest(`/documents/${encodeURIComponent(documentId)}/content`)
-}
-
-/** POST /knowledge-queries */
-export async function runKnowledgeQuery(
-  params: KnowledgeQueryRequest,
-): Promise<KnowledgeQuerySummary> {
-  return gatewayRequest<KnowledgeQuerySummary>('/knowledge-queries', {
-    method: 'POST',
-    body: params,
-  })
-}
 
 // =========================================================================
 // Model Profiles (admin-runtime-config, owner: ai-gateway)

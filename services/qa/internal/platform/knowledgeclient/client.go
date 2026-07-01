@@ -90,7 +90,7 @@ func (c *Client) Retrieve(ctx context.Context, userID string, input service.Retr
 	}
 	results := make([]service.RetrievalTestResult, 0, len(decoded.Data.Results))
 	for i, item := range decoded.Data.Results {
-		results = append(results, service.RetrievalTestResult{RankNo: i + 1, KnowledgeBaseID: item.KnowledgeBaseID, DocumentID: item.DocumentID, ChunkID: item.ChunkID, DocumentName: item.DocumentName, SectionPath: item.SectionPath, Score: item.Score, VectorScore: item.Score, ContentPreview: item.ContentPreview, Metadata: map[string]any{}})
+		results = append(results, service.RetrievalTestResult{RankNo: i + 1, KnowledgeBaseID: item.KnowledgeBaseID, DocumentID: item.DocumentID, ChunkID: item.ChunkID, DocumentName: item.DocumentName, SectionPath: item.SectionPath, Score: item.Score, VectorScore: &item.Score, ContentPreview: item.ContentPreview, Metadata: map[string]any{}})
 	}
 	return results, nil
 }
@@ -145,4 +145,30 @@ func (c *Client) setTrustedHeaders(ctx context.Context, req *http.Request, userI
 	if permissions := service.UserPermissionsFromContext(ctx); permissions != "" {
 		req.Header.Set("X-User-Permissions", permissions)
 	}
+}
+
+func decodeErrorCode(body io.Reader) (string, string) {
+	var decoded struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(io.LimitReader(body, 4096)).Decode(&decoded); err != nil {
+		return "", ""
+	}
+	return strings.TrimSpace(decoded.Error.Code), strings.TrimSpace(decoded.Error.Message)
+}
+
+func sanitizedMetadata(input map[string]any) map[string]any {
+	metadata := map[string]any{}
+	for key, value := range input {
+		switch key {
+		case "vector", "embedding", "payload", "prompt", "internalUrl", "objectKey":
+			continue
+		default:
+			metadata[key] = value
+		}
+	}
+	return metadata
 }
