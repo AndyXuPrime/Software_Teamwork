@@ -20,6 +20,26 @@
 - Parser runtime、Dockerfile 和 Parser Service CI 已落地；当前 CI 使用 fake OCR backend 覆盖 lint/test/compile，并在 PaddleOCR 依赖、锁文件或 Dockerfile 变化时校验 extra lock。真实 PaddleOCR 模型 smoke 已作为 env-gated 本地命令提供，但不属于普通 CI required check。
 - open PR、未合入 issue 和草案不能写成当前 `develop` 已实现；测试记录也不能把未稳定依赖的检查写成 required。
 
+## 自动化测试分层
+
+自动化测试按“本地先发现、CI 再兜底”的思路分层。新增测试或调整触发范围时，应先明确它属于本地自动化、CI 自动化还是显式 opt-in smoke，避免把需要外部依赖或长时间运行的检查直接放进默认路径。
+
+### 本地自动化
+
+本地自动化用于开发者在 PR 前快速验证改动，优先覆盖确定性强、依赖少、失败后容易定位的问题。前端以 typecheck、lint、format、build、Vitest/React Testing Library 和必要的 Playwright smoke 为主；后端以服务内 `go test ./...`、handler/service unit tests、fake dependency tests、OpenAPI/active route contract checks 和必要的 env-gated repository tests 为主。需要数据库、Redis、Qdrant、MinIO、Parser 或真实模型 provider 的检查可以作为本地命令记录，但必须写清楚依赖环境、跳过条件和残余风险。
+
+### CI 自动化
+
+CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定重现、耗时可控、依赖可准备的检查。路径过滤可以减少无关服务运行，但不能降低受影响模块的最低验证要求。CI 中的 mock、fake backend 或轻量服务容器只证明该层级契约稳定，不等价于完整跨服务验收；如果 CI 只跑 fake dependency，PR 说明中不能写成真实依赖已经验证。
+
+### 触发原则
+
+触发范围以改动影响面为准：改文档只需要文档一致性和 `git diff --check`；改前端页面或 API client 需要前端 check/build/unit，触碰关键流程时再加 E2E smoke；改 Gateway OpenAPI、owner map 或 route 时需要契约校验和前端类型生成检查；改后端 service、repository、SQL 或 migration 时需要对应服务测试，并按风险补充 repository 或 migration apply；改 Docker、Compose、runtime dependency 或 CI 配置时，需要同步 runbook/技术决策文档并运行对应 policy/config 检查。跨契约、跨服务或共享能力变更要扩大验证范围，不能只跑离改动最近的一层。
+
+### 暂不纳入默认自动化的内容
+
+真实外部 provider 调用、完整后端跨服务 E2E、真实 PaddleOCR 模型 smoke、大型文档解析质量评测、需要人工凭证或长期运行环境的检查，暂不纳入默认自动化。当前阶段也不引入 Testcontainers for Go 作为默认后端集成测试工具；后端集成测试继续优先使用显式 env-gated 数据库/服务地址和 CI 中已配置的轻量服务容器。若后续要升级为默认工具链，应先更新技术决策、测试策略、CI 资源预算和服务 runbook，再进入实现任务。
+
 ## 当前 CI 覆盖
 
 | Workflow | 覆盖 | 当前说明 |
@@ -34,7 +54,6 @@
 | `commitlint.yml` / `pr-guard.yml` | 协作规则 | 检查提交格式、PR body、issue 关联和 base 更新要求。 |
 
 所有 GitHub Actions workflow 都应显式声明最小 `permissions`。只读取仓库内容的校验类 workflow，例如 API type drift check，应使用 `contents: read`，不得依赖默认 token 权限。
-
 当前可作为 required checks 的优先候选是 Frontend、Go service tests、goose migration apply、Parser Service、Docker/Compose config、Gateway contract/API drift 和 API type drift。Parser 真实 PaddleOCR 模型 smoke、完整 DB integration jobs 和后端跨服务 E2E smoke 仍未落地；在 CI 提供稳定依赖前只能作为 PR 前建议或缺口登记。
 
 ## 本地命令矩阵
