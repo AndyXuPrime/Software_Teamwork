@@ -130,7 +130,10 @@ func TestDocumentListAndDetailExcludeDeletedKnowledgeBase(t *testing.T) {
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	})
-	svc := service.NewWithOptions(repo, func() time.Time { return now.Add(time.Hour) }, nil)
+	queue := &uploadQueue{}
+	svc := service.NewWithDependencies(repo, nil, queue, func() time.Time { return now.Add(time.Hour) }, func(prefix string) string {
+		return prefix + "_test"
+	})
 
 	status := service.DocumentStatusReady
 	list, err := svc.ListDocuments(context.Background(), readContext("usr_1"), service.ListDocumentsInput{
@@ -147,6 +150,14 @@ func TestDocumentListAndDetailExcludeDeletedKnowledgeBase(t *testing.T) {
 	if err := svc.DeleteKnowledgeBase(context.Background(), writeContext("usr_1"), "kb_1"); err != nil {
 		t.Fatalf("DeleteKnowledgeBase() error = %v", err)
 	}
+	if queue.cleanupCalls != 1 ||
+		queue.cleanupTask.DocumentID != "doc_1" ||
+		queue.cleanupTask.KnowledgeBaseID != "kb_1" ||
+		queue.cleanupTask.JobID == "" ||
+		queue.cleanupTask.RequestID == "" ||
+		queue.cleanupTask.UserID != "usr_1" {
+		t.Fatalf("cleanup task = %+v calls=%d", queue.cleanupTask, queue.cleanupCalls)
+	}
 	_, err = svc.GetDocument(context.Background(), readContext("usr_1"), "doc_1")
 	if !hasCode(err, service.CodeNotFound) {
 		t.Fatalf("GetDocument() after kb delete error = %v", err)
@@ -154,6 +165,73 @@ func TestDocumentListAndDetailExcludeDeletedKnowledgeBase(t *testing.T) {
 	_, err = svc.ListDocuments(context.Background(), readContext("usr_1"), service.ListDocumentsInput{KnowledgeBaseID: "kb_1"})
 	if !hasCode(err, service.CodeNotFound) {
 		t.Fatalf("ListDocuments() after kb delete error = %v", err)
+	}
+}
+
+func TestDeleteKnowledgeBaseEnqueuesCleanupForEveryDeletedDocument(t *testing.T) {
+	now := time.Date(2026, 6, 29, 11, 0, 0, 0, time.UTC)
+	repo := repository.NewMemoryRepository()
+	repo.SeedKnowledgeBase(service.KnowledgeBase{
+		ID:                "kb_1",
+		Name:              "规程库",
+		Description:       "",
+		DocType:           "GENERAL",
+		ChunkStrategy:     json.RawMessage(`{}`),
+		RetrievalStrategy: json.RawMessage(`{}`),
+		CreatedBy:         "usr_1",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	for _, doc := range []service.KnowledgeDocument{
+		{
+			ID:              "doc_1",
+			KnowledgeBaseID: "kb_1",
+			Name:            "规程.pdf",
+			Status:          service.DocumentStatusReady,
+			CreatedBy:       "usr_1",
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		},
+		{
+			ID:              "doc_2",
+			KnowledgeBaseID: "kb_1",
+			Name:            "细则.pdf",
+			Status:          service.DocumentStatusReady,
+			CreatedBy:       "usr_1",
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		},
+	} {
+		repo.SeedDocument(doc)
+	}
+	queue := &uploadQueue{}
+	svc := service.NewWithDependencies(repo, nil, queue, func() time.Time { return now.Add(time.Hour) }, func(prefix string) string {
+		return prefix + "_test"
+	})
+
+	if err := svc.DeleteKnowledgeBase(context.Background(), service.RequestContext{UserID: "usr_1", RequestID: "req_kb_delete", Permissions: []string{service.PermissionKnowledgeWrite}}, "kb_1"); err != nil {
+		t.Fatalf("DeleteKnowledgeBase() error = %v", err)
+	}
+
+	if len(queue.cleanupTasks) != 2 {
+		t.Fatalf("cleanup tasks = %+v", queue.cleanupTasks)
+	}
+	seen := map[string]service.DocumentDeleteCleanupTask{}
+	for _, task := range queue.cleanupTasks {
+		seen[task.DocumentID] = task
+	}
+	for _, documentID := range []string{"doc_1", "doc_2"} {
+		task, ok := seen[documentID]
+		if !ok ||
+			task.RequestID != "req_kb_delete" ||
+			task.JobID == "" ||
+			task.KnowledgeBaseID != "kb_1" ||
+			task.UserID != "usr_1" {
+			t.Fatalf("cleanup task for %s = %+v, all tasks = %+v", documentID, task, queue.cleanupTasks)
+		}
+		if _, err := svc.GetDocument(context.Background(), readContext("usr_1"), documentID); !hasCode(err, service.CodeNotFound) {
+			t.Fatalf("GetDocument(%s) after kb delete error = %v", documentID, err)
+		}
 	}
 }
 
@@ -557,6 +635,70 @@ func TestDeleteDocumentKeepsDocumentHiddenWhenCleanupQueueHandoffFails(t *testin
 	}
 	if strings.Contains(*job.ErrorMessage, "file_1") || strings.Contains(*job.ErrorMessage, "secret") {
 		t.Fatalf("job error leaked sensitive detail: %q", *job.ErrorMessage)
+	}
+}
+
+func TestDeleteKnowledgeBaseKeepsDocumentsHiddenWhenCleanupQueueHandoffFails(t *testing.T) {
+	now := time.Date(2026, 6, 30, 8, 35, 0, 0, time.UTC)
+	repo := repository.NewMemoryRepository()
+	fileRef := "file_1"
+	repo.SeedKnowledgeBase(service.KnowledgeBase{
+		ID:                "kb_1",
+		Name:              "规程库",
+		Description:       "",
+		DocType:           "GENERAL",
+		ChunkStrategy:     json.RawMessage(`{}`),
+		RetrievalStrategy: json.RawMessage(`{}`),
+		CreatedBy:         "usr_1",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	repo.SeedDocument(service.KnowledgeDocument{
+		ID:              "doc_1",
+		KnowledgeBaseID: "kb_1",
+		FileRef:         &fileRef,
+		Name:            "规程.pdf",
+		Status:          service.DocumentStatusReady,
+		CreatedBy:       "usr_1",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	queue := &uploadQueue{err: errors.New("redis unavailable with secret file_1")}
+	svc := service.NewWithDependencies(repo, nil, queue, func() time.Time {
+		return now.Add(time.Hour)
+	}, func(prefix string) string {
+		return prefix + "_test"
+	})
+
+	err := svc.DeleteKnowledgeBase(context.Background(), writeContext("usr_1"), "kb_1")
+	if !hasCode(err, service.CodeDependency) {
+		t.Fatalf("DeleteKnowledgeBase() error = %v", err)
+	}
+	if queue.cleanupCalls != 1 || queue.cleanupTask.DocumentID != "doc_1" {
+		t.Fatalf("cleanup task = %+v calls=%d", queue.cleanupTask, queue.cleanupCalls)
+	}
+	_, err = svc.GetDocument(context.Background(), readContext("usr_1"), "doc_1")
+	if !hasCode(err, service.CodeNotFound) {
+		t.Fatalf("GetDocument() after kb delete queue failure error = %v", err)
+	}
+	job, err := repo.GetProcessingJob(context.Background(), queue.cleanupTask.JobID)
+	if err != nil {
+		t.Fatalf("GetProcessingJob() error = %v", err)
+	}
+	if job.Status != service.JobStatusFailed || job.ErrorMessage == nil || *job.ErrorMessage != "delete cleanup queue handoff failed" {
+		t.Fatalf("job = %+v", job)
+	}
+	if strings.Contains(*job.ErrorMessage, "file_1") || strings.Contains(*job.ErrorMessage, "secret") {
+		t.Fatalf("job error leaked sensitive detail: %q", *job.ErrorMessage)
+	}
+	queue.err = nil
+
+	result, err := svc.RequeueDeleteCleanupTasks(context.Background(), service.RequestContext{RequestID: "req_reconcile"}, 10)
+	if err != nil {
+		t.Fatalf("RequeueDeleteCleanupTasks() error = %v", err)
+	}
+	if result.Scanned != 1 || result.Enqueued != 1 || result.Failed != 0 || queue.cleanupCalls != 2 {
+		t.Fatalf("requeue result = %+v cleanupCalls=%d", result, queue.cleanupCalls)
 	}
 }
 
@@ -1143,6 +1285,7 @@ func (f *uploadFileClient) ReadSource(ctx context.Context, reqCtx service.Reques
 type uploadQueue struct {
 	task         service.DocumentIngestionTask
 	cleanupTask  service.DocumentDeleteCleanupTask
+	cleanupTasks []service.DocumentDeleteCleanupTask
 	calls        int
 	cleanupCalls int
 	err          error
@@ -1158,6 +1301,7 @@ func (q *uploadQueue) EnqueueDocumentIngestion(ctx context.Context, task service
 func (q *uploadQueue) EnqueueDocumentDeleteCleanup(ctx context.Context, task service.DocumentDeleteCleanupTask) error {
 	q.cleanupCalls++
 	q.cleanupTask = task
+	q.cleanupTasks = append(q.cleanupTasks, task)
 	if q.cleanupHook != nil {
 		q.cleanupHook(ctx, task)
 	}
