@@ -95,15 +95,11 @@ JSON 成功、分页和错误响应遵循 [前后端集成契约](../../architec
 | `DELETE` | `/internal/v1/files/{fileId}` | 删除或标记删除基础文件对象。 |
 | `GET` | `/internal/v1/files/{fileId}/content` | 读取原始文件流。 |
 
-当前 `services/file/` 代码仍保留知识库文档形态的 MVP 兼容路由：
-
-- `POST /internal/v1/knowledge-bases/{knowledgeBaseId}/documents`
-- `GET /internal/v1/documents/{documentId}`
-- `PATCH /internal/v1/documents/{documentId}`
-- `DELETE /internal/v1/documents/{documentId}`
-- `GET /internal/v1/documents/{documentId}/content`
-
-这些兼容路由仅用于现阶段联调，不作为新的服务边界继续扩展。后续实现应迁移到 `/internal/v1/files/**`，并由 `knowledge` 自己创建和维护知识库文档资源。
+`services/file/` 已移除知识库文档形态的历史兼容路由。旧的
+`/internal/v1/knowledge-bases/{knowledgeBaseId}/documents` 和
+`/internal/v1/documents/{documentId}` 调用面返回统一 `404 not_found`
+错误 envelope。owner service 必须使用 `/internal/v1/files/**` 完成基础对象存储，
+并在自身边界内维护知识库文档或报告文件等业务资源。
 
 ## 内部数据结构
 

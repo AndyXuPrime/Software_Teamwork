@@ -7,65 +7,14 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/file/internal/platform/storage"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/file/internal/repository"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/file/internal/service"
 )
 
-func TestUploadDocumentStoresMetadataAndContent(t *testing.T) {
-	repo := repository.NewMemoryRepository()
-	store := storage.NewMemoryStore()
-	now := time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC)
-	documents := service.New(repo, store,
-		service.WithClock(func() time.Time { return now }),
-		service.WithIDGenerator(func(prefix string) (string, error) { return prefix + "_test", nil }),
-	)
-
-	doc, err := documents.UploadDocument(context.Background(), actorContext(), service.UploadDocumentInput{
-		KnowledgeBaseID: "kb_123",
-		FileName:        "policy.pdf",
-		ContentType:     "application/pdf",
-		SizeBytes:       int64(len("content")),
-		Tags:            []string{" policy ", "inspection", "policy"},
-		Content:         strings.NewReader("content"),
-	})
-	if err != nil {
-		t.Fatalf("UploadDocument() error = %v", err)
-	}
-	if doc.ID != "doc_test" {
-		t.Fatalf("document id = %q", doc.ID)
-	}
-	if doc.Name != "policy.pdf" {
-		t.Fatalf("document name = %q", doc.Name)
-	}
-	if doc.Status != service.DocumentStatusUploaded {
-		t.Fatalf("status = %q", doc.Status)
-	}
-	if got, want := strings.Join(doc.Tags, ","), "policy,inspection"; got != want {
-		t.Fatalf("tags = %q, want %q", got, want)
-	}
-	if !doc.CreatedAt.Equal(now) {
-		t.Fatalf("createdAt = %s", doc.CreatedAt)
-	}
-
-	content, err := documents.GetDocumentContent(context.Background(), actorContext(), doc.ID)
-	if err != nil {
-		t.Fatalf("GetDocumentContent() error = %v", err)
-	}
-	defer content.Body.Close()
-	body, err := io.ReadAll(content.Body)
-	if err != nil {
-		t.Fatalf("ReadAll() error = %v", err)
-	}
-	if string(body) != "content" {
-		t.Fatalf("content = %q", string(body))
-	}
-}
-
 func TestCreateFileComputesChecksumAndStoresContent(t *testing.T) {
-	files := newTestService(t)
+	files := newTestService(t, storage.NewMemoryStore())
 	created, err := files.CreateFile(context.Background(), internalContext(), service.CreateFileInput{
 		FileName:    "policy.pdf",
 		ContentType: "application/pdf",
@@ -103,7 +52,7 @@ func TestCreateFileComputesChecksumAndStoresContent(t *testing.T) {
 }
 
 func TestCreateFileRejectsChecksumMismatch(t *testing.T) {
-	files := newTestService(t)
+	files := newTestService(t, storage.NewMemoryStore())
 	_, err := files.CreateFile(context.Background(), internalContext(), service.CreateFileInput{
 		FileName:       "policy.pdf",
 		ContentType:    "application/pdf",
@@ -117,16 +66,9 @@ func TestCreateFileRejectsChecksumMismatch(t *testing.T) {
 }
 
 func TestDeleteFileHidesMetadataAndContent(t *testing.T) {
-	files := newTestService(t)
-	created, err := files.CreateFile(context.Background(), internalContext(), service.CreateFileInput{
-		FileName:    "policy.pdf",
-		ContentType: "application/pdf",
-		SizeBytes:   int64(len("content")),
-		Content:     strings.NewReader("content"),
-	})
-	if err != nil {
-		t.Fatalf("CreateFile() error = %v", err)
-	}
+	files := newTestService(t, storage.NewMemoryStore())
+	created := createTestFile(t, files)
+
 	if err := files.DeleteFile(context.Background(), internalContext(), created.ID); err != nil {
 		t.Fatalf("DeleteFile() error = %v", err)
 	}
@@ -138,8 +80,37 @@ func TestDeleteFileHidesMetadataAndContent(t *testing.T) {
 	}
 }
 
+func TestDeleteFileIsIdempotentAfterPurge(t *testing.T) {
+	files := newTestService(t, storage.NewMemoryStore())
+	created := createTestFile(t, files)
+
+	if err := files.DeleteFile(context.Background(), internalContext(), created.ID); err != nil {
+		t.Fatalf("DeleteFile() first error = %v", err)
+	}
+	if err := files.DeleteFile(context.Background(), internalContext(), created.ID); err != nil {
+		t.Fatalf("DeleteFile() second error = %v", err)
+	}
+}
+
+func TestDeleteFileCanRetryAfterStorageFailure(t *testing.T) {
+	store := storage.NewMemoryStore()
+	files := newTestService(t, &failOnceDeleteStore{ObjectStore: store})
+	created := createTestFile(t, files)
+
+	err := files.DeleteFile(context.Background(), internalContext(), created.ID)
+	if !hasCode(err, service.CodeDependency) {
+		t.Fatalf("DeleteFile() first error = %v, want dependency_error", err)
+	}
+	if _, err := files.GetFile(context.Background(), internalContext(), created.ID); !hasCode(err, service.CodeNotFound) {
+		t.Fatalf("GetFile() after failed purge = %v, want not_found", err)
+	}
+	if err := files.DeleteFile(context.Background(), internalContext(), created.ID); err != nil {
+		t.Fatalf("DeleteFile() retry error = %v", err)
+	}
+}
+
 func TestCreateFileRequiresInternalCaller(t *testing.T) {
-	files := newTestService(t)
+	files := newTestService(t, storage.NewMemoryStore())
 	_, err := files.CreateFile(context.Background(), service.RequestContext{}, service.CreateFileInput{
 		FileName:    "policy.pdf",
 		ContentType: "application/pdf",
@@ -150,76 +121,10 @@ func TestCreateFileRequiresInternalCaller(t *testing.T) {
 		t.Fatalf("CreateFile() error = %v, want unauthorized", err)
 	}
 }
-func TestUpdateDocumentReplacesTags(t *testing.T) {
-	documents := newTestService(t)
-	doc := uploadTestDocument(t, documents)
 
-	updated, err := documents.UpdateDocument(context.Background(), actorContext(), service.UpdateDocumentInput{
-		DocumentID: doc.ID,
-		Tags:       []string{"new", "new", "reviewed"},
-	})
-	if err != nil {
-		t.Fatalf("UpdateDocument() error = %v", err)
-	}
-	if got, want := strings.Join(updated.Tags, ","), "new,reviewed"; got != want {
-		t.Fatalf("tags = %q, want %q", got, want)
-	}
-}
-
-func TestDeleteDocumentHidesMetadataAndContent(t *testing.T) {
-	documents := newTestService(t)
-	doc := uploadTestDocument(t, documents)
-
-	if err := documents.DeleteDocument(context.Background(), actorContext(), doc.ID); err != nil {
-		t.Fatalf("DeleteDocument() error = %v", err)
-	}
-	if _, err := documents.GetDocument(context.Background(), actorContext(), doc.ID); !hasCode(err, service.CodeNotFound) {
-		t.Fatalf("GetDocument() error = %v, want not_found", err)
-	}
-	if _, err := documents.GetDocumentContent(context.Background(), actorContext(), doc.ID); !hasCode(err, service.CodeNotFound) {
-		t.Fatalf("GetDocumentContent() error = %v, want not_found", err)
-	}
-}
-
-func TestUploadDocumentRequiresActor(t *testing.T) {
-	documents := newTestService(t)
-	_, err := documents.UploadDocument(context.Background(), service.RequestContext{}, service.UploadDocumentInput{
-		KnowledgeBaseID: "kb_123",
-		FileName:        "policy.pdf",
-		ContentType:     "application/pdf",
-		SizeBytes:       1,
-		Content:         strings.NewReader("x"),
-	})
-	if !hasCode(err, service.CodeUnauthorized) {
-		t.Fatalf("UploadDocument() error = %v, want unauthorized", err)
-	}
-}
-
-func TestUploadDocumentRequiresPermission(t *testing.T) {
-	documents := newTestService(t)
-	_, err := documents.UploadDocument(context.Background(), service.RequestContext{UserID: "usr_123"}, service.UploadDocumentInput{
-		KnowledgeBaseID: "kb_123",
-		FileName:        "policy.pdf",
-		ContentType:     "application/pdf",
-		SizeBytes:       1,
-		Content:         strings.NewReader("x"),
-	})
-	if !hasCode(err, service.CodeForbidden) {
-		t.Fatalf("UploadDocument() error = %v, want forbidden", err)
-	}
-}
-
-func TestNormalizeTagsRejectsControlCharacters(t *testing.T) {
-	_, err := service.NormalizeTags([]string{"ok", "bad\n"})
-	if err == nil {
-		t.Fatal("NormalizeTags() error = nil, want error")
-	}
-}
-
-func newTestService(t *testing.T) *service.Service {
+func newTestService(t *testing.T, store service.ObjectStore) *service.Service {
 	t.Helper()
 	repo := repository.NewMemoryRepository()
-	store := storage.NewMemoryStore()
 	counter := 0
 	return service.New(repo, store, service.WithIDGenerator(func(prefix string) (string, error) {
 		counter++
@@ -227,20 +132,18 @@ func newTestService(t *testing.T) *service.Service {
 	}))
 }
 
-func uploadTestDocument(t *testing.T, documents *service.Service) service.Document {
+func createTestFile(t *testing.T, files *service.Service) service.FileObject {
 	t.Helper()
-	doc, err := documents.UploadDocument(context.Background(), actorContext(), service.UploadDocumentInput{
-		KnowledgeBaseID: "kb_123",
-		FileName:        "policy.pdf",
-		ContentType:     "application/pdf",
-		SizeBytes:       int64(len("content")),
-		Tags:            []string{"initial"},
-		Content:         strings.NewReader("content"),
+	created, err := files.CreateFile(context.Background(), internalContext(), service.CreateFileInput{
+		FileName:    "policy.pdf",
+		ContentType: "application/pdf",
+		SizeBytes:   int64(len("content")),
+		Content:     strings.NewReader("content"),
 	})
 	if err != nil {
-		t.Fatalf("UploadDocument() error = %v", err)
+		t.Fatalf("CreateFile() error = %v", err)
 	}
-	return doc
+	return created
 }
 
 func internalContext() service.RequestContext {
@@ -251,15 +154,20 @@ func internalContext() service.RequestContext {
 	}
 }
 
-func actorContext() service.RequestContext {
-	return service.RequestContext{
-		RequestID:   "req_test",
-		UserID:      "usr_123",
-		Permissions: []string{"document:upload", "document:read", "document:update", "document:delete"},
-	}
-}
-
 func hasCode(err error, code service.Code) bool {
 	var appErr *service.AppError
 	return errors.As(err, &appErr) && appErr.Code == code
+}
+
+type failOnceDeleteStore struct {
+	service.ObjectStore
+	failed bool
+}
+
+func (s *failOnceDeleteStore) Delete(ctx context.Context, key string) error {
+	if !s.failed {
+		s.failed = true
+		return errors.New("storage backend unavailable with object key files/secret")
+	}
+	return s.ObjectStore.Delete(ctx, key)
 }

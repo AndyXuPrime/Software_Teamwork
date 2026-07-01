@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: File Service Internal API
   version: 0.2.0
-  description: Internal base file-object API used by owner services such as knowledge and document. Public frontend contracts remain in docs/services/gateway/api/public.openapi.yaml and must be reached only through gateway /api/v1/**. This contract intentionally avoids knowledge-base, report-template, report-material, and report-file business fields; those are owned by their corresponding services. The current code still keeps knowledge-document shaped MVP routes for compatibility, but new integrations should use /internal/v1/files/**.
+  description: Internal base file-object API used by owner services such as knowledge and document. Public frontend contracts remain in docs/services/gateway/api/public.openapi.yaml and must be reached only through gateway /api/v1/**. This contract intentionally avoids knowledge-base, report-template, report-material, and report-file business fields; those are owned by their corresponding services. Legacy knowledge-document shaped MVP routes are retired; integrations must use /internal/v1/files/**.
 servers:
   - url: http://localhost:8082
 tags:

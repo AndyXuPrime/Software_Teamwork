@@ -88,7 +88,7 @@ func main() {
 	logger.Info("file service shutdown complete", "service", "file")
 }
 
-func newRepository(ctx context.Context, cfg config.Config) (service.DocumentRepository, string, filehttp.ReadyChecker, *sql.DB, error) {
+func newRepository(ctx context.Context, cfg config.Config) (service.FileRepository, string, filehttp.ReadyChecker, *sql.DB, error) {
 	if cfg.DatabaseURL == "" {
 		return repository.NewMemoryRepository(), "memory", nil, nil, nil
 	}

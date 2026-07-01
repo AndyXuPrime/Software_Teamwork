@@ -71,12 +71,38 @@ WHERE id = $1
 
 -- name: MarkFileDeleteRequested :one
 UPDATE file_objects
-SET status = 'delete_requested',
-    deleted_at = $2,
-    delete_requested_at = $2,
+SET status = CASE WHEN status = 'purged' THEN status ELSE 'delete_requested' END,
+    deleted_at = COALESCE(deleted_at, $2),
+    delete_requested_at = COALESCE(delete_requested_at, $2),
     updated_at = $2
 WHERE id = $1
-  AND deleted_at IS NULL
+RETURNING
+    id,
+    filename,
+    content_type,
+    size_bytes,
+    checksum_sha256,
+    storage_backend,
+    storage_bucket,
+    storage_object_key,
+    storage_version_id,
+    storage_etag,
+    status,
+    created_by_service,
+    request_id,
+    created_at,
+    updated_at,
+    deleted_at,
+    delete_requested_at,
+    purged_at,
+    last_error_code,
+    last_error_message;
+
+-- name: MarkFilePurging :one
+UPDATE file_objects
+SET status = CASE WHEN status = 'purged' THEN status ELSE 'purging' END,
+    updated_at = $2
+WHERE id = $1
 RETURNING
     id,
     filename,

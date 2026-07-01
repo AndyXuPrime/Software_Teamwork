@@ -242,6 +242,24 @@ func TestFileRoutesRequireConfiguredServiceToken(t *testing.T) {
 	if wrongRes.Code != http.StatusUnauthorized {
 		t.Fatalf("wrong token status = %d, body = %s", wrongRes.Code, wrongRes.Body.String())
 	}
+	if strings.Contains(wrongRes.Body.String(), "wrong-token") {
+		t.Fatalf("error response leaked submitted service token: %s", wrongRes.Body.String())
+	}
+
+	ownerWithoutToken := newMultipartUploadRequest(t, "/internal/v1/files", "policy.pdf", "application/pdf", "content", nil, "")
+	ownerWithoutToken.Header.Set("X-Caller-Service", "document")
+	ownerWithoutToken.Header.Set("X-Request-Id", "req_owner_no_token")
+	ownerWithoutToken.Header.Del("X-Service-Token")
+	ownerWithoutTokenRes := httptest.NewRecorder()
+	server.ServeHTTP(ownerWithoutTokenRes, ownerWithoutToken)
+	if ownerWithoutTokenRes.Code != http.StatusUnauthorized {
+		t.Fatalf("owner without token status = %d, body = %s", ownerWithoutTokenRes.Code, ownerWithoutTokenRes.Body.String())
+	}
+	var ownerErr errorResponseBody
+	decodeJSON(t, ownerWithoutTokenRes.Body, &ownerErr)
+	if ownerErr.Error.Code != "unauthorized" || ownerErr.Error.RequestID != "req_owner_no_token" {
+		t.Fatalf("owner without token error = %+v", ownerErr)
+	}
 
 	valid := newMultipartUploadRequest(t, "/internal/v1/files", "policy.pdf", "application/pdf", "content", nil, "")
 	valid.Header.Set("X-Caller-Service", "knowledge")
@@ -250,19 +268,6 @@ func TestFileRoutesRequireConfiguredServiceToken(t *testing.T) {
 	server.ServeHTTP(validRes, valid)
 	if validRes.Code != http.StatusCreated {
 		t.Fatalf("valid token status = %d, body = %s", validRes.Code, validRes.Body.String())
-	}
-}
-
-func TestConfiguredServiceTokenDoesNotBlockCompatibilityDocumentRoutes(t *testing.T) {
-	server := newTokenHTTPTestServer(t, "expected-token")
-	req := newMultipartUploadRequest(t, "/internal/v1/knowledge-bases/kb_123/documents", "policy.pdf", "application/pdf", "content", nil, "")
-	req.Header.Del("X-Service-Token")
-	res := httptest.NewRecorder()
-
-	server.ServeHTTP(res, req)
-
-	if res.Code != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
 	}
 }
 
@@ -342,154 +347,27 @@ func TestReadyReportsPostgresDependencySuccess(t *testing.T) {
 	}
 }
 
-func TestUploadGetPatchAndContent(t *testing.T) {
+func TestLegacyKnowledgeDocumentRoutesReturnNotFound(t *testing.T) {
 	server := newHTTPTestServer(t)
-
-	upload := newMultipartUploadRequest(t, "/internal/v1/knowledge-bases/kb_123/documents", "policy.pdf", "application/pdf", "content", []string{"policy", "inspection"}, "")
-	res := httptest.NewRecorder()
-	server.ServeHTTP(res, upload)
-	if res.Code != http.StatusCreated {
-		t.Fatalf("upload status = %d, body = %s", res.Code, res.Body.String())
+	cases := []struct {
+		method string
+		path   string
+		body   io.Reader
+	}{
+		{method: http.MethodPost, path: "/internal/v1/knowledge-bases/kb_123/documents", body: strings.NewReader("")},
+		{method: http.MethodGet, path: "/internal/v1/documents/doc_123"},
+		{method: http.MethodPatch, path: "/internal/v1/documents/doc_123", body: strings.NewReader(`{"tags":["updated"]}`)},
+		{method: http.MethodDelete, path: "/internal/v1/documents/doc_123"},
+		{method: http.MethodGet, path: "/internal/v1/documents/doc_123/content"},
 	}
-
-	var uploadBody documentResponseBody
-	decodeJSON(t, res.Body, &uploadBody)
-	if uploadBody.RequestID != "req_test" {
-		t.Fatalf("upload requestId = %q", uploadBody.RequestID)
-	}
-	if uploadBody.Data.ID == "" || uploadBody.Data.KnowledgeBaseID != "kb_123" || uploadBody.Data.Status != "uploaded" {
-		t.Fatalf("upload data = %+v", uploadBody.Data)
-	}
-	if uploadBody.Data.Name != "policy.pdf" {
-		t.Fatalf("upload name = %q", uploadBody.Data.Name)
-	}
-	if uploadBody.Data.ContentType != "application/pdf" || uploadBody.Data.SizeBytes != int64(len("content")) {
-		t.Fatalf("upload file metadata = %+v", uploadBody.Data)
-	}
-	if got, want := strings.Join(uploadBody.Data.Tags, ","), "policy,inspection"; got != want {
-		t.Fatalf("upload tags = %q", got)
-	}
-
-	getReq := authorizedRequest(http.MethodGet, "/internal/v1/documents/"+uploadBody.Data.ID, nil)
-	getRes := httptest.NewRecorder()
-	server.ServeHTTP(getRes, getReq)
-	if getRes.Code != http.StatusOK {
-		t.Fatalf("get status = %d, body = %s", getRes.Code, getRes.Body.String())
-	}
-
-	patchReq := authorizedRequest(http.MethodPatch, "/internal/v1/documents/"+uploadBody.Data.ID, strings.NewReader(`{"tags":["updated"]}`))
-	patchReq.Header.Set("Content-Type", "application/json")
-	patchRes := httptest.NewRecorder()
-	server.ServeHTTP(patchRes, patchReq)
-	if patchRes.Code != http.StatusOK {
-		t.Fatalf("patch status = %d, body = %s", patchRes.Code, patchRes.Body.String())
-	}
-	var patchBody documentResponseBody
-	decodeJSON(t, patchRes.Body, &patchBody)
-	if got, want := strings.Join(patchBody.Data.Tags, ","), "updated"; got != want {
-		t.Fatalf("patch tags = %q", got)
-	}
-
-	contentReq := authorizedRequest(http.MethodGet, "/internal/v1/documents/"+uploadBody.Data.ID+"/content", nil)
-	contentRes := httptest.NewRecorder()
-	server.ServeHTTP(contentRes, contentReq)
-	if contentRes.Code != http.StatusOK {
-		t.Fatalf("content status = %d, body = %s", contentRes.Code, contentRes.Body.String())
-	}
-	if got := contentRes.Header().Get("Content-Type"); got != "application/pdf" {
-		t.Fatalf("content type = %q", got)
-	}
-	if got := contentRes.Body.String(); got != "content" {
-		t.Fatalf("content body = %q", got)
-	}
-}
-
-func TestUploadRequiresFile(t *testing.T) {
-	server := newHTTPTestServer(t)
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	if err := writer.WriteField("tags", "policy"); err != nil {
-		t.Fatalf("WriteField() error = %v", err)
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-
-	req := authorizedRequest(http.MethodPost, "/internal/v1/knowledge-bases/kb_123/documents", &body)
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	res := httptest.NewRecorder()
-	server.ServeHTTP(res, req)
-
-	if res.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
-	}
-	var errBody errorResponseBody
-	decodeJSON(t, res.Body, &errBody)
-	if errBody.Error.Code != "validation_error" || errBody.Error.RequestID != "req_test" {
-		t.Fatalf("error body = %+v", errBody)
-	}
-}
-
-func TestBusinessRoutesRequireGatewayUser(t *testing.T) {
-	server := newHTTPTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/internal/v1/documents/doc_123", nil)
-	req.Header.Set("X-Request-Id", "req_no_user")
-	res := httptest.NewRecorder()
-
-	server.ServeHTTP(res, req)
-
-	if res.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d", res.Code)
-	}
-	var errBody errorResponseBody
-	decodeJSON(t, res.Body, &errBody)
-	if errBody.Error.Code != "unauthorized" {
-		t.Fatalf("error code = %q", errBody.Error.Code)
-	}
-}
-
-func TestBusinessRoutesRequirePermission(t *testing.T) {
-	server := newHTTPTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/internal/v1/documents/doc_123", nil)
-	req.Header.Set("X-Request-Id", "req_no_permission")
-	req.Header.Set("X-User-Id", "usr_123")
-	res := httptest.NewRecorder()
-
-	server.ServeHTTP(res, req)
-
-	if res.Code != http.StatusForbidden {
-		t.Fatalf("status = %d", res.Code)
-	}
-	var errBody errorResponseBody
-	decodeJSON(t, res.Body, &errBody)
-	if errBody.Error.Code != "forbidden" {
-		t.Fatalf("error code = %q", errBody.Error.Code)
-	}
-}
-
-func TestDeleteHidesLaterContentReads(t *testing.T) {
-	server := newHTTPTestServer(t)
-	upload := newMultipartUploadRequest(t, "/internal/v1/knowledge-bases/kb_123/documents", "policy.pdf", "application/pdf", "content", nil, "")
-	uploadRes := httptest.NewRecorder()
-	server.ServeHTTP(uploadRes, upload)
-	if uploadRes.Code != http.StatusCreated {
-		t.Fatalf("upload status = %d", uploadRes.Code)
-	}
-	var uploadBody documentResponseBody
-	decodeJSON(t, uploadRes.Body, &uploadBody)
-
-	deleteReq := authorizedRequest(http.MethodDelete, "/internal/v1/documents/"+uploadBody.Data.ID, nil)
-	deleteRes := httptest.NewRecorder()
-	server.ServeHTTP(deleteRes, deleteReq)
-	if deleteRes.Code != http.StatusNoContent {
-		t.Fatalf("delete status = %d", deleteRes.Code)
-	}
-
-	contentReq := authorizedRequest(http.MethodGet, "/internal/v1/documents/"+uploadBody.Data.ID+"/content", nil)
-	contentRes := httptest.NewRecorder()
-	server.ServeHTTP(contentRes, contentReq)
-	if contentRes.Code != http.StatusNotFound {
-		t.Fatalf("content status = %d", contentRes.Code)
+	for _, tc := range cases {
+		req := httptest.NewRequest(tc.method, tc.path, tc.body)
+		req.Header.Set("X-Request-Id", "req_legacy")
+		res := httptest.NewRecorder()
+		server.ServeHTTP(res, req)
+		if res.Code != http.StatusNotFound {
+			t.Fatalf("%s %s status = %d, body = %s", tc.method, tc.path, res.Code, res.Body.String())
+		}
 	}
 }
 
@@ -502,8 +380,8 @@ func newLimitedHTTPTestServer(t *testing.T, maxUploadBytes int64) http.Handler {
 	t.Helper()
 	repo := repository.NewMemoryRepository()
 	store := storage.NewMemoryStore()
-	documents := service.New(repo, store)
-	return filehttp.NewServer(documents, filehttp.Config{MaxUploadBytes: maxUploadBytes})
+	files := service.New(repo, store)
+	return filehttp.NewServer(files, filehttp.Config{MaxUploadBytes: maxUploadBytes})
 }
 
 func newTokenHTTPTestServer(t *testing.T, token string) http.Handler {
@@ -515,11 +393,11 @@ func newReadyHTTPTestServer(t *testing.T, cfg filehttp.Config) http.Handler {
 	t.Helper()
 	repo := repository.NewMemoryRepository()
 	store := storage.NewMemoryStore()
-	documents := service.New(repo, store)
+	files := service.New(repo, store)
 	if cfg.MaxUploadBytes == 0 {
 		cfg.MaxUploadBytes = 1024 * 1024
 	}
-	return filehttp.NewServer(documents, cfg)
+	return filehttp.NewServer(files, cfg)
 }
 
 func newMultipartUploadRequest(t *testing.T, target string, filename string, contentType string, content string, tags []string, checksum string) *http.Request {
@@ -639,20 +517,6 @@ type fileResponseBody struct {
 		ChecksumSHA256 *string `json:"checksumSha256"`
 		CreatedAt      string  `json:"createdAt"`
 		DeletedAt      *string `json:"deletedAt"`
-	} `json:"data"`
-	RequestID string `json:"requestId"`
-}
-
-type documentResponseBody struct {
-	Data struct {
-		ID              string   `json:"id"`
-		KnowledgeBaseID string   `json:"knowledgeBaseId"`
-		Name            string   `json:"name"`
-		Status          string   `json:"status"`
-		Tags            []string `json:"tags"`
-		CreatedAt       string   `json:"createdAt"`
-		ContentType     string   `json:"contentType"`
-		SizeBytes       int64    `json:"sizeBytes"`
 	} `json:"data"`
 	RequestID string `json:"requestId"`
 }
