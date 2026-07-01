@@ -171,6 +171,9 @@ paths:
         content:
           multipart/form-data:
             schema: { $ref: '#/components/schemas/UploadSessionAttachmentRequest' }
+            encoding:
+              file:
+                contentType: application/pdf, image/png, image/jpeg, text/plain, application/vnd.openxmlformats-officedocument.wordprocessingml.document
       responses:
         '201':
           description: Created session attachment
@@ -574,6 +577,13 @@ components:
         content: { type: string }
         intent: { $ref: '#/components/schemas/Intent' }
         status: { type: string, enum: [queued, streaming, completed, stopped, failed, cancelled] }
+        attachmentIds:
+          type: array
+          items: { type: string }
+          description: >-
+            IDs of session attachments associated with this message. Retained
+            in history after attachments are purged; look up the attachment
+            record for current status.
         createdAt: { type: string, format: date-time }
     MessagePage:
       allOf:

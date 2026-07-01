@@ -1938,6 +1938,9 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/UploadSessionAttachmentRequest'
+            encoding:
+              file:
+                contentType: application/pdf, image/png, image/jpeg, text/plain, application/vnd.openxmlformats-officedocument.wordprocessingml.document
       responses:
         '201':
           description: QA session attachment accepted for processing.
@@ -4779,6 +4782,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/QACitation'
+        attachmentIds:
+          type: array
+          items:
+            type: string
+          description: |
+            IDs of session attachments associated with this message at creation
+            time. Preserved in history even after the attachment is purged;
+            the attachment record will have status `purged` but the ID remains.
         createdAt:
           type: string
           format: date-time
