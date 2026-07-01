@@ -187,7 +187,7 @@ func TestOwnerAuthorizationBoundaries(t *testing.T) {
 	}
 	run, err := repo.AppendMessages(ctx, ownerID, conversationID,
 		service.ResponseRunStart{RequestID: "req-authorization", MaxIterations: 5},
-			nil,
+		nil,
 		service.Message{ID: userMessageID, ConversationID: conversationID, Role: "user", Content: "private question", Status: "completed", CreatedAt: now},
 		service.Message{ID: assistantMessageID, ConversationID: conversationID, Role: "assistant", Content: "private answer", Status: "streaming", CreatedAt: now},
 	)
@@ -282,7 +282,7 @@ func TestFinalizeResponseRunClearsStaleCitationsWhenFinalSetIsEmpty(t *testing.T
 	}
 	run, err := repo.AppendMessages(ctx, userID, conversationID,
 		service.ResponseRunStart{RequestID: "req-citation-cleanup", MaxIterations: 3},
-			nil,
+		nil,
 		service.Message{ID: userMessageID, ConversationID: conversationID, Role: "user", Content: "question", Status: "completed", CreatedAt: now},
 		service.Message{ID: assistantMessageID, ConversationID: conversationID, Role: "assistant", Status: "streaming", CreatedAt: now},
 	)
@@ -346,7 +346,7 @@ func TestAttachmentCitationRoundTrip(t *testing.T) {
 	}
 	run, err := repo.AppendMessages(ctx, userID, conversationID,
 		service.ResponseRunStart{RequestID: "req-attachment-citation", MaxIterations: 3},
-			nil,
+		nil,
 		service.Message{ID: userMessageID, ConversationID: conversationID, Role: "user", Content: "question", Status: "completed", CreatedAt: now},
 		service.Message{ID: assistantMessageID, ConversationID: conversationID, Role: "assistant", Status: "streaming", CreatedAt: now},
 	)

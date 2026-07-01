@@ -241,13 +241,11 @@ func (r *Postgres) PurgeAttachments(ctx context.Context, ids []string, now time.
 	if len(ids) == 0 {
 		return nil
 	}
-	tag, err := r.pool.Exec(ctx, `UPDATE session_attachments SET status='purged', deleted_at=$1, updated_at=$1 WHERE id::text = ANY($2) AND deleted_at IS NULL`, now, ids)
-	if err != nil {
+	if _, err := r.pool.Exec(ctx, `UPDATE session_attachments SET status='purged', deleted_at=$1, updated_at=$1 WHERE id::text = ANY($2) AND deleted_at IS NULL`, now, ids); err != nil {
 		return fmt.Errorf("purge expired attachments: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
-		return service.NewError(service.CodeNotFound, "attachments not found for purge", nil)
-	}
+	// Best-effort chunk cleanup. RowsAffected == 0 means the attachments
+	// were already purged concurrently — not an error.
 	if _, err := r.pool.Exec(ctx, `DELETE FROM session_attachment_chunks WHERE attachment_id::text = ANY($1)`, ids); err != nil {
 		return fmt.Errorf("delete purged attachment chunks: %w", err)
 	}
