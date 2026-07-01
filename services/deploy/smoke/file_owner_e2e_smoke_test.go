@@ -195,9 +195,8 @@ func gatewayAuthRequest(method, url, accessToken, requestID string, body io.Read
 	return req
 }
 
-func assertResponseEnvelope(t *testing.T, resp *http.Response, requestID string) {
+func assertResponseEnvelope(t *testing.T, body []byte, requestID string) {
 	t.Helper()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	var envelope struct {
 		Data      json.RawMessage `json:"data"`
 		RequestID string          `json:"requestId"`
@@ -305,7 +304,7 @@ func assertDocumentReportReadViaGateway(t *testing.T, ctx context.Context, clien
 		t.Fatalf("list report types returned %d: %s", resp.StatusCode, string(body))
 	}
 	assertNoLeakedInternals(t, body)
-	assertResponseEnvelope(t, resp, requestID)
+	assertResponseEnvelope(t, body, requestID)
 
 	// Read a known seed report through Gateway
 	reportReq := gatewayAuthRequest(http.MethodGet, cfg.gatewayBaseURL+"/api/v1/reports/22222222-2222-4222-8222-222222222301", session.AccessToken, requestID+"_report", nil)
@@ -319,5 +318,5 @@ func assertDocumentReportReadViaGateway(t *testing.T, ctx context.Context, clien
 		t.Fatalf("get report returned %d: %s", reportResp.StatusCode, string(reportBody))
 	}
 	assertNoLeakedInternals(t, reportBody)
-	assertResponseEnvelope(t, reportResp, requestID+"_report")
+	assertResponseEnvelope(t, reportBody, requestID+"_report")
 }
