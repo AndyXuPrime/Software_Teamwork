@@ -35,10 +35,12 @@ type Config struct {
 	// Stream opts into AI Gateway server-sent events. Function calling itself
 	// does not require streaming, so the default request path remains JSON.
 	Stream bool
+
+	transport http.RoundTripper
 }
 
 type Client struct {
-	endpoint  string
+	endpoint  modelendpoint.AIGatewayChatEndpoint
 	model     string
 	profileID string
 	parallel  bool
@@ -48,7 +50,7 @@ type Client struct {
 }
 
 func New(cfg Config) (*Client, error) {
-	endpoint, err := modelendpoint.NormalizeAIGatewayChatEndpoint(cfg.Endpoint)
+	endpoint, err := modelendpoint.ParseAIGatewayChatEndpoint(cfg.Endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -71,6 +73,7 @@ func New(cfg Config) (*Client, error) {
 		http: &http.Client{
 			Timeout: cfg.Timeout,
 			Transport: httpclient.HeaderTransport{
+				Base:   cfg.transport,
 				Header: cfg.TokenHeader,
 				Token:  cfg.Token,
 			},
@@ -123,7 +126,7 @@ func (c *Client) Complete(ctx context.Context, messages []agent.Message, tools [
 	if err != nil {
 		return agent.Completion{}, fmt.Errorf("marshal completion request: %w", err)
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint.String(), bytes.NewReader(body))
 	if err != nil {
 		return agent.Completion{}, fmt.Errorf("create completion request: %w", err)
 	}

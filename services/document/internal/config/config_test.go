@@ -122,6 +122,10 @@ func TestLoadRejectsUntrustedDocumentAIGatewayURL(t *testing.T) {
 	if _, err := Load(); err == nil {
 		t.Fatal("expected non-base AI Gateway path to fail")
 	}
+	t.Setenv("DOCUMENT_AI_GATEWAY_URL", "http://localhost:18086")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected non-standard AI Gateway port to fail")
+	}
 }
 
 func TestLoadUsesOptionalKnowledgeServiceConfig(t *testing.T) {

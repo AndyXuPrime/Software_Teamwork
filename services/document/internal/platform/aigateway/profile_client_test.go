@@ -5,10 +5,32 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/service"
 )
+
+type rewriteTransport struct {
+	target *url.URL
+	base   http.RoundTripper
+}
+
+func newTestHTTPClient(t *testing.T, rawURL string) *http.Client {
+	t.Helper()
+	target, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	return &http.Client{Transport: rewriteTransport{target: target, base: http.DefaultTransport}}
+}
+
+func (t rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	cloned := req.Clone(req.Context())
+	cloned.URL.Scheme = t.target.Scheme
+	cloned.URL.Host = t.target.Host
+	return t.base.RoundTrip(cloned)
+}
 
 func TestProfileClientGetsModelProfileWithInternalHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +63,7 @@ func TestProfileClientGetsModelProfileWithInternalHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewProfileClient(server.URL, "service-token", server.Client())
+	client, err := NewProfileClient("http://localhost:8086", "service-token", newTestHTTPClient(t, server.URL))
 	if err != nil {
 		t.Fatalf("NewProfileClient() error = %v", err)
 	}
@@ -69,7 +91,7 @@ func TestProfileClientMapsMissingProfileToNotFound(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewProfileClient(server.URL, "service-token", server.Client())
+	client, err := NewProfileClient("http://localhost:8086", "service-token", newTestHTTPClient(t, server.URL))
 	if err != nil {
 		t.Fatalf("NewProfileClient() error = %v", err)
 	}
@@ -88,6 +110,7 @@ func TestProfileClientRejectsUntrustedAIGatewayBaseURL(t *testing.T) {
 		"https://public.example.test",
 		"http://169.254.169.254",
 		"http://ai-gateway.example.test",
+		"http://localhost:18086",
 		"http://user:pass@ai-gateway",
 		"http://ai-gateway/internal/v1/model-profiles",
 		"http://ai-gateway?redirect=http://example.test",
@@ -104,6 +127,7 @@ func TestProfileClientRejectsUntrustedAIGatewayBaseURL(t *testing.T) {
 func TestProfileClientAcceptsLocalAndServiceBaseURL(t *testing.T) {
 	cases := []string{
 		"http://localhost:8086",
+		"http://localhost",
 		"http://127.0.0.1:8086/internal/v1",
 		"http://[::1]:8086",
 		"http://ai-gateway:8086",

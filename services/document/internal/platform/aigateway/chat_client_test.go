@@ -65,7 +65,7 @@ func TestChatClientCreatesCompletionWithInternalHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewChatClient(server.URL, "service-token", "profile-default", "model-default", server.Client())
+	client, err := NewChatClient("http://localhost:8086", "service-token", "profile-default", "model-default", newTestHTTPClient(t, server.URL))
 	if err != nil {
 		t.Fatalf("NewChatClient() error = %v", err)
 	}
@@ -91,7 +91,7 @@ func TestChatClientSanitizesDownstreamError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewChatClient(server.URL, "service-token", "profile-default", "model-default", server.Client())
+	client, err := NewChatClient("http://localhost:8086", "service-token", "profile-default", "model-default", newTestHTTPClient(t, server.URL))
 	if err != nil {
 		t.Fatalf("NewChatClient() error = %v", err)
 	}

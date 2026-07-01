@@ -14,13 +14,12 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/service"
 )
 
-const (
-	defaultTimeout = 10 * time.Second
-	callerService  = "document"
-)
+const defaultTimeout = 10 * time.Second
+const callerService = "document"
+const aiGatewayPort = "8086"
 
 type ProfileClient struct {
-	baseURL      string
+	baseURL      trustedBaseURL
 	serviceToken string
 	httpClient   *http.Client
 }
@@ -40,7 +39,9 @@ func NewProfileClient(baseURL, serviceToken string, httpClient *http.Client) (*P
 	}, nil
 }
 
-func validateAIGatewayBaseURL(raw string) (string, error) {
+type trustedBaseURL string
+
+func validateAIGatewayBaseURL(raw string) (trustedBaseURL, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return "", errors.New("DOCUMENT_AI_GATEWAY_URL must be an absolute http(s) URL")
@@ -58,11 +59,14 @@ func validateAIGatewayBaseURL(raw string) (string, error) {
 	if !trustedInternalHost(parsed.Hostname()) {
 		return "", errors.New("DOCUMENT_AI_GATEWAY_URL host is not trusted")
 	}
-	if path == "/internal/v1" {
-		parsed.Path = ""
-		parsed.RawPath = ""
+	if port := parsed.Port(); port != "" && port != aiGatewayPort {
+		return "", errors.New("DOCUMENT_AI_GATEWAY_URL port is not trusted")
 	}
-	return strings.TrimRight(parsed.String(), "/"), nil
+	base, ok := canonicalBaseURL(parsed.Scheme, parsed.Hostname())
+	if !ok {
+		return "", errors.New("DOCUMENT_AI_GATEWAY_URL host is not trusted")
+	}
+	return base, nil
 }
 
 func trustedInternalHost(host string) bool {
@@ -80,12 +84,44 @@ func trustedInternalHost(host string) bool {
 	return false
 }
 
+func canonicalBaseURL(schemeValue, hostValue string) (trustedBaseURL, bool) {
+	hostValue = strings.Trim(strings.ToLower(hostValue), "[]")
+	if schemeValue == "https" {
+		switch hostValue {
+		case "localhost":
+			return "https://localhost:8086", true
+		case "ai-gateway":
+			return "https://ai-gateway:8086", true
+		case "127.0.0.1":
+			return "https://127.0.0.1:8086", true
+		case "::1":
+			return "https://[::1]:8086", true
+		}
+		return "", false
+	}
+	switch hostValue {
+	case "localhost":
+		return "http://localhost:8086", true
+	case "ai-gateway":
+		return "http://ai-gateway:8086", true
+	case "127.0.0.1":
+		return "http://127.0.0.1:8086", true
+	case "::1":
+		return "http://[::1]:8086", true
+	}
+	return "", false
+}
+
+func (b trustedBaseURL) Join(elem ...string) (string, error) {
+	return url.JoinPath(string(b), elem...)
+}
+
 func (c *ProfileClient) GetModelProfile(ctx context.Context, reqCtx service.RequestContext, id string) (service.ModelProfileReference, error) {
 	profileID := strings.TrimSpace(id)
 	if profileID == "" {
 		return service.ModelProfileReference{}, service.ValidationError(map[string]string{"llm.profileId": "is required"})
 	}
-	endpoint, err := url.JoinPath(c.baseURL, "internal/v1/model-profiles", profileID)
+	endpoint, err := c.baseURL.Join("internal/v1/model-profiles", profileID)
 	if err != nil {
 		return service.ModelProfileReference{}, service.NewError(service.CodeDependency, "build ai gateway profile request", err)
 	}

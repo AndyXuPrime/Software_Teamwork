@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,27 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/service"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/service/agent"
 )
+
+type rewriteTransport struct {
+	target *url.URL
+	base   http.RoundTripper
+}
+
+func newTestTransport(t *testing.T, rawURL string) http.RoundTripper {
+	t.Helper()
+	target, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	return rewriteTransport{target: target, base: http.DefaultTransport}
+}
+
+func (t rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	cloned := req.Clone(req.Context())
+	cloned.URL.Scheme = t.target.Scheme
+	cloned.URL.Host = t.target.Host
+	return t.base.RoundTrip(cloned)
+}
 
 func TestCompleteSendsFunctionToolsAndParsesToolCalls(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -57,7 +79,7 @@ func TestCompleteSendsFunctionToolsAndParsesToolCalls(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(Config{Endpoint: server.URL + "/internal/v1/chat/completions", Token: "test-token", TokenHeader: "X-Service-Token", Model: "test", ProfileID: "profile-chat", MaxTokens: 100, Timeout: time.Second})
+	client, err := New(Config{Endpoint: "http://localhost:8086/internal/v1/chat/completions", Token: "test-token", TokenHeader: "X-Service-Token", Model: "test", ProfileID: "profile-chat", MaxTokens: 100, Timeout: time.Second, transport: newTestTransport(t, server.URL)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +106,7 @@ func TestNewRejectsUntrustedAIGatewayEndpoint(t *testing.T) {
 		"https://public.example.test/internal/v1/chat/completions",
 		"http://169.254.169.254/internal/v1/chat/completions",
 		"http://ai-gateway.example.test/internal/v1/chat/completions",
+		"http://localhost:18086/internal/v1/chat/completions",
 		"http://user:pass@ai-gateway/internal/v1/chat/completions",
 		"http://ai-gateway/internal/v1/model-profiles",
 		"http://ai-gateway/internal/v1/chat/completions?redirect=http://example.test",
@@ -100,6 +123,7 @@ func TestNewRejectsUntrustedAIGatewayEndpoint(t *testing.T) {
 func TestNewAcceptsLocalAndServiceAIGatewayEndpoints(t *testing.T) {
 	cases := []string{
 		"http://localhost:8086/internal/v1/chat/completions",
+		"http://localhost/internal/v1/chat/completions",
 		"http://127.0.0.1:8086/internal/v1/chat/completions",
 		"http://[::1]:8086/internal/v1/chat/completions",
 		"http://ai-gateway:8086/internal/v1/chat/completions",
@@ -143,7 +167,7 @@ func TestCompleteRejectsDependencyErrorBody(t *testing.T) {
 		http.Error(w, "provider secret detail api_key=sk-test prompt=hello", http.StatusBadGateway)
 	}))
 	defer server.Close()
-	client, err := New(Config{Endpoint: server.URL + "/internal/v1/chat/completions", TokenHeader: "X-Service-Token", Model: "test", MaxTokens: 100, Timeout: time.Second})
+	client, err := New(Config{Endpoint: "http://localhost:8086/internal/v1/chat/completions", TokenHeader: "X-Service-Token", Model: "test", MaxTokens: 100, Timeout: time.Second, transport: newTestTransport(t, server.URL)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +187,7 @@ func TestCompleteMapsGatewayValidationError(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":{"message":"full prompt must stay hidden","type":"invalid_request_error","code":"bad_request"}}`))
 	}))
 	defer server.Close()
-	client, err := New(Config{Endpoint: server.URL + "/internal/v1/chat/completions", TokenHeader: "X-Service-Token", Model: "test", MaxTokens: 100, Timeout: time.Second})
+	client, err := New(Config{Endpoint: "http://localhost:8086/internal/v1/chat/completions", TokenHeader: "X-Service-Token", Model: "test", MaxTokens: 100, Timeout: time.Second, transport: newTestTransport(t, server.URL)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +222,7 @@ data: [DONE]
 	}))
 	defer server.Close()
 
-	client, err := New(Config{Endpoint: server.URL + "/internal/v1/chat/completions", TokenHeader: "X-Service-Token", Model: "test", MaxTokens: 100, Timeout: time.Second, Stream: true})
+	client, err := New(Config{Endpoint: "http://localhost:8086/internal/v1/chat/completions", TokenHeader: "X-Service-Token", Model: "test", MaxTokens: 100, Timeout: time.Second, Stream: true, transport: newTestTransport(t, server.URL)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +268,7 @@ func TestCompleteRejectsInterruptedStreamWithPartialDelta(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(Config{Endpoint: server.URL + "/internal/v1/chat/completions", TokenHeader: "X-Service-Token", Model: "test", MaxTokens: 100, Timeout: time.Second, Stream: true})
+	client, err := New(Config{Endpoint: "http://localhost:8086/internal/v1/chat/completions", TokenHeader: "X-Service-Token", Model: "test", MaxTokens: 100, Timeout: time.Second, Stream: true, transport: newTestTransport(t, server.URL)})
 	if err != nil {
 		t.Fatal(err)
 	}

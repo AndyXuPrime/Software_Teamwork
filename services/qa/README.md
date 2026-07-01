@@ -56,7 +56,9 @@ AI Gateway variables:
 
 QA does not store provider API keys or provider base URLs. Runtime provider
 credentials belong to AI Gateway model profiles, and QA only sends `profile_id`,
-model name, timeout, and generation parameters.
+model name, timeout, and generation parameters. `AI_GATEWAY_URL` is limited to
+the AI Gateway chat completions path on `localhost`, loopback, or `ai-gateway`
+using the standard internal port `8086`.
 
 ## QA -> AI Gateway smoke
 

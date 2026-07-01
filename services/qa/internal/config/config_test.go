@@ -96,6 +96,7 @@ func TestLoadRejectsUntrustedAIGatewayEndpoint(t *testing.T) {
 		"https://public.example.test/internal/v1/chat/completions",
 		"http://169.254.169.254/internal/v1/chat/completions",
 		"http://10.0.0.5/internal/v1/chat/completions",
+		"http://localhost:18086/internal/v1/chat/completions",
 		"http://ai-gateway/internal/v1/model-profiles",
 		"http://ai-gateway/internal/v1/chat/completions?redirect=http://example.test",
 	}

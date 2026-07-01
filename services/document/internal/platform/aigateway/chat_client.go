@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/service"
@@ -17,7 +16,7 @@ import (
 const maxChatResponseBytes = 2 << 20
 
 type ChatClient struct {
-	baseURL          string
+	baseURL          trustedBaseURL
 	serviceToken     string
 	defaultProfileID string
 	defaultModel     string
@@ -72,7 +71,7 @@ func (c *ChatClient) CreateChatCompletion(ctx context.Context, reqCtx service.Re
 	if err != nil {
 		return service.ChatCompletionResponse{}, service.NewError(service.CodeInternal, "encode ai gateway request", err)
 	}
-	endpoint, err := url.JoinPath(c.baseURL, "internal/v1/chat/completions")
+	endpoint, err := c.baseURL.Join("internal/v1/chat/completions")
 	if err != nil {
 		return service.ChatCompletionResponse{}, service.NewError(service.CodeDependency, "build ai gateway chat request", err)
 	}

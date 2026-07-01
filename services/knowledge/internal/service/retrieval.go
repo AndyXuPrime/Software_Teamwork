@@ -248,8 +248,8 @@ func (s *Service) rerankRetrievalResults(ctx context.Context, reqCtx RequestCont
 		return nil, DependencyError("knowledge query reranking failed", err)
 	}
 
-	ordered := make([]KnowledgeQueryResult, 0, limit)
-	seen := make(map[string]struct{}, limit)
+	ordered := make([]KnowledgeQueryResult, 0, maxRetrievalTopK)
+	seen := make(map[string]struct{}, maxRetrievalTopK)
 	for _, item := range reranked {
 		result, ok := byID[strings.TrimSpace(item.DocumentID)]
 		if !ok {

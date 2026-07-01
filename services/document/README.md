@@ -26,7 +26,7 @@ Required environment variables:
 | `DOCUMENT_REDIS_ADDR` | `localhost:6380` | Redis/asynq queue endpoint. Redis is not the durable job state authority. |
 | `DOCUMENT_FILE_SERVICE_URL` | `http://localhost:8082` | Internal file service base URL for later template/material/report-file bytes. |
 | `DOCUMENT_FILE_SERVICE_TOKEN` | empty | Service token sent to File Service when request context has no `X-Service-Token`. Falls back to `INTERNAL_SERVICE_TOKEN` when empty. |
-| `DOCUMENT_AI_GATEWAY_URL` | `http://localhost:8086` | Internal AI Gateway base URL for report settings validation and report generation chat calls. |
+| `DOCUMENT_AI_GATEWAY_URL` | `http://localhost:8086` | Internal AI Gateway base URL for report settings validation and report generation chat calls. Must target `localhost`, loopback, or `ai-gateway` on port `8086`. |
 | `DOCUMENT_AI_GATEWAY_PROFILE_ID` | `default-chat` | AI Gateway chat profile reference used by report settings/default generation. |
 
 Optional variables:

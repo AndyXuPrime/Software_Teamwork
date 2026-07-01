@@ -121,6 +121,9 @@ func validateHTTPURL(name, value string) error {
 		if !trustedInternalHost(parsed.Hostname()) {
 			return fmt.Errorf("%s host is not trusted", name)
 		}
+		if port := parsed.Port(); port != "" && port != "8086" {
+			return fmt.Errorf("%s port is not trusted", name)
+		}
 	}
 	return nil
 }

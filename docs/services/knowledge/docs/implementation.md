@@ -124,6 +124,7 @@
 | 日期 | 检查人/工具 | 代码基准 | 结论 |
 | --- | --- | --- | --- |
 | 2026-07-01 | Codex | A-021 working tree | 新增 env-gated `TestKnowledgeIngestionRealDepsSmoke`，默认 skip；启用后验证 fixture 从 File Service、Parser Service、Knowledge worker、local hashing embedding 到 Qdrant point 写入和 PostgreSQL 状态更新，并记录清理策略。 |
+| 2026-07-01 | Codex CodeQL follow-up | working tree | 继续收敛合并后仍 open 的 rerank allocation 告警：rerank result ordering 的 slice/map capacity 改为 `maxRetrievalTopK` 常量，`limit` 仅作为业务截断条件，避免用户控制值继续流入 allocation size。 |
 | 2026-07-01 | Codex | A-021 scope update | 根据 Gateway/Auth 前置发现，新增 env-gated `TestGatewayKnowledgeOwnerRouteSmoke` 和 Parser image 构建/缓存前置说明；owner smoke 启用后先查 File/Parser/Knowledge ready、PostgreSQL 和 Redis，再通过 Gateway session 调用 `GET /api/v1/knowledge-bases`。 |
 | 2026-06-30 | Codex full-day audit | `develop@92d3afc` | 复核今日 PR/issue：Knowledge 已包含 ingestion worker、Parser Service client、parser-configs runtime management、chunks/content、`knowledge-queries`、AI Gateway embedding/rerank adapter、document PATCH/DELETE lifecycle 和 Gateway proxy；Parser PP-StructureV3/runtime readiness 已由 Parser 服务承接。剩余为 delete cleanup worker、#289 真实依赖 ingest/query smoke、真实 Qdrant collection smoke 和真实 AI Gateway embedding/rerank smoke。 |
 | 2026-06-30 | Codex | A-014 working tree | 补齐 chunks/content internal route、Gateway proxy、seeded/fake-backed `knowledge-queries` contract、错误 envelope 和 request id 测试；当时 document PATCH/DELETE 与真实 Qdrant/AI Gateway smoke 仍待后续任务。 |

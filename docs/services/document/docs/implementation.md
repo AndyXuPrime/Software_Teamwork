@@ -51,7 +51,7 @@
 | report settings | `internal/http/admin_handlers.go`、`internal/service/admin_service.go`、`internal/repository/admin.go` | Gateway / Document OpenAPI | HTTP/service/repository tests | 持久化 AI Gateway profile 引用、默认模板和文件默认值；`PATCH` 仅 admin/super_admin。 |
 | statistics / operation logs | `internal/http/admin_handlers.go`、`internal/service/admin_service.go`、`internal/repository/admin.go` | Gateway / Document OpenAPI | HTTP/service/repository tests | 支持概览、每日趋势和操作日志过滤；日志写入路径做敏感字段脱敏。 |
 | Document MCP tool adapter | `internal/service/mcp_tools.go` | Document README / requirements | MCP tool service tests | 提供 `generate_report_outline`、`regenerate_report_outline`、`generate_report_text`、`regenerate_report_text`、`regenerate_report_section`、`get_generation_status`、`get_template_schema`、`export_report_docx`、`get_report_result`；工具层复用现有 service，不直连 repository/File/MinIO/Qdrant/provider，输出和操作日志均为安全摘要。 |
-| AI Gateway profile/chat clients | `internal/platform/aigateway/profile_client.go`、`internal/platform/aigateway/chat_client.go`、`cmd/server/main.go` | AI Gateway internal API | client/config tests | Document 只校验并引用 profile，不保存 provider key。`DOCUMENT_AI_GATEWAY_URL` 必须是受控 AI Gateway service base URL，不允许 credentials/query/fragment、意外 path、公网域名或非 loopback IP；本地允许 `localhost`/loopback 和 Compose 服务名 `ai-gateway`。 |
+| AI Gateway profile/chat clients | `internal/platform/aigateway/profile_client.go`、`internal/platform/aigateway/chat_client.go`、`cmd/server/main.go` | AI Gateway internal API | client/config tests | Document 只校验并引用 profile，不保存 provider key。`DOCUMENT_AI_GATEWAY_URL` 必须是受控 AI Gateway service base URL，不允许 credentials/query/fragment、意外 path、公网域名、非 loopback IP 或非标准内部端口；本地允许 `localhost`/loopback 和 Compose 服务名 `ai-gateway` 的 `8086` 端口，校验后 client 使用 canonical base URL。 |
 | PostgreSQL repository | `internal/repository`、`migrations/0001_create_report_generation_tables.sql` | 数据模型 | repository tests | runtime 使用 `pgx/v5`。 |
 | File Service client | `internal/platform/fileclient` | File/Document 边界 | fileclient tests | multipart 创建 file，delete cleanup。 |
 
@@ -118,6 +118,7 @@
 | 日期 | 检查人/工具 | 代码基准 | 结论 |
 | --- | --- | --- | --- |
 | 2026-07-01 | Tina-jwt C-011 | `develop@c5c1a52` | 富 DOCX worker 工具链选型已固定（`pandoc/core:3.10`）；调用边界、smoke 验证和 fallback 策略写入 `rich-docx-worker.md`；technology-decisions.md、generation-workflow.md 和 README.md 同步更新；Dockerfile 接入和运行时调用是后续任务。 |
+| 2026-07-01 | Codex CodeQL follow-up | working tree | 继续收敛合并后仍 open 的 Document `go/request-forgery` 告警：AI Gateway profile/chat clients 校验后只保留 canonical trusted base URL，端口固定为 `8086`，并由 config/client tests 覆盖非标准端口拒绝。 |
 | 2026-06-30 | Codex C-005 implementation | working tree | Document 已补 `summer_peak_inspection` 基础 AI 大纲/正文生成编排、AI Gateway chat client、可选 Knowledge 检索 client、生成任务 payload 持久化和 OpenAPI/状态文档同步；Document MCP tools、更多报告类型和 Pandoc/LibreOffice 富 DOCX 仍是缺口。 |
 | 2026-06-30 | Codex full-day audit | `develop@92d3afc` | 复核今日 PR/issue：Document 已包含 report jobs/attempts/events、基础 DOCX report file creation、settings/statistics/logs、`pgx/v5@v5.9.2` 和安全依赖更新；#101 真实大纲/正文生成、#307 富 DOCX worker toolchain、Document MCP tools 和跨服务 content smoke 当时仍待补齐。 |
 | 2026-06-30 | Codex PR #265 review follow-up | working tree | 当时 Document 状态文档已与 report files/content 和基础内置 DOCX 导出对齐；生成编排、Document MCP tools 和 Pandoc/LibreOffice 富 DOCX 仍待后续任务。 |
