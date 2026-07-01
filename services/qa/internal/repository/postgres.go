@@ -442,6 +442,11 @@ func replaceStreamEvents(ctx context.Context, tx pgx.Tx, q *sqlc.Queries, runID 
 			if toolCallID == "" {
 				continue
 			}
+			mcpServerName, _ := event.Payload["mcpServerName"].(string)
+			if mcpServerName == "" {
+				mcpServerName = toolSourceName(toolName)
+			}
+			errorCode, errorMessage := toolCallErrorSummary(event.EventType, resultSummary)
 			status := "running"
 			if event.EventType == "tool.completed" {
 				status = "completed"
@@ -451,12 +456,69 @@ func replaceStreamEvents(ctx context.Context, tx pgx.Tx, q *sqlc.Queries, runID 
 			}
 			argsJSON, _ := json.Marshal(argumentsSummary)
 			resultJSON, _ := json.Marshal(resultSummary)
-			if err := upsertAgentToolCall(ctx, tx, runID, int32(iteration), toolCallID, toolName, status, argsJSON, resultJSON, event.CreatedAt); err != nil {
+			if err := upsertAgentToolCall(ctx, tx, runID, int32(iteration), toolCallID, toolName, mcpServerName, status, argsJSON, resultJSON, errorCode, errorMessage, event.CreatedAt); err != nil {
 				return fmt.Errorf("save tool call summary: %w", err)
 			}
 		}
 	}
 	return nil
+}
+
+func toolSourceName(toolName string) string {
+	switch toolName {
+	case "search_knowledge", "get_citation_source":
+		return "qa_builtin"
+	}
+	if before, _, ok := strings.Cut(toolName, "__"); ok {
+		return before
+	}
+	if before, _, ok := strings.Cut(toolName, "."); ok {
+		return before
+	}
+	return ""
+}
+
+func toolCallErrorSummary(eventType string, result map[string]any) (string, string) {
+	if eventType != "tool.failed" {
+		return "", ""
+	}
+	code, _ := result["error"].(string)
+	message, _ := result["message"].(string)
+	if code == "" {
+		code, message = errorSummaryFromRawResult(result)
+	}
+	if code == "" {
+		code = "tool_execution_failed"
+	}
+	if message == "" {
+		message = "tool execution failed"
+	}
+	return code, truncateStringRunes(message, 512)
+}
+
+func errorSummaryFromRawResult(result map[string]any) (string, string) {
+	raw, _ := result["raw"].(string)
+	if raw == "" {
+		return "", ""
+	}
+	var payload struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return "", ""
+	}
+	return strings.TrimSpace(payload.Error.Code), strings.TrimSpace(payload.Error.Message)
+}
+
+func truncateStringRunes(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit])
 }
 
 func (r *Postgres) replaceCitations(ctx context.Context, tx pgx.Tx, runID, messageID string, citations []service.Citation, useSnapshot bool) error {
@@ -549,16 +611,19 @@ func nullableFloat(value *float64) any {
 	return *value
 }
 
-func upsertAgentToolCall(ctx context.Context, tx pgx.Tx, runID string, iteration int32, toolCallID, toolName, status string, argumentsSummary, resultSummary []byte, startedAt time.Time) error {
+func upsertAgentToolCall(ctx context.Context, tx pgx.Tx, runID string, iteration int32, toolCallID, toolName, mcpServerName, status string, argumentsSummary, resultSummary []byte, errorCode, errorMessage string, startedAt time.Time) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO agent_tool_calls (
 			response_run_id,
 			iteration_no,
 			tool_call_id,
 			tool_name,
+			mcp_server_name,
 			status,
 			arguments_summary,
 			result_summary,
+			error_code,
+			error_message,
 			started_at,
 			finished_at
 		) VALUES (
@@ -566,19 +631,25 @@ func upsertAgentToolCall(ctx context.Context, tx pgx.Tx, runID string, iteration
 			GREATEST($2, 1),
 			$3,
 			$4,
-			$5,
-			$6::jsonb,
+			NULLIF($5, ''),
+			$6,
 			$7::jsonb,
-			$8::timestamptz,
+			$8::jsonb,
+			NULLIF($9, ''),
+			NULLIF($10, ''),
+			$11::timestamptz,
 			CASE
-				WHEN $5 = 'running' THEN NULL
-				ELSE $8::timestamptz
+				WHEN $6 = 'running' THEN NULL
+				ELSE $11::timestamptz
 			END
 		)
 		ON CONFLICT (response_run_id, tool_call_id) DO UPDATE SET
+			mcp_server_name = COALESCE(EXCLUDED.mcp_server_name, agent_tool_calls.mcp_server_name),
 			status = EXCLUDED.status,
 			arguments_summary = EXCLUDED.arguments_summary,
 			result_summary = EXCLUDED.result_summary,
+			error_code = EXCLUDED.error_code,
+			error_message = EXCLUDED.error_message,
 			finished_at = CASE
 				WHEN EXCLUDED.status = 'running' THEN agent_tool_calls.finished_at
 				ELSE EXCLUDED.finished_at
@@ -591,9 +662,12 @@ func upsertAgentToolCall(ctx context.Context, tx pgx.Tx, runID string, iteration
 		iteration,
 		toolCallID,
 		toolName,
+		mcpServerName,
 		status,
 		argumentsSummary,
 		resultSummary,
+		errorCode,
+		errorMessage,
 		startedAt,
 	)
 	return err

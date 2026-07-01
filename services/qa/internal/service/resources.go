@@ -181,10 +181,13 @@ type AgentToolCall struct {
 	IterationNo       int            `json:"iterationNo,omitempty"`
 	ToolCallID        string         `json:"toolCallId"`
 	ToolName          string         `json:"toolName"`
+	MCPServerName     string         `json:"mcpServerName,omitempty"`
 	ArgumentsSummary  map[string]any `json:"argumentsSummary,omitempty"`
 	ResultSummary     map[string]any `json:"resultSummary,omitempty"`
 	Status            string         `json:"status"`
 	LatencyMS         int64          `json:"latencyMs,omitempty"`
+	ErrorCode         string         `json:"errorCode,omitempty"`
+	ErrorMessage      string         `json:"errorMessage,omitempty"`
 	StartedAt         time.Time      `json:"startedAt"`
 	FinishedAt        *time.Time     `json:"finishedAt,omitempty"`
 }

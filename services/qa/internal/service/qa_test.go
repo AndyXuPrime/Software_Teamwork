@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/platform/contextutil"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/service/agent"
 )
 
@@ -132,8 +133,9 @@ func (r *fakeRepository) SaveCitations(_ context.Context, _, _ string, citations
 }
 
 type fakeAgentRunner struct {
-	input  []agent.Message
-	userID string
+	input             []agent.Message
+	userID            string
+	retrievalSettings contextutil.RetrievalSettings
 }
 type blockingAgentRunner struct{ started chan struct{} }
 
@@ -264,6 +266,7 @@ func (fallbackCitationToolRunner) RunWithToolResultCallback(ctx context.Context,
 func (r *fakeAgentRunner) RunWithObserver(ctx context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
 	r.userID = UserIDFromContext(ctx)
 	r.input = append([]agent.Message(nil), input...)
+	r.retrievalSettings = contextutil.RetrievalSettingsFromContext(ctx)
 	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
 	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1, Usage: agent.TokenUsage{PromptTokens: 10, CompletionTokens: 4, TotalTokens: 14}})
 	final := agent.Message{Role: agent.RoleAssistant, Content: "测试回答"}
@@ -299,6 +302,7 @@ type fakeRuntimeProvider struct {
 	prompt         string
 	maxIterations  int
 	overallTimeout time.Duration
+	retrieval      RetrievalSettings
 }
 
 func (p fakeRuntimeProvider) Acquire() (RuntimeSnapshot, func(), error) {
@@ -310,6 +314,7 @@ func (p fakeRuntimeProvider) Acquire() (RuntimeSnapshot, func(), error) {
 		Runner: p.runner, SystemPrompt: p.prompt, LLMModel: "deepseek-v4-pro", LLMProfileID: "default",
 		QAConfigVersionID: "qa-config-id", LLMConfigVersionID: "llm-config-id",
 		MaxIterations: maxIterations, OverallTimeout: p.overallTimeout,
+		RetrievalSettings: p.retrieval,
 	}, func() {}, nil
 }
 
@@ -372,6 +377,38 @@ func TestAskRejectsUnsupportedDataAnalysis(t *testing.T) {
 	appErr, ok := Classify(err)
 	if !ok || appErr.Code != CodeUnsupportedIntent {
 		t.Fatalf("error = %v, want unsupported_intent", err)
+	}
+}
+
+func TestAskMergesRequestRetrievalOverridesIntoToolContext(t *testing.T) {
+	var input AskInput
+	if err := json.Unmarshal([]byte(`{"message":"检索","retrieval":{"topK":3,"scoreThreshold":0.42,"enableRerank":false,"rerankThreshold":0.25,"rerankTopN":2}}`), &input); err != nil {
+		t.Fatal(err)
+	}
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"}}
+	runner := &fakeAgentRunner{}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{
+		runner: runner,
+		prompt: "system",
+		retrieval: RetrievalSettings{
+			TopK:            8,
+			ScoreThreshold:  0.7,
+			EnableRerank:    true,
+			RerankThreshold: 0.6,
+			RerankTopN:      5,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = qa.Ask(context.Background(), "user-id", "conversation-id", input, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	want := contextutil.RetrievalSettings{TopK: 3, ScoreThreshold: 0.42, EnableRerank: false, RerankThreshold: 0.25, RerankTopN: 2}
+	if runner.retrievalSettings != want {
+		t.Fatalf("retrieval settings=%+v, want %+v", runner.retrievalSettings, want)
 	}
 }
 

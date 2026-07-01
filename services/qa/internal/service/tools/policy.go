@@ -163,6 +163,10 @@ func generateCitationArgumentsSummary(args map[string]any) map[string]any {
 // GenerateResultSummary creates a sanitized summary of tool results.
 // It must not expose full content, internal URLs, object keys, or secrets.
 func GenerateResultSummary(toolName string, resultContent string) map[string]any {
+	if summary, ok := toolFailureSummary(resultContent); ok {
+		summary["tool"] = toolName
+		return summary
+	}
 	switch toolName {
 	case ToolSearchKnowledge:
 		return generateSearchResultSummary(resultContent)
@@ -175,6 +179,39 @@ func GenerateResultSummary(toolName string, resultContent string) map[string]any
 			"size_hint": len(resultContent),
 		}
 	}
+}
+
+func toolFailureSummary(content string) (map[string]any, bool) {
+	var decoded struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(content), &decoded); err != nil {
+		return nil, false
+	}
+	code := strings.TrimSpace(decoded.Error.Code)
+	if code == "" {
+		return nil, false
+	}
+	message := strings.TrimSpace(decoded.Error.Message)
+	if message == "" {
+		message = "tool execution failed"
+	}
+	return map[string]any{
+		"error":     code,
+		"message":   truncateSummary(message, 512),
+		"sanitized": true,
+	}, true
+}
+
+func truncateSummary(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit])
 }
 
 func generateSearchResultSummary(content string) map[string]any {

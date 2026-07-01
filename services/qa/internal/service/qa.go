@@ -124,8 +124,50 @@ type RetrievalOptions struct {
 	TopK            int                 `json:"topK,omitempty"`
 	ScoreThreshold  float64             `json:"scoreThreshold,omitempty"`
 	RerankThreshold float64             `json:"rerankThreshold,omitempty"`
+	RerankTopN      int                 `json:"rerankTopN,omitempty"`
 	EnableRerank    bool                `json:"enableRerank,omitempty"`
 	TagFilters      map[string][]string `json:"tagFilters,omitempty"`
+	topKSet         bool
+	scoreSet        bool
+	rerankSet       bool
+	rerankTopNSet   bool
+	enableSet       bool
+}
+
+func (o *RetrievalOptions) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		TopK            *int                `json:"topK,omitempty"`
+		ScoreThreshold  *float64            `json:"scoreThreshold,omitempty"`
+		RerankThreshold *float64            `json:"rerankThreshold,omitempty"`
+		RerankTopN      *int                `json:"rerankTopN,omitempty"`
+		EnableRerank    *bool               `json:"enableRerank,omitempty"`
+		TagFilters      map[string][]string `json:"tagFilters,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*o = RetrievalOptions{TagFilters: raw.TagFilters}
+	if raw.TopK != nil {
+		o.TopK = *raw.TopK
+		o.topKSet = true
+	}
+	if raw.ScoreThreshold != nil {
+		o.ScoreThreshold = *raw.ScoreThreshold
+		o.scoreSet = true
+	}
+	if raw.RerankThreshold != nil {
+		o.RerankThreshold = *raw.RerankThreshold
+		o.rerankSet = true
+	}
+	if raw.RerankTopN != nil {
+		o.RerankTopN = *raw.RerankTopN
+		o.rerankTopNSet = true
+	}
+	if raw.EnableRerank != nil {
+		o.EnableRerank = *raw.EnableRerank
+		o.enableSet = true
+	}
+	return nil
 }
 
 type AskInput struct {
@@ -388,13 +430,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	baseCtx := WithUserID(ctx, userID)
 	baseCtx = contextutil.WithKnowledgeBaseIDs(baseCtx, input.KnowledgeBaseIDs)
 	baseCtx = contextutil.WithDefaultKnowledgeBaseIDs(baseCtx, runtime.DefaultKnowledgeBaseIDs)
-	baseCtx = contextutil.WithRetrievalSettings(baseCtx, contextutil.RetrievalSettings{
-		TopK:            runtime.RetrievalSettings.TopK,
-		ScoreThreshold:  runtime.RetrievalSettings.ScoreThreshold,
-		EnableRerank:    runtime.RetrievalSettings.EnableRerank,
-		RerankThreshold: runtime.RetrievalSettings.RerankThreshold,
-		RerankTopN:      runtime.RetrievalSettings.RerankTopN,
-	})
+	baseCtx = contextutil.WithRetrievalSettings(baseCtx, retrievalSettingsForAsk(runtime.RetrievalSettings, input.Retrieval))
 	baseCtx = contextutil.WithCitationNo(baseCtx, 1)
 	cancelBase := func() {}
 	if runtime.OverallTimeout > 0 {
@@ -515,13 +551,13 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 			}
 		case agent.EventToolStarted:
 			observation := toolObservations[event.ToolCallID]
-			emit("tool.started", map[string]any{"toolCallId": event.ToolCallID, "tool": event.ToolName, "iterationNo": event.Iteration, "summary": "正在执行工具 " + event.ToolName, "arguments": tools.GenerateArgumentsSummary(event.ToolName, observation.Arguments)})
+			emit("tool.started", map[string]any{"toolCallId": event.ToolCallID, "tool": event.ToolName, "mcpServerName": toolSourceName(event.ToolName), "iterationNo": event.Iteration, "summary": "正在执行工具 " + event.ToolName, "arguments": tools.GenerateArgumentsSummary(event.ToolName, observation.Arguments)})
 		case agent.EventToolCompleted:
 			observation := toolObservations[event.ToolCallID]
-			emit("tool.completed", map[string]any{"toolCallId": event.ToolCallID, "tool": event.ToolName, "iterationNo": event.Iteration, "summary": "工具 " + event.ToolName + " 执行完成", "arguments": tools.GenerateArgumentsSummary(event.ToolName, observation.Arguments), "result": tools.GenerateResultSummary(event.ToolName, observation.Result)})
+			emit("tool.completed", map[string]any{"toolCallId": event.ToolCallID, "tool": event.ToolName, "mcpServerName": toolSourceName(event.ToolName), "iterationNo": event.Iteration, "summary": "工具 " + event.ToolName + " 执行完成", "arguments": tools.GenerateArgumentsSummary(event.ToolName, observation.Arguments), "result": tools.GenerateResultSummary(event.ToolName, observation.Result)})
 		case agent.EventToolFailed:
 			observation := toolObservations[event.ToolCallID]
-			emit("tool.failed", map[string]any{"toolCallId": event.ToolCallID, "tool": event.ToolName, "iterationNo": event.Iteration, "summary": "工具 " + event.ToolName + " 执行失败", "arguments": tools.GenerateArgumentsSummary(event.ToolName, observation.Arguments), "result": tools.GenerateResultSummary(event.ToolName, observation.Result)})
+			emit("tool.failed", map[string]any{"toolCallId": event.ToolCallID, "tool": event.ToolName, "mcpServerName": toolSourceName(event.ToolName), "iterationNo": event.Iteration, "summary": "工具 " + event.ToolName + " 执行失败", "arguments": tools.GenerateArgumentsSummary(event.ToolName, observation.Arguments), "result": tools.GenerateResultSummary(event.ToolName, observation.Result)})
 		}
 		step, ok := stepFromAgentEvent(assistantMessage.ID, event, s.now().UTC())
 		if !ok {
@@ -750,7 +786,56 @@ func validateAskInput(input AskInput) error {
 	if len(input.KnowledgeBaseIDs) > 50 {
 		return ValidationError(map[string]string{"knowledgeBaseIds": "must not contain more than 50 items"})
 	}
+	if err := validateAskRetrieval(input.Retrieval); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validateAskRetrieval(retrieval RetrievalOptions) error {
+	fields := map[string]string{}
+	if (retrieval.topKSet || retrieval.TopK != 0) && (retrieval.TopK <= 0 || retrieval.TopK > 100) {
+		fields["retrieval.topK"] = "must be between 1 and 100"
+	}
+	if (retrieval.scoreSet || retrieval.ScoreThreshold != 0) && (retrieval.ScoreThreshold < 0 || retrieval.ScoreThreshold > 1) {
+		fields["retrieval.scoreThreshold"] = "must be between 0 and 1"
+	}
+	if (retrieval.rerankSet || retrieval.RerankThreshold != 0) && (retrieval.RerankThreshold < 0 || retrieval.RerankThreshold > 1) {
+		fields["retrieval.rerankThreshold"] = "must be between 0 and 1"
+	}
+	if (retrieval.rerankTopNSet || retrieval.RerankTopN != 0) && retrieval.RerankTopN < 0 {
+		fields["retrieval.rerankTopN"] = "must be positive"
+	}
+	if len(fields) > 0 {
+		return ValidationError(fields)
+	}
+	return nil
+}
+
+func retrievalSettingsForAsk(defaults RetrievalSettings, override RetrievalOptions) contextutil.RetrievalSettings {
+	settings := contextutil.RetrievalSettings{
+		TopK:            defaults.TopK,
+		ScoreThreshold:  defaults.ScoreThreshold,
+		EnableRerank:    defaults.EnableRerank,
+		RerankThreshold: defaults.RerankThreshold,
+		RerankTopN:      defaults.RerankTopN,
+	}
+	if override.topKSet || override.TopK != 0 {
+		settings.TopK = override.TopK
+	}
+	if override.scoreSet || override.ScoreThreshold != 0 {
+		settings.ScoreThreshold = override.ScoreThreshold
+	}
+	if override.rerankSet || override.RerankThreshold != 0 {
+		settings.RerankThreshold = override.RerankThreshold
+	}
+	if override.rerankTopNSet || override.RerankTopN != 0 {
+		settings.RerankTopN = override.RerankTopN
+	}
+	if override.enableSet || override.EnableRerank {
+		settings.EnableRerank = override.EnableRerank
+	}
+	return settings
 }
 
 func requestDirective(input AskInput) string {
@@ -762,6 +847,20 @@ func requestDirective(input AskInput) string {
 		parts = append(parts, "When a knowledge tool supports knowledge-base filtering, restrict it to: "+strings.Join(input.KnowledgeBaseIDs, ", ")+".")
 	}
 	return strings.Join(parts, " ")
+}
+
+func toolSourceName(toolName string) string {
+	switch toolName {
+	case tools.ToolSearchKnowledge, tools.ToolGetCitationSource:
+		return "qa_builtin"
+	}
+	if before, _, ok := strings.Cut(toolName, "__"); ok {
+		return before
+	}
+	if before, _, ok := strings.Cut(toolName, "."); ok {
+		return before
+	}
+	return ""
 }
 
 func stepFromAgentEvent(messageID string, event agent.Event, now time.Time) (ReasoningStep, bool) {

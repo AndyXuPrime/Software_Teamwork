@@ -35,7 +35,11 @@ func TestDocumentedResourceRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events := []service.StreamEvent{{EventSeq: 1, EventType: "agent.iteration.started", Payload: map[string]any{"iterationNo": 1}, CreatedAt: now}, {EventSeq: 2, EventType: "tool.started", Payload: map[string]any{"iterationNo": 1, "toolCallId": "call-1", "tool": "search_knowledge"}, CreatedAt: now}, {EventSeq: 3, EventType: "tool.completed", Payload: map[string]any{"iterationNo": 1, "toolCallId": "call-1", "tool": "search_knowledge"}, CreatedAt: now.Add(time.Millisecond)}}
+	events := []service.StreamEvent{
+		{EventSeq: 1, EventType: "agent.iteration.started", Payload: map[string]any{"iterationNo": 1}, CreatedAt: now},
+		{EventSeq: 2, EventType: "tool.started", Payload: map[string]any{"iterationNo": 1, "toolCallId": "call-1", "tool": "search_knowledge"}, CreatedAt: now},
+		{EventSeq: 3, EventType: "tool.failed", Payload: map[string]any{"iterationNo": 1, "toolCallId": "call-1", "tool": "search_knowledge", "result": map[string]any{"error": "retrieval_failed", "message": "knowledge retrieval service failed", "sanitized": true}}, CreatedAt: now.Add(time.Millisecond)},
+	}
 	if err = repo.SaveStreamEvents(ctx, "integration-user", run.ID, events); err != nil {
 		t.Fatal(err)
 	}
@@ -60,8 +64,11 @@ func TestDocumentedResourceRoundTrip(t *testing.T) {
 		t.Fatalf("events after seq=%+v err=%v", replayedAfterFirst, err)
 	}
 	calls, err := repo.ListToolCalls(ctx, "integration-user", run.ID)
-	if err != nil || len(calls) != 1 || calls[0].Status != "completed" {
+	if err != nil || len(calls) != 1 || calls[0].Status != "failed" {
 		t.Fatalf("calls=%+v err=%v", calls, err)
+	}
+	if calls[0].MCPServerName != "qa_builtin" || calls[0].ErrorCode != "retrieval_failed" || calls[0].ErrorMessage != "knowledge retrieval service failed" {
+		t.Fatalf("tool call audit fields=%+v", calls[0])
 	}
 	cancelled, err := repo.CancelResponseRun(ctx, "integration-user", run.ID)
 	if err != nil || cancelled.Status != "cancelled" {
