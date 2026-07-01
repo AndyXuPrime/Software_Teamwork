@@ -140,6 +140,8 @@ Issue label、Assignee 和正文更新仍使用默认 `GITHUB_TOKEN`，`PROJECTS
 - 认领成功后自动把评论者设为 Assignee。
 - 若正文包含任务模板字段，会把 `状态` 从 `Draft` 或 `Ready` 改为
   `In Progress`，并把 Project `Status` 同步为 `In Progress`。
+- 认领会把任务推进到非 `Draft` 状态，因此正文 `预期工时（小时数）` 必须已填写
+  大于 `0` 的小时数；`0`、`待估`、`未填写` 或留空会被拒绝。
 - 认领同步会刷新 Project `ExpectedHours` 和 `ActualHours`，来源分别是正文
   `预期工时（小时数）` 和 `实际工时（小时数）`。
 - 若 Project 同步成功，正文中的 `Project sync` 会写为 `synced`；同步失败会写为
@@ -150,6 +152,7 @@ Issue label、Assignee 和正文更新仍使用默认 `GITHUB_TOKEN`，`PROJECTS
 
 - 仓库维护者、协作者或当前 Assignee 可以评论 `实际工时：2` 或 `实际工时：0.5` 设置实际工时。
 - 自动化会更新正文 `实际工时（小时数）` 字段，并同步 Project `ActualHours`。
+- 非 `Draft` 任务设置实际工时时，正文 `预期工时（小时数）` 也必须是大于 `0` 的小时数。
 - 如果 Project 同步失败，正文仍会保留评论中的实际工时，`Project sync` 会写为
   `blocked`，workflow run 会失败以提醒维护者补权限或字段配置。
 

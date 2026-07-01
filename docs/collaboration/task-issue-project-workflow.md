@@ -314,6 +314,7 @@ gh issue view <number> --repo Sakayori-Iroha-168/Software_Teamwork --json body,l
 自动化会：
 
 - 校验评论者只能认领自己。
+- 校验 `预期工时（小时数）` 已是大于 `0` 的小时数，因为认领会把任务推进到非 `Draft`。
 - 把评论者设为 Assignee。
 - 将正文 `状态` 从 `Draft` 或 `Ready` 改为 `In Progress`。
 - 将 Project `Status` 同步为 `In Progress`，并刷新 `ExpectedHours`、`ActualHours`。
@@ -327,7 +328,8 @@ gh issue view <number> --repo Sakayori-Iroha-168/Software_Teamwork --json body,l
 ```
 
 自动化会把正文 `实际工时（小时数）` 改为评论值，并同步 Project `ActualHours`。评论值必须是非负小时数，
-允许浮点数，例如 `实际工时：0.5`；只有仓库维护者、协作者或当前 Assignee 可以通过评论设置实际工时。
+允许浮点数，例如 `实际工时：0.5`；只有仓库维护者、协作者或当前 Assignee 可以通过评论设置实际工时。非
+`Draft` 任务还要求正文 `预期工时（小时数）` 已填写大于 `0` 的小时数。
 
 ## 8. 发布前校对清单
 
