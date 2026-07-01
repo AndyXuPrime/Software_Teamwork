@@ -927,6 +927,110 @@ func TestReportGenerationServiceRetrievesKnowledgeContextForOutline(t *testing.T
 	}
 }
 
+func TestReportGenerationServiceHandlesKnowledgeRetrievalError(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer report",
+		ReportType: "summer_peak_inspection",
+		TemplateID: "template-1",
+		Topic:      "summer peak inspection",
+		CreatorID:  "user-1",
+		Status:     ReportStatusDraft,
+	}
+	repo.jobs["job-1"] = ReportJob{
+		ID:       "job-1",
+		JobType:  JobTypeOutlineGeneration,
+		ReportID: "report-1",
+		RequestPayload: map[string]any{
+			"options": map[string]any{
+				"knowledgeBaseIds": []any{"kb-1"},
+			},
+		},
+	}
+	repo.templateStructures["template-1"] = ReportTemplateStructure{OutlineSchema: []byte(`{"sections":["overview"]}`)}
+	chat := &fakeGenerationChatClient{}
+	retriever := &fakeReportKnowledgeRetriever{
+		err: errors.New("knowledge service timeout"),
+	}
+	svc := NewReportGenerationService(repo, chat, retriever)
+
+	_, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-outline",
+		JobType:   JobTypeOutlineGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	})
+
+	if err == nil {
+		t.Fatal("expected non-nil error when knowledge retrieval fails, got nil")
+	}
+	if len(chat.requests) != 0 {
+		t.Fatalf("expected 0 AI requests after retrieval error, got %d", len(chat.requests))
+	}
+	if len(repo.events) == 0 {
+		t.Fatal("expected at least one failure event to be recorded, got none")
+	}
+	for _, ev := range repo.events {
+		if strings.Contains(ev.Message, "knowledge service timeout") {
+			t.Fatalf("event message leaked raw retrieval error detail: %q", ev.Message)
+		}
+	}
+}
+
+func TestReportGenerationServiceHandlesEmptyKnowledgeContext(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer report",
+		ReportType: "summer_peak_inspection",
+		TemplateID: "template-1",
+		Topic:      "summer peak inspection",
+		CreatorID:  "user-1",
+		Status:     ReportStatusDraft,
+	}
+	repo.jobs["job-1"] = ReportJob{
+		ID:       "job-1",
+		JobType:  JobTypeOutlineGeneration,
+		ReportID: "report-1",
+		RequestPayload: map[string]any{
+			"options": map[string]any{
+				"knowledgeBaseIds": []any{"kb-1"},
+			},
+		},
+	}
+	repo.templateStructures["template-1"] = ReportTemplateStructure{OutlineSchema: []byte(`{"sections":["overview"]}`)}
+	chat := &fakeGenerationChatClient{
+		responses: []ChatCompletionResponse{{Content: `{"sections":[{"title":"Overview"}]}`}},
+	}
+	retriever := &fakeReportKnowledgeRetriever{
+		snippets: []ReportKnowledgeSnippet{},
+	}
+	svc := NewReportGenerationService(repo, chat, retriever)
+
+	result, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-outline",
+		JobType:   JobTypeOutlineGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error with empty knowledge snippets: %v", err)
+	}
+	if result.Status != JobStatusSucceeded {
+		t.Fatalf("expected status succeeded with empty snippets, got %q", result.Status)
+	}
+	if len(repo.outlines) == 0 {
+		t.Fatal("expected at least one outline to be created, got none")
+	}
+	for _, ol := range repo.outlines {
+		if len(ol.Sections) == 0 {
+			t.Fatal("outline was created with no sections (zero-value section skeleton)")
+		}
+	}
+}
+
 type fakeGenerationChatClient struct {
 	requests  []ChatCompletionRequest
 	responses []ChatCompletionResponse
