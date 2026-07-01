@@ -16,7 +16,7 @@
 - OpenAPI 是协作源；改 Gateway active API 时必须跑契约校验和前端类型同步检查。
 - 数据库 migration 必须能从空库 apply。
 - env-gated integration tests 默认可能跳过；如果本次改动触碰 repository、SQL 或 migration，应尽量提供本地数据库执行记录。
-- 测试组 `T-*` 任务必须实际运行测试并留下可复核证据；纯单元/组件自动化可在 issue/PR 中保留轻量执行记录，集成、E2E、安全、权限、migration、人工验收、回归或缺陷复现必须按 `docs/testing/templates/test-report-template.md` 生成完整报告并归档到 `docs/testing/reports/YYYY-MM-DD/`。
+- 测试组 `T-*` 任务必须实际运行测试并留下可复核证据；纯单元/组件自动化可在 issue/PR 中保留轻量执行记录，集成、E2E、权限/安全边界、文件/Parser 边界、migration、环境验收、人工验收、回归或缺陷复现必须按 `docs/testing/templates/test-report-template.md` 生成完整报告并归档到 `docs/testing/reports/YYYY-MM-DD/`。
 - 当前有前端 Playwright 基础 smoke，但没有后端跨服务完整 E2E smoke；不要用单服务测试或前端 mock E2E 替代跨服务验收。
 - Parser runtime、Dockerfile 和 Parser Service CI 已落地；当前 CI 使用 fake OCR backend 覆盖 lint/test/compile，并在 PaddleOCR 依赖、锁文件或 Dockerfile 变化时校验 extra lock。真实 PaddleOCR 模型 smoke 已作为 env-gated 本地命令提供，但不属于普通 CI required check。
 - open PR、未合入 issue 和草案不能写成当前 `develop` 已实现；测试记录也不能把未稳定依赖的检查写成 required。
