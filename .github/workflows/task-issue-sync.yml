@@ -2,7 +2,18 @@ name: Task Issue Sync
 
 on:
   issues:
-    types: [opened, edited, reopened]
+    types: [opened, edited, reopened, closed]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Closed managed issue number to sync
+        required: true
+        type: number
+      backfill_actual_hours:
+        description: Recalculate ActualHours for a closed issue
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -11,13 +22,15 @@ permissions:
 
 jobs:
   sync:
-    if: ${{ !github.event.issue.pull_request }}
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     steps:
       - name: Sync task issue metadata
         uses: actions/github-script@v7
         env:
           PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
+          TASK_ISSUE_NUMBER: ${{ github.event.inputs.issue_number || '' }}
+          BACKFILL_ACTUAL_HOURS: ${{ github.event.inputs.backfill_actual_hours || 'false' }}
         with:
           script: |
             const projectOwner = 'Sakayori-Iroha-168';
@@ -46,9 +59,27 @@ jobs:
 
               return payload.data;
             };
-            const issue = context.payload.issue;
+            const dispatchIssueNumberRaw = process.env.TASK_ISSUE_NUMBER || '';
+            const dispatchIssueNumber = dispatchIssueNumberRaw ? Number(dispatchIssueNumberRaw) : 0;
+            let issue = context.payload.issue;
+            if (!issue && dispatchIssueNumber) {
+              if (!Number.isInteger(dispatchIssueNumber) || dispatchIssueNumber <= 0) {
+                throw new Error(`workflow_dispatch issue_number must be a positive integer; got '${dispatchIssueNumberRaw}'.`);
+              }
+              const response = await github.rest.issues.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: dispatchIssueNumber,
+              });
+              issue = response.data;
+            }
+            if (!issue) {
+              throw new Error('Task Issue Sync needs an issue event or workflow_dispatch issue_number.');
+            }
             const body = issue.body || '';
             const previousBody = context.payload.changes?.body?.from || '';
+            const eventAction = context.payload.action || 'workflow_dispatch';
+            const forceActualHoursBackfill = process.env.BACKFILL_ACTUAL_HOURS === 'true';
 
             const parseTaskCode = (title) => {
               const bracketedMatch = title.trim().match(/^\[([SABCFT]-(?:\d{8}-)?\d{2,3})\]\s+.+$/u);
@@ -132,6 +163,28 @@ jobs:
                 throw new Error(`${label} must be greater than 0 before sync; use a concrete estimate such as 0.5, 1, or 2.`);
               }
               return { number, text: String(number) };
+            };
+            const formatHourNumber = (value) => {
+              const rounded = Math.round(Math.max(0, value) * 100) / 100;
+              const normalized = Object.is(rounded, -0) ? 0 : rounded;
+              return { number: normalized, text: String(normalized) };
+            };
+            const formatFieldLine = (label, value) => `- ${label}：\`${value}\``;
+            const replaceOrInsertField = (issueBody, label, value, anchors = []) => {
+              const nextLine = formatFieldLine(label, value);
+              const pattern = new RegExp(`^-\\s*${escapeRegExp(label)}\\s*[:：].*$`, 'imu');
+              if (pattern.test(issueBody)) {
+                return issueBody.replace(pattern, () => nextLine);
+              }
+
+              for (const anchor of anchors) {
+                const anchorPattern = new RegExp(`(^-\\s*${escapeRegExp(anchor)}\\s*[:：].*$)`, 'imu');
+                if (anchorPattern.test(issueBody)) {
+                  return issueBody.replace(anchorPattern, (line) => `${line}\n${nextLine}`);
+                }
+              }
+
+              return `${issueBody.trimEnd()}\n${nextLine}\n`;
             };
 
             const normalizeDependency = (value) => {
@@ -387,6 +440,59 @@ jobs:
               });
               return cacheIssue(response.data);
             };
+            const calculateClosedActualHours = async () => {
+              if (eventAction !== 'closed' && !forceActualHoursBackfill) {
+                return null;
+              }
+              if (issue.state !== 'closed') {
+                throw new Error(`Cannot calculate actual hours for issue #${issue.number}: issue state is '${issue.state}', expected 'closed'.`);
+              }
+
+              const closeTime = issue.closed_at ? Date.parse(issue.closed_at) : NaN;
+              const createdTime = issue.created_at ? Date.parse(issue.created_at) : NaN;
+              if (!Number.isFinite(closeTime) || !Number.isFinite(createdTime)) {
+                throw new Error(`Cannot calculate actual hours for issue #${issue.number}: missing created_at or closed_at.`);
+              }
+
+              let startTime = createdTime;
+              let startSource = 'issue.created_at';
+              const ignoredDependencies = [];
+              for (const dependencyIssueNumber of dependencyIssueNumbers) {
+                if (dependencyIssueNumber === issue.number) {
+                  continue;
+                }
+
+                const dependencyIssue = await resolveIssue(dependencyIssueNumber);
+                const dependencyClosedAt = dependencyIssue?.closed_at;
+                if (!dependencyClosedAt) {
+                  ignoredDependencies.push(`#${dependencyIssueNumber}:open`);
+                  continue;
+                }
+
+                const dependencyClosedTime = Date.parse(dependencyClosedAt);
+                if (!Number.isFinite(dependencyClosedTime)) {
+                  ignoredDependencies.push(`#${dependencyIssueNumber}:invalid-closed-at`);
+                  continue;
+                }
+                if (dependencyClosedTime > closeTime) {
+                  ignoredDependencies.push(`#${dependencyIssueNumber}:closed-after-current`);
+                  continue;
+                }
+                if (dependencyClosedTime > startTime) {
+                  startTime = dependencyClosedTime;
+                  startSource = `dependency #${dependencyIssueNumber} closed_at`;
+                }
+              }
+
+              if (ignoredDependencies.length > 0) {
+                core.warning(`Ignored dependencies while calculating actual hours for issue #${issue.number}: ${ignoredDependencies.join(', ')}`);
+              }
+
+              const elapsedHours = (closeTime - startTime) / 36e5;
+              const hours = formatHourNumber(elapsedHours);
+              core.info(`Calculated ActualHours=${hours.text} for issue #${issue.number} from ${startSource} to issue.closed_at.`);
+              return { hours, startSource };
+            };
             const resolveRelationshipIssue = async (candidateIssue) => {
               const cachedIssue = cacheIssue(candidateIssue);
               if (!cachedIssue?.number) {
@@ -571,6 +677,7 @@ jobs:
 
             let syncState = 'blocked';
             let syncErrorMessage = '';
+            let autoActualHours = null;
             try {
               const projectResult = await projectGraphql(projectQuery, {
                 login: projectOwner,
@@ -665,7 +772,8 @@ jobs:
                 allowEmptyAsZero: issueStatus === 'Draft',
                 allowZero: issueStatus === 'Draft',
               });
-              const actualHours = parseHourNumber(actualHoursRaw, '实际工时（小时数）');
+              autoActualHours = await calculateClosedActualHours();
+              const actualHours = autoActualHours?.hours || parseHourNumber(actualHoursRaw, '实际工时（小时数）');
 
               await updateSingleSelect('Status', projectStatus);
               await updateSingleSelect('Group', group);
@@ -694,6 +802,10 @@ jobs:
             const syncLinePattern = /^- Project sync：`?(pending|synced|blocked)`?`?$/imu;
             const nextSyncLine = `- Project sync：\`${syncState}\``;
             let nextBody = body;
+
+            if (autoActualHours) {
+              nextBody = replaceOrInsertField(nextBody, '实际工时（小时数）', autoActualHours.hours.text, ['预期工时（小时数）', '预期工时', '模块']);
+            }
 
             if (syncLinePattern.test(nextBody)) {
               nextBody = nextBody.replace(syncLinePattern, nextSyncLine);

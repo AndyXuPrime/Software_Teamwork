@@ -98,9 +98,16 @@ custom fields.
   `In Progress`, and refresh both hour fields in the Project. Because claim
   changes the effective status to non-`Draft`, it must reject missing, `0`,
   `待估`, or `未填写` expected hours before assigning or syncing Project fields.
+- Closing a managed issue must calculate `ActualHours` automatically from the
+  later of issue `created_at` and the latest closed dependency in `依赖任务`, to
+  the current issue `closed_at`, then update the issue body and Project
+  `ActualHours`.
+- Maintainers may rerun Task Issue Sync with `workflow_dispatch` and
+  `issue_number` to backfill a closed managed issue without reopening it.
 - Actual-hours comments must update the issue body `实际工时（小时数）` field
   and sync Project `ActualHours`; they must not require the task to be claimable,
-  but they must still enforce positive expected hours for non-`Draft` tasks.
+  must remain able to override an automatically generated value, and must still
+  enforce positive expected hours for non-`Draft` tasks.
 
 ### 4. Validation & Error Matrix
 
@@ -112,6 +119,7 @@ custom fields.
 | Actual-hours comment targets a non-`Draft` issue while `预期工时（小时数）` is missing, zero, `待估`, or `未填写` | Reject with an issue comment and do not mutate fields. |
 | `预期工时（小时数）` is missing on a `Draft` issue | Sync `ExpectedHours` as `0`. |
 | `实际工时（小时数）` is missing | Sync `ActualHours` as `0`. |
+| Managed issue is closed | Calculate and write `ActualHours` from the later of issue creation and latest closed dependency to issue close time. |
 | Comment is `实际工时：` with an empty or non-numeric value | Reject with an issue comment and do not mutate fields. |
 | Commenter is not trusted or assigned | Reject actual-hours update with an issue comment. |
 | Project lacks `ExpectedHours` or `ActualHours` | Set `Project sync` to `blocked` and fail the workflow run. |

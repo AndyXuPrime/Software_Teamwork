@@ -156,7 +156,9 @@ issue 指派给对应 owner 小组，并在测试任务中链接。
 工时字段只填写小时数，允许整数或浮点数，例如 `0`、`0.5`、`1.25`。不要填写 `h`、`d`
 或中文单位。`预期工时（小时数）` 在发布 `Ready`、`In Progress`、`Blocked`、`Review`
 或 `Done` 任务前必须给出大于 `0` 的估算；只有 `Draft` 可以临时写 `0`、`待估` 或留空。
-`实际工时（小时数）` 初始写 `0`，完成后通过评论或维护者回填。
+任务关闭时，Task Issue Sync 会自动按“任务创建时间”和“`依赖任务` 中已关闭依赖的最晚
+关闭时间”两者较晚者，到当前 issue 本次关闭时间的间隔，回填 `实际工时（小时数）` 并同步
+Project `ActualHours`。
 
 需要协调人确认时：
 
@@ -321,7 +323,7 @@ gh issue view <number> --repo Sakayori-Iroha-168/Software_Teamwork --json body,l
 
 `Blocked`、`Review`、`Done` 状态的任务不能直接认领，需要协调人先改回 `Draft` 或 `Ready`。
 
-设置或修正实际工时时，在 Issue 评论：
+任务关闭后会自动生成实际工时。需要手动修正时，在 Issue 评论：
 
 ```text
 实际工时：2
@@ -343,7 +345,7 @@ gh issue view <number> --repo Sakayori-Iroha-168/Software_Teamwork --json body,l
 - [ ] `T-*` 测试任务已要求按模板生成测试报告，并归档到 `docs/testing/reports/YYYY-MM-DD/`。
 - [ ] 正文字段完整，能被 Task Issue Sync 解析。
 - [ ] `预期工时（小时数）` 已填写大于 `0` 的小时数字；只有 `Draft` 任务可临时写 `0`、`待估` 或留空。
-- [ ] `实际工时（小时数）` 初始可写 `0`，完成后通过评论 `实际工时：2` 或 `实际工时：0.5` 回填。
+- [ ] `实际工时（小时数）` 初始可写 `0`；任务关闭后会自动回填，必要时通过评论 `实际工时：2` 或 `实际工时：0.5` 修正。
 - [ ] `GitHub Project：Software Teamwork` 和 `Project sync：pending` 已填写。
 - [ ] `依赖任务`、`阻塞任务`、`并行任务` 使用 GitHub issue 引用；暂未创建的上游任务已列入回填项。
 - [ ] `依赖原因` 具体说明依赖的接口、schema、数据结构、环境变量、服务能力或验收条件。

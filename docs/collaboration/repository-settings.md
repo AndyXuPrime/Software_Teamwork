@@ -150,8 +150,14 @@ Issue label、Assignee 和正文更新仍使用默认 `GITHUB_TOKEN`，`PROJECTS
 
 实际工时规则：
 
+- issue 关闭时，Task Issue Sync 会自动按“任务创建时间”和“`依赖任务` 中已关闭依赖的最晚
+  关闭时间”两者较晚者，到当前 issue 本次关闭时间的间隔，回填正文
+  `实际工时（小时数）` 并同步 Project `ActualHours`。
+- 维护者可以手动运行 Task Issue Sync 的 `workflow_dispatch`，传入已关闭任务的
+  `issue_number`，在不重新打开 issue 的情况下补算实际工时。
 - 仓库维护者、协作者或当前 Assignee 可以评论 `实际工时：2` 或 `实际工时：0.5` 设置实际工时。
-- 自动化会更新正文 `实际工时（小时数）` 字段，并同步 Project `ActualHours`。
+- 评论设置会覆盖自动生成值，自动化会更新正文 `实际工时（小时数）` 字段，并同步 Project
+  `ActualHours`。
 - 非 `Draft` 任务设置实际工时时，正文 `预期工时（小时数）` 也必须是大于 `0` 的小时数。
 - 如果 Project 同步失败，正文仍会保留评论中的实际工时，`Project sync` 会写为
   `blocked`，workflow run 会失败以提醒维护者补权限或字段配置。
