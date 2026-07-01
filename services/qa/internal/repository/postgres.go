@@ -535,7 +535,7 @@ func (r *Postgres) replaceCitations(ctx context.Context, tx pgx.Tx, runID, messa
 			item.DocumentName = "Unknown source"
 			item.DocName = item.DocumentName
 		}
-		metadata, err := json.Marshal(item.Metadata)
+		metadata, err := marshalCitationMetadata(item)
 		if err != nil {
 			return fmt.Errorf("encode citation metadata: %w", err)
 		}
@@ -594,6 +594,19 @@ func nullableInt(value *int) any {
 		return nil
 	}
 	return *value
+}
+
+func marshalCitationMetadata(item service.Citation) ([]byte, error) {
+	metadata := make(map[string]any, len(item.Metadata)+1)
+	for key, value := range item.Metadata {
+		metadata[key] = value
+	}
+	delete(metadata, "attachmentId")
+	delete(metadata, "attachment_id")
+	if attachmentID := strings.TrimSpace(item.AttachmentID); attachmentID != "" {
+		metadata["attachmentId"] = attachmentID
+	}
+	return json.Marshal(metadata)
 }
 
 func coalesceFirst(values ...string) string {
@@ -755,18 +768,9 @@ func (r *Postgres) SaveCitations(ctx context.Context, userID, messageID string, 
 		return fmt.Errorf("delete existing citations: %w", err)
 	}
 	for _, citation := range citations {
-		metadata, _ := json.Marshal(citation.Metadata)
-		if metadata == nil {
-			metadata = []byte("{}")
-		}
-		if strings.TrimSpace(citation.AttachmentID) != "" {
-			var meta map[string]any
-			_ = json.Unmarshal(metadata, &meta)
-			if meta == nil {
-				meta = map[string]any{}
-			}
-			meta["attachmentId"] = citation.AttachmentID
-			metadata, _ = json.Marshal(meta)
+		metadata, err := marshalCitationMetadata(citation)
+		if err != nil {
+			return fmt.Errorf("encode citation metadata: %w", err)
 		}
 		var pageNum *int32
 		if citation.PageNumber != nil {

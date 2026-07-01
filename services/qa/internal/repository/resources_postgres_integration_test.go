@@ -316,6 +316,102 @@ func TestFinalizeResponseRunClearsStaleCitationsWhenFinalSetIsEmpty(t *testing.T
 	}
 }
 
+func TestAttachmentCitationRoundTrip(t *testing.T) {
+	databaseURL := os.Getenv("QA_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("QA_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	repo, err := NewPostgres(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repo.Close()
+
+	now := time.Now().UTC()
+	suffix := uint64(now.UnixNano()) & 0xffffffffffff
+	conversationID := integrationUUID(suffix)
+	userMessageID := integrationUUID(suffix + 1)
+	assistantMessageID := integrationUUID(suffix + 2)
+	citationID := integrationUUID(suffix + 3)
+	userID := "attachment-citation-user"
+	if _, err = repo.CreateConversation(ctx, service.Conversation{
+		ID: conversationID, OwnerUserID: userID, Title: "attachment citation",
+		Status: "active", CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	run, err := repo.AppendMessages(ctx, userID, conversationID,
+		service.ResponseRunStart{RequestID: "req-attachment-citation", MaxIterations: 3},
+		service.Message{ID: userMessageID, ConversationID: conversationID, Role: "user", Content: "question", Status: "completed", CreatedAt: now},
+		service.Message{ID: assistantMessageID, ConversationID: conversationID, Role: "assistant", Status: "streaming", CreatedAt: now},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachmentID := integrationUUID(suffix + 4)
+	if _, err = repo.FinalizeResponseRun(ctx, userID, service.ResponseRunFinalization{
+		RunID: run.ID,
+		AssistantMessage: service.Message{
+			ID: assistantMessageID, ConversationID: conversationID, Role: "assistant",
+			Content: "answer", Status: "completed", CreatedAt: now,
+		},
+		Status: "completed", TerminationReason: "completed", CurrentIteration: 1,
+		CompletedAt: now.Add(time.Millisecond),
+		Citations: []service.Citation{{
+			ID: citationID, AttachmentID: attachmentID, DocumentName: "guide.pdf",
+			ChunkID: "attachment-chunk-1", ContentPreview: "saved attachment preview",
+			IsSourceAvailable: true, Metadata: map[string]any{"pageLabel": "2"},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	listed, err := repo.ListMessageCitations(ctx, userID, assistantMessageID)
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("listed citations=%+v err=%v", listed, err)
+	}
+	assertAttachmentCitation(t, listed[0], attachmentID)
+	loaded, err := repo.GetCitation(ctx, userID, citationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAttachmentCitation(t, loaded, attachmentID)
+	lookedUp, err := repo.LookupCitations(ctx, userID, []string{citationID})
+	if err != nil || len(lookedUp) != 1 {
+		t.Fatalf("lookup citations=%+v err=%v", lookedUp, err)
+	}
+	assertAttachmentCitation(t, lookedUp[0], attachmentID)
+
+	savedCitationID := integrationUUID(suffix + 5)
+	if err := repo.SaveCitations(ctx, userID, assistantMessageID, []service.Citation{{
+		ID: savedCitationID, CitationNo: 1, AttachmentID: attachmentID,
+		DocumentName: "guide.pdf", ContentPreview: "saved directly",
+		IsSourceAvailable: true,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	directlySaved, err := repo.GetCitation(ctx, userID, savedCitationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAttachmentCitation(t, directlySaved, attachmentID)
+}
+
+func assertAttachmentCitation(t *testing.T, citation service.Citation, attachmentID string) {
+	t.Helper()
+	if citation.AttachmentID != attachmentID {
+		t.Fatalf("attachmentId=%q, want %q; citation=%+v", citation.AttachmentID, attachmentID, citation)
+	}
+	if !citation.IsSourceAvailable || citation.Source == nil || !citation.Source.Available {
+		t.Fatalf("attachment citation source unavailable: %+v", citation)
+	}
+	if citation.Source.DownloadEndpoint != "" {
+		t.Fatalf("attachment citation download endpoint=%q, want empty", citation.Source.DownloadEndpoint)
+	}
+}
+
 func integrationUUID(value uint64) string { return fmt.Sprintf("00000000-0000-4000-8000-%012x", value) }
 
 func ptrTime(value time.Time) *time.Time { return &value }

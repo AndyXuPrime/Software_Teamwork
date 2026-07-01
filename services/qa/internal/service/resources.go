@@ -86,12 +86,14 @@ func NormalizeCitation(item Citation) Citation {
 	if item.Content == "" {
 		item.Content = item.ContentPreview
 	}
-	if item.IsSourceAvailable && item.DocumentID == "" {
+	if item.IsSourceAvailable && item.DocumentID == "" && item.AttachmentID == "" {
 		item.IsSourceAvailable = false
 	}
 	item.Source = &CitationSource{Available: item.IsSourceAvailable}
 	if item.IsSourceAvailable {
-		item.Source.DownloadEndpoint = "/api/v1/documents/" + item.DocumentID + "/content"
+		if item.DocumentID != "" {
+			item.Source.DownloadEndpoint = "/api/v1/documents/" + item.DocumentID + "/content"
+		}
 	} else {
 		if item.SourceUnavailableReason == "" {
 			item.SourceUnavailableReason = citationSourceUnavailableReason
@@ -429,10 +431,10 @@ type ResourceService struct {
 	retriever      KnowledgeRetriever
 	sourceChecker  CitationSourceChecker
 	knowledgeStats KnowledgeStatsProvider
-	llmTester     LLMConnectionTester
-	bootstrap     RuntimeLLMConfig
-	canceller     ActiveRunCanceller
-	now           func() time.Time
+	llmTester      LLMConnectionTester
+	bootstrap      RuntimeLLMConfig
+	canceller      ActiveRunCanceller
+	now            func() time.Time
 }
 
 func NewResourceService(repository ResourceRepository, retriever KnowledgeRetriever, tester LLMConnectionTester, bootstrap RuntimeLLMConfig, canceller ActiveRunCanceller) (*ResourceService, error) {
