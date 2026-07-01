@@ -247,6 +247,8 @@ knowledge:write
 document:upload
 report:read
 report:write
+qa:settings:read
+qa:settings:write
 admin:model-profile:write
 ```
 

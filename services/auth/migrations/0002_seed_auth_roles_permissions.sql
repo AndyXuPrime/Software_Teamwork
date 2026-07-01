@@ -22,6 +22,8 @@ VALUES
     ('perm_report_read', 'report:read', 'report', 'read', 'Read report resources.', TRUE, now(), now()),
     ('perm_report_write', 'report:write', 'report', 'write', 'Create and modify report resources.', TRUE, now(), now()),
     ('perm_qa_use', 'qa:use', 'qa', 'use', 'Use QA capabilities.', TRUE, now(), now()),
+    ('perm_qa_settings_read', 'qa:settings:read', 'qa', 'settings:read', 'Read QA runtime settings.', TRUE, now(), now()),
+    ('perm_qa_settings_write', 'qa:settings:write', 'qa', 'settings:write', 'Manage QA runtime settings.', TRUE, now(), now()),
     ('perm_admin_model_profile_write', 'admin:model-profile:write', 'admin', 'model-profile:write', 'Manage runtime model profiles.', TRUE, now(), now()),
     ('perm_admin_parser_config_write', 'admin:parser-config:write', 'admin', 'parser-config:write', 'Manage parser configurations.', TRUE, now(), now()),
     ('perm_system_admin', 'system:admin', 'system', 'admin', 'Administer system-level settings.', TRUE, now(), now())
@@ -49,6 +51,8 @@ FROM (
         ('rperm_admin_report_read', 'admin', 'report:read'),
         ('rperm_admin_report_write', 'admin', 'report:write'),
         ('rperm_admin_qa_use', 'admin', 'qa:use'),
+        ('rperm_admin_qa_settings_read', 'admin', 'qa:settings:read'),
+        ('rperm_admin_qa_settings_write', 'admin', 'qa:settings:write'),
         ('rperm_admin_model_profile_write', 'admin', 'admin:model-profile:write'),
         ('rperm_admin_parser_config_write', 'admin', 'admin:parser-config:write'),
         ('rperm_super_knowledge_read', 'super_admin', 'knowledge:read'),
@@ -60,6 +64,8 @@ FROM (
         ('rperm_super_report_read', 'super_admin', 'report:read'),
         ('rperm_super_report_write', 'super_admin', 'report:write'),
         ('rperm_super_qa_use', 'super_admin', 'qa:use'),
+        ('rperm_super_qa_settings_read', 'super_admin', 'qa:settings:read'),
+        ('rperm_super_qa_settings_write', 'super_admin', 'qa:settings:write'),
         ('rperm_super_model_profile_write', 'super_admin', 'admin:model-profile:write'),
         ('rperm_super_parser_config_write', 'super_admin', 'admin:parser-config:write'),
         ('rperm_super_system_admin', 'super_admin', 'system:admin')
@@ -93,6 +99,8 @@ WHERE code IN (
     'report:read',
     'report:write',
     'qa:use',
+    'qa:settings:read',
+    'qa:settings:write',
     'admin:model-profile:write',
     'admin:parser-config:write',
     'system:admin'
