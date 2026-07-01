@@ -968,13 +968,17 @@ func TestReportGenerationServiceHandlesKnowledgeRetrievalError(t *testing.T) {
 	if len(chat.requests) != 0 {
 		t.Fatalf("expected 0 AI requests after retrieval error, got %d", len(chat.requests))
 	}
-	if len(repo.events) == 0 {
-		t.Fatal("expected at least one failure event to be recorded, got none")
-	}
+	foundFailedEvent := false
 	for _, ev := range repo.events {
+		if ev.EventType == "outline.failed" {
+			foundFailedEvent = true
+		}
 		if strings.Contains(ev.Message, "knowledge service timeout") {
 			t.Fatalf("event message leaked raw retrieval error detail: %q", ev.Message)
 		}
+	}
+	if !foundFailedEvent {
+		t.Fatalf("expected outline.failed event to be recorded, got events: %+v", repo.events)
 	}
 }
 
@@ -1024,9 +1028,22 @@ func TestReportGenerationServiceHandlesEmptyKnowledgeContext(t *testing.T) {
 	if len(repo.outlines) == 0 {
 		t.Fatal("expected at least one outline to be created, got none")
 	}
+	var outline ReportOutline
 	for _, ol := range repo.outlines {
-		if len(ol.Sections) == 0 {
-			t.Fatal("outline was created with no sections (zero-value section skeleton)")
+		outline = ol
+	}
+	if len(repo.sections) == 0 {
+		t.Fatal("expected section skeletons to be persisted in repo.sections, got none")
+	}
+	for _, section := range repo.sections {
+		if section.OutlineID != outline.ID {
+			t.Fatalf("section skeleton OutlineID = %q, want %q", section.OutlineID, outline.ID)
+		}
+		if section.LastJobID != "job-1" {
+			t.Fatalf("section skeleton LastJobID = %q, want job-1", section.LastJobID)
+		}
+		if section.GenerationStatus != JobStatusPending {
+			t.Fatalf("section skeleton GenerationStatus = %q, want %q", section.GenerationStatus, JobStatusPending)
 		}
 	}
 }
