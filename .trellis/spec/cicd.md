@@ -46,13 +46,16 @@ Do not weaken collaboration checks when adding product CI.
 ### 1. Scope / Trigger
 
 Update this contract when changing `.github/ISSUE_TEMPLATE/issue.md`,
-`.github/workflows/task-issue-sync.yml`, `.github/workflows/task-claim.yml`,
-task issue workflow docs, or GitHub Project custom fields.
+`.github/ISSUE_TEMPLATE/test_issue.md`, `.github/workflows/task-issue-sync.yml`,
+`.github/workflows/task-claim.yml`, task issue workflow docs, or GitHub Project
+custom fields.
 
 ### 2. Signatures
 
 - Managed task title: `[A-001] ...`, `[B-001] ...`, `[C-001] ...`,
   `[F-001] ...`, `[S-001] ...`, or `[T-001] ...`.
+- Task templates: `.github/ISSUE_TEMPLATE/issue.md` for ordinary managed tasks;
+  `.github/ISSUE_TEMPLATE/test_issue.md` for `T-*` testing tasks.
 - Project marker: `GitHub Project：Software Teamwork`.
 - Issue body fields read by automation include `状态`, `主责小组`, `优先级`,
   `批次`, `模块`, `预期工时（小时数）`, `实际工时（小时数）`, `Risk`,
@@ -72,6 +75,13 @@ task issue workflow docs, or GitHub Project custom fields.
   documentation, test code, test reports, and test support work. Bugs or
   optimization requests found during testing but owned by development still use
   the matching development group prefix.
+- `T-*` issues should be created from `test_issue.md` or otherwise include the
+  testing execution and defect-handling rules. Testing task owners must run the
+  tests and record commands, environment, results, and failure evidence. Small
+  issues may be fixed inside the testing PR when scoped and verified; larger
+  owner-service, contract, data-model, migration, security, product, architecture,
+  or cross-module issues must become separate owner-group issues and be linked
+  from the testing task.
 - Missing `预期工时（小时数）` defaults to numeric `0`; missing
   `实际工时（小时数）` defaults to numeric `0`.
 - Hour fields must be non-negative hour numbers without units. Floating-point
@@ -114,6 +124,9 @@ task issue workflow docs, or GitHub Project custom fields.
   an async wrapper.
 - Query GitHub Project fields and confirm `ExpectedHours` and `ActualHours` are
   present as Number fields before relying on statistics.
+- For changed issue templates, run `git diff --check` and manually verify that
+  the required task fields, Project marker, hour fields, and claim rules remain
+  present.
 - Run `git diff --check`.
 
 ### 7. Wrong vs Correct
