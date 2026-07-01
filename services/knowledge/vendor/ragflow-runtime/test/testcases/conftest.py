@@ -102,8 +102,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--client-type",
         action="store",
         default="http",
-        choices=["python_sdk", "http", "web"],
-        help="Test client type: 'python_sdk', 'http', 'web'",
+        choices=["python_sdk", "http"],
+        help="Test client type: 'python_sdk' or 'http'",
     )
 
 

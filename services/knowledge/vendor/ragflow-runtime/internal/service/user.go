@@ -731,12 +731,6 @@ func (s *UserService) GetUserProfile(user *entity.User) map[string]interface{} {
 		status = *user.Status
 	}
 
-	// Get is_superuser
-	isSuperuser := false
-	if user.IsSuperuser != nil {
-		isSuperuser = *user.IsSuperuser
-	}
-
 	return map[string]interface{}{
 		"access_token":     accessToken,
 		"avatar":           avatar,
@@ -748,7 +742,6 @@ func (s *UserService) GetUserProfile(user *entity.User) map[string]interface{} {
 		"is_active":        user.IsActive,
 		"is_anonymous":     user.IsAnonymous,
 		"is_authenticated": user.IsAuthenticated,
-		"is_superuser":     isSuperuser,
 		"language":         language,
 		"last_login_time":  lastLoginTime,
 		"login_channel":    loginChannel,

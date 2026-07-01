@@ -1,143 +1,48 @@
-# RAGFlow
+# RAGFlow Runtime（裁剪版）
 
-<p align="center">
-    <a href="https://x.com/intent/follow?screen_name=infiniflowai" target="_blank">
-        <img src="https://img.shields.io/twitter/follow/infiniflow?logo=X&color=%20%23f5f5f5" alt="follow on X(Twitter)">
-    </a>
-    <a href="https://cloud.ragflow.io" target="_blank">
-        <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
-    </a>
-    <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.2">
-    </a>
-    <a href="https://github.com/infiniflow/ragflow/releases/latest">
-        <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
-    </a>
-    <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
-        <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
-    </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
-    </a>
-</p>
+本目录是上游 [RAGFlow](https://github.com/infiniflow/ragflow) 的隔离快照，挂载在 Knowledge 服务域下，供后续逐步适配文档解析、RAG 检索与 MCP 工具化能力。
 
-<h4 align="center">
-  <a href="https://cloud.ragflow.io">Cloud</a> |
-  <a href="https://ragflow.io/docs/dev/">Document</a> |
-  <a href="https://github.com/infiniflow/ragflow/issues/12241">Roadmap</a> |
-  <a href="https://discord.gg/NjYzJD3GM3">Discord</a>
-</h4>
+完整上游信息与 refresh 步骤见 [`UPSTREAM.md`](UPSTREAM.md)。
 
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
-</div>
+## 保留范围
 
-<div align="center">
-<a href="https://trendshift.io/repositories/9064" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9064" alt="infiniflow%2Fragflow | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-</div>
+- **文档解析**：`deepdoc/`、`rag/app/`
+- **RAG / 检索**：`rag/`（含 GraphRAG、RAPTOR、mindmap 索引）
+- **检索反馈加权**：`api/db/services/chunk_feedback_service.py`（默认关闭，设 `CHUNK_FEEDBACK_ENABLED=true` 启用；根据引用 chunk 的点赞/点踩调整 `pagerank_fea`）
+- **MCP / 工具化**：`mcp/`
+- **容器化参考**：`docker/`、`Dockerfile*`、`build.sh`
+- **对应测试**：`test/unit_test/deepdoc/`、`test/unit_test/rag/`、`test/unit_test/mcp/` 及相关 REST 集成测试
 
-<details open>
-<summary><b>📕 目录</b></summary>
+## 已裁剪的产品面
 
-- 💡 [RAGFlow 是什么？](#-RAGFlow-是什么)
-- 🎮 [快速开始](#-快速开始)
-- 📌 [近期更新](#-近期更新)
-- 🌟 [主要功能](#-主要功能)
-- 📚 [技术文档](#-技术文档)
-- 📜 [路线图](#-路线图)
-- 🏄 [贡献指南](#-贡献指南)
-- 🙌 [加入社区](#-加入社区)
-- 🤝 [商务合作](#-商务合作)
+上游完整产品中的 Web UI、Agent、Admin、Chat、Dify 集成、用户注册/登录/租户协作、OceanBase 运维端点等已移除或不再暴露。运行时仍保留 API token / JWT 鉴权中间层，用于保护 dataset / document / retrieval / MCP 等核心 API。
 
-</details>
+## 主要目录
 
-## 💡 RAGFlow 是什么？
+| 路径 | 说明 |
+|------|------|
+| `deepdoc/` | 文档解析器与视觉模型 |
+| `rag/` | 分块、嵌入、检索、GraphRAG、任务执行 |
+| `mcp/` | MCP server / client |
+| `api/` | Python REST API 与 DB 服务 |
+| `internal/` | Go API 与 ingestion 运行时 |
+| `docker/` | Compose 与启动脚本参考 |
+| `common/data_source/` | 多源连接器参考代码（默认不启用运行时） |
+| `docs/` | 保留的 parser/RAG/MCP 参考文档 |
 
-[RAGFlow](https://ragflow.io/) 是一款领先的开源检索增强生成（[RAG](https://ragflow.io/basics/what-is-rag)）引擎，为大型语言模型提供高质量上下文层。它提供可适配任意规模企业的端到端 RAG 工作流，助力开发者以较高效率与精度将复杂数据转化为高可信、生产级的人工智能系统。
+## 本地验证
 
-## 🎮 快速开始
+```bash
+# Python 语法抽查
+python3 -m py_compile api/apps/__init__.py rag/prompts/generator.py
 
-请登录网址 [https://cloud.ragflow.io](https://cloud.ragflow.io) 体验云服务。
+# Shell 脚本语法
+bash -n docker/entrypoint.sh && bash -n docker/launch_backend_service.sh
 
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
-</div>
+# Go 路由注册测试
+go test ./internal/router/...
+```
 
-## 🔥 近期更新
+## 许可证
 
-- 2026-04-24 支持 DeepSeek v4.
-- 2025-11-19 支持 Gemini 3 Pro。
-- 2025-10-23 支持 MinerU 和 Docling 作为文档解析方法。
-- 2025-08-08 支持 OpenAI 最新的 GPT-5 系列模型。
-- 2025-08-01 支持 MCP。
-- 2025-03-19 PDF 和 DOCX 中的图支持用多模态大模型去解析得到描述。
-
-
-## 🎉 关注项目
-
-⭐️ 点击右上角的 Star 关注 RAGFlow，可以获取最新发布的实时通知 !🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
-## 🌟 主要功能
-
-### 🍭 **"Quality in, quality out"**
-
-- 基于[深度文档理解](./deepdoc/README.md)，能够从各类复杂格式的非结构化数据中提取真知灼见。
-- 真正在无限上下文（token）的场景下快速完成大海捞针测试。
-
-### 🍱 **基于模板的文本切片**
-
-- 不仅仅是智能，更重要的是可控可解释。
-- 多种文本模板可供选择
-
-### 🌱 **有理有据、最大程度降低幻觉（hallucination）**
-
-- 有理有据：答案提供关键引用的快照并支持追根溯源。
-
-### 🍔 **兼容各类异构数据源**
-
-- 支持丰富的文件类型，包括 Word 文档、PPT、excel 表格、txt 文件、图片、PDF、影印件、复印件、结构化数据、网页等。
-
-### 🛀 **全程无忧、自动化的 RAG 工作流**
-
-- 全面优化的 RAG 工作流可以支持从个人应用乃至超大型企业的各类生态系统。
-- 大语言模型 LLM 以及向量模型均支持配置。
-- 基于多路召回、融合重排序。
-- 提供易用的 API，可以轻松集成到各类企业系统。
-
-## 📚 技术文档
-
-- [Quickstart](https://ragflow.io/docs/dev/)
-- [Configuration](https://ragflow.io/docs/dev/configurations)
-- [User guides](https://ragflow.io/docs/category/user-guides)
-- [Developer guides](https://ragflow.io/docs/category/developer-guides)
-- [References](https://ragflow.io/docs/dev/category/references)
-
-## 📜 路线图
-
-详见 [RAGFlow Roadmap 2026](https://github.com/infiniflow/ragflow/issues/12241) 。
-
-## 🏄 开源社区
-
-- [Discord](https://discord.gg/NjYzJD3GM3)
-- [X](https://x.com/infiniflowai)
-- [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
-
-## 🙌 贡献指南
-
-RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们欢迎来自社区的各种贡献。如果您有意参与其中,请查阅我们的 [贡献者指南](https://ragflow.io/docs/dev/contributing) 。
-
-## 🤝 商务合作
-
-- [预约咨询](https://aao615odquw.feishu.cn/share/base/form/shrcnjw7QleretCLqh1nuPo1xxh)
-
-## 👥 加入社区
-
-扫二维码添加 RAGFlow 小助手，进 RAGFlow 交流群。
-
-<p align="center">
-  <img src="https://github.com/infiniflow/ragflow/assets/7248/bccf284f-46f2-4445-9809-8f1030fb7585" width=50% height=50%>
-</p>
+Apache License 2.0，详见 [`LICENSE`](LICENSE)。

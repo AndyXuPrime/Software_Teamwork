@@ -168,7 +168,7 @@ fi
 
 for arg in "$@"; do
   case $arg in
-    ragflow|server|webserver)
+    ragflow|server|api-server|webserver)
       START_RAGFLOW=1
       ;;
     task_executor|task-executor|taskexecutor)

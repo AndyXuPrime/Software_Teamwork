@@ -502,3 +502,36 @@ first, most likely Parser-backed document parsing before retrieval replacement.
   superuser bootstrap semantics. The retained runtime still needs normal user
   and tenant context for dataset/document/API-token permission behavior.
 - Confirmed by user before cleanup: yes
+
+### 2026-07-01: remove orphan product integrations and upstream identity surfaces (batches A–D)
+
+- Removed:
+  - Chat/dialog residue: `think_tag.go`, `internal/observability/otel/`
+  - Dify retrieval integration (Python API, Go handler, router routes, tests)
+  - Go user registration/login/profile routes (`internal/handler/user.go`) and tenant
+    member/invite/list product routes from `tenant.go` / `router.go`
+  - Python `user_account_service.py`, OceanBase status endpoint and dedicated tests
+  - `RAGFlowWebApiAuth` test helper and `--client-type web` option
+- Updated:
+  - `README_zh.md`, `run_retrieval_test.md`, `glossary.mdx` to local trimmed-runtime docs
+  - Docker entrypoint/help text: API server terminology (`--disable-api-server`)
+  - `docker/.env` comments to drop web console / agent upload wording
+  - stale dialog/Dify/chat-assistant comments in `system_api.py`, `run_tests.py`,
+    `chat_model.py`, `es_conn_base.py`
+  - Go user serialization to stop exposing `is_superuser`
+- Kept:
+  - API token / JWT auth middleware (`internal/handler/auth.go`) for core dataset,
+    document, retrieval, MCP, and provider routes
+  - tenant internal store APIs and default-model configuration handlers
+  - OceanBase/SeekDB engine code paths (only removed product monitoring endpoint/tests)
+- Confirmed by user before cleanup: yes
+
+### 2026-07-01: restore chunk feedback retrieval weighting
+
+- Restored: `api/db/services/chunk_feedback_service.py`
+- Added: `test/unit_test/api/db/services/test_chunk_feedback_service.py`
+- Reason: user feedback on cited chunks (thumb up/down) adjusts `pagerank_fea` to
+  improve future retrieval quality; treated as a core RAG enhancement rather
+  than upstream Chat UI residue. Feature remains opt-in via
+  `CHUNK_FEEDBACK_ENABLED=true`.
+- Confirmed by user before restoration: yes

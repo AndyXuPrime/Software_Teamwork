@@ -132,3 +132,7 @@ reports/rendered_pages/
 *.bak
 *.tmp
 *.orig
+
+# Vendored upstream source snapshots.
+!services/knowledge/vendor/ragflow-runtime/bin/
+!services/knowledge/vendor/ragflow-runtime/bin/.gitkeep

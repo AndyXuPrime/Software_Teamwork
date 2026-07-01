@@ -89,7 +89,7 @@ EXAMPLES:
     python run_tests.py --ignore
 
     # Run specific test file
-    python run_tests.py --test services/test_dialog_service.py
+    python run_tests.py --test test/unit_test/rag/test_search_pagination.py
 
     # Run only unit tests
     python run_tests.py --markers "unit"
@@ -220,7 +220,7 @@ Examples:
   python run_tests.py                    # Run all tests
   python run_tests.py --coverage         # Run with coverage
   python run_tests.py --parallel         # Run in parallel
-  python run_tests.py --test services/test_dialog_service.py  # Run specific test
+  python run_tests.py --test test/unit_test/rag/test_search_pagination.py  # Run specific test
   python run_tests.py --markers "unit"   # Run only unit tests
   python run_tests.py --ignore           # Run with "-W ignore::SyntaxWarning" option
 """

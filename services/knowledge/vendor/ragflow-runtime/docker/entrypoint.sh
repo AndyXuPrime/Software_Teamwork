@@ -9,9 +9,10 @@ cat /ragflow/VERSION
 # Usage and command-line argument parsing
 # -----------------------------------------------------------------------------
 function usage() {
-    echo "Usage: $0 [--disable-webserver] [--disable-taskexecutor] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
+    echo "Usage: $0 [--disable-api-server] [--disable-webserver] [--disable-taskexecutor] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
     echo
-    echo "  --disable-webserver             Disables the web server (nginx + ragflow_server)."
+    echo "  --disable-api-server            Disables the API server stack (nginx reverse proxy + ragflow_server)."
+    echo "  --disable-webserver             Alias for --disable-api-server."
     echo "  --disable-taskexecutor          Disables task executor workers."
     echo "  --enable-mcpserver              Enables the MCP server."
     echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
@@ -27,7 +28,7 @@ function usage() {
     exit 1
 }
 
-ENABLE_WEBSERVER=1 # Default to enable web server
+ENABLE_API_SERVER=1 # Default to enable API server stack
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
 ENABLE_MCP_SERVER=0
 CONSUMER_NO_BEG=0
@@ -61,8 +62,8 @@ HOST_ID="$DEFAULT_HOST_ID"
 # Parse arguments
 for arg in "$@"; do
   case $arg in
-    --disable-webserver)
-      ENABLE_WEBSERVER=0
+    --disable-api-server|--disable-webserver)
+      ENABLE_API_SERVER=0
       shift
       ;;
     --disable-taskexecutor)
@@ -246,8 +247,8 @@ function wait_for_server() {
 ensure_docling
 ensure_db_init
 
-if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
-    echo "Starting nginx..."
+if [[ "${ENABLE_API_SERVER}" -eq 1 ]]; then
+    echo "Starting API reverse proxy (nginx)..."
     /usr/sbin/nginx
 
     while true; do

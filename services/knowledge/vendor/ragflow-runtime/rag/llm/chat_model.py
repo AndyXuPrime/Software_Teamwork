@@ -64,7 +64,7 @@ LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小�
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
 # Generation parameters that are safe to forward to the underlying completion
-# call. `gen_conf` originates from a chat assistant's `llm_setting`, which can
+# call. `gen_conf` originates from caller-provided LLM settings, which can
 # also carry RAGFlow-internal metadata (e.g. `model_type`). Anything outside
 # this set is dropped so providers don't reject the request with errors like
 # "Extra inputs are not permitted" / "Unknown parameter: 'model_type'" (#15427).
@@ -443,7 +443,7 @@ class Base(ABC):
         * Legacy: ``bind_tools(toolcall_session, tools_schemas)`` where
           ``toolcall_session`` implements :class:`ToolCallSession` and
           ``tools_schemas`` is a pre-built list of OpenAI function-schema
-          dicts (used by the agent/dialog layer).
+          dicts (used by higher-level LLM callers).
         * Decorator: ``bind_tools(tools=[fn1, fn2, ...])`` where each ``fn``
           is decorated with :func:`rag.llm.tool_decorator.tool`. The session
           and schemas are derived from the callables automatically.
@@ -1815,7 +1815,7 @@ class LiteLLMBase(ABC):
         * Legacy: ``bind_tools(toolcall_session, tools_schemas)`` where
           ``toolcall_session`` implements :class:`ToolCallSession` and
           ``tools_schemas`` is a pre-built list of OpenAI function-schema
-          dicts (used by the agent/dialog layer).
+          dicts (used by higher-level LLM callers).
         * Decorator: ``bind_tools(tools=[fn1, fn2, ...])`` where each ``fn``
           is decorated with :func:`rag.llm.tool_decorator.tool`. The session
           and schemas are derived from the callables automatically.

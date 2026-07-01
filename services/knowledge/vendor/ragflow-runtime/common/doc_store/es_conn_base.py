@@ -397,10 +397,9 @@ class ESConnectionBase(DocStoreConnection):
                 continue
             except BadRequestError as e:
                 # LLM-generated SQL routinely references columns that don't exist
-                # (e.g. unknown_column / verification_exception). The caller in
-                # api/db/services/dialog_service.py:use_sql catches this and either
-                # re-prompts the LLM with the error or falls back to vector search,
-                # so a full ERROR-level traceback is misleading — see #15409.
+                # (e.g. unknown_column / verification_exception). Callers re-prompt
+                # the LLM with the error or fall back to vector search, so a full
+                # ERROR-level traceback is misleading — see #15409.
                 self.logger.warning(f"ESConnection.sql rejected by ES (likely invalid LLM-generated SQL). SQL:\n{sql}\nError: {e}")
                 raise Exception(f"SQL error: {e}\n\nSQL: {sql}")
             except Exception as e:

@@ -25,7 +25,6 @@ import (
 
 type Router struct {
 	authHandler          *handler.AuthHandler
-	userHandler          *handler.UserHandler
 	tenantHandler        *handler.TenantHandler
 	documentHandler      *handler.DocumentHandler
 	datasetsHandler      *handler.DatasetsHandler
@@ -35,14 +34,12 @@ type Router struct {
 	fileHandler          *handler.FileHandler
 	mcpHandler           *handler.MCPHandler
 	providerHandler      *handler.ProviderHandler
-	difyRetrievalHandler *handler.DifyRetrievalHandler
 	modelHandler         *handler.ModelHandler
 }
 
 // NewRouter create router
 func NewRouter(
 	authHandler *handler.AuthHandler,
-	userHandler *handler.UserHandler,
 	tenantHandler *handler.TenantHandler,
 	documentHandler *handler.DocumentHandler,
 	datasetsHandler *handler.DatasetsHandler,
@@ -52,12 +49,10 @@ func NewRouter(
 	fileHandler *handler.FileHandler,
 	mcpHandler *handler.MCPHandler,
 	providerHandler *handler.ProviderHandler,
-	difyRetrievalHandler *handler.DifyRetrievalHandler,
 	modelHandler *handler.ModelHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
-		userHandler:          userHandler,
 		tenantHandler:        tenantHandler,
 		documentHandler:      documentHandler,
 		datasetsHandler:      datasetsHandler,
@@ -67,7 +62,6 @@ func NewRouter(
 		fileHandler:          fileHandler,
 		mcpHandler:           mcpHandler,
 		providerHandler:      providerHandler,
-		difyRetrievalHandler: difyRetrievalHandler,
 		modelHandler:         modelHandler,
 	}
 }
@@ -89,20 +83,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// System endpoints
 	engine.GET("/v1/system/configs", r.systemHandler.GetConfigs)
 
-	// User logout endpoint
-	engine.GET("/v1/user/logout", r.userHandler.Logout)
-
 	apiNoAuth := engine.Group("/api/v1")
 	{
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
 		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
-
-		// User login by email endpoint
-		apiNoAuth.POST("/auth/login", r.userHandler.LoginByEmail)
-
-		// Register
-		apiNoAuth.POST("/users", r.userHandler.Register)
 	}
 
 	// Beta-token routes retained for document preview/image endpoints.
@@ -118,52 +103,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 	authorized := engine.Group("")
 	authorized.Use(r.authHandler.AuthMiddleware())
 	{
-		// User info endpoint
-		authorized.GET("/v1/user/info", r.userHandler.Info)
-		// User tenant info endpoint
-		authorized.GET("/v1/user/tenant_info", r.tenantHandler.TenantInfo)
-		// Tenant list endpoint
-		authorized.GET("/v1/tenant/list", r.tenantHandler.TenantList)
-		// User settings endpoint
-		authorized.POST("/v1/user/setting", r.userHandler.Setting)
-		// User change password endpoint
-		authorized.POST("/v1/user/setting/password", r.userHandler.ChangePassword)
-		// User set tenant info endpoint
-		authorized.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
-
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
 		{
-			// Auth routes
-			auth := v1.Group("/auth")
-			{
-				// User logout endpoint
-				auth.POST("/logout", r.userHandler.Logout)
-			}
-
-			// Users routes
-			users := v1.Group("/users")
-			{
-				users.GET("/me", r.userHandler.Info)
-				// User settings endpoint
-				users.PATCH("/me", r.userHandler.Setting)
-				// User tenant info endpoint
-				users.GET("/me/models", r.tenantHandler.TenantInfo)
-				// User set tenant info endpoint
-				users.PATCH("/me/models", r.userHandler.SetTenantInfo)
-			}
-
-			tenants := v1.Group("/tenants")
-			{
-				tenants.GET("", r.tenantHandler.TenantList)
-				tenants.PATCH("/:tenant_id", r.tenantHandler.AcceptTenantInvite)
-				tenants.GET("/:tenant_id/users", r.tenantHandler.ListTenantMembers)
-				tenants.POST("/:tenant_id/users", r.tenantHandler.AddTenantMember)
-				tenants.DELETE("/:tenant_id/users", r.tenantHandler.RemoveTenantMember)
-			}
-
-			v1.GET("/tenant/list", r.tenantHandler.TenantList)
-
 			// Document routes
 			documents := v1.Group("/documents")
 			{
@@ -301,9 +243,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// TODO: list default models?
 				//model.GET("/", r.tenantHandler.GetModels)
 				model.PATCH("/", r.tenantHandler.SetModels)
-				// Tenant default-model selection (used by the agent
-				// page's useFetchDefaultModels hook). Mirrors the
-				// Python contract at api/apps/restful_apis/models_api.py:84.
+				// Tenant default-model selection. Mirrors the Python contract at
+				// api/apps/restful_apis/models_api.py:84.
 				model.GET("/default", r.tenantHandler.GetDefaultModels)
 				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
 			}
@@ -436,14 +377,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		}
 
 	}
-
-	// Dify retrieval routes
-	dify := authorized.Group("/api/v1/dify")
-	{
-		dify.POST("/retrieval", r.difyRetrievalHandler.Retrieval)
-		dify.GET("/retrieval", r.difyRetrievalHandler.Retrieval)
-	}
-	apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
 
 	// Handle undefined routes
 	engine.NoRoute(handler.HandleNoRoute)
