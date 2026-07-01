@@ -70,7 +70,9 @@ func main() {
 	redisOpt := asynq.RedisClientOpt{Addr: cfg.RedisAddr}
 	asynqClient := asynq.NewClient(redisOpt)
 	defer asynqClient.Close()
-	ingestionQueue := queue.NewAsynqQueue(asynqClient)
+	asynqInspector := asynq.NewInspector(redisOpt)
+	defer asynqInspector.Close()
+	ingestionQueue := queue.NewAsynqQueueWithInspector(asynqClient, asynqInspector)
 
 	repo := repository.NewPostgresRepository(pool)
 	reranker, err := newReranker(cfg)
@@ -157,10 +159,14 @@ func runDeleteCleanupReconciler(ctx context.Context, logger *slog.Logger, knowle
 			if appErr, ok := service.Classify(err); ok {
 				errorCode = string(appErr.Code)
 			}
+			dependency := strings.TrimSpace(result.FailedDependency)
+			if dependency == "" {
+				dependency = "unknown"
+			}
 			logger.WarnContext(reconcileCtx, "knowledge delete cleanup requeue failed",
 				"service", "knowledge",
 				"operation", "knowledge_delete_cleanup_reconciler",
-				"dependency", "redis",
+				"dependency", dependency,
 				"status", "failed",
 				"scanned", result.Scanned,
 				"enqueued", result.Enqueued,

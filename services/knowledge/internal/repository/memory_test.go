@@ -266,6 +266,10 @@ func TestMemoryRepositoryListRetryableDeleteCleanupTasksFiltersTerminalAndFreshJ
 	if err := repo.MarkDocumentJobFailed(context.Background(), "doc_failed_dependency", "job_failed_dependency", nil, string(service.CodeDependency), "delete cleanup queue handoff failed", now.Add(-5*time.Minute)); err != nil {
 		t.Fatalf("MarkDocumentJobFailed(dependency) error = %v", err)
 	}
+	seedDeletedCleanupJob(t, "doc_failed_unauthorized", "job_failed_unauthorized", now.Add(-4*time.Minute))
+	if err := repo.MarkDocumentJobFailed(context.Background(), "doc_failed_unauthorized", "job_failed_unauthorized", nil, string(service.CodeUnauthorized), "file service rejected knowledge request", now.Add(-4*time.Minute)); err != nil {
+		t.Fatalf("MarkDocumentJobFailed(unauthorized) error = %v", err)
+	}
 	seedDeletedCleanupJob(t, "doc_failed_conflict", "job_failed_conflict", now.Add(-4*time.Minute))
 	if err := repo.MarkDocumentJobFailed(context.Background(), "doc_failed_conflict", "job_failed_conflict", nil, string(service.CodeConflict), "delete cleanup target mismatch", now.Add(-4*time.Minute)); err != nil {
 		t.Fatalf("MarkDocumentJobFailed(conflict) error = %v", err)
@@ -323,7 +327,7 @@ func TestMemoryRepositoryListRetryableDeleteCleanupTasksFiltersTerminalAndFreshJ
 	for _, task := range tasks {
 		got[task.JobID] = task
 	}
-	for _, jobID := range []string{"job_queued", "job_failed_dependency", "job_running_stale"} {
+	for _, jobID := range []string{"job_queued", "job_failed_dependency", "job_failed_unauthorized", "job_running_stale"} {
 		task, exists := got[jobID]
 		if !exists {
 			t.Fatalf("missing retryable job %s in tasks %+v", jobID, tasks)

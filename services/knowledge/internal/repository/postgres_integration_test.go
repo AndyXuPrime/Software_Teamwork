@@ -237,6 +237,64 @@ func TestPostgresRepositoryDocumentLifecycleUpdateAndDelete(t *testing.T) {
 		retryableTasks[0].UserID != ownerScope.UserID {
 		t.Fatalf("retryable cleanup tasks = %+v", retryableTasks)
 	}
+	authDoc, _, err := repo.CreateDocumentWithJob(ctx, service.CreateDocumentWithJobRecord{
+		DocumentID:      "doc_delete_cleanup_auth",
+		KnowledgeBaseID: kb.ID,
+		FileRef:         "file_auth",
+		Name:            "auth.pdf",
+		ContentType:     "application/pdf",
+		SizeBytes:       12,
+		Status:          service.DocumentStatusUploaded,
+		CurrentJobID:    "job_ingest_auth",
+		CreatedBy:       ownerScope.UserID,
+		JobID:           "job_ingest_auth",
+		JobType:         service.JobTypeDocumentIngestion,
+		JobStatus:       service.JobStatusQueued,
+		JobStage:        "uploaded",
+		JobMessage:      "document uploaded and queued for ingestion",
+		MaxAttempts:     3,
+		CreatedAt:       now.Add(4 * time.Minute),
+		UpdatedAt:       now.Add(4 * time.Minute),
+	}, ownerScope)
+	if err != nil {
+		t.Fatalf("CreateDocumentWithJob(auth cleanup) error = %v", err)
+	}
+	if err := repo.SoftDeleteDocument(ctx, service.DeleteDocumentRecord{
+		DocumentID:  authDoc.ID,
+		JobID:       "job_delete_cleanup_auth",
+		JobType:     service.JobTypeDeleteCleanup,
+		JobStatus:   service.JobStatusQueued,
+		JobStage:    "delete_cleanup",
+		JobMessage:  "document queued for delete cleanup",
+		MaxAttempts: 3,
+		DeletedAt:   now.Add(5 * time.Minute),
+		CreatedAt:   now.Add(5 * time.Minute),
+		UpdatedAt:   now.Add(5 * time.Minute),
+	}, ownerScope); err != nil {
+		t.Fatalf("SoftDeleteDocument(auth cleanup) error = %v", err)
+	}
+	if err := repo.MarkDocumentJobFailed(ctx, authDoc.ID, "job_delete_cleanup_auth", nil, string(service.CodeUnauthorized), "file service rejected knowledge request", now.Add(6*time.Minute)); err != nil {
+		t.Fatalf("MarkDocumentJobFailed(auth cleanup) error = %v", err)
+	}
+	retryableTasks, err = repo.ListRetryableDeleteCleanupTasks(ctx, service.DeleteCleanupTaskListInput{
+		RequestID: "req_reconcile",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("ListRetryableDeleteCleanupTasks(auth failure) error = %v", err)
+	}
+	foundAuth := false
+	for _, task := range retryableTasks {
+		if task.JobID == "job_delete_cleanup_auth" {
+			foundAuth = true
+			if task.DocumentID != authDoc.ID || task.UserID != ownerScope.UserID {
+				t.Fatalf("auth retryable task = %+v", task)
+			}
+		}
+	}
+	if !foundAuth {
+		t.Fatalf("retryable auth cleanup task missing from %+v", retryableTasks)
+	}
 
 	list, err := repo.ListDocumentsByKnowledgeBase(ctx, kb.ID, nil, ownerScope, service.PageInput{Page: 1, PageSize: 20})
 	if err != nil {

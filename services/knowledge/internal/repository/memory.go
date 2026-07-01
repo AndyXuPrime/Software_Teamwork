@@ -836,9 +836,21 @@ func retryableDeleteCleanupJob(job service.ProcessingJob, staleRunningBefore *ti
 	case service.JobStatusQueued:
 		return true
 	case service.JobStatusFailed:
-		return job.ErrorCode == nil || strings.TrimSpace(*job.ErrorCode) == "" || strings.TrimSpace(*job.ErrorCode) == string(service.CodeDependency)
+		return retryableDeleteCleanupFailureCode(job.ErrorCode)
 	case service.JobStatusRunning:
 		return staleRunningBefore != nil && job.UpdatedAt.Before(*staleRunningBefore)
+	default:
+		return false
+	}
+}
+
+func retryableDeleteCleanupFailureCode(code *string) bool {
+	if code == nil || strings.TrimSpace(*code) == "" {
+		return true
+	}
+	switch strings.TrimSpace(*code) {
+	case string(service.CodeDependency), string(service.CodeUnauthorized), string(service.CodeForbidden):
+		return true
 	default:
 		return false
 	}

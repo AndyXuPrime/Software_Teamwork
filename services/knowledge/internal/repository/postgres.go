@@ -505,27 +505,29 @@ func (r *PostgresRepository) ListRetryableDeleteCleanupTasks(ctx context.Context
 SELECT j.id, d.id, j.knowledge_base_id, d.created_by
 FROM processing_jobs j
 JOIN knowledge_documents d ON d.id = j.document_id
-WHERE j.job_type = $1
-  AND d.deleted_at IS NOT NULL
-  AND (j.max_attempts <= 0 OR j.attempts < j.max_attempts)
-  AND (
-    j.status = $2
-    OR (
-      j.status = $3
-      AND (j.error_code IS NULL OR j.error_code = '' OR j.error_code = $4)
-    )
-    OR (
-      j.status = $5
-      AND $6::timestamptz IS NOT NULL
-      AND j.updated_at < $6
-    )
-  )
-ORDER BY j.updated_at ASC
-LIMIT $7`,
+	WHERE j.job_type = $1
+	  AND d.deleted_at IS NOT NULL
+	  AND (j.max_attempts <= 0 OR j.attempts < j.max_attempts)
+	  AND (
+	    j.status = $2
+	    OR (
+	      j.status = $3
+	      AND (j.error_code IS NULL OR j.error_code = '' OR j.error_code IN ($4, $5, $6))
+	    )
+	    OR (
+	      j.status = $7
+	      AND $8::timestamptz IS NOT NULL
+	      AND j.updated_at < $8
+	    )
+	  )
+	ORDER BY j.updated_at ASC
+	LIMIT $9`,
 		service.JobTypeDeleteCleanup,
 		service.JobStatusQueued,
 		service.JobStatusFailed,
 		string(service.CodeDependency),
+		string(service.CodeUnauthorized),
+		string(service.CodeForbidden),
 		service.JobStatusRunning,
 		pgTimePtr(input.StaleRunningBefore),
 		input.Limit,

@@ -679,6 +679,86 @@ func TestDeleteCleanupReconcilerSkipsPermanentConflictFailure(t *testing.T) {
 	}
 }
 
+func TestDeleteCleanupReconcilerRequeuesRetryableAuthFailures(t *testing.T) {
+	now := time.Date(2026, 6, 30, 8, 45, 0, 0, time.UTC)
+	repo := repository.NewMemoryRepository()
+	fileRef := "file_1"
+	repo.SeedKnowledgeBase(service.KnowledgeBase{
+		ID:                "kb_1",
+		Name:              "规程库",
+		Description:       "",
+		DocType:           "GENERAL",
+		ChunkStrategy:     json.RawMessage(`{}`),
+		RetrievalStrategy: json.RawMessage(`{}`),
+		CreatedBy:         "usr_1",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	repo.SeedDocument(service.KnowledgeDocument{
+		ID:              "doc_1",
+		KnowledgeBaseID: "kb_1",
+		FileRef:         &fileRef,
+		Name:            "规程.pdf",
+		Status:          service.DocumentStatusReady,
+		CreatedBy:       "usr_1",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	if err := repo.SoftDeleteDocument(context.Background(), service.DeleteDocumentRecord{
+		DocumentID:  "doc_1",
+		JobID:       "job_unauthorized",
+		JobType:     service.JobTypeDeleteCleanup,
+		JobStatus:   service.JobStatusQueued,
+		JobStage:    "delete_cleanup",
+		JobMessage:  "document marked deleted; cleanup is pending",
+		MaxAttempts: service.DefaultIngestionMaxAttempts,
+		DeletedAt:   now,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}, service.AccessScope{UserID: "usr_1", CanWrite: true}); err != nil {
+		t.Fatalf("SoftDeleteDocument() error = %v", err)
+	}
+	if err := repo.MarkDocumentJobFailed(context.Background(), "doc_1", "job_unauthorized", nil, string(service.CodeUnauthorized), "file service rejected knowledge request", now.Add(time.Minute)); err != nil {
+		t.Fatalf("MarkDocumentJobFailed() error = %v", err)
+	}
+	queue := &uploadQueue{}
+	svc := service.NewWithDependencies(repo, nil, queue, func() time.Time {
+		return now.Add(time.Hour)
+	}, func(prefix string) string {
+		return prefix + "_test"
+	})
+
+	result, err := svc.RequeueDeleteCleanupTasks(context.Background(), service.RequestContext{RequestID: "req_reconcile"}, 10)
+	if err != nil {
+		t.Fatalf("RequeueDeleteCleanupTasks() error = %v", err)
+	}
+	if result.Scanned != 1 || result.Enqueued != 1 || result.Failed != 0 || queue.cleanupCalls != 1 {
+		t.Fatalf("result = %+v cleanupCalls=%d", result, queue.cleanupCalls)
+	}
+	if queue.cleanupTask.JobID != "job_unauthorized" || queue.cleanupTask.RequestID != "req_reconcile" {
+		t.Fatalf("cleanup task = %+v", queue.cleanupTask)
+	}
+}
+
+func TestDeleteCleanupReconcilerReportsRepositoryDependency(t *testing.T) {
+	repo := &uploadRepository{
+		MemoryRepository: repository.NewMemoryRepository(),
+		listRetryableErr: errors.New("postgres unavailable"),
+	}
+	queue := &uploadQueue{}
+	svc := service.NewWithDependencies(repo, nil, queue, fixedClock(), func(prefix string) string {
+		return prefix + "_test"
+	})
+
+	result, err := svc.RequeueDeleteCleanupTasks(context.Background(), service.RequestContext{RequestID: "req_reconcile"}, 10)
+	if !hasCode(err, service.CodeDependency) {
+		t.Fatalf("RequeueDeleteCleanupTasks() error = %v", err)
+	}
+	if result.FailedDependency != "postgres" {
+		t.Fatalf("failed dependency = %q", result.FailedDependency)
+	}
+}
+
 func TestDocumentLifecycleUpdateDeleteChunksAndContent(t *testing.T) {
 	now := time.Date(2026, 6, 30, 9, 0, 0, 0, time.UTC)
 	repo := repository.NewMemoryRepository()
@@ -903,9 +983,10 @@ func (i *lifecycleVectorIndex) Search(context.Context, service.VectorSearchReque
 
 type uploadRepository struct {
 	*repository.MemoryRepository
-	createErr       error
-	lastCreate      service.CreateDocumentWithJobRecord
-	markFailedCalls []markFailedCall
+	createErr        error
+	listRetryableErr error
+	lastCreate       service.CreateDocumentWithJobRecord
+	markFailedCalls  []markFailedCall
 }
 
 type markFailedCall struct {
@@ -931,6 +1012,13 @@ func (r *uploadRepository) MarkDocumentJobFailed(ctx context.Context, documentID
 		Message:    message,
 	})
 	return r.MemoryRepository.MarkDocumentJobFailed(ctx, documentID, jobID, expectedAttempts, code, message, failedAt)
+}
+
+func (r *uploadRepository) ListRetryableDeleteCleanupTasks(ctx context.Context, input service.DeleteCleanupTaskListInput) ([]service.DocumentDeleteCleanupTask, error) {
+	if r.listRetryableErr != nil {
+		return nil, r.listRetryableErr
+	}
+	return r.MemoryRepository.ListRetryableDeleteCleanupTasks(ctx, input)
 }
 
 func writeContext(userID string) service.RequestContext {

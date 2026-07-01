@@ -414,9 +414,10 @@ type DeleteCleanupTaskListInput struct {
 }
 
 type DeleteCleanupRequeueResult struct {
-	Scanned  int
-	Enqueued int
-	Failed   int
+	Scanned          int
+	Enqueued         int
+	Failed           int
+	FailedDependency string
 }
 
 type Repository interface {
