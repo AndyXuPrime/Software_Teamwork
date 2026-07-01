@@ -909,3 +909,47 @@ Handled PR 350 stale AI response review: stale generated section conflicts now s
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: PR 350 running marker and journal cleanup
+
+**Date**: 2026-07-01
+**Task**: PR 350 running marker and journal cleanup
+**Branch**: `PrimeTeam/feat/report-section-versions`
+
+### Summary
+
+Fixed the latest PR #350 review findings by returning dependency errors when section running-marker persistence fails and cleaning PR-visible Trellis formatting artifacts.
+
+### Main Changes
+
+- Made running-marker persistence failure a hard dependency-error path before any AI provider call.
+- Added a regression that asserts no chat request is sent, `section.failed` is recorded, progress remains at the current completed count, and stale skip/success events are not emitted.
+- Cleaned PR-visible Trellis journal and archived task text so template placeholders and local Go binary paths are not committed.
+- Updated backend database guidelines with the running-marker failure contract and required regression coverage.
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2a4b4a0` | (see git log) |
+
+### Testing
+
+- `go test ./internal/service -run '^(TestReportGenerationServiceFailsWhenSectionRunningMarkerCannotPersist|TestReportGenerationServicePreservesConcurrentSectionEditBeforeSuccessfulWrite|TestReportGenerationServiceDoesNotOverwriteSupersededGenerationJob)$' -count=1`
+- `go test ./internal/service -count=1`
+- `go test ./... -count=1`
+- `go build ./cmd/server`
+- `go vet ./...`
+- `go run golang.org/x/vuln/cmd/govulncheck@latest ./...`
+- `git diff --check`
+- Placeholder/local-path/mojibake scans returned no matches for PR-visible Trellis and changed Document service files.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
