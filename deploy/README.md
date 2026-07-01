@@ -226,14 +226,78 @@ problems. Compose health checks identify container-level dependency failures.
 
 ## Seed Data
 
-`seed-local` applies `deploy/seeds/001-local-demo-seed.sql` after migrations:
+`seed-local` applies `deploy/seeds/001-local-demo-seed.sql` after Auth,
+Knowledge, Document, and QA migrations. `seed-local-ai` applies
+`deploy/seeds/002-ai-gateway-model-profiles.sql` after the AI Gateway migration.
+Both scripts are idempotent and use deterministic IDs with `ON CONFLICT`.
 
-- admin user `admin` with local password `LocalDemoAdmin#12345`;
-- admin role assignment;
-- report types `summer_peak_inspection` and `coal_inventory_audit`;
-- knowledge base `kb_local_demo`;
-- optional AI model profile placeholders `default-chat`, `default-embedding`,
-  and `default-rerank`.
+CI-safe checks validate static seed contracts without starting containers:
+
+```powershell
+python scripts/verify_local_seed_contract.py
+docker compose --env-file deploy/.env.example -f deploy/docker-compose.yml config --quiet
+docker compose --env-file deploy/.env.example -f deploy/docker-compose.yml --profile ai config --quiet
+```
+
+The local/manual seed path is the Compose run itself:
+
+```powershell
+cd deploy
+docker compose --env-file .env.example up -d --build gateway
+docker compose --env-file .env.example --profile ai up -d --build ai-gateway
+```
+
+Seeded local resources:
+
+| Area | Deterministic resource |
+| --- | --- |
+| Auth | user `usr_local_admin`, username `admin`, password `LocalDemoAdmin#12345`, role `admin` |
+| Auth permissions | `admin:model-profile:write` and `admin:parser-config:write`; `system:admin` is not required for this local admin |
+| Knowledge | knowledge base `kb_local_demo`, document `doc_local_demo_seed`, chunk `chunk_local_demo_seed_001` |
+| Document | material `22222222-2222-4222-8222-222222222201`, report `22222222-2222-4222-8222-222222222301`, outline `22222222-2222-4222-8222-222222222401` |
+| QA | conversation `33333333-3333-4333-8333-333333333301`, user message `33333333-3333-4333-8333-333333333401`, assistant message `33333333-3333-4333-8333-333333333402` |
+| AI Gateway | optional placeholder profiles `default-chat`, `default-embedding`, and `default-rerank` |
+
+The local admin password hash in `001-local-demo-seed.sql` is an `argon2id`
+PHC string for `LOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345` using the documented
+`argon2id-v1` parameters: `m=65536`, `t=3`, `p=2`, 16-byte salt, and 32-byte
+key. For rotation, generate a new local-only `argon2id` hash, update
+`deploy/.env.example`, `001-local-demo-seed.sql`, and this README together,
+then rerun `seed-local`. Never reuse the demo password or hash in a shared or
+long-lived environment.
+
+After the stack is up, verify the seeded admin through Gateway:
+
+```powershell
+$body = @{ username = "admin"; password = "LocalDemoAdmin#12345" } | ConvertTo-Json
+$session = Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/sessions -ContentType "application/json" -Body $body
+$session.data.user.roles
+$session.data.user.permissions
+$token = $session.data.session.accessToken
+$headers = @{ Authorization = "Bearer $token" }
+Invoke-RestMethod -Uri http://localhost:8080/api/v1/admin/parser-configs -Headers $headers
+```
+
+The response should include role `admin` and admin runtime config permissions
+such as `admin:model-profile:write` or `admin:parser-config:write`. The
+`GET /api/v1/admin/parser-configs` call proves the seeded admin token passes a
+Gateway admin route preflight; use `/api/v1/admin/model-profiles` when the
+optional AI profile is running.
+
+To remove only the deterministic local demo rows after migrations are present:
+
+```powershell
+cd deploy
+docker compose --env-file .env.example run --rm seed-local sh -c "psql -v ON_ERROR_STOP=1 -h postgres -U postgres -d postgres -f /seeds/099-local-demo-cleanup.sql"
+```
+
+For a full reset, remove volumes and rerun the stack:
+
+```powershell
+cd deploy
+docker compose --env-file .env.example --profile ai down -v
+docker compose --env-file .env.example up -d --build gateway
+```
 
 The AI profiles are enabled local placeholders for readiness checks and include
 fake encrypted provider credentials. They are not real API keys, so model
