@@ -139,7 +139,7 @@ fallback 行为：
 
 ```bash
 docker pull pandoc/core:3.10
-docker run --rm pandoc/core:3.10 pandoc --version
+docker run --rm pandoc/core:3.10 --version
 # 期望首行：pandoc 3.10
 ```
 
