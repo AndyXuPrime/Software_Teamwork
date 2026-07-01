@@ -653,3 +653,10 @@ first, most likely Parser-backed document parsing before retrieval replacement.
   - standard `{data, requestId}` / `{error}` envelopes aligned with legacy HTTP layer
 - Parser-config admin routes registered but return not-implemented in adapter mode (Phase 3b)
 - Next: integration tests against running vendor runtime, parser-config bridge
+
+### 2026-07-01: knowledge vendor replacement phase 3b parser-config bridge
+
+- Adapter wires legacy goose `parser_configs` via optional `DATABASE_URL`
+- `cmd/adapter` connects PostgreSQL and injects `service.Service` for parser-config CRUD only
+- Without `DATABASE_URL`, parser-config routes return `502 dependency_error`
+- Vendor-facing KB/document/query routes unchanged (still proxied through vendorclient)

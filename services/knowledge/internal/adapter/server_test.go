@@ -164,3 +164,19 @@ func TestNotFoundRoute(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestListParserConfigsRequiresDatabase(t *testing.T) {
+	server := NewServer(adapterconfig.Config{
+		ServiceVersion:   "test",
+		VendorRuntimeURL: "http://127.0.0.1:1",
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/v1/parser-configs", nil)
+	req.Header.Set("X-User-Id", "usr_admin")
+	req.Header.Set("X-User-Permissions", "knowledge:admin")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}

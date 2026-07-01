@@ -20,6 +20,7 @@ type Config struct {
 	ServiceVersion   string
 	Environment      string
 	VendorRuntimeURL string
+	DatabaseURL      string
 	ShutdownTimeout  time.Duration
 }
 
@@ -31,6 +32,7 @@ func Load() (Config, error) {
 		ShutdownTimeout: DefaultShutdownTimeout,
 	}
 	cfg.VendorRuntimeURL = trimTrailingSlash(stringValue("VENDOR_RUNTIME_URL", DefaultVendorRuntimeURL))
+	cfg.DatabaseURL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
 
 	if raw := os.Getenv("KNOWLEDGE_SHUTDOWN_TIMEOUT"); raw != "" {
 		value, err := time.ParseDuration(raw)

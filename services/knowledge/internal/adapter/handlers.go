@@ -346,18 +346,6 @@ func (s *Server) handleCreateKnowledgeQuery(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusCreated, knowledgeQueryFromVendor(newQueryID(), strings.TrimSpace(body.Query), data, topK, scoreThreshold, body.Rerank, body.RerankTopN), reqCtx.RequestID)
 }
 
-func (s *Server) handleParserConfigNotImplemented(w http.ResponseWriter, r *http.Request) {
-	reqCtx, ok := s.gatewayContext(w, r)
-	if !ok {
-		return
-	}
-	if _, err := parserConfigScope(reqCtx); err != nil {
-		writeAppError(w, r, err)
-		return
-	}
-	writeAppError(w, r, service.NotImplementedError("parser config routes are not implemented in adapter mode yet"))
-}
-
 func parsePageQuery(r *http.Request) (service.PageInput, error) {
 	page := parsePositiveIntParam(r, "page")
 	pageSize := parsePositiveIntParam(r, "pageSize")

@@ -46,9 +46,9 @@ Default compose keeps the legacy Knowledge server. Adapter mode is opt-in via
 | --- | --- | --- |
 | `KNOWLEDGE_RUNTIME_MODE` | `legacy` | `adapter` runs `cmd/adapter` |
 | `VENDOR_RUNTIME_URL` | `http://127.0.0.1:9380` | Vendor HTTP base URL |
+| `DATABASE_URL` | optional | Legacy goose PostgreSQL (`postgres://...`); adapter parser-config routes and Go `DatabaseConfig` |
 | `DOC_ENGINE` | `elasticsearch` | Vendor doc engine selector |
 | `DB_TYPE` | `mysql` (legacy vendor default) / `postgres` (Knowledge replacement) | Metadata backend selector |
-| `DATABASE_URL` | optional | Overrides Go `DatabaseConfig` when set (`postgres://...`) |
 
 ## Next phases
 

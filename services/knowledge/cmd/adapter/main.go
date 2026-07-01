@@ -9,8 +9,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/adapter"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/adapterconfig"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/repository"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
 )
 
 func main() {
@@ -22,14 +26,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	server := adapter.NewServer(cfg, logger)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	var opts []adapter.Option
+	if cfg.DatabaseURL != "" {
+		pool, err := connectPostgres(ctx, cfg.DatabaseURL)
+		if err != nil {
+			logger.Error("postgres connection failed", "service", "knowledge-adapter", "dependency", "postgres", "error", err)
+			os.Exit(1)
+		}
+		defer pool.Close()
+		opts = append(opts, adapter.WithParserConfigService(service.New(repository.NewPostgresRepository(pool))))
+		logger.Info("parser config storage enabled", "service", "knowledge-adapter")
+	} else {
+		logger.Warn("DATABASE_URL not set; parser-config routes will return dependency_error", "service", "knowledge-adapter")
+	}
+
+	server := adapter.NewServer(cfg, logger, opts...)
 	httpServer := &http.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: server.Handler(),
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	go func() {
 		logger.Info("knowledge adapter listening", "addr", cfg.HTTPAddr, "vendor_runtime_url", cfg.VendorRuntimeURL)
@@ -46,4 +64,20 @@ func main() {
 		logger.Error("adapter shutdown failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+func connectPostgres(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	poolConfig, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	if err != nil {
+		return nil, err
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return pool, nil
 }
