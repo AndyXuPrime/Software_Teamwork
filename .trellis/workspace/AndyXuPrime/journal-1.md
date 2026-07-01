@@ -892,8 +892,10 @@ Synced the PR branch onto latest `upstream/develop` and addressed the remaining 
 ### Main Changes
 
 - Kept QA SSE consumption open after `answer.completed` so fatal `error` events before EOF still override the completed UI state.
+- Moved chat input unlock to stream EOF and bound stream patches to the current assistant message, preventing post-completion events from modifying a later reply.
 - Rendered non-retry stream degradation notices as warning alerts without a dead retry button.
 - Added explicit QA capability formatting for `403` / `forbidden` permission denials.
+- Sanitized reasoning step label/detail before display so prompt, raw provider, internal URL, and storage details are not exposed.
 - Captured the QA SSE completion-vs-EOF gotcha in `.trellis/spec/frontend/hook-guidelines.md`.
 
 ### Git Commits
@@ -901,6 +903,7 @@ Synced the PR branch onto latest `upstream/develop` and addressed the remaining 
 | Hash | Message |
 |------|---------|
 | `73e9f90` | fix(qa): handle finalize stream errors |
+| `19cb6d2` | fix(qa): finalize stream lifecycle |
 
 ### Testing
 
@@ -909,6 +912,7 @@ Synced the PR branch onto latest `upstream/develop` and addressed the remaining 
 - [OK] `bun run --cwd apps/web build`
 - [OK] `bun run --cwd apps/web test:unit`
 - [OK] `git diff --check`
+- [OK] Re-ran after `19cb6d2`: targeted unit tests, `check`, `build`, full `test:unit`, and `git diff --check`.
 
 ### Status
 
