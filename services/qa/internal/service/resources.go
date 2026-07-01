@@ -365,7 +365,7 @@ type ResourceRepository interface {
 	SaveLLMConnectionTest(context.Context, string, LLMProfileTestResult) (LLMProfileTestResult, error)
 	SaveRetrievalTestRun(context.Context, string, RetrievalTestInput, []RetrievalTestResult, time.Duration, error) (RetrievalTestRun, error)
 	GetRetrievalTestRun(context.Context, string, string) (RetrievalTestRun, error)
-	GetMetricsOverview(context.Context, int) (MetricsOverview, error)
+	GetMetricsOverview(context.Context, string, int) (MetricsOverview, error)
 	GetMetricsTrend(context.Context, int) (MetricsTrend, error)
 	GetTopQueries(context.Context, int, int) ([]TopQuery, error)
 	GetIntentDistribution(context.Context, int) ([]IntentDistribution, error)
@@ -683,8 +683,8 @@ func validateRetrievalSettings(value RetrievalSettings) error {
 func (s *ResourceService) GetRetrievalTestRun(ctx context.Context, userID, id string) (RetrievalTestRun, error) {
 	return s.repository.GetRetrievalTestRun(ctx, userID, id)
 }
-func (s *ResourceService) GetMetricsOverview(ctx context.Context, days int) (MetricsOverview, error) {
-	overview, err := s.repository.GetMetricsOverview(ctx, days)
+func (s *ResourceService) GetMetricsOverview(ctx context.Context, userID string, days int) (MetricsOverview, error) {
+	overview, err := s.repository.GetMetricsOverview(ctx, userID, days)
 	if err != nil {
 		return MetricsOverview{}, err
 	}
@@ -692,7 +692,7 @@ func (s *ResourceService) GetMetricsOverview(ctx context.Context, days int) (Met
 	// Calls are best-effort: a failure leaves the count at zero
 	// rather than rejecting the entire overview response.
 	if s.knowledgeStats != nil {
-		kbCount, docCount, statsErr := s.knowledgeStats.GetStats(ctx, "")
+		kbCount, docCount, statsErr := s.knowledgeStats.GetStats(ctx, userID)
 		if statsErr == nil {
 			overview.KnowledgeBaseCount = kbCount
 			overview.DocumentCount = docCount

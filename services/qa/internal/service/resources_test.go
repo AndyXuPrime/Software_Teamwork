@@ -73,7 +73,7 @@ func (r *resourceRepositoryStub) SaveRetrievalTestRun(_ context.Context, _ strin
 func (r *resourceRepositoryStub) GetRetrievalTestRun(context.Context, string, string) (RetrievalTestRun, error) {
 	return RetrievalTestRun{}, nil
 }
-func (r *resourceRepositoryStub) GetMetricsOverview(context.Context, int) (MetricsOverview, error) {
+func (r *resourceRepositoryStub) GetMetricsOverview(context.Context, string, int) (MetricsOverview, error) {
 	return MetricsOverview{}, nil
 }
 func (r *resourceRepositoryStub) GetMetricsTrend(context.Context, int) (MetricsTrend, error) {
@@ -427,7 +427,7 @@ func TestGetMetricsOverviewEnrichesWithKnowledgeStats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	overview, err := svc.GetMetricsOverview(context.Background(), 7)
+	overview, err := svc.GetMetricsOverview(context.Background(), "test-user", 7)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,7 +443,7 @@ func TestGetMetricsOverviewWithKnowledgeStats(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc.knowledgeStats = knowledgeStatsStub{kbCount: 5, docCount: 42}
-	overview, err := svc.GetMetricsOverview(context.Background(), 7)
+	overview, err := svc.GetMetricsOverview(context.Background(), "test-user", 7)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +459,7 @@ func TestGetMetricsOverviewStatsFailureReturnsZero(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc.knowledgeStats = knowledgeStatsStub{err: errors.New("knowledge unavailable")}
-	overview, err := svc.GetMetricsOverview(context.Background(), 7)
+	overview, err := svc.GetMetricsOverview(context.Background(), "test-user", 7)
 	if err != nil {
 		t.Fatal(err)
 	}

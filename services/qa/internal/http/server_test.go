@@ -127,7 +127,7 @@ func (f fakeResourceServiceWithCreate) CreateRetrievalTestRun(ctx context.Contex
 func (fakeResourceService) GetRetrievalTestRun(context.Context, string, string) (service.RetrievalTestRun, error) {
 	return service.RetrievalTestRun{}, nil
 }
-func (fakeResourceService) GetMetricsOverview(context.Context, int) (service.MetricsOverview, error) {
+func (fakeResourceService) GetMetricsOverview(context.Context, string, int) (service.MetricsOverview, error) {
 	return service.MetricsOverview{}, nil
 }
 func (fakeResourceService) GetMetricsTrend(context.Context, int) (service.MetricsTrend, error) {

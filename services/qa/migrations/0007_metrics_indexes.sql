@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- Indexes for QA metrics aggregation queries.  The combination (role,
 -- created_at) speeds up trend, top-queries, and intent-distribution
