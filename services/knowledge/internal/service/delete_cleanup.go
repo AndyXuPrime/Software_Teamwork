@@ -182,6 +182,11 @@ func (s *Service) failDeleteCleanupAndReturn(ctx context.Context, job Processing
 	if err != nil {
 		return failed, err
 	}
+	// Once the retry budget is exhausted, the durable job state is already failed;
+	// returning a conflict lets the worker ack the final delivery without hiding the failure.
+	if hasExhaustedJobAttempts(failed) {
+		return failed, ConflictError("job has reached max attempts", cleanupErr)
+	}
 	return failed, cleanupErr
 }
 
