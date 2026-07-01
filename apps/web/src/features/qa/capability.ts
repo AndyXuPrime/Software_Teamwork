@@ -62,6 +62,7 @@ const SAFE_SUMMARY_LABELS: Record<string, string> = {
 const SAFE_STREAM_ERROR_MESSAGES: Record<string, string> = {
   cancelled: '请求已取消',
   dependency_error: '依赖服务暂不可用，当前回复可能已降级',
+  forbidden: '权限不足，请联系管理员开通访问权限',
   internal_error: '服务暂时无法完成回复',
   invalid_sse_event: '收到无法解析的流式事件',
   model_error: '模型服务暂不可用',
@@ -98,6 +99,10 @@ function isDependencyFailure(error: ApiError | StreamErrorLike): boolean {
   return error.status === 502 || error.code === 'dependency_error'
 }
 
+function isForbidden(error: ApiError | StreamErrorLike): boolean {
+  return error.status === 403 || error.code === 'forbidden'
+}
+
 function formatApiError(error: ApiError | StreamErrorLike, featureName: string): string {
   const requestIdText = getRequestIdText(error.requestId)
   const safeMessage =
@@ -111,6 +116,10 @@ function formatApiError(error: ApiError | StreamErrorLike, featureName: string):
 
   if (isDependencyFailure(error)) {
     return `${featureName}降级：${safeMessage}。（${requestIdText}）`
+  }
+
+  if (isForbidden(error)) {
+    return `${featureName}权限不足：${safeMessage}。（${requestIdText}）`
   }
 
   return `${featureName}失败：${safeMessage}。（${requestIdText}）`

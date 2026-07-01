@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { act } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -194,6 +194,69 @@ describe('ChatPage stream sequencing', () => {
     })
   })
 
+  it('marks the completed answer failed when a fatal error arrives before EOF', async () => {
+    const encoder = new TextEncoder()
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (request.method === 'GET' && url.pathname.endsWith('/qa-sessions')) {
+        return pageResponse([createSession()])
+      }
+      if (request.method === 'GET' && url.pathname.endsWith('/qa-sessions/session-1/messages')) {
+        return pageResponse([])
+      }
+      if (request.method === 'POST' && url.pathname.endsWith('/qa-sessions/session-1/messages')) {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            streamController = controller
+          },
+        })
+        return new Response(stream, {
+          headers: { 'Content-Type': 'text/event-stream' },
+          status: 200,
+        })
+      }
+
+      return jsonResponse({ data: {}, requestId: 'req-default' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithProviders(<ChatPage />)
+
+    const input = screen.getByRole('textbox')
+    fireEvent.change(input, { target: { value: 'question' } })
+    fireEvent.keyDown(input, { code: 'Enter', key: 'Enter' })
+
+    await waitFor(() => expect(streamController).toBeDefined())
+    await waitFor(() => expect(input).toBeDisabled())
+
+    const emit = async (event: string, data: Record<string, unknown>, id?: number) => {
+      await act(async () => {
+        const idLine = id === undefined ? '' : `id: ${id}\n`
+        streamController?.enqueue(
+          encoder.encode(`event: ${event}\n${idLine}data: ${JSON.stringify(data)}\n\n`),
+        )
+        await new Promise((resolve) => window.setTimeout(resolve, 0))
+      })
+    }
+
+    await emit('answer.delta', { content: 'answer' }, 2)
+    await emit('answer.completed', { responseRunId: 'run-1' }, 3)
+    await waitFor(() => expect(getLastAssistantMessage().status).toBe('completed'))
+
+    await emit('error', { code: 'finalize_failed', fatal: true, message: 'finalize failed' }, 4)
+    await waitFor(() => expect(useChatStore.getState().lastFailedMsg).toBe('question'))
+
+    expect(input).not.toBeDisabled()
+    expect(within(screen.getByRole('alert')).getByRole('button')).toBeInTheDocument()
+    expect(getLastAssistantMessage()).toMatchObject({
+      content: 'answer',
+      status: 'failed',
+    })
+  })
+
   it('keeps streaming after non-fatal QA error events', async () => {
     const encoder = new TextEncoder()
     let streamController: ReadableStreamDefaultController<Uint8Array> | undefined
@@ -249,6 +312,7 @@ describe('ChatPage stream sequencing', () => {
     )
     await waitFor(() => expect(useChatStore.getState().error).toContain('依赖服务暂不可用'))
     expect(useChatStore.getState().error).not.toContain('retrieval degraded')
+    expect(within(screen.getByRole('alert')).queryByRole('button')).toBeNull()
 
     expect(input).toBeDisabled()
     expect(useChatStore.getState().streaming).toBe(true)

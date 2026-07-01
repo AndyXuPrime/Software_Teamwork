@@ -293,6 +293,7 @@ type ChatMessagesProps = {
   messages: QAMessage[]
   streaming: boolean
   error: string | null
+  canRetry?: boolean
   suggestedPrompts: string[]
   onSuggestedClick: (prompt: string) => void
   onRetry: () => void
@@ -302,6 +303,7 @@ export default function ChatMessages({
   messages,
   streaming,
   error,
+  canRetry = false,
   suggestedPrompts,
   onSuggestedClick,
   onRetry,
@@ -356,7 +358,12 @@ export default function ChatMessages({
       })}
 
       {/* ── Error ── */}
-      {error && (
+      {error && !canRetry && (
+        <InlineNotice className="mx-4" variant="warning">
+          {error}
+        </InlineNotice>
+      )}
+      {error && canRetry && (
         <InlineNotice
           action={
             <Button variant="destructive" size="sm" onClick={onRetry}>

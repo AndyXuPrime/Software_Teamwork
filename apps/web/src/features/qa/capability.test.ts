@@ -35,6 +35,22 @@ describe('QA capability helpers', () => {
     ).toContain('响应未包含 requestId')
   })
 
+  it('formats forbidden errors as permission denials', () => {
+    const formatted = formatQAError(
+      new ApiError({
+        code: 'forbidden',
+        message: 'not allowed',
+        requestId: 'req-403',
+        status: 403,
+      }),
+      'QA 会话列表',
+    )
+
+    expect(formatted).toContain('权限不足')
+    expect(formatted).toContain('requestId: req-403')
+    expect(formatted).not.toContain('稍后重试')
+  })
+
   it('does not expose backend raw error messages in user-visible text', () => {
     const formatted = formatQAStreamError({
       code: 'dependency_error',

@@ -124,7 +124,8 @@ export function streamChat(
   let fallbackSeq = 0
   let maxDispatchedSeq: number | undefined
   let didAbort = false
-  let didReceiveTerminalEvent = false
+  let didReceiveAnswerCompleted = false
+  let didReceiveFatalError = false
 
   const recordDispatchedSeq = (seq: number) => {
     maxDispatchedSeq = maxDispatchedSeq === undefined ? seq : Math.max(maxDispatchedSeq, seq)
@@ -135,21 +136,19 @@ export function streamChat(
     return maxDispatchedSeq
   }
 
-  const isTerminalEvent = (
+  const isFatalErrorEvent = (
     event: QASseEventType,
     payload: Record<string, unknown> & { seq: number },
   ): boolean => {
-    if (event === 'answer.completed') return true
-    if (event !== 'error') return false
-    return payload.fatal !== false
+    return event === 'error' && payload.fatal !== false
   }
 
   const stream = streamGateway(`/qa-sessions/${encodeURIComponent(sessionId)}/messages`, {
     body: { message },
     method: 'POST',
     onError: (error) => {
-      if (didAbort || didReceiveTerminalEvent) return
-      didReceiveTerminalEvent = true
+      if (didAbort || didReceiveFatalError || didReceiveAnswerCompleted) return
+      didReceiveFatalError = true
       handlers.onError?.({
         code: error.code,
         fatal: true,
@@ -161,7 +160,7 @@ export function streamChat(
     },
     onEvent: ({ data, event, id }) => {
       if (event === 'heartbeat') return
-      if (didReceiveTerminalEvent) return
+      if (didReceiveFatalError) return
       fallbackSeq += 1
 
       try {
@@ -170,12 +169,15 @@ export function streamChat(
         const isStaleEvent = maxDispatchedSeq !== undefined && payload.seq <= maxDispatchedSeq
         if (isStaleEvent) return
         recordDispatchedSeq(payload.seq)
-        if (isTerminalEvent(qaEvent, payload)) {
-          didReceiveTerminalEvent = true
+        if (qaEvent === 'answer.completed') {
+          didReceiveAnswerCompleted = true
+        }
+        if (isFatalErrorEvent(qaEvent, payload)) {
+          didReceiveFatalError = true
         }
         dispatch(qaEvent, payload, handlers)
       } catch {
-        didReceiveTerminalEvent = true
+        didReceiveFatalError = true
         stream.abort()
         handlers.onError?.({
           code: 'invalid_sse_event',
@@ -186,8 +188,8 @@ export function streamChat(
       }
     },
     onDone: () => {
-      if (didAbort || didReceiveTerminalEvent) return
-      didReceiveTerminalEvent = true
+      if (didAbort || didReceiveFatalError || didReceiveAnswerCompleted) return
+      didReceiveFatalError = true
       handlers.onError?.({
         code: 'stream_ended_without_completion',
         fatal: true,

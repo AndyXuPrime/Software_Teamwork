@@ -303,6 +303,49 @@ describe('chat stream API', () => {
     expect(onError).not.toHaveBeenCalled()
   })
 
+  it('dispatches fatal QA error events that arrive after answer.completed', async () => {
+    const onAnswerCompleted = vi.fn()
+    const onError = vi.fn()
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        streamResponse(
+          [
+            'event: answer.completed',
+            'id: 3',
+            'data: {"responseRunId":"run-1"}',
+            '',
+            'event: error',
+            'id: 4',
+            'data: {"code":"finalize_failed","message":"finalize failed","fatal":true}',
+            '',
+            '',
+          ].join('\n'),
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    streamChat('session-1', 'question', {
+      onAnswerCompleted,
+      onError,
+    })
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+
+    expect(onAnswerCompleted).toHaveBeenCalledWith(
+      expect.objectContaining({ responseRunId: 'run-1', seq: 3 }),
+    )
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'finalize_failed',
+        fatal: true,
+        message: 'finalize failed',
+        seq: 4,
+      }),
+    )
+  })
+
   it('continues dispatching after non-fatal QA error events', async () => {
     const onAnswerCompleted = vi.fn()
     const onAnswerDelta = vi.fn()

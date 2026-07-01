@@ -436,6 +436,7 @@ export function ChatPage() {
         </header>
 
         <ChatMessages
+          canRetry={Boolean(lastFailedMsg)}
           error={error}
           messages={activeMessages}
           onRetry={handleRetry}
