@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { Database, Info } from 'lucide-react'
 
-import { getCurrentQAConfig, listKnowledgeBases } from '@/api/admin'
+import { getCurrentQAConfig } from '@/api/admin'
+import { listKnowledgeBases } from '@/api/knowledge'
 import { Badge } from '@/components/ui/badge'
 
 function KnowledgeConfigSkeleton() {

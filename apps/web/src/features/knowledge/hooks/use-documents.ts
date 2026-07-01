@@ -6,6 +6,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import type { KnowledgeQueryRequest, UpdateDocumentRequest } from '@/api/knowledge'
 import {
   deleteDocument,
   getDocument,
@@ -15,8 +16,8 @@ import {
   runKnowledgeQuery,
   updateDocument,
   uploadDocument,
-} from '@/api/admin'
-import type { KnowledgeQueryRequest, UpdateDocumentRequest } from '@/lib/types'
+} from '@/api/knowledge'
+import type { DocumentStatus } from '@/lib/types'
 
 // ── Query keys ──
 
@@ -37,7 +38,12 @@ export const documentKeys = {
 // ── Queries ──
 
 /** Paginated document list for a knowledge base. */
-export function useDocuments(knowledgeBaseId: string, page = 1, pageSize = 20, status?: string) {
+export function useDocuments(
+  knowledgeBaseId: string,
+  page = 1,
+  pageSize = 20,
+  status?: DocumentStatus,
+) {
   return useQuery({
     queryKey: documentKeys.list(knowledgeBaseId, page, pageSize, status),
     queryFn: () => listDocuments(knowledgeBaseId, { page, pageSize, status }),

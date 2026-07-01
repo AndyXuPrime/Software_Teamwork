@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { getDocumentContent, getKnowledgeBase } from '@/api/admin'
+import { getDocumentContent, getKnowledgeBase } from '@/api/knowledge'
 import { ConfirmDialog, InlineNotice, StateBlock, TableSkeleton } from '@/components/common'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -158,7 +158,7 @@ export function KnowledgeDocumentsPage({
 }: KnowledgeDocumentsPageProps) {
   // ── State ──
   const [keyword, setKeyword] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState<DocumentStatus | ''>('')
   const [page, setPage] = useState(1)
   const [activeKbId, setActiveKbId] = useState(initialKbId ?? '')
   const knowledgeBaseId = activeKbId
@@ -560,7 +560,7 @@ export function KnowledgeDocumentsPage({
             <select
               value={statusFilter}
               onChange={(e) => {
-                setStatusFilter(e.target.value)
+                setStatusFilter(e.target.value as DocumentStatus | '')
                 setPage(1)
               }}
               className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"

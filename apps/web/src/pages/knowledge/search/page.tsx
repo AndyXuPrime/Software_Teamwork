@@ -1,7 +1,7 @@
 import { BookOpen, ChevronDown, ChevronUp, Loader2, Search } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
-import { listKnowledgeBases } from '@/api/admin'
+import { listKnowledgeBases } from '@/api/knowledge'
 import { InlineNotice, StateBlock } from '@/components/common'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
