@@ -84,6 +84,7 @@ type Message struct {
 	Thinking       []ReasoningStep `json:"thinking,omitempty"`
 	Citations      []Citation      `json:"citations,omitempty"`
 	CitationCount  int             `json:"-"`
+	AttachmentIDs  []string        `json:"attachmentIds,omitempty"`
 	CreatedAt      time.Time       `json:"createdAt"`
 	CompletedAt    *time.Time      `json:"completedAt,omitempty"`
 }

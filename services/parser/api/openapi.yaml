@@ -111,7 +111,7 @@ components:
       required: true
       schema:
         type: string
-        enum: [knowledge]
+        enum: [knowledge, qa]
     UserIdHeader:
       name: X-User-Id
       in: header

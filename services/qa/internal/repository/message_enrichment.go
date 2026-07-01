@@ -13,6 +13,9 @@ func (r *Postgres) enrichMessages(ctx context.Context, userID, conversationID st
 		return nil
 	}
 	ids := messageIDs(messages)
+	if err := r.enrichMessageAttachments(ctx, ids, messages); err != nil {
+		return err
+	}
 	if options.IncludeThinking {
 		steps, err := r.listThinkingForMessages(ctx, userID, conversationID, ids)
 		if err != nil {
@@ -30,6 +33,29 @@ func (r *Postgres) enrichMessages(ctx context.Context, userID, conversationID st
 		for index := range messages {
 			messages[index].Citations = citations[messages[index].ID]
 		}
+	}
+	return nil
+}
+
+func (r *Postgres) enrichMessageAttachments(ctx context.Context, ids []string, messages []service.Message) error {
+	rows, err := r.pool.Query(ctx, `SELECT message_id::text, attachment_id::text FROM message_attachments WHERE message_id::text = ANY($1) ORDER BY message_id, created_at`, ids)
+	if err != nil {
+		return fmt.Errorf("list message attachment IDs: %w", err)
+	}
+	defer rows.Close()
+	attachments := map[string][]string{}
+	for rows.Next() {
+		var messageID, attachmentID string
+		if err := rows.Scan(&messageID, &attachmentID); err != nil {
+			return fmt.Errorf("scan message attachment ID: %w", err)
+		}
+		attachments[messageID] = append(attachments[messageID], attachmentID)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("rows iteration for message attachment IDs: %w", err)
+	}
+	for index := range messages {
+		messages[index].AttachmentIDs = attachments[messages[index].ID]
 	}
 	return nil
 }
