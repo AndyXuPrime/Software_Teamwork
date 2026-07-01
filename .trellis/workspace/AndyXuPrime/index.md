@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
+- **Total Sessions**: 27
 - **Last Active**: 2026-07-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~958 | Active |
+| `journal-1.md` | ~989 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 27 | 2026-07-01 | Review PR 350 against latest develop | - | `PrimeTeam/chore/pr-350-review-journal` |
 | 26 | 2026-07-01 | Fix knowledge PR review archive context | `afe8241`, `79090f7` | `Frontend/feat/knowledge-real-api` |
 | 25 | 2026-06-30 | F-016 malformed stream closure | `2ebcc07` | `Frontend/feat/qa-capability-aligned-chat` |
 | 24 | 2026-06-30 | F-016 citation and EOF follow-up | `67c538d` | `Frontend/feat/qa-capability-aligned-chat` |

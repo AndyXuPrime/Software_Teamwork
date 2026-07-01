@@ -3,6 +3,19 @@
 日期：2026-07-01
 范围：`services/auth`、`services/gateway`、以及验证这两个模块服务系统能力所需的相关链路。
 
+## 0. 测试基准与环境摘要
+
+| 项目 | 记录 |
+| --- | --- |
+| Branch | `Special/docs/sync-trellis-spec-docs` |
+| 原始测试执行 / 归档提交 | 测试执行结果随 `4b6664777cd5` 归档；后续 `22ce0bdd3925` 仅修正文档空白。PR #357 首轮 review 看到的 head 为 `300e02138125`，rebase 后等价提交为 `22ce0bdd3925`。 |
+| 元数据修复 PR | PR #361 只补充测试基准、环境摘要和归档元数据；当前 PR head 以 GitHub PR 页面为准，不作为原始测试执行依据。 |
+| Base branch | `develop` |
+| 运行方式 | 本机当前源码运行 Auth/Gateway，Docker Compose 只提供 PostgreSQL、Redis 和 migration 依赖。 |
+| 关键端口 | Auth `:18001`，Gateway `:18080`，Gateway metrics `:19091`。 |
+| 基础依赖 | `postgres:16-alpine`、`redis:7-alpine`，配置来源 `deploy/docker-compose.yml` + `deploy/.env.example`。 |
+| 阻塞环境 | 完整 `--profile ai up -d --build` 和真实 Knowledge owner-service smoke 被 Docker Hub metadata/token 超时、缺少本地 parser image 阻塞。 |
+
 ## 1. 测试目标
 
 本轮测试不是只看单个模块是否能编译，而是验证 Auth 与 Gateway 是否能可靠支撑系统入口、认证上下文、会话缓存、公开契约和下游服务代理。

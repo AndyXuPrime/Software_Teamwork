@@ -19,7 +19,9 @@ Clarified Gateway OpenAPI as the stable public contract, reduced duplicated serv
 
 ### Main Changes
 
-(Add details)
+- Clarified that Gateway OpenAPI is the stable frontend/public contract and service OpenAPI files are owner-facing or internal references.
+- Reduced duplicated endpoint/schema detail across service README files and moved cross-service rules back to architecture docs.
+- Updated Trellis backend/frontend/CI specs to reinforce public/internal contract ownership and pre-commit quality expectations.
 
 ### Git Commits
 
@@ -29,7 +31,9 @@ Clarified Gateway OpenAPI as the stable public contract, reduced duplicated serv
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] Documentation link/path checks
+- [OK] Contract ownership wording review across updated service docs
+- [OK] `git diff --check`
 
 ### Status
 
@@ -52,7 +56,9 @@ Cleaned Knowledge/Document/File storage-boundary docs so owner services use opaq
 
 ### Main Changes
 
-(Add details)
+- Updated Knowledge/Document/File docs so owner services keep only opaque `file_ref` values.
+- Clarified that bucket, object key, storage backend, credentials, and object URLs are File Service internal implementation details.
+- Removed stale bucket-classification wording from Knowledge docs and aligned local integration notes with the single local File bucket.
 
 ### Git Commits
 
@@ -62,7 +68,8 @@ Cleaned Knowledge/Document/File storage-boundary docs so owner services use opaq
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] Storage-boundary terminology review across Knowledge, Document, File, requirements, and runbook docs
+- [OK] `git diff --check`
 
 ### Status
 
@@ -85,7 +92,9 @@ Recorded 0701 auth/gateway and file service test audit reports, then archived th
 
 ### Main Changes
 
-(Add details)
+- Added `docs/tests/0701/auth-gateway-test-report.md` with Auth/Gateway package tests, builds, Gateway active API verification, local Auth/Gateway/Redis smoke evidence, and blocked full Compose/Knowledge smoke notes.
+- Added `docs/tests/0701/file-module-test-report.md` with File service package/build checks, PostgreSQL repository smoke, PostgreSQL + MinIO integration smoke, Knowledge/Document fileclient checks, and remaining cross-service E2E gaps.
+- Archived the completed auth gateway test audit task after recording the report artifacts.
 
 ### Git Commits
 
@@ -95,7 +104,11 @@ Recorded 0701 auth/gateway and file service test audit reports, then archived th
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `cd services/auth && go test ./...`
+- [OK] `cd services/gateway && go test ./...`
+- [OK] `cd services/file && go test ./... -count=1`
+- [OK] File PostgreSQL repository smoke and PostgreSQL + MinIO integration smoke
+- [OK] Gateway active API verification and `git diff --check`
 
 ### Status
 
@@ -118,7 +131,10 @@ Created the architecture link-flow condition coverage document, linked it from d
 
 ### Main Changes
 
-(Add details)
+- Added `docs/architecture/system-link-condition-coverage.md` covering 14 major user, admin, and system workflow families.
+- Linked the new architecture document from `docs/README.md`.
+- Captured owner service, participants, normal path, condition branches, outputs/state, implementation status, and leakage boundaries for each chain.
+- Aligned File `file_ref` and Document `summer_peak_inspection` generation status with latest `origin/develop` docs.
 
 ### Git Commits
 
@@ -128,7 +144,9 @@ Created the architecture link-flow condition coverage document, linked it from d
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `git diff --check`
+- [OK] trailing whitespace check
+- [OK] new docs link/path check
 
 ### Status
 
