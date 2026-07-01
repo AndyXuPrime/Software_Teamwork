@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -10,14 +11,37 @@ import (
 )
 
 func TestInternalOpenAPIDoesNotDriftFromDocs(t *testing.T) {
-	docsContract := readNormalizedYAML(t, "../../../../docs/services/file/api/internal.openapi.yaml")
-	serviceContract := readNormalizedYAML(t, "../../api/openapi.yaml")
+	repoRoot := findRepoRoot(t)
+	docsContract := readNormalizedYAML(t, filepath.Join(repoRoot, "docs/services/file/api/internal.openapi.yaml"))
+	serviceContract := readNormalizedYAML(t, filepath.Join(repoRoot, "services/file/api/openapi.yaml"))
 
 	if !reflect.DeepEqual(docsContract, serviceContract) {
 		t.Fatalf("services/file/api/openapi.yaml drifted from docs/services/file/api/internal.openapi.yaml\n--- docs\n%s\n--- service\n%s",
 			prettyJSON(t, docsContract),
 			prettyJSON(t, serviceContract),
 		)
+	}
+}
+
+func findRepoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	for {
+		docsContract := filepath.Join(dir, "docs/services/file/api/internal.openapi.yaml")
+		serviceContract := filepath.Join(dir, "services/file/api/openapi.yaml")
+		if _, err := os.Stat(docsContract); err == nil {
+			if _, err := os.Stat(serviceContract); err == nil {
+				return dir
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("find repository root from %s", dir)
+		}
+		dir = parent
 	}
 }
 
