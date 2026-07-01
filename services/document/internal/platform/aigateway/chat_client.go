@@ -125,6 +125,9 @@ func (c *ChatClient) CreateChatCompletion(ctx context.Context, reqCtx service.Re
 		return service.ChatCompletionResponse{}, service.NewError(service.CodeDependency, "ai gateway chat response has no choices", nil)
 	}
 	choice := decoded.Choices[0]
+	if strings.TrimSpace(choice.Message.Content) == "" {
+		return service.ChatCompletionResponse{}, service.NewError(service.CodeDependency, "ai gateway chat response content is empty", nil)
+	}
 	return service.ChatCompletionResponse{
 		Content:      choice.Message.Content,
 		FinishReason: choice.FinishReason,
