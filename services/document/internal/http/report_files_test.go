@@ -156,9 +156,29 @@ func TestGetReportFileContentStreamsBinary(t *testing.T) {
 }
 
 func TestGetReportFileContentFailureUsesErrorEnvelope(t *testing.T) {
-	server := NewServer(Config{ReportFileSvc: &fakeReportFileService{
-		err: service.NewError(service.CodeDependency, "file service failed", errors.New("minio bucket raw object")),
-	}})
+	repo := &contractReportFileRepository{
+		report: service.Report{ID: "report-1", CreatorID: "user-1"},
+		file: service.ReportFile{
+			ID:        "rf-1",
+			ReportID:  "report-1",
+			FileRef:   "file_internal_report",
+			Filename:  "report.docx",
+			Format:    service.ReportFileFormatDOCX,
+			Status:    service.ReportFileStatusSucceeded,
+			CreatedBy: "user-1",
+			CreatedAt: time.Date(2026, 6, 29, 0, 0, 0, 0, time.UTC),
+		},
+	}
+	files := &leakingReportFileContentClient{
+		err: service.NewError(
+			service.CodeDependency,
+			"minio bucket raw objectKey provider.internal qdrant prompt=secret",
+			nil,
+		),
+	}
+	server := NewServer(Config{
+		ReportFileSvc: service.NewReportFileService(repo, files, nil, nil),
+	})
 	req := httptest.NewRequest(http.MethodGet, "/report-files/rf-1/content", nil)
 	req.Header.Set("X-User-Id", "user-1")
 	req.Header.Set("X-Request-Id", "req-file-error")
@@ -185,4 +205,77 @@ func TestGetReportFileContentFailureUsesErrorEnvelope(t *testing.T) {
 	if envelope.Error.Code != "dependency_error" || envelope.Error.RequestID != "req-file-error" {
 		t.Fatalf("unexpected error envelope: %+v", envelope)
 	}
+}
+
+type contractReportFileRepository struct {
+	report service.Report
+	file   service.ReportFile
+}
+
+func (f *contractReportFileRepository) GetReportByID(context.Context, string) (service.Report, error) {
+	return f.report, nil
+}
+
+func (f *contractReportFileRepository) ListReportSections(context.Context, string) ([]service.ReportSection, error) {
+	return nil, errors.New("unexpected ListReportSections call")
+}
+
+func (f *contractReportFileRepository) FindReportJobByID(context.Context, string) (service.ReportJob, error) {
+	return service.ReportJob{}, errors.New("unexpected FindReportJobByID call")
+}
+
+func (f *contractReportFileRepository) CreateReportJob(context.Context, service.ReportJob) (service.ReportJob, error) {
+	return service.ReportJob{}, errors.New("unexpected CreateReportJob call")
+}
+
+func (f *contractReportFileRepository) UpdateReportJobStatus(context.Context, string, service.JobStatus, string, string, *time.Time, *time.Time) (service.ReportJob, error) {
+	return service.ReportJob{}, errors.New("unexpected UpdateReportJobStatus call")
+}
+
+func (f *contractReportFileRepository) UpdateJobAsynqTaskID(context.Context, string, string) error {
+	return errors.New("unexpected UpdateJobAsynqTaskID call")
+}
+
+func (f *contractReportFileRepository) CreateReportJobAttempt(context.Context, service.ReportJobAttempt) (service.ReportJobAttempt, error) {
+	return service.ReportJobAttempt{}, errors.New("unexpected CreateReportJobAttempt call")
+}
+
+func (f *contractReportFileRepository) UpdateAttemptAsynqTaskID(context.Context, string, string) error {
+	return errors.New("unexpected UpdateAttemptAsynqTaskID call")
+}
+
+func (f *contractReportFileRepository) SetAttemptFailed(context.Context, string, string, string) error {
+	return errors.New("unexpected SetAttemptFailed call")
+}
+
+func (f *contractReportFileRepository) CreateReportFile(context.Context, service.ReportFile) (service.ReportFile, error) {
+	return service.ReportFile{}, errors.New("unexpected CreateReportFile call")
+}
+
+func (f *contractReportFileRepository) ListReportFiles(context.Context, service.ReportFileListFilter) ([]service.ReportFile, int, error) {
+	return nil, 0, errors.New("unexpected ListReportFiles call")
+}
+
+func (f *contractReportFileRepository) GetReportFileByID(context.Context, string) (service.ReportFile, error) {
+	return f.file, nil
+}
+
+func (f *contractReportFileRepository) GetReportFileByJobID(context.Context, string) (service.ReportFile, error) {
+	return service.ReportFile{}, errors.New("unexpected GetReportFileByJobID call")
+}
+
+func (f *contractReportFileRepository) UpdateReportFile(context.Context, service.ReportFile) (service.ReportFile, error) {
+	return service.ReportFile{}, errors.New("unexpected UpdateReportFile call")
+}
+
+type leakingReportFileContentClient struct {
+	err error
+}
+
+func (f *leakingReportFileContentClient) CreateFile(context.Context, service.RequestContext, service.UploadedFile) (service.FileObject, error) {
+	return service.FileObject{}, errors.New("unexpected CreateFile call")
+}
+
+func (f *leakingReportFileContentClient) ReadFileContent(context.Context, service.RequestContext, string) (service.FileContent, error) {
+	return service.FileContent{}, f.err
 }
