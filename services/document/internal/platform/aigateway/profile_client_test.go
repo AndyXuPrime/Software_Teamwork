@@ -131,6 +131,11 @@ func TestProfileClientAcceptsLocalAndServiceBaseURL(t *testing.T) {
 		"http://127.0.0.1:8086/internal/v1",
 		"http://[::1]:8086",
 		"http://ai-gateway:8086",
+		// https variants exercise all four canonicalBaseURL https branches
+		"https://localhost:8086",
+		"https://ai-gateway:8086",
+		"https://127.0.0.1:8086",
+		"https://[::1]:8086",
 	}
 	for _, baseURL := range cases {
 		t.Run(baseURL, func(t *testing.T) {
@@ -138,5 +143,94 @@ func TestProfileClientAcceptsLocalAndServiceBaseURL(t *testing.T) {
 				t.Fatalf("NewProfileClient() rejected base URL %q: %v", baseURL, err)
 			}
 		})
+	}
+}
+
+func TestProfileClientRejectsEmptyProfileID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called for empty profileID")
+	}))
+	defer server.Close()
+
+	client, err := NewProfileClient("http://localhost:8086", "service-token", newTestHTTPClient(t, server.URL))
+	if err != nil {
+		t.Fatalf("NewProfileClient() error = %v", err)
+	}
+	_, err = client.GetModelProfile(context.Background(), service.RequestContext{}, "")
+	if err == nil {
+		t.Fatal("GetModelProfile() error = nil, want validation error for empty profileID")
+	}
+	appErr, ok := service.Classify(err)
+	if !ok || appErr.Code != service.CodeValidation {
+		t.Fatalf("error = %#v, want validation error", err)
+	}
+}
+
+func TestProfileClientMapsDependencyErrorOnNonSuccessStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	client, err := NewProfileClient("http://localhost:8086", "service-token", newTestHTTPClient(t, server.URL))
+	if err != nil {
+		t.Fatalf("NewProfileClient() error = %v", err)
+	}
+	_, err = client.GetModelProfile(context.Background(), service.RequestContext{}, "some-profile")
+	if err == nil {
+		t.Fatal("GetModelProfile() error = nil, want dependency error for 503")
+	}
+	appErr, ok := service.Classify(err)
+	if !ok || appErr.Code != service.CodeDependency {
+		t.Fatalf("error = %#v, want dependency error", err)
+	}
+}
+
+func TestProfileClientMapsNetworkErrorToDependencyError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer server.Close()
+
+	client, err := NewProfileClient("http://localhost:8086", "service-token", newTestHTTPClient(t, server.URL))
+	if err != nil {
+		t.Fatalf("NewProfileClient() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = client.GetModelProfile(ctx, service.RequestContext{}, "some-profile")
+	if err == nil {
+		t.Fatal("GetModelProfile() error = nil, want dependency error for cancelled context")
+	}
+	appErr, ok := service.Classify(err)
+	if !ok || appErr.Code != service.CodeDependency {
+		t.Fatalf("error = %#v, want dependency error", err)
+	}
+}
+
+func TestProfileClientMapsInvalidJSONToDependencyError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer server.Close()
+
+	client, err := NewProfileClient("http://localhost:8086", "service-token", newTestHTTPClient(t, server.URL))
+	if err != nil {
+		t.Fatalf("NewProfileClient() error = %v", err)
+	}
+	_, err = client.GetModelProfile(context.Background(), service.RequestContext{}, "some-profile")
+	if err == nil {
+		t.Fatal("GetModelProfile() error = nil, want dependency error for invalid JSON")
+	}
+	appErr, ok := service.Classify(err)
+	if !ok || appErr.Code != service.CodeDependency {
+		t.Fatalf("error = %#v, want dependency error", err)
+	}
+}
+
+func TestTimeoutMSToSecondsZeroReturnsZero(t *testing.T) {
+	if got := timeoutMSToSeconds(0); got != 0 {
+		t.Fatalf("timeoutMSToSeconds(0) = %d, want 0", got)
+	}
+	if got := timeoutMSToSeconds(-1); got != 0 {
+		t.Fatalf("timeoutMSToSeconds(-1) = %d, want 0", got)
 	}
 }
