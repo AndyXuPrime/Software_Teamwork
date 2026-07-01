@@ -10,13 +10,7 @@ from deepdoc.vision.table_structure_recognizer import TableStructureRecognizer
 
 logger = logging.getLogger(__name__)
 
-# OSS model label → Go tsrLabels index (labels are identical)
-# Go-side (internal/parser/deepdoc.go):
-#   var tsrLabels = []string{
-#       "table", "table column", "table row",
-#       "table column header", "table projected row header",
-#       "table spanning cell",
-#   }
+# OSS model label → wire-format class index (TSR label order)
 TSR_CLASS_MAP = {
     "table": 0,
     "table column": 1,

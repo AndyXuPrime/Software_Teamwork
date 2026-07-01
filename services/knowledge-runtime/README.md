@@ -63,9 +63,9 @@ VENDOR_RUNTIME_URL=http://127.0.0.1:9380 go run ./cmd/adapter
 
 ## Configuration
 
-- Project overlay: `conf/service_conf.compose.yaml` (used by compose via env substitution)
-- Upstream template: `docker/service_conf.yaml.template` (rendered by `entrypoint.sh` in containers)
-- Go ingestor (`cmd/ingestor.go`, NATS) is **not** the default worker path; Python `task_executor.py` + Redis is.
+- Compose overlay: `conf/service_conf.compose.yaml` (used by root `deploy/docker-compose.yml`)
+- Container template: `conf/service_conf.yaml.template` (rendered by `docker/entrypoint.sh`)
+- Local dev: copy compose overlay to `conf/service_conf.yaml` and point hosts at localhost
 
 ## Upstream
 

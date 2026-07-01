@@ -11,7 +11,7 @@ cat /ragflow/VERSION
 function usage() {
     echo "Usage: $0 [--disable-api-server] [--disable-webserver] [--disable-taskexecutor] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
     echo
-    echo "  --disable-api-server            Disables the API server stack (nginx reverse proxy + ragflow_server)."
+    echo "  --disable-api-server            Disables the Python API server (ragflow_server)."
     echo "  --disable-webserver             Alias for --disable-api-server."
     echo "  --disable-taskexecutor          Disables task executor workers."
     echo "  --enable-mcpserver              Enables the MCP server."
@@ -160,27 +160,6 @@ export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
 PY=python3
 
 # -----------------------------------------------------------------------------
-# Select Nginx Configuration based on API_PROXY_SCHEME
-# -----------------------------------------------------------------------------
-NGINX_CONF_DIR="/etc/nginx/conf.d"
-if [ -n "$API_PROXY_SCHEME" ]; then
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf"
-        echo "Applied nginx config: ragflow.conf.hybrid"
-    elif [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
-        echo "Applied nginx config: ragflow.conf.golang (default)"
-    else
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
-        echo "Applied nginx config: ragflow.conf.python"
-    fi
-else
-    # Default to python backend
-    cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
-    echo "Default: applied nginx config: ragflow.conf.python"
-fi
-
-# -----------------------------------------------------------------------------
 # Function(s)
 # -----------------------------------------------------------------------------
 
@@ -223,24 +202,6 @@ function ensure_db_init() {
     echo "Database tables initialized."
 }
 
-function wait_for_server() {
-    local url="$1"
-    local server_name="$2"
-    local timeout=90
-    local interval=2
-    local start_time=$(date +%s)
-
-    echo "Waiting for $server_name to be ready at $url..."
-    while ! curl -f -s -o /dev/null "$url"; do
-        if [ $(($(date +%s) - start_time)) -gt $timeout ]; then
-            echo "Timeout waiting for $server_name after $timeout seconds"
-            return 1
-        fi
-        sleep $interval
-    done
-    echo "$server_name is ready."
-}
-
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
@@ -248,25 +209,12 @@ ensure_docling
 ensure_db_init
 
 if [[ "${ENABLE_API_SERVER}" -eq 1 ]]; then
-    echo "Starting API reverse proxy (nginx)..."
-    /usr/sbin/nginx
-
     while true; do
         echo "Attempt to start RAGFlow server..."
         "$PY" api/ragflow_server.py
-        echo "RAGFlow python server started."
-        sleep 1;
+        echo "RAGFlow server exited; restarting in 1s..."
+        sleep 1
     done &
-
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        while true; do
-            echo "Attempt to start RAGFlow go server..."
-            wait_for_server "http://127.0.0.1:9380/api/v1/system/healthz" "ragflow_server"
-            echo "Starting RAGFlow go server..."
-            bin/ragflow_server
-            sleep 1;
-        done &
-    fi
 fi
 
 

@@ -26,7 +26,6 @@ from enum import Enum
 from functools import wraps
 
 from quart_auth import AuthUser
-from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from peewee import (
     fn,
     InterfaceError,
@@ -728,8 +727,7 @@ class User(DataBaseModel, AuthUser):
         return self.email
 
     def get_id(self):
-        jwt = Serializer(secret_key=settings.get_secret_key())
-        return jwt.dumps(str(self.access_token))
+        return str(self.id)
 
     def to_safe_dict(self, *, for_self: bool = False):
         """Return a dict with sensitive fields stripped for API responses.

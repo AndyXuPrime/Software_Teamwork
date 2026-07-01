@@ -1,7 +1,8 @@
 # Vendored RAGFlow Runtime
 
-This directory is an isolated copy of upstream RAGFlow for Knowledge/RAG
-adaptation work. It is not wired into the current Knowledge service runtime.
+This directory is an isolated copy of upstream RAGFlow, deployed as the Knowledge
+vendor runtime. The Go contract adapter in `services/knowledge/` calls its HTTP
+API on `:9380` via `VENDOR_RUNTIME_URL`.
 
 ## Upstream
 
@@ -14,11 +15,10 @@ adaptation work. It is not wired into the current Knowledge service runtime.
 
 ## Isolation Boundary
 
-- Do not import this source directly from the Go Knowledge service.
-- Do not add Knowledge, Parser, Gateway, or QA integration here in the vendor
-  import task.
-- Future adapters should call a documented HTTP/runtime boundary or live outside
-  this copied upstream tree.
+- Do not import this Python source directly from the Go Knowledge adapter; call
+  the documented HTTP API (`/api/v1/*` on `:9380`).
+- Do not add Gateway, Parser, or QA integration inside this vendor tree.
+- Product auth is Gateway `X-User-Id` / `X-Tenant-Id`; RAGFlow web login is not used.
 
 ## Refresh Notes
 

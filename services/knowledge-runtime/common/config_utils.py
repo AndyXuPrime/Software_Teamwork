@@ -17,7 +17,6 @@
 import os
 import copy
 import logging
-import importlib
 from filelock import FileLock
 
 from common.file_utils import get_project_base_directory
@@ -116,31 +115,9 @@ def get_base_config(key, default=None):
     return CONFIGS.get(key, default)
 
 
-def decrypt_database_password(password):
-    encrypt_password = get_base_config("encrypt_password", False)
-    encrypt_module = get_base_config("encrypt_module", False)
-    private_key = get_base_config("private_key", None)
-
-    if not password or not encrypt_password:
-        return password
-
-    if not private_key:
-        raise ValueError("No private key")
-
-    module_fun = encrypt_module.split("#")
-    pwdecrypt_fun = getattr(
-        importlib.import_module(
-            module_fun[0]),
-        module_fun[1])
-
-    return pwdecrypt_fun(private_key, password)
-
-
 def decrypt_database_config(database=None, passwd_key="password", name="database"):
     if not database:
         database = get_base_config(name, {})
-
-    database[passwd_key] = decrypt_database_password(database[passwd_key])
     return database
 
 

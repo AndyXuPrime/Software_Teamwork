@@ -52,14 +52,14 @@ class OceanBaseConnectionPool:
             host = mysql_config.get("host", "localhost")
             port = mysql_config.get("port", 2881)
             self.username = mysql_config.get("user", "root@test")
-            self.password = mysql_config.get("password", "infini_rag_flow")
+            self.password = mysql_config.get("password", "")
             max_connections = mysql_config.get("max_connections", 300)
         else:
             logger.info("Use customized config to create OceanBase connection.")
             host = ob_config.get("host", "localhost")
             port = ob_config.get("port", 2881)
             self.username = ob_config.get("user", "root@test")
-            self.password = ob_config.get("password", "infini_rag_flow")
+            self.password = ob_config.get("password", "")
             max_connections = ob_config.get("max_connections", 300)
 
         self.db_name = ob_config.get("db_name", "test")

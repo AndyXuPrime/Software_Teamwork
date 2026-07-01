@@ -56,7 +56,8 @@ $ curl -N -H "api_key: YOUR_API_KEY" http://127.0.0.1:9382/sse
 ```
 
 :::tip NOTE
-See [here](../acquire_ragflow_api_key.md) for information about acquiring an API key.
+This product path uses Gateway auth and the Knowledge adapter MCP bridge; RAGFlow
+web API keys are not used. For upstream vendor MCP testing, see upstream RAGFlow docs.
 :::
 
 #### Transport

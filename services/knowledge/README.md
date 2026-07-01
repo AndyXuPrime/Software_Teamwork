@@ -31,9 +31,9 @@ See `runtime/README.md` for vendor runtime wiring and compose profiles.
 | `KNOWLEDGE_SHUTDOWN_TIMEOUT` | no | `10s` | Graceful shutdown timeout. |
 
 Upload storage and vector retrieval are configured in the vendor runtime
-(`runtime/service_conf.compose.yaml`): MinIO bucket `software-teamwork-knowledge`,
-doc engine `elasticsearch` or `infinity`. Knowledge does not call File Service,
-Qdrant, Redis, or `services/parser`.
+(`services/knowledge-runtime/conf/service_conf.compose.yaml`): MinIO bucket
+`software-teamwork-knowledge`, doc engine `elasticsearch` (default in compose).
+Knowledge does not call File Service, Qdrant, Redis, or `services/parser`.
 
 ## Implemented Routes
 

@@ -216,23 +216,6 @@ def check_oceanbase_health() -> dict:
         }
 
 
-def get_mysql_status():
-    try:
-        cursor = DB.execute_sql("SHOW PROCESSLIST;")
-        res_rows = cursor.fetchall()
-        headers = ['id', 'user', 'host', 'db', 'command', 'time', 'state', 'info']
-        cursor.close()
-        return {
-            "status": "alive",
-            "message": [dict(zip(headers, r)) for r in res_rows]
-        }
-    except Exception as e:
-        return {
-            "status": "timeout",
-            "message": f"error: {str(e)}",
-        }
-
-
 def _minio_scheme_and_verify():
     """
     Determine URL scheme (http/https) and SSL verify flag for MinIO health check.

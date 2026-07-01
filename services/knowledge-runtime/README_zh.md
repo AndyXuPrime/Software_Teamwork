@@ -1,46 +1,39 @@
-# RAGFlow Runtime（裁剪版）
+# Knowledge Runtime（裁剪版）
 
-本目录是上游 [RAGFlow](https://github.com/infiniflow/ragflow) 的隔离快照，挂载在 Knowledge 服务域下，供后续逐步适配文档解析、RAG 检索与 MCP 工具化能力。
+本目录是上游 [RAGFlow](https://github.com/infiniflow/ragflow) 的隔离快照，作为 Knowledge 的 **vendor 运行时** 部署。Go 契约适配器在 `services/knowledge/cmd/adapter`，通过 `VENDOR_RUNTIME_URL` 调用本目录 Python API（`:9380`）。
 
 完整上游信息与 refresh 步骤见 [`UPSTREAM.md`](UPSTREAM.md)。
 
-## 保留范围
+## 进程
 
-- **文档解析**：`deepdoc/`、`rag/app/`
-- **RAG / 检索**：`rag/`（含 GraphRAG、RAPTOR、mindmap 索引）
-- **检索反馈加权**：`api/db/services/chunk_feedback_service.py` + `POST /api/v1/chunk-feedback`（默认关闭，设 `CHUNK_FEEDBACK_ENABLED=true` 启用）
-- **MCP / 工具化**：`mcp/`
-- **容器化参考**：`docker/`、`Dockerfile*`、`build.sh`
-- **对应测试**：`test/unit_test/deepdoc/`、`test/unit_test/rag/`、`test/unit_test/mcp/` 及相关 REST 集成测试
+| 服务 | 端口 | 入口 | 职责 |
+| --- | --- | --- | --- |
+| `knowledge-runtime-api` | `:9380` | `api/ragflow_server.py` | 数据集/文档/检索 HTTP API |
+| `knowledge-runtime-worker` | n/a | `rag/svr/task_executor.py` | deepdoc 解析、分块、嵌入（Redis 队列） |
+
+共用 PostgreSQL（`knowledge_system`）、MinIO（`software-teamwork-knowledge`）、Elasticsearch、Redis。
 
 ## 已裁剪的产品面
 
-上游完整产品中的 Web UI、Agent、Admin、Chat、Dify 集成、用户注册/登录/租户协作、API token 自助管理等已移除或不再暴露。运行时信任上游 Gateway 注入的 `X-Tenant-Id`（或 `X-User-Id`）解析 tenant 上下文，用于保护 dataset / document / retrieval / MCP 等核心 API。
+上游 Web UI、Agent、Admin、Chat、用户注册/登录、Go HTTP 运行时、容器内 nginx、vendor 自带 docker-compose 等已移除。运行时信任 Gateway 注入的 `X-Tenant-Id` / `X-User-Id`。
 
 ## 主要目录
 
 | 路径 | 说明 |
 |------|------|
+| `api/` | Python REST API 与 DB 服务（adapter 调用面） |
 | `deepdoc/` | 文档解析器与视觉模型 |
 | `rag/` | 分块、嵌入、检索、GraphRAG、任务执行 |
-| `mcp/` | MCP server / client |
-| `api/` | Python REST API 与 DB 服务 |
-| `internal/` | Go API 与 ingestion 运行时 |
-| `docker/` | Compose 与启动脚本参考 |
-| `common/data_source/` | 多源连接器参考代码（默认不启用运行时） |
-| `docs/` | 保留的 parser/RAG/MCP 参考文档 |
+| `docker/` | 容器 entrypoint |
+| `conf/` | 运行时配置（compose 覆盖见 `service_conf.compose.yaml`） |
+| `common/data_source/` | 多源连接器参考代码（默认不启用） |
+| `docs/` | parser/RAG 参考文档 |
 
 ## 本地验证
 
 ```bash
-# Python 语法抽查
+bash -n docker/entrypoint.sh
 python3 -m py_compile api/apps/__init__.py rag/prompts/generator.py
-
-# Shell 脚本语法
-bash -n docker/entrypoint.sh && bash -n docker/launch_backend_service.sh
-
-# Go 路由注册测试
-go test ./internal/router/...
 ```
 
 ## 许可证

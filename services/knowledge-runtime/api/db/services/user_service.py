@@ -18,7 +18,7 @@ from datetime import datetime
 import logging
 
 import peewee
-from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.security import generate_password_hash
 
 from api.db import UserTenantRole
 from api.db.db_models import DB, UserTenant
@@ -84,31 +84,6 @@ class UserService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def query_user(cls, email, password):
-        """Authenticate a user with email and password.
-
-        Args:
-            email: User's email address.
-            password: User's password in plain text.
-
-        Returns:
-            User object if authentication successful, None otherwise.
-        """
-        user = cls.model.select().where((cls.model.email == email),
-                                        (cls.model.status == StatusEnum.VALID.value)).first()
-        if user and check_password_hash(str(user.password), password):
-            return user
-        else:
-            return None
-
-    @classmethod
-    @DB.connection_context()
-    def query_user_by_email(cls, email):
-        users = cls.model.select().where((cls.model.email == email))
-        return list(users)
-
-    @classmethod
-    @DB.connection_context()
     def save(cls, **kwargs):
         if "id" not in kwargs:
             kwargs["id"] = get_uuid()
@@ -142,17 +117,6 @@ class UserService(CommonService):
                 user_dict["update_date"] = datetime_format(datetime.now())
                 cls.model.update(user_dict).where(
                     cls.model.id == user_id).execute()
-
-    @classmethod
-    @DB.connection_context()
-    def update_user_password(cls, user_id, new_password):
-        with DB.atomic():
-            update_dict = {
-                "password": generate_password_hash(str(new_password)),
-                "update_time": current_timestamp(),
-                "update_date": datetime_format(datetime.now())
-            }
-            cls.model.update(update_dict).where(cls.model.id == user_id).execute()
 
     @classmethod
     @DB.connection_context()

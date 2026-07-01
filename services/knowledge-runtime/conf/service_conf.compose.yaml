@@ -12,14 +12,6 @@ postgres:
   host: postgres
   port: 5432
 
-# Legacy upstream default kept for reference only:
-# mysql:
-#   name: rag_flow
-#   user: root
-#   password: infini_rag_flow
-#   host: mysql
-#   port: 3306
-
 minio:
   user: ${MINIO_ROOT_USER:-minio_local_demo}
   password: ${MINIO_ROOT_PASSWORD:-minio-local-demo-password}

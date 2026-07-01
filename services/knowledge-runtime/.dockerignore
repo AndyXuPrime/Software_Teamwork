@@ -12,10 +12,6 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
-# ── Frontend dependencies and build outputs ─────────────────────────────────
-web/node_modules/
-web/dist/
-
 # ── Runtime logs ────────────────────────────────────────────────────────────
 logs/
 *.log
@@ -23,14 +19,6 @@ docker/ragflow-logs/
 
 # ── Docker runtime data ─────────────────────────────────────────────────────
 docker/data/
-docker/oceanbase/
-docker/seekdb/
-
-# ── Go and C++ build outputs ────────────────────────────────────────────────
-internal/cpp/build/
-internal/cpp/cmake-build-release/
-internal/cpp/cmake-build-debug/
-target/
 
 # ── ragflow_deps build context (built as a separate image, mounted ──
 # ── from RAGFLOW_DEPS_IMAGE by the main Dockerfile)                 ──
@@ -54,5 +42,5 @@ htmlcov/
 .hypothesis/
 .nox/
 
-# ── Docker env (contains secrets) ───────────────────────────────────────────
+# ── Docker env (local-only; not shipped in image) ───────────────────────────
 docker/.env

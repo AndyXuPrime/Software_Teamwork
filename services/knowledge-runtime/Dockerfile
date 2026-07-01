@@ -2,6 +2,8 @@
 ARG IMAGE_REGISTRY_PREFIX=
 # Pinned deps image (see UPSTREAM.md import commit). Override at build time if needed.
 ARG RAGFLOW_DEPS_IMAGE=infiniflow/ragflow_deps:51ce6aab
+FROM ${IMAGE_REGISTRY_PREFIX}infiniflow/ragflow_deps:51ce6aab AS ragflow_deps
+
 FROM ${IMAGE_REGISTRY_PREFIX}ubuntu:24.04 AS base
 USER root
 SHELL ["/bin/bash", "-c"]
@@ -13,7 +15,7 @@ WORKDIR /ragflow
 
 # copy models downloaded via download_deps.py
 RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
-RUN --mount=type=bind,from=${RAGFLOW_DEPS_IMAGE},source=/huggingface.co,target=/huggingface.co \
+RUN --mount=type=bind,from=ragflow_deps,source=/huggingface.co,target=/huggingface.co \
     tar --exclude='.*' -cf - \
         /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
         /huggingface.co/InfiniFlow/deepdoc \
@@ -21,7 +23,7 @@ RUN --mount=type=bind,from=${RAGFLOW_DEPS_IMAGE},source=/huggingface.co,target=/
 
 # https://github.com/chrismattmann/tika-python
 # This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.
-RUN --mount=type=bind,from=${RAGFLOW_DEPS_IMAGE},source=/,target=/deps \
+RUN --mount=type=bind,from=ragflow_deps,source=/,target=/deps \
     cp -r /deps/nltk_data /root/ && \
     cp /deps/tika-server-standard-3.3.0.jar /deps/tika-server-standard-3.3.0.jar.md5 /ragflow/ && \
     cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
@@ -63,18 +65,8 @@ RUN mkdir -p /usr/share/infinity/resource && \
     cp -r /tmp/resource/* /usr/share/infinity/resource && \
     rm -rf /tmp/resource
 
-ARG NGINX_VERSION=1.31.0-1~noble
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    mkdir -p /etc/apt/keyrings && \
-    curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/keyrings/nginx-archive-keyring.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/nginx-archive-keyring.gpg] https://nginx.org/packages/mainline/ubuntu/ noble nginx" > /etc/apt/sources.list.d/nginx.list && \
-    apt -o Acquire::Retries=5 update && \
-    apt -o Acquire::Retries=5 install -y nginx=${NGINX_VERSION} && \
-    apt-mark hold nginx && \
-    rm -rf /var/lib/apt/lists/*
-
 # Install uv
-RUN --mount=type=bind,from=${RAGFLOW_DEPS_IMAGE},source=/,target=/deps \
+RUN --mount=type=bind,from=ragflow_deps,source=/,target=/deps \
     if [ "$NEED_MIRROR" == "1" ]; then \
         mkdir -p /etc/uv && \
         echo 'python-install-mirror = "https://registry.npmmirror.com/-/binary/python-build-standalone/"' > /etc/uv/uv.toml && \
@@ -115,16 +107,16 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
 
 
 # Add dependencies of selenium
-RUN --mount=type=bind,from=${RAGFLOW_DEPS_IMAGE},source=/chrome-linux64-121-0-6167-85,target=/chrome-linux64.zip \
+RUN --mount=type=bind,from=ragflow_deps,source=/chrome-linux64-121-0-6167-85,target=/chrome-linux64.zip \
     unzip /chrome-linux64.zip && \
     mv chrome-linux64 /opt/chrome && \
     ln -s /opt/chrome/chrome /usr/local/bin/
-RUN --mount=type=bind,from=${RAGFLOW_DEPS_IMAGE},source=/chromedriver-linux64-121-0-6167-85,target=/chromedriver-linux64.zip \
+RUN --mount=type=bind,from=ragflow_deps,source=/chromedriver-linux64-121-0-6167-85,target=/chromedriver-linux64.zip \
     unzip -j /chromedriver-linux64.zip chromedriver-linux64/chromedriver && \
     mv chromedriver /usr/local/bin/ && \
     rm -f /usr/bin/google-chrome
 
-RUN --mount=type=bind,from=${RAGFLOW_DEPS_IMAGE},source=/,target=/deps \
+RUN --mount=type=bind,from=ragflow_deps,source=/,target=/deps \
     if [ "$(uname -m)" = "x86_64" ]; then \
         dpkg -i /deps/libssl1.1_1.1.1f-1ubuntu2_amd64.deb; \
     elif [ "$(uname -m)" = "aarch64" ]; then \
@@ -200,19 +192,11 @@ COPY rag rag
 COPY pyproject.toml uv.lock ./
 COPY mcp mcp
 COPY common common
-COPY bin bin
 
 # Project overlay: PostgreSQL + compose-friendly env substitution (see conf/service_conf.yaml.template).
 COPY conf/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint.sh ./
 RUN chmod +x ./entrypoint*.sh
-
-# Copy nginx configuration for frontend serving
-COPY docker/nginx/ragflow.conf.golang docker/nginx/ragflow.conf.python docker/nginx/ragflow.conf.hybrid docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
-RUN mv /etc/nginx/ragflow.conf.golang /etc/nginx/conf.d/ragflow.conf.golang && \
-    mv /etc/nginx/ragflow.conf.python /etc/nginx/conf.d/ragflow.conf.python && \
-    mv /etc/nginx/ragflow.conf.hybrid /etc/nginx/conf.d/ragflow.conf.hybrid && \
-    rm -f /etc/nginx/sites-enabled/default
 
 COPY --from=builder /ragflow/VERSION /ragflow/VERSION
 ENTRYPOINT ["./entrypoint.sh"]
