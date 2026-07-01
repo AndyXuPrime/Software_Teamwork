@@ -82,9 +82,14 @@ check 名称补入 `contexts`。
 - 同步成功后把正文中的 `Project sync` 改为 `synced`；同步失败则改为
   `blocked`，并将本次 workflow run 标记为失败，方便维护者发现权限问题。
 
-新任务 issue 默认使用 [.github/ISSUE_TEMPLATE/issue.md](../../.github/ISSUE_TEMPLATE/issue.md)。
-模板标题采用 `[A/B/C/F/S/T-001] 中文任务标题` 格式，正文包含任务信息、工时字段、依赖字段和
-`Project sync` 字段，以便 Task Issue Sync 识别和同步 Project 字段。
+新任务 issue 按任务类型选择模板：普通开发、文档、联调和专项任务使用
+[.github/ISSUE_TEMPLATE/issue.md](../../.github/ISSUE_TEMPLATE/issue.md)；测试组
+`T-*` 任务优先使用
+[.github/ISSUE_TEMPLATE/test_issue.md](../../.github/ISSUE_TEMPLATE/test_issue.md)。
+两个模板标题都采用 `[A/B/C/F/S/T-001] 中文任务标题` 或 `[T-001] 中文测试任务标题`
+格式，正文包含任务信息、工时字段、依赖字段和 `Project sync` 字段，以便 Task Issue Sync
+识别和同步 Project 字段。Test Task Issue 模板额外包含测试执行与缺陷处理规则，要求测试
+主责人实际运行测试、记录结果，并把大问题转给对应 owner 小组。
 
 Project `Software Teamwork` 的 `Group` 单选字段需要包含 `L1nggTeam`、`JerryTeam`、
 `PrimeTeam`、`Frontend`、`Special` 和 `Test`。`Test` 用于测试文档、测试代码、测试报告
