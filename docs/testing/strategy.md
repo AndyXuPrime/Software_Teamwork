@@ -16,6 +16,7 @@
 - OpenAPI 是协作源；改 Gateway active API 时必须跑契约校验和前端类型同步检查。
 - 数据库 migration 必须能从空库 apply。
 - env-gated integration tests 默认可能跳过；如果本次改动触碰 repository、SQL 或 migration，应尽量提供本地数据库执行记录。
+- 测试组 `T-*` 任务必须实际运行测试，并按 `docs/testing/templates/test-report-template.md` 生成完整测试报告，归档到 `docs/testing/reports/YYYY-MM-DD/`。
 - 当前有前端 Playwright 基础 smoke，但没有后端跨服务完整 E2E smoke；不要用单服务测试或前端 mock E2E 替代跨服务验收。
 - Parser runtime、Dockerfile 和 Parser Service CI 已落地；当前 CI 使用 fake OCR backend 覆盖 lint/test/compile，并在 PaddleOCR 依赖、锁文件或 Dockerfile 变化时校验 extra lock。真实 PaddleOCR 模型 smoke 已作为 env-gated 本地命令提供，但不属于普通 CI required check。
 - open PR、未合入 issue 和草案不能写成当前 `develop` 已实现；测试记录也不能把未稳定依赖的检查写成 required。
@@ -226,6 +227,17 @@ prompts, document text, embedding payloads, or provider raw bodies.
 6. QA 创建 session/message，非流式和 SSE 路径都能保存 response run 和事件摘要。
 7. Document 创建 report/job，worker 推进 attempt/event；真实生成落地后再验证 AI Gateway 和 File Service。
 8. 前端 typed client 能在 Gateway OpenAPI 更新后重新生成并通过 check/build。
+
+## 测试报告归档
+
+测试报告是测试任务的必交付物，不是 PR body 的替代品。每个 `T-*` 测试任务完成时都应：
+
+- 复制 `docs/testing/templates/test-report-template.md` 生成报告。
+- 将报告保存到 `docs/testing/reports/YYYY-MM-DD/`，日期使用实际执行日期。
+- 在报告中记录被测 commit、环境、执行命令、结果、失败证据、未运行原因、缺陷处理和最终结论。
+- 在测试 issue 和 PR 中链接报告路径。
+
+旧的 `docs/tests/` 目录不再新增报告；历史报告已迁移到 `docs/testing/reports/`。
 
 ## PR 记录要求
 
