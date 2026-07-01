@@ -17,6 +17,8 @@ type resourceRepositoryStub struct {
 	createdLLMInput  CreateLLMConfigVersionInput
 	createQACalled   bool
 	createLLMCalled  bool
+	createQAErr      error
+	createLLMErr     error
 	restoredQAID     string
 	restoredLLMID    string
 	savedInput       RetrievalTestInput
@@ -62,7 +64,7 @@ func (r *resourceRepositoryStub) CreateQAConfigVersionResource(_ context.Context
 		r.activeQAConfig.IsActive = false
 	}
 	r.activeQAConfig = QAConfigVersion{ID: "qa-config-id", IsActive: shouldActivateConfig(input.Activate), ReplacedActiveVersionID: replacedID}
-	return r.activeQAConfig, nil
+	return r.activeQAConfig, r.createQAErr
 }
 func (r *resourceRepositoryStub) RestoreQAConfigActiveVersion(_ context.Context, failedVersionID, restoreVersionID string) error {
 	r.restoredQAID = restoreVersionID
@@ -86,7 +88,7 @@ func (r *resourceRepositoryStub) CreateLLMConfigVersionResource(_ context.Contex
 		r.activeLLMConfig.IsActive = false
 	}
 	r.activeLLMConfig = LLMConfigVersion{ID: "llm-config-id", IsActive: shouldActivateConfig(input.Activate), ReplacedActiveVersionID: replacedID}
-	return r.activeLLMConfig, nil
+	return r.activeLLMConfig, r.createLLMErr
 }
 func (r *resourceRepositoryStub) RestoreLLMConfigActiveVersion(_ context.Context, failedVersionID, restoreVersionID string) error {
 	r.restoredLLMID = restoreVersionID
@@ -380,6 +382,25 @@ func TestCreateQAConfigVersionPreservesExplicitEmptyAgentToolWhitelist(t *testin
 	}
 }
 
+func TestCreateQAConfigVersionTreatsExplicitZeroScoreThresholdAsConfiguredDuringValidation(t *testing.T) {
+	repository := &resourceRepositoryStub{}
+	resources, err := NewResourceService(repository, &knowledgeRetrieverStub{}, llmTesterStub{}, RuntimeLLMConfig{}, runCancellerStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = resources.CreateQAConfigVersion(context.Background(), "user-1", CreateQAConfigVersionInput{
+		Retrieval:           RetrievalSettings{TopK: 5, ScoreThreshold: 0}.WithScoreThresholdConfigured(),
+		SimilarityThreshold: 2,
+	})
+	if err != nil {
+		t.Fatalf("error=%v, want explicit zero threshold to ignore legacy invalid threshold", err)
+	}
+	if !repository.createQACalled {
+		t.Fatal("CreateQAConfigVersionResource was not called")
+	}
+}
+
 func TestCreateQAConfigVersionReloadsRuntimeWhenActivated(t *testing.T) {
 	repository := &resourceRepositoryStub{}
 	reloader := &resourceReloaderStub{}
@@ -472,6 +493,36 @@ func TestCreateQAConfigVersionDeactivatesFailedVersionWhenReloadFailsWithoutPrev
 	}
 }
 
+func TestCreateQAConfigVersionRollsBackWhenPostCommitReadFails(t *testing.T) {
+	repository := &resourceRepositoryStub{
+		activeQAConfig: QAConfigVersion{ID: "qa-old", IsActive: true},
+		createQAErr:    errors.New("post commit read failed"),
+	}
+	reloader := &resourceReloaderStub{}
+	resources, err := NewResourceService(repository, &knowledgeRetrieverStub{}, llmTesterStub{}, RuntimeLLMConfig{}, runCancellerStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources.SetReloader(reloader)
+
+	_, err = resources.CreateQAConfigVersion(context.Background(), "user-1", CreateQAConfigVersionInput{
+		Retrieval: RetrievalSettings{TopK: 5, ScoreThreshold: .2},
+	})
+
+	if err == nil {
+		t.Fatal("expected post-commit create error")
+	}
+	if reloader.called != 0 {
+		t.Fatalf("reload called %d times, want 0", reloader.called)
+	}
+	if repository.restoredQAID != "qa-old" {
+		t.Fatalf("restored qa id=%q, want qa-old", repository.restoredQAID)
+	}
+	if repository.activeQAConfig.ID != "qa-old" || !repository.activeQAConfig.IsActive {
+		t.Fatalf("active QA config=%+v, want restored old active", repository.activeQAConfig)
+	}
+}
+
 func TestCreateLLMConfigVersionReloadsRuntimeWhenActivated(t *testing.T) {
 	repository := &resourceRepositoryStub{}
 	reloader := &resourceReloaderStub{}
@@ -542,6 +593,36 @@ func TestCreateLLMConfigVersionDeactivatesFailedVersionWhenReloadFailsWithoutPre
 	}
 	if repository.activeLLMConfig.ID != "llm-config-id" || repository.activeLLMConfig.IsActive {
 		t.Fatalf("active LLM config=%+v, want failed config inactive", repository.activeLLMConfig)
+	}
+}
+
+func TestCreateLLMConfigVersionRollsBackWhenPostCommitReadFails(t *testing.T) {
+	repository := &resourceRepositoryStub{
+		activeLLMConfig: LLMConfigVersion{ID: "llm-old", IsActive: true},
+		createLLMErr:    errors.New("post commit read failed"),
+	}
+	reloader := &resourceReloaderStub{}
+	resources, err := NewResourceService(repository, &knowledgeRetrieverStub{}, llmTesterStub{}, RuntimeLLMConfig{}, runCancellerStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources.SetReloader(reloader)
+
+	_, err = resources.CreateLLMConfigVersion(context.Background(), "user-1", CreateLLMConfigVersionInput{
+		Provider: "ai-gateway", ProfileID: "profile-1", ModelName: "K2.6", TimeoutSeconds: 60,
+	})
+
+	if err == nil {
+		t.Fatal("expected post-commit create error")
+	}
+	if reloader.called != 0 {
+		t.Fatalf("reload called %d times, want 0", reloader.called)
+	}
+	if repository.restoredLLMID != "llm-old" {
+		t.Fatalf("restored llm id=%q, want llm-old", repository.restoredLLMID)
+	}
+	if repository.activeLLMConfig.ID != "llm-old" || !repository.activeLLMConfig.IsActive {
+		t.Fatalf("active LLM config=%+v, want restored old active", repository.activeLLMConfig)
 	}
 }
 

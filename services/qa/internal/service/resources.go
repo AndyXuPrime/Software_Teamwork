@@ -432,6 +432,7 @@ type KnowledgeStatsProvider interface {
 
 type ActiveRunCanceller interface{ CancelActiveRun(string) }
 
+const configActivationPostCommitTimeout = 30 * time.Second
 const configReloadRollbackTimeout = 5 * time.Second
 
 type ResourceService struct {
@@ -474,6 +475,14 @@ func (s *ResourceService) reloadRuntime(ctx context.Context) error {
 
 func shouldActivateConfig(activate *bool) bool {
 	return activate == nil || *activate
+}
+
+func configActivationContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), configActivationPostCommitTimeout)
+}
+
+func configRollbackContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), configReloadRollbackTimeout)
 }
 
 func (s *ResourceService) GetResponseRun(ctx context.Context, userID, id string) (ResponseRun, error) {
@@ -598,7 +607,7 @@ func (s *ResourceService) CreateQAConfigVersion(ctx context.Context, userID stri
 		fields["retrieval.topK"] = "must be between 1 and 100"
 	}
 	threshold := input.Retrieval.ScoreThreshold
-	if threshold == 0 {
+	if !input.Retrieval.HasScoreThreshold() {
 		threshold = input.SimilarityThreshold
 	}
 	if threshold < 0 || threshold > 1 {
@@ -636,15 +645,22 @@ func (s *ResourceService) CreateQAConfigVersion(ctx context.Context, userID stri
 	if len(fields) > 0 {
 		return QAConfigVersion{}, ValidationError(fields)
 	}
+	activate := shouldActivateConfig(input.Activate)
 	version, err := s.repository.CreateQAConfigVersionResource(ctx, userID, input)
 	if err != nil {
+		if activate {
+			if rollbackErr := s.rollbackQAConfigActivation(ctx, version); rollbackErr != nil {
+				err = fmt.Errorf("%w; rollback active QA config: %v", err, rollbackErr)
+			}
+		}
 		return QAConfigVersion{}, err
 	}
-	if shouldActivateConfig(input.Activate) {
-		if err := s.reloadRuntime(ctx); err != nil {
-			rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), configReloadRollbackTimeout)
-			defer cancel()
-			if rollbackErr := s.repository.RestoreQAConfigActiveVersion(rollbackCtx, version.ID, version.ReplacedActiveVersionID); rollbackErr != nil {
+	if activate {
+		reloadCtx, cancel := configActivationContext(ctx)
+		err := s.reloadRuntime(reloadCtx)
+		cancel()
+		if err != nil {
+			if rollbackErr := s.rollbackQAConfigActivation(ctx, version); rollbackErr != nil {
 				err = fmt.Errorf("%w; rollback active QA config: %v", err, rollbackErr)
 			}
 			return QAConfigVersion{}, NewError(CodeDependency, "runtime reload failed", err)
@@ -659,21 +675,46 @@ func (s *ResourceService) CreateLLMConfigVersion(ctx context.Context, userID str
 	if fields := validateLLMProfile(input.Provider, input.ProfileID, input.ModelName, input.TimeoutSeconds, input.Temperature, input.MaxTokens); len(fields) > 0 {
 		return LLMConfigVersion{}, ValidationError(fields)
 	}
+	activate := shouldActivateConfig(input.Activate)
 	version, err := s.repository.CreateLLMConfigVersionResource(ctx, userID, input)
 	if err != nil {
+		if activate {
+			if rollbackErr := s.rollbackLLMConfigActivation(ctx, version); rollbackErr != nil {
+				err = fmt.Errorf("%w; rollback active LLM config: %v", err, rollbackErr)
+			}
+		}
 		return LLMConfigVersion{}, err
 	}
-	if shouldActivateConfig(input.Activate) {
-		if err := s.reloadRuntime(ctx); err != nil {
-			rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), configReloadRollbackTimeout)
-			defer cancel()
-			if rollbackErr := s.repository.RestoreLLMConfigActiveVersion(rollbackCtx, version.ID, version.ReplacedActiveVersionID); rollbackErr != nil {
+	if activate {
+		reloadCtx, cancel := configActivationContext(ctx)
+		err := s.reloadRuntime(reloadCtx)
+		cancel()
+		if err != nil {
+			if rollbackErr := s.rollbackLLMConfigActivation(ctx, version); rollbackErr != nil {
 				err = fmt.Errorf("%w; rollback active LLM config: %v", err, rollbackErr)
 			}
 			return LLMConfigVersion{}, NewError(CodeDependency, "runtime reload failed", err)
 		}
 	}
 	return version, nil
+}
+
+func (s *ResourceService) rollbackQAConfigActivation(ctx context.Context, version QAConfigVersion) error {
+	if version.ID == "" {
+		return nil
+	}
+	rollbackCtx, cancel := configRollbackContext(ctx)
+	defer cancel()
+	return s.repository.RestoreQAConfigActiveVersion(rollbackCtx, version.ID, version.ReplacedActiveVersionID)
+}
+
+func (s *ResourceService) rollbackLLMConfigActivation(ctx context.Context, version LLMConfigVersion) error {
+	if version.ID == "" {
+		return nil
+	}
+	rollbackCtx, cancel := configRollbackContext(ctx)
+	defer cancel()
+	return s.repository.RestoreLLMConfigActiveVersion(rollbackCtx, version.ID, version.ReplacedActiveVersionID)
 }
 func (s *ResourceService) TestLLMConnection(ctx context.Context, userID string, input LLMProfileTestInput) (LLMProfileTestResult, error) {
 	if fields := validateLLMProfile(input.Provider, input.ProfileID, input.ModelName, input.TimeoutSeconds, 0, 0); len(fields) > 0 {

@@ -264,6 +264,10 @@ func applyQAConfigVersionCompatibilityFields(v *service.QAConfigVersion) {
 	v.EnabledToolNames = append([]string(nil), v.Agent.EnabledToolNames...)
 }
 
+func postCommitConfigContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+}
+
 func (r *Postgres) CreateQAConfigVersionResource(ctx context.Context, userID string, input service.CreateQAConfigVersionInput) (service.QAConfigVersion, error) {
 	retrieval := retrievalConfigFromCreateInput(input)
 	agent := agentConfigFromCreateInput(input)
@@ -308,8 +312,13 @@ func (r *Postgres) CreateQAConfigVersionResource(ctx context.Context, userID str
 	if err = tx.Commit(ctx); err != nil {
 		return service.QAConfigVersion{}, err
 	}
-	version, err := r.getQAConfigVersion(ctx, id, false)
+	readCtx, cancel := postCommitConfigContext(ctx)
+	defer cancel()
+	version, err := r.getQAConfigVersion(readCtx, id, false)
 	version.ReplacedActiveVersionID = replacedActiveID
+	if err != nil {
+		version.ID = id
+	}
 	return version, err
 }
 
@@ -459,8 +468,13 @@ func (r *Postgres) CreateLLMConfigVersionResource(ctx context.Context, userID st
 	if err = tx.Commit(ctx); err != nil {
 		return service.LLMConfigVersion{}, err
 	}
-	version, err := r.getLLMConfigVersion(ctx, id, false)
+	readCtx, cancel := postCommitConfigContext(ctx)
+	defer cancel()
+	version, err := r.getLLMConfigVersion(readCtx, id, false)
 	version.ReplacedActiveVersionID = replacedActiveID
+	if err != nil {
+		version.ID = id
+	}
 	return version, err
 }
 
