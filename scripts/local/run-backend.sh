@@ -44,12 +44,9 @@ start() {
   echo "$!" >"$RUN_DIR/$name.pid"
 }
 
-(cd "$ROOT_DIR/services/parser" && uv sync --frozen --group dev --extra paddleocr)
-
 start auth "$ROOT_DIR/services/auth" go run ./cmd/server
 start file "$ROOT_DIR/services/file" go run ./cmd/server
-start parser "$ROOT_DIR/services/parser" uv run --frozen parser-service
-start knowledge "$ROOT_DIR/services/knowledge" go run ./cmd/server
+start knowledge "$ROOT_DIR/services/knowledge" go run ./cmd/adapter
 start ai-gateway "$ROOT_DIR/services/ai-gateway" go run ./cmd/server
 start qa "$ROOT_DIR/services/qa" go run ./cmd/server
 start document "$ROOT_DIR/services/document" go run ./cmd/server

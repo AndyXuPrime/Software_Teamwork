@@ -687,3 +687,15 @@ Changes:
 - Dockerfile/entrypoint: adapter-only binary
 - Compose: Knowledge no longer depends on parser/redis/file; parser under `legacy` profile
 - Parser CI workflow → `workflow_dispatch` only; added `services/parser/DEPRECATED.md`
+
+### 2026-07-01: knowledge vendor replacement phase 5b hard cleanup
+
+- Trimmed `internal/repository` to parser-config only; removed sqlc/goose KB CRUD dead code
+- Slimmed `internal/service/types.go` to adapter + parser-config types
+- Deleted `services/parser/` and parser CI workflow
+- Removed Qdrant and parser services from default compose
+- Updated deploy README, labeler, docker-deploy-checks, `.env.example`
+
+Remaining intentional bridge: parser-config admin (`/internal/v1/parser-configs`) via goose
+PostgreSQL until vendor admin UI replaces it. OpenAPI `qdrantCollection` trace field name
+unchanged (value `"vendor"`) — rename requires Gateway contract update.
