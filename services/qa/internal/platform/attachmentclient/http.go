@@ -24,12 +24,14 @@ type FileHTTPConfig struct {
 	BaseURL      string
 	ServiceToken string
 	Timeout      time.Duration
+	MaxReadBytes int64
 }
 
 type FileHTTPClient struct {
 	baseURL      *url.URL
 	serviceToken string
 	httpClient   *http.Client
+	maxReadBytes int64
 }
 
 func NewFileHTTPClient(cfg FileHTTPConfig) (*FileHTTPClient, error) {
@@ -40,11 +42,14 @@ func NewFileHTTPClient(cfg FileHTTPConfig) (*FileHTTPClient, error) {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 30 * time.Second
 	}
+	if cfg.MaxReadBytes <= 0 {
+		return nil, errors.New("max read bytes must be positive")
+	}
 	client := &http.Client{Timeout: cfg.Timeout}
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	return &FileHTTPClient{baseURL: baseURL, serviceToken: strings.TrimSpace(cfg.ServiceToken), httpClient: client}, nil
+	return &FileHTTPClient{baseURL: baseURL, serviceToken: strings.TrimSpace(cfg.ServiceToken), httpClient: client, maxReadBytes: cfg.MaxReadBytes}, nil
 }
 
 func (c *FileHTTPClient) Upload(ctx context.Context, name, contentType string, size int64, body io.Reader) (string, error) {
@@ -118,7 +123,17 @@ func (c *FileHTTPClient) Read(ctx context.Context, fileRef string) ([]byte, erro
 		io.Copy(io.Discard, res.Body)
 		return nil, fmt.Errorf("file content read returned %d", res.StatusCode)
 	}
-	return io.ReadAll(io.LimitReader(res.Body, 21<<20))
+	if res.ContentLength > c.maxReadBytes {
+		return nil, fmt.Errorf("file content exceeds configured attachment limit of %d bytes", c.maxReadBytes)
+	}
+	data, err := io.ReadAll(io.LimitReader(res.Body, c.maxReadBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > c.maxReadBytes {
+		return nil, fmt.Errorf("file content exceeds configured attachment limit of %d bytes", c.maxReadBytes)
+	}
+	return data, nil
 }
 
 func (c *FileHTTPClient) Delete(ctx context.Context, fileRef string) error {

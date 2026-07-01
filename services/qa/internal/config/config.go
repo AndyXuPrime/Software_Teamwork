@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	TransportDisabled       = "disabled"
-	TransportStdio          = "stdio"
-	TransportStreamableHTTP = "streamable_http"
+	TransportDisabled         = "disabled"
+	TransportStdio            = "stdio"
+	TransportStreamableHTTP   = "streamable_http"
+	maxSessionAttachmentBytes = int64(20 << 20)
 
 	defaultAIGatewayURL         = "http://localhost:8086/internal/v1/chat/completions"
 	defaultAIGatewayTokenHeader = "X-Service-Token"
@@ -179,6 +180,9 @@ func Load() (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if c.AttachmentMaxBytes > maxSessionAttachmentBytes {
+		return fmt.Errorf("QA_SESSION_ATTACHMENT_MAX_BYTES must not exceed %d", maxSessionAttachmentBytes)
+	}
 	if err := validateHTTPURL("KNOWLEDGE_SERVICE_URL", c.KnowledgeURL); err != nil {
 		return err
 	}

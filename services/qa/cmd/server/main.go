@@ -75,6 +75,7 @@ func main() {
 		BaseURL:      cfg.FileServiceURL,
 		ServiceToken: cfg.ServiceToken,
 		Timeout:      cfg.AttachmentProcessTimeout,
+		MaxReadBytes: cfg.AttachmentMaxBytes,
 	})
 	if err != nil {
 		logger.Error("file client initialization failed", "service", "qa", "error", err)
