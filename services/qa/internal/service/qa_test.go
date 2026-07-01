@@ -241,6 +241,52 @@ func (citationToolRunner) RunWithToolResultCallback(_ context.Context, input []a
 	return agent.Result{Final: final, Messages: messages, Iterations: 1}, nil
 }
 
+type duplicateCitationToolRunner struct{}
+
+func (duplicateCitationToolRunner) RunWithObserver(_ context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
+	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
+	for _, toolCallID := range []string{"call-1", "call-2"} {
+		observer(agent.Event{Type: agent.EventToolStarted, Iteration: 1, ToolCallID: toolCallID, ToolName: "search_knowledge"})
+		observer(agent.Event{Type: agent.EventToolCompleted, Iteration: 1, ToolCallID: toolCallID, ToolName: "search_knowledge"})
+	}
+	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1, Usage: agent.TokenUsage{PromptTokens: 8, CompletionTokens: 6, TotalTokens: 14}})
+	messages := append([]agent.Message{}, input...)
+	for _, toolCallID := range []string{"call-1", "call-2"} {
+		messages = append(messages, agent.Message{
+			Role:       agent.RoleTool,
+			Name:       "search_knowledge",
+			ToolCallID: toolCallID,
+			Content:    citationToolResultContent,
+		})
+	}
+	final := agent.Message{Role: agent.RoleAssistant, Content: "answer with duplicated citation [1]"}
+	messages = append(messages, final)
+	return agent.Result{Final: final, Messages: messages, Iterations: 1}, nil
+}
+func (duplicateCitationToolRunner) RunWithToolResultCallback(_ context.Context, input []agent.Message, observer agent.Observer, toolObserver agent.ToolObserver) (agent.Result, error) {
+	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
+	for _, toolCallID := range []string{"call-1", "call-2"} {
+		observer(agent.Event{Type: agent.EventToolStarted, Iteration: 1, ToolCallID: toolCallID, ToolName: "search_knowledge"})
+		if toolObserver != nil {
+			toolObserver(agent.ToolObservation{Type: agent.EventToolCompleted, Iteration: 1, ToolCallID: toolCallID, ToolName: "search_knowledge", Result: citationToolResultContent})
+		}
+		observer(agent.Event{Type: agent.EventToolCompleted, Iteration: 1, ToolCallID: toolCallID, ToolName: "search_knowledge"})
+	}
+	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1, Usage: agent.TokenUsage{PromptTokens: 8, CompletionTokens: 6, TotalTokens: 14}})
+	messages := append([]agent.Message{}, input...)
+	for _, toolCallID := range []string{"call-1", "call-2"} {
+		messages = append(messages, agent.Message{
+			Role:       agent.RoleTool,
+			Name:       "search_knowledge",
+			ToolCallID: toolCallID,
+			Content:    citationToolResultContent,
+		})
+	}
+	final := agent.Message{Role: agent.RoleAssistant, Content: "answer with duplicated citation [1]"}
+	messages = append(messages, final)
+	return agent.Result{Final: final, Messages: messages, Iterations: 1}, nil
+}
+
 type fallbackCitationToolRunner struct{}
 
 func (fallbackCitationToolRunner) RunWithObserver(_ context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
@@ -872,6 +918,49 @@ func TestAskPersistsCitationSnapshotsFromKnowledgeToolResults(t *testing.T) {
 	}
 	if citationSeq == 0 || completedSeq == 0 || citationSeq > completedSeq {
 		t.Fatalf("citation event sequence=%d completed=%d events=%+v", citationSeq, completedSeq, repository.savedEvents)
+	}
+}
+
+func TestAskDeduplicatesStreamingCitationSnapshots(t *testing.T) {
+	now := time.Date(2026, 6, 30, 9, 0, 0, 0, time.UTC)
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active", CreatedAt: now, UpdatedAt: now}}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{runner: duplicateCitationToolRunner{}, prompt: "system"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	qa.now = func() time.Time { return now }
+	qa.SetCitationSourceChecker(&fakeCitationSourceChecker{availability: map[string]bool{"doc-1": true}})
+
+	result, err := qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "find repeated citation", Mode: "knowledge_qa"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Citations) != 1 || len(repository.finalization.Citations) != 1 {
+		t.Fatalf("result citations=%+v finalization=%+v", result.Citations, repository.finalization.Citations)
+	}
+	citation := repository.finalization.Citations[0]
+	if citation.CitationNo != 1 || citation.DocumentID != "doc-1" || citation.ChunkID != "chunk-7" {
+		t.Fatalf("unexpected deduplicated citation: %+v", citation)
+	}
+
+	citationCount := 0
+	var eventCitation Citation
+	for _, event := range repository.savedEvents {
+		if event.EventType != "citation.delta" {
+			continue
+		}
+		citationCount++
+		payload, ok := event.Payload["citation"].(Citation)
+		if !ok {
+			t.Fatalf("citation.delta payload=%#v, want Citation", event.Payload["citation"])
+		}
+		eventCitation = payload
+	}
+	if citationCount != 1 {
+		t.Fatalf("citation.delta event count=%d events=%+v", citationCount, repository.savedEvents)
+	}
+	if eventCitation.ID != citation.ID || eventCitation.CitationNo != 1 || eventCitation.ChunkID != "chunk-7" {
+		t.Fatalf("citation event=%+v finalization=%+v", eventCitation, citation)
 	}
 }
 

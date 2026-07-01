@@ -491,6 +491,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	onToolObservation := func(observation agent.ToolObservation) {
 		toolObservations[observation.ToolCallID] = observation
 	}
+	seenCitationKeys := map[string]struct{}{}
 	emitSearchCitations := func(observation agent.ToolObservation) {
 		if observation.Type != agent.EventToolCompleted {
 			return
@@ -501,19 +502,28 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 				startNo = 1
 			}
 			extracted := extractCitationsFromToolResult(observation.Result, startNo)
+			newCitations := make([]Citation, 0, len(extracted))
 			for _, citation := range extracted {
 				citation.MessageID = assistantMessage.ID
 				citation.ResponseRunID = run.ID
 				citation = NormalizeCitation(citation)
-				citations = append(citations, citation)
+				key := citationSnapshotKey(citation)
+				if _, ok := seenCitationKeys[key]; ok {
+					continue
+				}
+				seenCitationKeys[key] = struct{}{}
+				citation.CitationNo = len(citations) + len(newCitations) + 1
+				newCitations = append(newCitations, citation)
 			}
-			citations = revalidateCitationSources(ctx, userID, s.sourceChecker, citations)
-			for _, citation := range citations[len(citations)-len(extracted):] {
+			if len(newCitations) == 0 {
+				return
+			}
+			newCitations = revalidateCitationSources(ctx, userID, s.sourceChecker, newCitations)
+			citations = append(citations, newCitations...)
+			for _, citation := range newCitations {
 				emit("citation.delta", map[string]any{"citation": citation})
 			}
-			if len(extracted) > 0 {
-				contextutil.AddCitationNo(runCtx, len(extracted))
-			}
+			contextutil.AddCitationNo(runCtx, len(newCitations))
 		}
 	}
 	result, runErr := runtime.Runner.RunWithToolResultCallback(runCtx, messages, func(event agent.Event) {
