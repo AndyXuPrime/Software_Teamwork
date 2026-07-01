@@ -1,6 +1,6 @@
 # 测试策略
 
-日期：2026-06-30
+日期：2026-07-01
 
 本文把当前仓库已经可执行的检查、CI 覆盖和仍缺的测试能力放在一起，作为 PR 前验证基线。具体服务实现状态仍以各服务 `docs/implementation.md` 为准。
 
@@ -62,6 +62,7 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | --- | --- |
 | 文档 | `git diff --check`；检查新增链接和实现事实。 |
 | Gateway OpenAPI / owner map | `python3 -m unittest scripts.tests.test_verify_gateway_active_api`；`python3 scripts/verify_gateway_active_api.py`。 |
+| Gateway QA active path schema contract | `cd services/gateway && go test ./internal/http -run QA`；覆盖 QA-owned active paths、OpenAPI schema/auth/content type、QA internal `$ref` drift 和 proxy namespace/query 映射。 |
 | 前端 | `bun install --frozen-lockfile`；`bun run --cwd apps/web check`；`bun run --cwd apps/web build`；`bun run --cwd apps/web test:unit`；关键页面改动再跑 `bun run --cwd apps/web test:e2e`。 |
 | 前端 API 类型 | `bun run --cwd apps/web api:generate`；确认 generated diff 符合预期。 |
 | 单个 Go 服务 | `cd services/<service> && go test ./...`；`go build ./cmd/server`。 |
@@ -86,7 +87,7 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | Unit tests | Go `testing`、fake repository、fake provider、httptest。 | service rules、handler validation、脱敏、错误归一化。 |
 | Repository tests | 部分服务有 SQL/repository tests；Knowledge/QA/Document 有 env-gated PostgreSQL integration tests；Knowledge repository lifecycle 已接入 CI PostgreSQL job。 | repository、SQL、transaction、migration 相关改动。 |
 | Migration apply | CI 使用 PostgreSQL 16 和 goose apply。 | 新增或修改 migration。 |
-| Contract tests | Gateway active API verifier、route coverage tests。 | OpenAPI、owner map、active path 和 RESTful path 规则。 |
+| Contract tests | Gateway active API verifier、route coverage tests、QA active path schema contract tests。 | OpenAPI、owner map、active path、RESTful path、owner/auth/schema/content type 和 QA internal `$ref` drift。 |
 | Parser runtime tests | OpenAPI schema review、文档一致性检查、FastAPI handler/service tests、fake OCR backend 和可选 env-gated PaddleOCR model smoke。 | Parser API/runtime 变更；真实 PaddleOCR 模型、OCR 质量和部署资源需要具备模型环境后单独记录。 |
 | Knowledge ingestion real deps smoke | `KNOWLEDGE_INGESTION_SMOKE=1` 显式启用；使用真实 File Service、Parser Service、PostgreSQL 和 Qdrant，默认 local hashing embedding。 | 验证 Knowledge 上传 fixture、worker handler、解析、切片、embedding metadata、Qdrant point 写入和状态更新；不替代 retrieval/rerank/MCP/Gateway 总入口。 |
 | Gateway -> Knowledge owner route smoke | `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1` 显式启用；使用真实 Gateway/Auth/session cache、Knowledge、File/Parser ready、PostgreSQL 和 Redis。 | 先验证无 Bearer token 的伪造 `X-User-*` 请求被 Gateway 拒绝，再通过 Gateway 创建/读取 KB 并断言 `createdBy` 是真实 session user；不替代完整 Gateway route matrix。 |
@@ -148,6 +149,16 @@ Parser image exists locally. If `software-teamwork-local-parser:latest` is
 absent, pre-build Parser with the documented Docker mirror/registry overlay;
 otherwise Docker may fail immediately on the missing image or block on
 `python:3.12-slim` metadata from Docker Hub.
+
+QA 快速契约和安全边界测试使用 fake repository / fake runner，不依赖 PostgreSQL 或真实模型 provider：
+
+```bash
+cd services/gateway
+go test ./internal/http -run QA
+
+cd services/qa
+go test ./internal/service -run 'AskSSEPayloads|AskToolProgress|AskPersistsCitation|NormalizeCitation|PreservesGatewayValidation'
+```
 
 ## 前端测试层级
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -760,6 +761,54 @@ func TestAskPersistsCitationSnapshotsFromKnowledgeToolResults(t *testing.T) {
 	}
 }
 
+func TestAskSSEPayloadsDoNotLeakPromptRawToolOrProviderSecrets(t *testing.T) {
+	t.Run("tool and citation events", func(t *testing.T) {
+		repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"}}
+		qa, err := NewQAService(repository, fakeRuntimeProvider{
+			runner: citationToolRunner{},
+			prompt: "system prompt with PRIVATE_CHAIN_OF_THOUGHT and raw MCP arguments",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		qa.SetCitationSourceChecker(&fakeCitationSourceChecker{availability: map[string]bool{"doc-1": true}})
+		var observed []ProgressEvent
+		_, err = qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "find citation", Mode: "knowledge_qa"}, func(event ProgressEvent) {
+			observed = append(observed, event)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		assertSSEEventTypesSeen(t, observed, "message.created", "agent.iteration.started", "reasoning.step", "tool.started", "tool.completed", "answer.delta", "citation.delta", "answer.completed")
+		assertProgressPayloadsDoNotLeakSensitiveData(t, observed)
+		assertStreamPayloadsDoNotLeakSensitiveData(t, repository.savedEvents)
+	})
+
+	t.Run("provider error event", func(t *testing.T) {
+		repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"}}
+		qa, err := NewQAService(repository, fakeRuntimeProvider{
+			runner: errorAgentRunner{err: errors.New("provider raw error: token=secret http://internal.provider/v1 prompt leaked")},
+			prompt: "system prompt with PRIVATE_CHAIN_OF_THOUGHT",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var observed []ProgressEvent
+		_, err = qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "fail safely"}, func(event ProgressEvent) {
+			observed = append(observed, event)
+		})
+		appErr, ok := Classify(err)
+		if !ok || appErr.Code != CodeDependency {
+			t.Fatalf("error=%v, want dependency_error", err)
+		}
+
+		assertSSEEventTypesSeen(t, observed, "message.created", "agent.iteration.started", "reasoning.step", "error")
+		assertProgressPayloadsDoNotLeakSensitiveData(t, observed)
+		assertStreamPayloadsDoNotLeakSensitiveData(t, repository.savedEvents)
+	})
+}
+
 func TestNormalizeCitationMarksUnavailableSourceAndSanitizesMetadata(t *testing.T) {
 	citation := NormalizeCitation(Citation{
 		ID:           "citation-id",
@@ -792,5 +841,78 @@ func TestNormalizeCitationMarksUnavailableSourceAndSanitizesMetadata(t *testing.
 	}
 	if _, ok := nested["internalUrl"]; ok {
 		t.Fatalf("internal URL leaked in nested metadata: %#v", nested)
+	}
+}
+
+func assertSSEEventTypesSeen(t *testing.T, events []ProgressEvent, expected ...string) {
+	t.Helper()
+	seen := make(map[string]bool, len(events))
+	for _, event := range events {
+		seen[event.Type] = true
+	}
+	for _, eventType := range expected {
+		if !seen[eventType] {
+			t.Fatalf("missing SSE event type %q; seen=%v", eventType, seen)
+		}
+	}
+}
+
+func assertProgressPayloadsDoNotLeakSensitiveData(t *testing.T, events []ProgressEvent) {
+	t.Helper()
+	for _, event := range events {
+		assertPayloadDoesNotLeakSensitiveData(t, event.Type, event.Payload)
+	}
+}
+
+func assertStreamPayloadsDoNotLeakSensitiveData(t *testing.T, events []StreamEvent) {
+	t.Helper()
+	for _, event := range events {
+		assertPayloadDoesNotLeakSensitiveData(t, event.EventType, event.Payload)
+	}
+}
+
+func assertPayloadDoesNotLeakSensitiveData(t *testing.T, eventType string, payload map[string]any) {
+	t.Helper()
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("%s payload is not JSON encodable: %v", eventType, err)
+	}
+	payloadText := strings.ToLower(string(payloadJSON))
+	for _, marker := range []string{
+		"private_chain_of_thought",
+		"raw mcp arguments",
+		"full raw document body",
+		"rawresult",
+		"objectkey",
+		"internalurl",
+		"http://internal",
+		"provider raw error",
+		"token=secret",
+		"prompt leaked",
+	} {
+		if strings.Contains(payloadText, strings.ToLower(marker)) {
+			t.Fatalf("%s payload leaked sensitive marker %q: %s", eventType, marker, payloadJSON)
+		}
+	}
+	assertPayloadKeysDoNotLeakSensitiveData(t, eventType, payload)
+}
+
+func assertPayloadKeysDoNotLeakSensitiveData(t *testing.T, eventType string, value any) {
+	t.Helper()
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, nested := range typed {
+			normalizedKey := strings.NewReplacer("_", "", "-", "", " ", "", ".", "").Replace(strings.ToLower(key))
+			for _, marker := range []string{"chainofthought", "rawresult", "objectkey", "internalurl", "providerrawerror", "prompttokens"} {
+				if strings.Contains(normalizedKey, marker) {
+					t.Fatalf("%s payload leaked sensitive key %q in %#v", eventType, key, value)
+				}
+			}
+			assertPayloadKeysDoNotLeakSensitiveData(t, eventType, nested)
+		}
+	case []any:
+		for _, nested := range typed {
+			assertPayloadKeysDoNotLeakSensitiveData(t, eventType, nested)
+		}
 	}
 }
