@@ -346,6 +346,52 @@ describe('chat stream API', () => {
     )
   })
 
+  it('dispatches transport errors that arrive after answer.completed before EOF', async () => {
+    const onAnswerCompleted = vi.fn()
+    const onError = vi.fn()
+    let pullCount = 0
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            pullCount += 1
+            if (pullCount === 1) {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  'event: answer.completed\nid: 3\ndata: {"responseRunId":"run-1"}\n\n',
+                ),
+              )
+              return
+            }
+            controller.error(new Error('connection lost after completion'))
+          },
+        }),
+        {
+          headers: { 'Content-Type': 'text/event-stream' },
+          status: 200,
+        },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    streamChat('session-1', 'question', {
+      onAnswerCompleted,
+      onError,
+    })
+
+    await vi.waitFor(() => expect(onAnswerCompleted).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'network_error',
+        fatal: true,
+        message: 'connection lost after completion',
+        seq: 4,
+      }),
+    )
+  })
+
   it('continues dispatching after non-fatal QA error events', async () => {
     const onAnswerCompleted = vi.fn()
     const onAnswerDelta = vi.fn()

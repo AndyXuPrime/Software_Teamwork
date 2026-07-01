@@ -227,15 +227,21 @@ export function ChatPage() {
       const steps: QAThinkingStep[] = []
       const citations: QACitation[] = []
       const toolStepIndexes = new Map<string, number>()
+      let assistantMessagePatchId = assistantMessage.id
 
       const patchAssistant = (patch: Partial<QAMessage>) => {
+        const targetId = assistantMessagePatchId
+        let didPatch = false
         useChatStore.setState((state) => {
           const messages = [...(state.messagesBySession[sessionId] ?? [])]
-          const lastIndex = messages.length - 1
-          const last = messages[lastIndex]
-          if (!last || last.role !== 'assistant') return state
+          const targetIndex = messages.findIndex(
+            (message) => message.id === targetId && message.role === 'assistant',
+          )
+          const target = messages[targetIndex]
+          if (!target) return state
 
-          messages[lastIndex] = { ...last, ...patch }
+          didPatch = true
+          messages[targetIndex] = { ...target, ...patch }
           return {
             messagesBySession: {
               ...state.messagesBySession,
@@ -243,6 +249,9 @@ export function ChatPage() {
             },
           }
         })
+        if (didPatch && typeof patch.id === 'string') {
+          assistantMessagePatchId = patch.id
+        }
       }
 
       let lastSeq = -1
@@ -287,8 +296,6 @@ export function ChatPage() {
         },
         onAnswerCompleted(data) {
           if (!verifySeq(data.seq)) return
-          setStreaming(false)
-          abortRef.current = null
           const assistantMessageId =
             typeof data.assistantMessageId === 'string'
               ? data.assistantMessageId
@@ -340,6 +347,10 @@ export function ChatPage() {
             status: 'failed',
             thinking: [...steps],
           })
+        },
+        onDone() {
+          setStreaming(false)
+          abortRef.current = null
         },
         onMessageCreated(data) {
           if (!verifySeq(data.seq)) return

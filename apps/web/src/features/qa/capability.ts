@@ -240,9 +240,12 @@ export function getSafeReasoningStep(payload: unknown): QAThinkingStep | undefin
     return undefined
   }
 
+  const rawLabel = getString(step, 'label')
+  const rawDetail = getString(step, 'detail')
+
   return {
-    detail: getString(step, 'detail'),
-    label: getString(step, 'label') ?? type,
+    detail: rawDetail && !isBlockedSummaryValue(rawDetail) ? rawDetail : undefined,
+    label: rawLabel && !isBlockedSummaryValue(rawLabel) ? rawLabel : type,
     status: status as QAThinkingStep['status'],
     type: type as QAThinkingStep['type'],
   }

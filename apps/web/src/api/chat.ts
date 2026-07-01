@@ -37,6 +37,7 @@ export interface ChatStreamHandlers {
   onCitationDelta?: (data: Record<string, unknown> & { seq: number }) => void
   onAnswerCompleted?: (data: Record<string, unknown> & { seq: number }) => void
   onError?: (data: ChatStreamError) => void
+  onDone?: () => void
   onAbort?: () => void
 }
 
@@ -147,7 +148,7 @@ export function streamChat(
     body: { message },
     method: 'POST',
     onError: (error) => {
-      if (didAbort || didReceiveFatalError || didReceiveAnswerCompleted) return
+      if (didAbort || didReceiveFatalError) return
       didReceiveFatalError = true
       handlers.onError?.({
         code: error.code,
@@ -188,14 +189,18 @@ export function streamChat(
       }
     },
     onDone: () => {
-      if (didAbort || didReceiveFatalError || didReceiveAnswerCompleted) return
-      didReceiveFatalError = true
-      handlers.onError?.({
-        code: 'stream_ended_without_completion',
-        fatal: true,
-        message: 'QA stream ended before answer.completed',
-        seq: nextSyntheticSeq(),
-      })
+      if (didAbort || didReceiveFatalError) return
+      if (didReceiveAnswerCompleted) {
+        handlers.onDone?.()
+      } else {
+        didReceiveFatalError = true
+        handlers.onError?.({
+          code: 'stream_ended_without_completion',
+          fatal: true,
+          message: 'QA stream ended before answer.completed',
+          seq: nextSyntheticSeq(),
+        })
+      }
     },
     signal,
   })

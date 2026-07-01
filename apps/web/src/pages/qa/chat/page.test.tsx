@@ -124,6 +124,10 @@ describe('ChatPage stream sequencing', () => {
     await waitFor(() => expect(getLastAssistantMessage().content).toBe('first second'))
 
     await emit('answer.completed', { messageId: 'assistant-backend-1', responseRunId: 'run-1' }, 4)
+    await act(async () => {
+      streamController?.close()
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+    })
     await waitFor(() => expect(useChatStore.getState().streaming).toBe(false))
 
     expect(input).not.toBeDisabled()
@@ -326,6 +330,11 @@ describe('ChatPage stream sequencing', () => {
     await waitFor(() => expect(getLastAssistantMessage().content).toBe('answer'))
 
     await emit('answer.completed', { responseRunId: 'run-1' }, 3)
+    expect(input).toBeDisabled()
+    await act(async () => {
+      streamController?.close()
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+    })
     await waitFor(() => expect(useChatStore.getState().streaming).toBe(false))
 
     expect(input).not.toBeDisabled()

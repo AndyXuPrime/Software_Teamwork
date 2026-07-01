@@ -149,6 +149,22 @@ describe('QA capability helpers', () => {
     })
   })
 
+  it('sanitizes reasoning label and detail before display', () => {
+    expect(
+      getSafeReasoningStep({
+        detail: 'provider raw error includes http://10.0.0.2/internal',
+        label: 'system prompt: hidden chain',
+        status: 'done',
+        type: 'generation',
+      }),
+    ).toMatchObject({
+      detail: undefined,
+      label: 'generation',
+      status: 'done',
+      type: 'generation',
+    })
+  })
+
   it('accepts only structured reasoning and citation payloads', () => {
     expect(
       getSafeReasoningStep({
