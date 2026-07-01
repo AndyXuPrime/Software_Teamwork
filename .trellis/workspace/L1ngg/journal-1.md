@@ -538,3 +538,36 @@ Committed Phase 1+2 scaffold/PG port (68999fb) and Phase 3 contract adapter with
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Phase 3b parser-config bridge
+
+**Date**: 2026-07-01
+**Task**: Phase 3b parser-config bridge
+**Branch**: `L1nggTeam/feat/ragflow-runtime-vendor`
+
+### Summary
+
+Adapter mode parser-config CRUD delegates to legacy goose PostgreSQL via optional DATABASE_URL; without it routes return 502 dependency_error.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c2fd2b1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
