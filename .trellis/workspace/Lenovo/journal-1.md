@@ -38,3 +38,36 @@ Pinned local Compose Qdrant and MinIO image tags, synced deploy docs and technol
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: C-010 Document integration contracts
+
+**Date**: 2026-07-01
+**Task**: C-010 Document integration contracts
+**Branch**: `PrimeTeam/test/document-integration-contracts`
+
+### Summary
+
+Added Document cross-service contract tests for File Service token/path/error behavior, safe public DTOs, report-file binary/error responses, and README validation guidance.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `92940ea` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
