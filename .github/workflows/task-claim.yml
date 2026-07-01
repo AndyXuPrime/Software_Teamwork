@@ -141,6 +141,18 @@ jobs:
                 .filter(Boolean)
                 .join(', ') || '无';
             };
+            const parseModuleNames = (value) => {
+              const normalized = cleanValue(value || '');
+              if (!normalized) {
+                return ['ci'];
+              }
+
+              const moduleNames = normalized
+                .split(/\s*(?:\/|／|,|，|、|\+|&)\s*/u)
+                .map((item) => cleanValue(item))
+                .filter(Boolean);
+              return moduleNames.length > 0 ? [...new Set(moduleNames)] : ['ci'];
+            };
 
             const projectQuery = `
               query($login: String!, $number: Int!) {
@@ -254,6 +266,20 @@ jobs:
                     throw new Error(`Project field '${fieldUpdate.name}' option '${fieldUpdate.value}' is unavailable.`);
                   }
                   value = { singleSelectOptionId: option.id };
+                } else if (fieldUpdate.kind === 'module-single-select') {
+                  if (!field.options) {
+                    throw new Error(`Project field '${fieldUpdate.name}' is not single-select.`);
+                  }
+                  const optionByName = new Map(field.options.map((option) => [option.name, option]));
+                  const moduleName = fieldUpdate.values.find((candidate) => optionByName.has(candidate));
+                  if (!moduleName) {
+                    core.warning(`Project field '${fieldUpdate.name}' has no matching option for issue modules: ${fieldUpdate.values.join(', ')}; skipping Module update.`);
+                    continue;
+                  }
+                  if (fieldUpdate.values.length > 1) {
+                    core.info(`Issue declares multiple modules (${fieldUpdate.values.join(', ')}); using '${moduleName}' for the Project Module field.`);
+                  }
+                  value = { singleSelectOptionId: optionByName.get(moduleName).id };
                 } else if (fieldUpdate.kind === 'number') {
                   value = field.dataType === 'NUMBER'
                     ? { number: fieldUpdate.value.number }
@@ -281,7 +307,7 @@ jobs:
             }
             const priority = readField('优先级') || 'P1';
             const batch = readField('批次') || 'Batch 4';
-            const moduleName = readField('模块') || 'ci';
+            const moduleNames = parseModuleNames(readField('模块'));
             const dependency = normalizeDependency(readField('依赖任务'));
             const taskStatus = readField('状态') || 'Draft';
             const expectedHoursRaw = readHourField('预期工时');
@@ -410,7 +436,7 @@ jobs:
                 { kind: 'single-select', name: 'Group', value: group },
                 { kind: 'single-select', name: 'Priority', value: priority },
                 { kind: 'single-select', name: 'Batch', value: batch },
-                { kind: 'single-select', name: 'Module', value: moduleName },
+                { kind: 'module-single-select', name: 'Module', values: moduleNames },
                 { kind: 'single-select', name: 'Risk', value: 'Normal' },
                 { kind: 'text', name: 'Dependency', value: dependency },
                 { kind: 'number', name: 'ExpectedHours', value: parseHourNumber(expectedHoursRaw, '预期工时（小时数）') },
