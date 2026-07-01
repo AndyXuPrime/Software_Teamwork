@@ -1,0 +1,438 @@
+package vendorclient
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+)
+
+const vendorCodeSuccess = 0
+
+type Client struct {
+	baseURL string
+	http    *http.Client
+}
+
+func New(baseURL string, timeout time.Duration) *Client {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	return &Client{
+		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		http: &http.Client{
+			Timeout: timeout,
+		},
+	}
+}
+
+type APIError struct {
+	Code    int
+	Message string
+}
+
+func (e *APIError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	return fmt.Sprintf("vendor api error code=%d", e.Code)
+}
+
+type envelope struct {
+	Code          int             `json:"code"`
+	Message       string          `json:"message"`
+	Data          json.RawMessage `json:"data"`
+	TotalDatasets int64           `json:"total_datasets"`
+}
+
+type documentListData struct {
+	Total int64                    `json:"total"`
+	Docs  []map[string]interface{} `json:"docs"`
+}
+
+type chunkListData struct {
+	Total  int64                    `json:"total"`
+	Chunks []map[string]interface{} `json:"chunks"`
+	Doc    map[string]interface{}   `json:"doc"`
+}
+
+type RetrievalData struct {
+	Total   int64                    `json:"total"`
+	Chunks  []map[string]interface{} `json:"chunks"`
+	DocAggs []map[string]interface{} `json:"doc_aggs"`
+}
+
+func (c *Client) ListDatasets(ctx context.Context, userID string, page, pageSize int) ([]map[string]interface{}, int64, error) {
+	query := url.Values{}
+	if page > 0 {
+		query.Set("page", strconv.Itoa(page))
+	}
+	if pageSize > 0 {
+		query.Set("page_size", strconv.Itoa(pageSize))
+	}
+	var payload envelope
+	if err := c.getJSON(ctx, userID, "/api/v1/datasets?"+query.Encode(), &payload); err != nil {
+		return nil, 0, err
+	}
+	items, err := decodeDatasetItems(payload.Data)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := payload.TotalDatasets
+	if total == 0 {
+		total = int64(len(items))
+	}
+	return items, total, nil
+}
+
+func (c *Client) CreateDataset(ctx context.Context, userID string, body []byte) (map[string]interface{}, error) {
+	var payload envelope
+	if err := c.doJSON(ctx, userID, http.MethodPost, "/api/v1/datasets", body, &payload); err != nil {
+		return nil, err
+	}
+	return decodeObject(payload.Data)
+}
+
+func (c *Client) GetDataset(ctx context.Context, userID, datasetID string) (map[string]interface{}, error) {
+	var payload envelope
+	path := "/api/v1/datasets/" + url.PathEscape(datasetID)
+	if err := c.getJSON(ctx, userID, path, &payload); err != nil {
+		return nil, err
+	}
+	return decodeObject(payload.Data)
+}
+
+func (c *Client) UpdateDataset(ctx context.Context, userID, datasetID string, body []byte) (map[string]interface{}, error) {
+	var payload envelope
+	path := "/api/v1/datasets/" + url.PathEscape(datasetID)
+	if err := c.doJSON(ctx, userID, http.MethodPut, path, body, &payload); err != nil {
+		return nil, err
+	}
+	return decodeObject(payload.Data)
+}
+
+func (c *Client) DeleteDataset(ctx context.Context, userID, datasetID string) error {
+	body, err := json.Marshal(map[string]any{"ids": []string{datasetID}})
+	if err != nil {
+		return err
+	}
+	var payload envelope
+	return c.doJSON(ctx, userID, http.MethodDelete, "/api/v1/datasets", body, &payload)
+}
+
+func (c *Client) ListDocuments(ctx context.Context, userID, datasetID string, page, pageSize int) ([]map[string]interface{}, int64, error) {
+	query := url.Values{}
+	if page > 0 {
+		query.Set("page", strconv.Itoa(page))
+	}
+	if pageSize > 0 {
+		query.Set("page_size", strconv.Itoa(pageSize))
+	}
+	path := fmt.Sprintf("/api/v1/datasets/%s/documents?%s", url.PathEscape(datasetID), query.Encode())
+	var payload envelope
+	if err := c.getJSON(ctx, userID, path, &payload); err != nil {
+		return nil, 0, err
+	}
+	var listed documentListData
+	if len(payload.Data) == 0 {
+		return nil, 0, nil
+	}
+	if err := json.Unmarshal(payload.Data, &listed); err != nil {
+		return nil, 0, err
+	}
+	return listed.Docs, listed.Total, nil
+}
+
+func (c *Client) UploadDocument(ctx context.Context, userID, datasetID, filename, contentType string, content io.Reader) (map[string]interface{}, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(part, content); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+
+	path := fmt.Sprintf("/api/v1/datasets/%s/documents?type=local", url.PathEscape(datasetID))
+	req, err := c.newRequest(ctx, userID, http.MethodPost, path, &body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	res, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 16<<20))
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		return nil, fmt.Errorf("vendor upload failed: status=%d body=%s", res.StatusCode, strings.TrimSpace(string(raw)))
+	}
+
+	var payload envelope
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, err
+	}
+	if payload.Code != vendorCodeSuccess {
+		return nil, &APIError{Code: payload.Code, Message: payload.Message}
+	}
+	return decodeUploadDocument(payload.Data)
+}
+
+func (c *Client) GetDocument(ctx context.Context, userID, documentID string) (map[string]interface{}, error) {
+	path := "/api/v1/documents/" + url.PathEscape(documentID)
+	req, err := c.newRequest(ctx, userID, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode == http.StatusNotFound {
+		return nil, &APIError{Code: 404, Message: "document not found"}
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		return nil, fmt.Errorf("vendor get document failed: status=%d", res.StatusCode)
+	}
+
+	var wrapped struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err != nil {
+		return nil, err
+	}
+	if wrapped.Data == nil {
+		return nil, &APIError{Code: 404, Message: "document not found"}
+	}
+	return wrapped.Data, nil
+}
+
+func (c *Client) UpdateDocument(ctx context.Context, userID, datasetID, documentID string, body []byte) (map[string]interface{}, error) {
+	var payload envelope
+	path := fmt.Sprintf("/api/v1/datasets/%s/documents/%s", url.PathEscape(datasetID), url.PathEscape(documentID))
+	if err := c.doJSON(ctx, userID, http.MethodPatch, path, body, &payload); err != nil {
+		return nil, err
+	}
+	return decodeObject(payload.Data)
+}
+
+func (c *Client) DeleteDocument(ctx context.Context, userID, documentID string) error {
+	path := "/api/v1/documents/" + url.PathEscape(documentID)
+	req, err := c.newRequest(ctx, userID, http.MethodDelete, path, nil)
+	if err != nil {
+		return err
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= http.StatusBadRequest {
+		raw, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return fmt.Errorf("vendor delete document failed: status=%d body=%s", res.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	return nil
+}
+
+func (c *Client) ListChunks(ctx context.Context, userID, datasetID, documentID string, page, pageSize int) ([]map[string]interface{}, int64, error) {
+	query := url.Values{}
+	if page > 0 {
+		query.Set("page", strconv.Itoa(page))
+	}
+	if pageSize > 0 {
+		query.Set("page_size", strconv.Itoa(pageSize))
+	}
+	path := fmt.Sprintf("/api/v1/datasets/%s/documents/%s/chunks?%s",
+		url.PathEscape(datasetID), url.PathEscape(documentID), query.Encode())
+	var payload envelope
+	if err := c.getJSON(ctx, userID, path, &payload); err != nil {
+		return nil, 0, err
+	}
+	var listed chunkListData
+	if len(payload.Data) == 0 {
+		return nil, 0, nil
+	}
+	if err := json.Unmarshal(payload.Data, &listed); err != nil {
+		return nil, 0, err
+	}
+	return listed.Chunks, listed.Total, nil
+}
+
+func (c *Client) DownloadDocument(ctx context.Context, userID, datasetID, documentID string) (contentType string, body []byte, err error) {
+	path := fmt.Sprintf("/api/v1/datasets/%s/documents/%s", url.PathEscape(datasetID), url.PathEscape(documentID))
+	req, err := c.newRequest(ctx, userID, http.MethodGet, path, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return "", nil, err
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 64<<20))
+	if err != nil {
+		return "", nil, err
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		return "", nil, fmt.Errorf("vendor download failed: status=%d", res.StatusCode)
+	}
+	contentType = res.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return contentType, raw, nil
+}
+
+func (c *Client) RetrievalSearch(ctx context.Context, userID string, body []byte) (*RetrievalData, error) {
+	var payload envelope
+	if err := c.doJSON(ctx, userID, http.MethodPost, "/api/v1/datasets/search", body, &payload); err != nil {
+		return nil, err
+	}
+	var data RetrievalData
+	if len(payload.Data) == 0 {
+		return &RetrievalData{}, nil
+	}
+	if err := json.Unmarshal(payload.Data, &data); err != nil {
+		return nil, err
+	}
+	return &data, nil
+}
+
+func (c *Client) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/system/ping", nil)
+	if err != nil {
+		return err
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(res.Body, 256))
+	if res.StatusCode != http.StatusOK || strings.TrimSpace(string(raw)) != "pong" {
+		return fmt.Errorf("vendor ping failed: status=%d body=%q", res.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	return nil
+}
+
+func (c *Client) getJSON(ctx context.Context, userID, path string, target *envelope) error {
+	return c.doJSON(ctx, userID, http.MethodGet, path, nil, target)
+}
+
+func (c *Client) doJSON(ctx context.Context, userID, method, path string, body []byte, target *envelope) error {
+	var reader io.Reader
+	if len(body) > 0 {
+		reader = bytes.NewReader(body)
+	}
+	req, err := c.newRequest(ctx, userID, method, path, reader)
+	if err != nil {
+		return err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 16<<20))
+	if err != nil {
+		return err
+	}
+	if res.StatusCode >= http.StatusBadRequest && len(raw) == 0 {
+		return fmt.Errorf("vendor request failed: status=%d", res.StatusCode)
+	}
+	if err := json.Unmarshal(raw, target); err != nil {
+		if res.StatusCode >= http.StatusBadRequest {
+			return fmt.Errorf("vendor request failed: status=%d body=%s", res.StatusCode, strings.TrimSpace(string(raw)))
+		}
+		return err
+	}
+	if target.Code != vendorCodeSuccess {
+		return &APIError{Code: target.Code, Message: target.Message}
+	}
+	return nil
+}
+
+func (c *Client) newRequest(ctx context.Context, userID, method, path string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	if err != nil {
+		return nil, err
+	}
+	userID = strings.TrimSpace(userID)
+	req.Header.Set("X-Tenant-Id", userID)
+	req.Header.Set("X-User-Id", userID)
+	return req, nil
+}
+
+func decodeDatasetItems(raw json.RawMessage) ([]map[string]interface{}, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var items []map[string]interface{}
+	if err := json.Unmarshal(raw, &items); err == nil {
+		return items, nil
+	}
+	one, err := decodeObject(raw)
+	if err != nil {
+		return nil, err
+	}
+	return []map[string]interface{}{one}, nil
+}
+
+func decodeObject(raw json.RawMessage) (map[string]interface{}, error) {
+	if len(raw) == 0 {
+		return map[string]interface{}{}, nil
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, err
+	}
+	return obj, nil
+}
+
+func decodeUploadDocument(raw json.RawMessage) (map[string]interface{}, error) {
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("vendor upload returned empty data")
+	}
+	var one map[string]interface{}
+	if err := json.Unmarshal(raw, &one); err == nil && one != nil {
+		if _, ok := one["id"]; ok {
+			return one, nil
+		}
+	}
+	var items []map[string]interface{}
+	if err := json.Unmarshal(raw, &items); err == nil && len(items) > 0 {
+		return items[0], nil
+	}
+	var wrapped struct {
+		Documents []map[string]interface{} `json:"documents"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err == nil && len(wrapped.Documents) > 0 {
+		return wrapped.Documents[0], nil
+	}
+	return decodeObject(raw)
+}

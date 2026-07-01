@@ -641,3 +641,15 @@ first, most likely Parser-backed document parsing before retrieval replacement.
 - Python path: existing `DB_TYPE=postgres` Peewee support reused (no code changes required)
 - Coexistence: legacy goose tables remain; vendor AutoMigrate creates separate RAGFlow tables
 - Next: Phase 3 contract adapter routes
+
+### 2026-07-01: knowledge vendor replacement phase 3 contract adapter routes
+
+- Added `internal/vendorclient/` HTTP client for vendor `:9380` with gateway header forwarding
+- Implemented adapter contract routes:
+  - knowledge base CRUD → vendor `/api/v1/datasets`
+  - document list/upload/get/delete/chunks/content → vendor datasets/documents APIs
+  - knowledge query → vendor `/api/v1/datasets/search`
+  - gateway RBAC via `X-User-Id` / `X-User-Roles` / `X-User-Permissions`
+  - standard `{data, requestId}` / `{error}` envelopes aligned with legacy HTTP layer
+- Parser-config admin routes registered but return not-implemented in adapter mode (Phase 3b)
+- Next: integration tests against running vendor runtime, parser-config bridge

@@ -11,8 +11,9 @@ const (
 	CodeNotFound     Code = "not_found"
 	CodeConflict     Code = "conflict"
 	CodeRateLimited  Code = "rate_limited"
-	CodeDependency   Code = "dependency_error"
-	CodeInternal     Code = "internal_error"
+	CodeDependency     Code = "dependency_error"
+	CodeNotImplemented Code = "not_implemented"
+	CodeInternal       Code = "internal_error"
 )
 
 var (
@@ -57,6 +58,10 @@ func NotFoundError(message string) *AppError {
 
 func DependencyError(message string, err error) *AppError {
 	return &AppError{Code: CodeDependency, Message: message, Err: err}
+}
+
+func NotImplementedError(message string) *AppError {
+	return &AppError{Code: CodeNotImplemented, Message: message}
 }
 
 func ConflictError(message string, err error) *AppError {

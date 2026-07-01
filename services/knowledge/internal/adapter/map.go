@@ -1,0 +1,596 @@
+package adapter
+
+import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/vendorclient"
+)
+
+const defaultMaxUploadBytes = int64(32 << 20)
+
+type knowledgeBaseSummary struct {
+	ID                string          `json:"id"`
+	Name              string          `json:"name"`
+	Description       string          `json:"description"`
+	DocType           string          `json:"docType"`
+	ChunkStrategy     json.RawMessage `json:"chunkStrategy"`
+	RetrievalStrategy json.RawMessage `json:"retrievalStrategy"`
+	DocumentCount     int64           `json:"documentCount"`
+	ChunkCount        int64           `json:"chunkCount"`
+	CreatedBy         string          `json:"createdBy,omitempty"`
+	CreatedAt         time.Time       `json:"createdAt"`
+	UpdatedAt         time.Time       `json:"updatedAt"`
+}
+
+type createKnowledgeBaseRequest struct {
+	ID                *string          `json:"id"`
+	Name              string           `json:"name"`
+	Description       *string          `json:"description"`
+	DocType           *string          `json:"docType"`
+	ChunkStrategy     *json.RawMessage `json:"chunkStrategy"`
+	RetrievalStrategy *json.RawMessage `json:"retrievalStrategy"`
+}
+
+type updateKnowledgeBaseRequest struct {
+	Name              *string          `json:"name"`
+	Description       *string          `json:"description"`
+	DocType           *string          `json:"docType"`
+	ChunkStrategy     *json.RawMessage `json:"chunkStrategy"`
+	RetrievalStrategy *json.RawMessage `json:"retrievalStrategy"`
+}
+
+type updateDocumentRequest struct {
+	Tags *[]string `json:"tags"`
+}
+
+type knowledgeQueryRequest struct {
+	Query            string            `json:"query"`
+	KnowledgeBaseIDs []string          `json:"knowledgeBaseIds,omitempty"`
+	TopK             int               `json:"topK,omitempty"`
+	ScoreThreshold   *float64          `json:"scoreThreshold,omitempty"`
+	Tags             []string          `json:"tags,omitempty"`
+	MetadataFilter   map[string]string `json:"metadataFilter,omitempty"`
+	Rerank           bool              `json:"rerank,omitempty"`
+	RerankTopN       *int              `json:"rerankTopN,omitempty"`
+}
+
+type knowledgeQuerySummary struct {
+	ID      string                 `json:"id"`
+	Query   string                 `json:"query"`
+	Results []knowledgeQueryResult `json:"results"`
+	Trace   knowledgeQueryTrace    `json:"trace"`
+}
+
+type knowledgeQueryResult struct {
+	Score           float64  `json:"score"`
+	KnowledgeBaseID string   `json:"knowledgeBaseId"`
+	DocumentID      string   `json:"documentId"`
+	ChunkID         string   `json:"chunkId"`
+	DocumentName    string   `json:"documentName"`
+	SectionPath     *string  `json:"sectionPath,omitempty"`
+	ChunkIndex      *int     `json:"chunkIndex,omitempty"`
+	ChunkType       *string  `json:"chunkType,omitempty"`
+	ContentPreview  string   `json:"contentPreview"`
+	Tags            []string `json:"tags,omitempty"`
+}
+
+type knowledgeQueryTrace struct {
+	EmbeddingProvider  string  `json:"embeddingProvider"`
+	EmbeddingModel     string  `json:"embeddingModel"`
+	EmbeddingDimension int     `json:"embeddingDimension"`
+	QdrantCollection   string  `json:"qdrantCollection"`
+	SearchTopK         int     `json:"searchTopK"`
+	ScoreThreshold     float64 `json:"scoreThreshold"`
+	HitCount           int     `json:"hitCount"`
+	Rerank             bool    `json:"rerank"`
+	RerankTopN         *int    `json:"rerankTopN,omitempty"`
+}
+
+type documentSummary struct {
+	ID              string                 `json:"id"`
+	KnowledgeBaseID string                 `json:"knowledgeBaseId"`
+	Name            string                 `json:"name"`
+	ContentType     *string                `json:"contentType,omitempty"`
+	SizeBytes       *int64                 `json:"sizeBytes,omitempty"`
+	Status          service.DocumentStatus `json:"status"`
+	ErrorCode       *string                `json:"errorCode,omitempty"`
+	ErrorMessage    *string                `json:"errorMessage,omitempty"`
+	ChunkCount      int64                  `json:"chunkCount"`
+	Tags            []string               `json:"tags,omitempty"`
+	ParserBackend   *string                `json:"parserBackend,omitempty"`
+	CreatedBy       string                 `json:"createdBy,omitempty"`
+	CreatedAt       time.Time              `json:"createdAt"`
+	UpdatedAt       time.Time              `json:"updatedAt"`
+	JobID           *string                `json:"jobId,omitempty"`
+}
+
+type documentChunkSummary struct {
+	ID              string         `json:"id"`
+	KnowledgeBaseID string         `json:"knowledgeBaseId"`
+	DocumentID      string         `json:"documentId"`
+	ChunkIndex      int32          `json:"chunkIndex"`
+	SectionPath     *string        `json:"sectionPath,omitempty"`
+	Content         string         `json:"content"`
+	TokenCount      int32          `json:"tokenCount"`
+	ChunkType       *string        `json:"chunkType,omitempty"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
+	CreatedAt       time.Time      `json:"createdAt"`
+}
+
+func mapVendorError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if apiErr, ok := err.(*vendorclient.APIError); ok {
+		switch apiErr.Code {
+		case 401:
+			return service.UnauthorizedError()
+		case 403:
+			return service.ForbiddenError(apiErr.Message)
+		default:
+			msg := strings.TrimSpace(apiErr.Message)
+			if strings.Contains(strings.ToLower(msg), "not found") || strings.Contains(strings.ToLower(msg), "invalid dataset") {
+				return service.NotFoundError(msg)
+			}
+			if msg == "" {
+				msg = "vendor runtime request failed"
+			}
+			return service.DependencyError(msg, err)
+		}
+	}
+	return service.DependencyError("vendor runtime request failed", err)
+}
+
+func knowledgeBaseFromVendor(raw map[string]interface{}) knowledgeBaseSummary {
+	chunkStrategy := json.RawMessage(`{}`)
+	if cfg := raw["parser_config"]; cfg != nil {
+		if encoded, err := json.Marshal(cfg); err == nil {
+			chunkStrategy = encoded
+		}
+	}
+	retrievalStrategy := json.RawMessage(`{}`)
+	retrieval := map[string]any{}
+	if v, ok := raw["similarity_threshold"]; ok {
+		retrieval["scoreThreshold"] = v
+	}
+	if v, ok := raw["vector_similarity_weight"]; ok {
+		retrieval["vectorWeight"] = v
+	}
+	if len(retrieval) > 0 {
+		if encoded, err := json.Marshal(retrieval); err == nil {
+			retrievalStrategy = encoded
+		}
+	}
+	description := stringField(raw, "description")
+	docType := stringField(raw, "chunk_method")
+	if docType == "" {
+		docType = stringField(raw, "parser_id")
+	}
+	return knowledgeBaseSummary{
+		ID:                stringField(raw, "id"),
+		Name:              stringField(raw, "name"),
+		Description:       description,
+		DocType:           docType,
+		ChunkStrategy:     chunkStrategy,
+		RetrievalStrategy: retrievalStrategy,
+		DocumentCount:     int64Field(raw, "document_count", "doc_num"),
+		ChunkCount:        int64Field(raw, "chunk_count", "chunk_num"),
+		CreatedBy:         stringField(raw, "created_by"),
+		CreatedAt:         timeField(raw, "create_time", "created_at", "create_date"),
+		UpdatedAt:         timeField(raw, "update_time", "updated_at", "update_date"),
+	}
+}
+
+func knowledgeBasesFromVendor(items []map[string]interface{}) []knowledgeBaseSummary {
+	out := make([]knowledgeBaseSummary, 0, len(items))
+	for _, item := range items {
+		out = append(out, knowledgeBaseFromVendor(item))
+	}
+	return out
+}
+
+func documentFromVendor(raw map[string]interface{}) documentSummary {
+	kbID := stringField(raw, "dataset_id", "kb_id")
+	name := stringField(raw, "name")
+	contentType := optionalStringField(raw, "type")
+	size := optionalInt64Field(raw, "size")
+	status := mapDocumentStatus(raw)
+	parserBackend := optionalStringField(raw, "chunk_method", "parser_id")
+	progressMsg := optionalStringField(raw, "progress_msg")
+	var errorCode *string
+	var errorMessage *string
+	if status == service.DocumentStatusFailed && progressMsg != nil {
+		errorMessage = progressMsg
+		code := string(service.CodeDependency)
+		errorCode = &code
+	}
+	return documentSummary{
+		ID:              stringField(raw, "id"),
+		KnowledgeBaseID: kbID,
+		Name:            name,
+		ContentType:     contentType,
+		SizeBytes:       size,
+		Status:          status,
+		ErrorCode:       errorCode,
+		ErrorMessage:    errorMessage,
+		ChunkCount:      int64Field(raw, "chunk_count", "chunk_num"),
+		Tags:            tagsFromVendor(raw),
+		ParserBackend:   parserBackend,
+		CreatedBy:       stringField(raw, "created_by"),
+		CreatedAt:       timeField(raw, "create_time", "created_at", "create_date"),
+		UpdatedAt:       timeField(raw, "update_time", "updated_at", "update_date"),
+	}
+}
+
+func documentsFromVendor(items []map[string]interface{}) []documentSummary {
+	out := make([]documentSummary, 0, len(items))
+	for _, item := range items {
+		out = append(out, documentFromVendor(item))
+	}
+	return out
+}
+
+func documentChunkFromVendor(raw map[string]interface{}, kbID, documentID string) documentChunkSummary {
+	content := stringField(raw, "content_with_weight", "content")
+	if content == "" {
+		content = stringField(raw, "content_ltks")
+	}
+	chunkIndex := int32(intField(raw, "chunk_index", "page_num_int"))
+	metadata := map[string]any{}
+	for key, value := range raw {
+		switch key {
+		case "id", "content_with_weight", "content", "content_ltks", "chunk_index", "page_num_int", "doc_id", "kb_id", "vector":
+			continue
+		default:
+			metadata[key] = value
+		}
+	}
+	return documentChunkSummary{
+		ID:              stringField(raw, "id", "chunk_id"),
+		KnowledgeBaseID: firstNonEmpty(stringField(raw, "kb_id", "dataset_id"), kbID),
+		DocumentID:      firstNonEmpty(stringField(raw, "doc_id", "document_id"), documentID),
+		ChunkIndex:      chunkIndex,
+		Content:         content,
+		TokenCount:      int32(intField(raw, "token_count", "token_num")),
+		CreatedAt:       timeField(raw, "create_time", "created_at"),
+	}
+}
+
+func documentChunksFromVendor(items []map[string]interface{}, kbID, documentID string) []documentChunkSummary {
+	out := make([]documentChunkSummary, 0, len(items))
+	for _, item := range items {
+		out = append(out, documentChunkFromVendor(item, kbID, documentID))
+	}
+	return out
+}
+
+func knowledgeQueryFromVendor(queryID, query string, data *vendorclient.RetrievalData, topK int, scoreThreshold float64, rerank bool, rerankTopN *int) knowledgeQuerySummary {
+	results := make([]knowledgeQueryResult, 0)
+	if data != nil {
+		for _, chunk := range data.Chunks {
+			results = append(results, mapRetrievalChunk(chunk))
+		}
+	}
+	hitCount := len(results)
+	if data != nil && data.Total > 0 {
+		hitCount = int(data.Total)
+	}
+	return knowledgeQuerySummary{
+		ID:      queryID,
+		Query:   query,
+		Results: results,
+		Trace: knowledgeQueryTrace{
+			EmbeddingProvider:  "vendor",
+			EmbeddingModel:     "vendor-default",
+			EmbeddingDimension: 0,
+			QdrantCollection:   service.DefaultVectorCollection,
+			SearchTopK:         topK,
+			ScoreThreshold:     scoreThreshold,
+			HitCount:           hitCount,
+			Rerank:             rerank,
+			RerankTopN:         rerankTopN,
+		},
+	}
+}
+
+func mapRetrievalChunk(raw map[string]interface{}) knowledgeQueryResult {
+	score := floatField(raw, "similarity", "score", "vector_similarity")
+	kbID := stringField(raw, "kb_id", "dataset_id")
+	docID := stringField(raw, "doc_id", "document_id")
+	chunkID := stringField(raw, "chunk_id", "id")
+	docName := stringField(raw, "docnm_kwd", "document_name", "doc_name")
+	content := stringField(raw, "content_with_weight", "content")
+	if len(content) > 240 {
+		content = content[:240]
+	}
+	var chunkIndex *int
+	if idx := intField(raw, "chunk_index", "page_num_int"); idx >= 0 {
+		chunkIndex = &idx
+	}
+	return knowledgeQueryResult{
+		Score:           score,
+		KnowledgeBaseID: kbID,
+		DocumentID:      docID,
+		ChunkID:         chunkID,
+		DocumentName:    docName,
+		ChunkIndex:      chunkIndex,
+		ContentPreview:  content,
+	}
+}
+
+func buildCreateDatasetBody(req createKnowledgeBaseRequest) ([]byte, error) {
+	payload := map[string]any{
+		"name": strings.TrimSpace(req.Name),
+	}
+	if req.Description != nil {
+		payload["description"] = strings.TrimSpace(*req.Description)
+	}
+	if req.DocType != nil && strings.TrimSpace(*req.DocType) != "" {
+		payload["chunk_method"] = strings.TrimSpace(*req.DocType)
+	}
+	if req.ChunkStrategy != nil {
+		var cfg map[string]any
+		if err := json.Unmarshal(*req.ChunkStrategy, &cfg); err == nil {
+			payload["parser_config"] = cfg
+		}
+	}
+	return json.Marshal(payload)
+}
+
+func buildUpdateDatasetBody(req updateKnowledgeBaseRequest) ([]byte, error) {
+	payload := map[string]any{}
+	if req.Name != nil {
+		payload["name"] = strings.TrimSpace(*req.Name)
+	}
+	if req.Description != nil {
+		payload["description"] = strings.TrimSpace(*req.Description)
+	}
+	if req.DocType != nil {
+		payload["chunk_method"] = strings.TrimSpace(*req.DocType)
+	}
+	if req.ChunkStrategy != nil {
+		var cfg map[string]any
+		if err := json.Unmarshal(*req.ChunkStrategy, &cfg); err == nil {
+			payload["parser_config"] = cfg
+		}
+	}
+	if len(payload) == 0 {
+		return nil, service.ValidationError("request validation failed", map[string]string{"body": "must include at least one supported field"})
+	}
+	return json.Marshal(payload)
+}
+
+func buildUpdateDocumentBody(tags []string) ([]byte, error) {
+	return json.Marshal(map[string]any{
+		"meta_fields": map[string]any{"tags": tags},
+	})
+}
+
+func tagsFromVendor(raw map[string]interface{}) []string {
+	metaFields, ok := raw["meta_fields"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	tagsVal, ok := metaFields["tags"]
+	if !ok || tagsVal == nil {
+		return nil
+	}
+	switch typed := tagsVal.(type) {
+	case []string:
+		return typed
+	case []interface{}:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if value := strings.TrimSpace(fmt.Sprint(item)); value != "" {
+				out = append(out, value)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func buildRetrievalBody(req knowledgeQueryRequest) ([]byte, error) {
+	query := strings.TrimSpace(req.Query)
+	if query == "" {
+		return nil, service.ValidationError("request validation failed", map[string]string{"query": "is required"})
+	}
+	if len(req.KnowledgeBaseIDs) == 0 {
+		return nil, service.ValidationError("request validation failed", map[string]string{"knowledgeBaseIds": "must include at least one knowledge base id"})
+	}
+	topK := req.TopK
+	if topK <= 0 {
+		topK = 10
+	}
+	payload := map[string]any{
+		"question":    query,
+		"dataset_ids": req.KnowledgeBaseIDs,
+		"top_k":       topK,
+	}
+	if req.ScoreThreshold != nil {
+		payload["similarity_threshold"] = *req.ScoreThreshold
+	}
+	if len(req.MetadataFilter) > 0 {
+		filter := make(map[string]any, len(req.MetadataFilter))
+		for key, value := range req.MetadataFilter {
+			filter[key] = value
+		}
+		payload["meta_data_filter"] = filter
+	}
+	return json.Marshal(payload)
+}
+
+func mapDocumentStatus(raw map[string]interface{}) service.DocumentStatus {
+	run := strings.ToUpper(strings.TrimSpace(stringField(raw, "run")))
+	switch run {
+	case "DONE":
+		return service.DocumentStatusReady
+	case "FAIL":
+		return service.DocumentStatusFailed
+	case "CANCEL":
+		return service.DocumentStatusFailed
+	case "RUNNING":
+		return service.DocumentStatusParsing
+	case "SCHEDULE":
+		return service.DocumentStatusUploaded
+	default:
+		if progress := floatField(raw, "progress"); progress > 0 && progress < 1 {
+			return service.DocumentStatusEmbedding
+		}
+		return service.DocumentStatusUploaded
+	}
+}
+
+func normalizePage(page, pageSize int) (service.PageInput, error) {
+	if page == 0 {
+		page = 1
+	}
+	if pageSize == 0 {
+		pageSize = 20
+	}
+	fields := map[string]string{}
+	if page < 1 {
+		fields["page"] = "must be greater than or equal to 1"
+	}
+	if pageSize < 1 || pageSize > 200 {
+		fields["pageSize"] = "must be between 1 and 200"
+	}
+	if len(fields) > 0 {
+		return service.PageInput{}, service.ValidationError("request validation failed", fields)
+	}
+	return service.PageInput{Page: page, PageSize: pageSize}, nil
+}
+
+func stringField(raw map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := raw[key]; ok && value != nil {
+			switch typed := value.(type) {
+			case string:
+				return strings.TrimSpace(typed)
+			default:
+				return strings.TrimSpace(fmt.Sprint(typed))
+			}
+		}
+	}
+	return ""
+}
+
+func optionalStringField(raw map[string]interface{}, keys ...string) *string {
+	value := stringField(raw, keys...)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func int64Field(raw map[string]interface{}, keys ...string) int64 {
+	for _, key := range keys {
+		if value, ok := raw[key]; ok && value != nil {
+			switch typed := value.(type) {
+			case float64:
+				return int64(typed)
+			case int64:
+				return typed
+			case int:
+				return int64(typed)
+			case json.Number:
+				parsed, _ := typed.Int64()
+				return parsed
+			}
+		}
+	}
+	return 0
+}
+
+func optionalInt64Field(raw map[string]interface{}, keys ...string) *int64 {
+	value := int64Field(raw, keys...)
+	if value == 0 {
+		return nil
+	}
+	return &value
+}
+
+func intField(raw map[string]interface{}, keys ...string) int {
+	return int(int64Field(raw, keys...))
+}
+
+func floatField(raw map[string]interface{}, keys ...string) float64 {
+	for _, key := range keys {
+		if value, ok := raw[key]; ok && value != nil {
+			switch typed := value.(type) {
+			case float64:
+				return typed
+			case int:
+				return float64(typed)
+			case int64:
+				return float64(typed)
+			case json.Number:
+				parsed, _ := typed.Float64()
+				return parsed
+			case string:
+				parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+				if err == nil {
+					return parsed
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func timeField(raw map[string]interface{}, keys ...string) time.Time {
+	for _, key := range keys {
+		value, ok := raw[key]
+		if !ok || value == nil {
+			continue
+		}
+		switch typed := value.(type) {
+		case float64:
+			return unixMillisToTime(int64(typed))
+		case int64:
+			return unixMillisToTime(typed)
+		case int:
+			return unixMillisToTime(int64(typed))
+		case string:
+			trimmed := strings.TrimSpace(typed)
+			if trimmed == "" {
+				continue
+			}
+			for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
+				if parsed, err := time.Parse(layout, trimmed); err == nil {
+					return parsed.UTC()
+				}
+			}
+		}
+	}
+	return time.Time{}.UTC()
+}
+
+func unixMillisToTime(value int64) time.Time {
+	if value <= 0 {
+		return time.Time{}.UTC()
+	}
+	if value > 1_000_000_000_000 {
+		return time.UnixMilli(value).UTC()
+	}
+	return time.Unix(value, 0).UTC()
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func newQueryID() string {
+	return fmt.Sprintf("kq_%d", time.Now().UTC().UnixNano())
+}

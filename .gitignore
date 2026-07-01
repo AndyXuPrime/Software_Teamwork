@@ -53,6 +53,8 @@ out/
 *.dll
 *.so
 *.dylib
+services/knowledge/adapter
+services/knowledge/server
 
 # Go test binaries and coverage artifacts
 *.test
