@@ -2516,6 +2516,97 @@ Failure:
 
 ---
 
+### Apply chunk feedback
+
+**POST** `/api/v1/chunk-feedback`
+
+Adjusts `pagerank_fea` on chunks cited in a retrieval or QA response, based on user thumb-up / thumb-down feedback. This improves future retrieval ranking for similar questions.
+
+The feature is **disabled by default**. Set `CHUNK_FEEDBACK_ENABLED=true` on the runtime before expecting weight updates. Optional: `CHUNK_FEEDBACK_WEIGHTING=relevance|uniform`.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/chunk-feedback`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"thumbup"`: `boolean`, *Required* — `true` for positive feedback, `false` for negative
+  - `"reference"`: `object`, *Required*
+    - `"chunks"`: `list[object]`, *Required* — cited chunks from a prior `/retrieval` or dataset search response
+      - Each chunk must include `"id"` (or `"chunk_id"`) and `"dataset_id"` (or `"kb_id"`)
+      - Optional scoring fields used when `CHUNK_FEEDBACK_WEIGHTING=relevance`: `"similarity"`, `"vector_similarity"`, `"term_similarity"`, `"row_id"`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/chunk-feedback \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+       "thumbup": true,
+       "reference": {
+         "chunks": [
+           {
+             "id": "chunk-id-1",
+             "dataset_id": "dataset-id-1",
+             "similarity": 0.82,
+             "vector_similarity": 0.75,
+             "term_similarity": 0.61
+           }
+         ]
+       }
+     }'
+```
+
+##### Response example
+
+Feature enabled:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "success_count": 1,
+    "fail_count": 0,
+    "chunk_ids": ["chunk-id-1"]
+  }
+}
+```
+
+Feature disabled (`CHUNK_FEEDBACK_ENABLED` not set):
+
+```json
+{
+  "code": 0,
+  "data": {
+    "success_count": 0,
+    "fail_count": 0,
+    "chunk_ids": ["chunk-id-1"],
+    "disabled": true
+  }
+}
+```
+
+Failure:
+
+```json
+{
+  "code": 102,
+  "message": "`thumbup` must be a boolean"
+}
+```
+
+#### Frontend integration notes
+
+1. Call `/api/v1/retrieval` or `/api/v1/datasets/{dataset_id}/search` and keep the returned `chunks` array as the answer reference.
+2. When the user rates the answer, POST the same cited chunks (with ids and dataset ids) to `/api/v1/chunk-feedback` together with `thumbup`.
+3. Ensure the runtime enables `CHUNK_FEEDBACK_ENABLED=true` in the deployment environment.
+
+---
+
 ## System
 
 ---
