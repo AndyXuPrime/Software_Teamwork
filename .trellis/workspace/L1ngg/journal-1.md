@@ -504,3 +504,37 @@ Implemented Knowledge document multipart upload, File Service persistence, durab
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: Phase 3 contract adapter routes
+
+**Date**: 2026-07-01
+**Task**: Phase 3 contract adapter routes
+**Branch**: `L1nggTeam/feat/ragflow-runtime-vendor`
+
+### Summary
+
+Committed Phase 1+2 scaffold/PG port (68999fb) and Phase 3 contract adapter with vendorclient proxy, gateway RBAC, 13 live routes, parser-config 501 stub, trellis-check fixes, and api-contracts spec update.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `68999fb` | (see git log) |
+| `5f0c488` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
