@@ -431,7 +431,7 @@ GetGlobalStats(ctx context.Context) (GlobalStats, error)
 	ListKnowledgeBases(ctx context.Context, scope AccessScope, page PageInput) (KnowledgeBaseList, error)
 	GetKnowledgeBase(ctx context.Context, id string, scope AccessScope) (KnowledgeBase, error)
 	UpdateKnowledgeBase(ctx context.Context, input UpdateKnowledgeBaseRecord, scope AccessScope) (KnowledgeBase, error)
-	SoftDeleteKnowledgeBase(ctx context.Context, id string, deletedAt time.Time, scope AccessScope) error
+	SoftDeleteKnowledgeBase(ctx context.Context, input DeleteKnowledgeBaseRecord, scope AccessScope) ([]DocumentDeleteCleanupTask, error)
 	CreateDocumentWithJob(ctx context.Context, input CreateDocumentWithJobRecord, scope AccessScope) (KnowledgeDocument, ProcessingJob, error)
 	MarkDocumentJobFailed(ctx context.Context, documentID string, jobID string, expectedAttempts *int32, code string, message string, failedAt time.Time) error
 	ListDocumentsByKnowledgeBase(ctx context.Context, knowledgeBaseID string, status *DocumentStatus, scope AccessScope, page PageInput) (DocumentList, error)
@@ -476,6 +476,19 @@ type UpdateKnowledgeBaseRecord struct {
 	ChunkStrategy     *json.RawMessage
 	RetrievalStrategy *json.RawMessage
 	UpdatedAt         time.Time
+}
+
+type DeleteKnowledgeBaseRecord struct {
+	KnowledgeBaseID    string
+	CleanupJobIDPrefix string
+	JobType            string
+	JobStatus          string
+	JobStage           string
+	JobMessage         string
+	MaxAttempts        int32
+	DeletedAt          time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type CreateDocumentWithJobRecord struct {

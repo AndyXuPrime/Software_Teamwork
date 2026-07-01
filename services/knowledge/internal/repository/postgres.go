@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -322,38 +323,83 @@ func (r *PostgresRepository) UpdateKnowledgeBase(ctx context.Context, input serv
 	return r.GetKnowledgeBase(ctx, input.ID, scope)
 }
 
-func (r *PostgresRepository) SoftDeleteKnowledgeBase(ctx context.Context, id string, deletedAt time.Time, scope service.AccessScope) error {
+func (r *PostgresRepository) SoftDeleteKnowledgeBase(ctx context.Context, input service.DeleteKnowledgeBaseRecord, scope service.AccessScope) ([]service.DocumentDeleteCleanupTask, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return wrapPostgresError("begin knowledge base delete transaction", err)
+		return nil, wrapPostgresError("begin knowledge base delete transaction", err)
 	}
 	defer func() {
 		_ = tx.Rollback(ctx)
 	}()
 
+	id := strings.TrimSpace(input.KnowledgeBaseID)
 	qtx := r.queries.WithTx(tx)
 	rowsAffected, err := qtx.MarkKnowledgeBaseDeleted(ctx, sqlc.MarkKnowledgeBaseDeletedParams{
 		ID:         id,
-		DeletedAt:  pgTime(deletedAt),
+		DeletedAt:  pgTime(input.DeletedAt),
 		CanReadAll: scope.CanReadAll,
 		UserID:     scope.UserID,
 	})
 	if err != nil {
-		return wrapPostgresError("mark knowledge base deleted", err)
+		return nil, wrapPostgresError("mark knowledge base deleted", err)
 	}
 	if rowsAffected == 0 {
-		return service.ErrNotFound
+		return nil, service.ErrNotFound
 	}
-	if err := qtx.MarkDocumentsDeletedByKnowledgeBase(ctx, sqlc.MarkDocumentsDeletedByKnowledgeBaseParams{
-		KnowledgeBaseID: id,
-		DeletedAt:       pgTime(deletedAt),
-	}); err != nil {
-		return wrapPostgresError("mark documents deleted by knowledge base", err)
+	cleanupJobIDPrefix := strings.TrimSpace(input.CleanupJobIDPrefix)
+	if cleanupJobIDPrefix == "" {
+		cleanupJobIDPrefix = "job_delete_cleanup"
+	}
+	rows, err := tx.Query(ctx, `
+UPDATE knowledge_documents
+SET deleted_at = $1,
+    updated_at = $1,
+    current_job_id = $2 || '_' || id
+WHERE knowledge_base_id = $3
+  AND deleted_at IS NULL
+RETURNING id, knowledge_base_id, created_by, current_job_id`,
+		pgTime(input.DeletedAt),
+		cleanupJobIDPrefix,
+		id,
+	)
+	if err != nil {
+		return nil, wrapPostgresError("mark documents deleted by knowledge base", err)
+	}
+
+	tasks := []service.DocumentDeleteCleanupTask{}
+	for rows.Next() {
+		var task service.DocumentDeleteCleanupTask
+		if err := rows.Scan(&task.DocumentID, &task.KnowledgeBaseID, &task.UserID, &task.JobID); err != nil {
+			return nil, wrapPostgresError("scan deleted knowledge base document", err)
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrapPostgresError("iterate deleted knowledge base documents", err)
+	}
+	rows.Close()
+
+	for _, task := range tasks {
+		if _, err := qtx.CreateProcessingJob(ctx, sqlc.CreateProcessingJobParams{
+			ID:                   task.JobID,
+			KnowledgeBaseID:      task.KnowledgeBaseID,
+			DocumentID:           task.DocumentID,
+			JobType:              input.JobType,
+			Status:               input.JobStatus,
+			CurrentStage:         input.JobStage,
+			Message:              input.JobMessage,
+			MaxAttempts:          input.MaxAttempts,
+			ParserConfigSnapshot: []byte(`{}`),
+			CreatedAt:            pgTime(input.CreatedAt),
+			UpdatedAt:            pgTime(input.UpdatedAt),
+		}); err != nil {
+			return nil, wrapPostgresError("create knowledge base document cleanup job", err)
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return wrapPostgresError("commit knowledge base delete transaction", err)
+		return nil, wrapPostgresError("commit knowledge base delete transaction", err)
 	}
-	return nil
+	return tasks, nil
 }
 
 func (r *PostgresRepository) ListDocumentsByKnowledgeBase(ctx context.Context, knowledgeBaseID string, status *service.DocumentStatus, scope service.AccessScope, page service.PageInput) (service.DocumentList, error) {
@@ -535,8 +581,8 @@ func (r *PostgresRepository) ListRetryableDeleteCleanupTasks(ctx context.Context
 	      AND j.updated_at < $8
 	    )
 	  )
-	ORDER BY j.updated_at ASC
-	LIMIT $9`,
+		ORDER BY j.updated_at ASC, d.id ASC, j.id ASC
+		LIMIT $9`,
 		service.JobTypeDeleteCleanup,
 		service.JobStatusQueued,
 		service.JobStatusFailed,

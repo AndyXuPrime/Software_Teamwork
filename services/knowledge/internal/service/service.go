@@ -320,8 +320,25 @@ func (s *Service) DeleteKnowledgeBase(ctx context.Context, reqCtx RequestContext
 	if id == "" {
 		return ValidationError("request validation failed", map[string]string{"knowledgeBaseId": "is required"})
 	}
-	if err := s.repo.SoftDeleteKnowledgeBase(ctx, id, s.now(), scope); err != nil {
+	now := s.now()
+	cleanupJobPrefix := s.newID("job")
+	tasks, err := s.repo.SoftDeleteKnowledgeBase(ctx, DeleteKnowledgeBaseRecord{
+		KnowledgeBaseID:    id,
+		CleanupJobIDPrefix: cleanupJobPrefix,
+		JobType:            JobTypeDeleteCleanup,
+		JobStatus:          JobStatusQueued,
+		JobStage:           "delete_cleanup",
+		JobMessage:         "document marked deleted; cleanup is pending",
+		MaxAttempts:        DefaultIngestionMaxAttempts,
+		DeletedAt:          now,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}, scope)
+	if err != nil {
 		return repositoryError(err)
+	}
+	if err := s.enqueueDeleteCleanupTasks(ctx, reqCtx, tasks, cleanupJobPrefix); err != nil {
+		return err
 	}
 	return nil
 }

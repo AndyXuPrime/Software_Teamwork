@@ -337,30 +337,80 @@ func (r *MemoryRepository) UpdateKnowledgeBase(ctx context.Context, input servic
 	return cloneKnowledgeBase(r.hydrateKnowledgeBaseLocked(kb)), nil
 }
 
-func (r *MemoryRepository) SoftDeleteKnowledgeBase(ctx context.Context, id string, deletedAt time.Time, scope service.AccessScope) error {
+func (r *MemoryRepository) SoftDeleteKnowledgeBase(ctx context.Context, input service.DeleteKnowledgeBaseRecord, scope service.AccessScope) ([]service.DocumentDeleteCleanupTask, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	id := strings.TrimSpace(input.KnowledgeBaseID)
 	kb, exists := r.knowledgeBases[id]
 	if !exists || kb.DeletedAt != nil || !canRead(kb.CreatedBy, scope) {
-		return service.ErrNotFound
+		return nil, service.ErrNotFound
 	}
-	deleted := deletedAt.UTC()
+	docIDs := make([]string, 0)
+	for docID, doc := range r.documents {
+		if doc.KnowledgeBaseID == id && doc.DeletedAt == nil {
+			docIDs = append(docIDs, docID)
+		}
+	}
+	sort.Strings(docIDs)
+	jobIDs := make(map[string]string, len(docIDs))
+	for _, docID := range docIDs {
+		jobID := knowledgeBaseDeleteCleanupJobID(input.CleanupJobIDPrefix, docID)
+		if _, exists := r.jobs[jobID]; exists {
+			return nil, service.ErrConflict
+		}
+		jobIDs[docID] = jobID
+	}
+	deleted := input.DeletedAt.UTC()
 	kb.DeletedAt = &deleted
 	kb.UpdatedAt = deleted
 	r.knowledgeBases[id] = kb
 
-	for docID, doc := range r.documents {
-		if doc.KnowledgeBaseID == id && doc.DeletedAt == nil {
-			doc.DeletedAt = &deleted
-			doc.UpdatedAt = deleted
-			r.documents[docID] = doc
+	tasks := make([]service.DocumentDeleteCleanupTask, 0, len(docIDs))
+	for _, docID := range docIDs {
+		doc := r.documents[docID]
+		jobID := jobIDs[docID]
+		doc.DeletedAt = &deleted
+		doc.UpdatedAt = deleted
+		doc.CurrentJobID = cloneStringPtr(&jobID)
+		r.documents[docID] = doc
+
+		documentID := doc.ID
+		stage := input.JobStage
+		message := input.JobMessage
+		job := service.ProcessingJob{
+			ID:              jobID,
+			KnowledgeBaseID: doc.KnowledgeBaseID,
+			DocumentID:      &documentID,
+			JobType:         input.JobType,
+			Status:          input.JobStatus,
+			CurrentStage:    &stage,
+			ProgressPercent: 0,
+			Message:         &message,
+			MaxAttempts:     input.MaxAttempts,
+			CreatedAt:       input.CreatedAt,
+			UpdatedAt:       input.UpdatedAt,
 		}
+		r.jobs[job.ID] = job
+		tasks = append(tasks, service.DocumentDeleteCleanupTask{
+			JobID:           job.ID,
+			DocumentID:      doc.ID,
+			KnowledgeBaseID: doc.KnowledgeBaseID,
+			UserID:          doc.CreatedBy,
+		})
 	}
-	return nil
+	return tasks, nil
+}
+
+func knowledgeBaseDeleteCleanupJobID(prefix string, documentID string) string {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		prefix = "job_delete_cleanup"
+	}
+	return prefix + "_" + strings.TrimSpace(documentID)
 }
 
 func (r *MemoryRepository) CreateDocumentWithJob(ctx context.Context, input service.CreateDocumentWithJobRecord, scope service.AccessScope) (service.KnowledgeDocument, service.ProcessingJob, error) {
@@ -834,7 +884,21 @@ func (r *MemoryRepository) ListRetryableDeleteCleanupTasks(ctx context.Context, 
 		jobs = append(jobs, job)
 	}
 	sort.SliceStable(jobs, func(i, j int) bool {
-		return jobs[i].UpdatedAt.Before(jobs[j].UpdatedAt)
+		if !jobs[i].UpdatedAt.Equal(jobs[j].UpdatedAt) {
+			return jobs[i].UpdatedAt.Before(jobs[j].UpdatedAt)
+		}
+		leftDocumentID := ""
+		if jobs[i].DocumentID != nil {
+			leftDocumentID = strings.TrimSpace(*jobs[i].DocumentID)
+		}
+		rightDocumentID := ""
+		if jobs[j].DocumentID != nil {
+			rightDocumentID = strings.TrimSpace(*jobs[j].DocumentID)
+		}
+		if leftDocumentID != rightDocumentID {
+			return leftDocumentID < rightDocumentID
+		}
+		return jobs[i].ID < jobs[j].ID
 	})
 
 	tasks := make([]service.DocumentDeleteCleanupTask, 0, input.Limit)
