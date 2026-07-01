@@ -877,3 +877,44 @@ Closed malformed QA streams as terminal fatal events, ignored later old-stream e
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: PR 311 review follow-up
+
+**Date**: 2026-07-01
+**Task**: PR 311 Codex review follow-up
+**Branch**: `Frontend/feat/qa-capability-aligned-chat`
+
+### Summary
+
+Synced the PR branch onto latest `upstream/develop` and addressed the remaining QA chat review items: fatal finalize errors after `answer.completed`, non-retry degradation warnings, and explicit 403/forbidden capability formatting.
+
+### Main Changes
+
+- Kept QA SSE consumption open after `answer.completed` so fatal `error` events before EOF still override the completed UI state.
+- Rendered non-retry stream degradation notices as warning alerts without a dead retry button.
+- Added explicit QA capability formatting for `403` / `forbidden` permission denials.
+- Captured the QA SSE completion-vs-EOF gotcha in `.trellis/spec/frontend/hook-guidelines.md`.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `73e9f90` | fix(qa): handle finalize stream errors |
+
+### Testing
+
+- [OK] `bun run --cwd apps/web test:unit -- chat.test.ts page.test.tsx capability.test.ts`
+- [OK] `bun run --cwd apps/web check`
+- [OK] `bun run --cwd apps/web build`
+- [OK] `bun run --cwd apps/web test:unit`
+- [OK] `git diff --check`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Push rebased branch to origin with `--force-with-lease`.
+- Confirm PR #311 still targets `develop`.
