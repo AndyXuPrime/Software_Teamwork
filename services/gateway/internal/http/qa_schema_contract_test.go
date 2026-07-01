@@ -416,7 +416,7 @@ func successResponses(t *testing.T, operation openAPIOperation) map[string]any {
 
 func qaOperationRequiresPagination(operationID string) bool {
 	switch operationID {
-	case "listQASessions", "listQAMessages":
+	case "listQASessions", "listQAMessages", "listQASessionAttachments":
 		return true
 	default:
 		return false
