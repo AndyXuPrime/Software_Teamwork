@@ -116,28 +116,28 @@ func TestMCPToolServiceValidationAndErrorMapping(t *testing.T) {
 		service  *MCPToolService
 		toolName string
 		args     string
-		wantCode Code
+		wantCode string
 	}{
 		{
 			name:     "missing report id",
 			service:  NewMCPToolService(MCPToolServiceConfig{JobService: &fakeMCPJobService{}, Recorder: &fakeMCPOperationRecorder{}}),
 			toolName: DocumentMCPToolGenerateReportOutline,
 			args:     `{}`,
-			wantCode: CodeValidation,
+			wantCode: string(CodeValidation),
 		},
 		{
 			name:     "invalid arguments shape",
 			service:  NewMCPToolService(MCPToolServiceConfig{Recorder: &fakeMCPOperationRecorder{}}),
 			toolName: DocumentMCPToolGetReportResult,
 			args:     `[]`,
-			wantCode: CodeValidation,
+			wantCode: string(CodeValidation),
 		},
 		{
 			name:     "unknown tool",
 			service:  NewMCPToolService(MCPToolServiceConfig{Recorder: &fakeMCPOperationRecorder{}}),
 			toolName: "delete_everything",
 			args:     `{}`,
-			wantCode: CodeNotImplemented,
+			wantCode: documentMCPErrorUnsupported,
 		},
 		{
 			name: "forbidden job status",
@@ -147,7 +147,7 @@ func TestMCPToolServiceValidationAndErrorMapping(t *testing.T) {
 			}),
 			toolName: DocumentMCPToolGetGenerationStatus,
 			args:     `{"jobId":"job-1"}`,
-			wantCode: CodeForbidden,
+			wantCode: string(CodeForbidden),
 		},
 		{
 			name: "dependency error",
@@ -157,15 +157,60 @@ func TestMCPToolServiceValidationAndErrorMapping(t *testing.T) {
 			}),
 			toolName: DocumentMCPToolGetGenerationStatus,
 			args:     `{"jobId":"job-1"}`,
-			wantCode: CodeInternal,
+			wantCode: string(CodeInternal),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tt.service.CallTool(context.Background(), RequestContext{UserID: "user-1", RequestID: "req-error"}, tt.toolName, json.RawMessage(tt.args))
-			if result.Status != documentMCPToolResultFailed || result.Error == nil || result.Error.Code != string(tt.wantCode) {
+			if result.Status != documentMCPToolResultFailed || result.Error == nil || result.Error.Code != tt.wantCode {
 				t.Fatalf("CallTool() result = %+v, want failed %s", result, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestMCPToolServiceRejectsInvalidGenerationArgumentTypes(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      string
+		wantField string
+	}{
+		{
+			name:      "material ids must be string array",
+			args:      `{"reportId":"report-1","materialIds":["material-1",3]}`,
+			wantField: "materialIds",
+		},
+		{
+			name:      "options must be object",
+			args:      `{"reportId":"report-1","options":["not-object"]}`,
+			wantField: "options",
+		},
+		{
+			name:      "retrieval must be object",
+			args:      `{"reportId":"report-1","retrieval":"not-object"}`,
+			wantField: "retrieval",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jobs := &fakeMCPJobService{}
+			result := NewMCPToolService(MCPToolServiceConfig{
+				JobService: jobs,
+				Recorder:   &fakeMCPOperationRecorder{},
+			}).CallTool(context.Background(), RequestContext{UserID: "user-1", RequestID: "req-invalid-type"},
+				DocumentMCPToolGenerateReportOutline, json.RawMessage(tt.args))
+
+			if result.Status != documentMCPToolResultFailed || result.Error == nil || result.Error.Code != string(CodeValidation) {
+				t.Fatalf("CallTool() result = %+v, want validation failure", result)
+			}
+			if result.Error.Fields[tt.wantField] == "" {
+				t.Fatalf("validation fields = %+v, missing %q", result.Error.Fields, tt.wantField)
+			}
+			if len(jobs.createInputs) != 0 {
+				t.Fatalf("invalid arguments should not call CreateJob, inputs=%+v", jobs.createInputs)
 			}
 		})
 	}

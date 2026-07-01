@@ -24,6 +24,7 @@ const (
 	documentMCPToolResultFailed            = "failed"
 	documentMCPToolResultAccepted          = "accepted"
 	documentMCPDefaultExportFormat         = ReportFileFormatDOCX
+	documentMCPErrorUnsupported            = "unsupported"
 )
 
 // MCPDocumentService is the subset of the Document metadata service used by
@@ -191,7 +192,7 @@ func (s *MCPToolService) CallTool(ctx context.Context, reqCtx RequestContext, na
 		result = s.getReportResult(ctx, reqCtx, args)
 	default:
 		result.Status = documentMCPToolResultFailed
-		result.Error = &MCPToolError{Code: string(CodeNotImplemented), Message: "document MCP tool is not supported"}
+		result.Error = &MCPToolError{Code: documentMCPErrorUnsupported, Message: "document MCP tool is not supported"}
 		s.recordToolCall(ctx, reqCtx, result, map[string]any{"toolSupported": false})
 	}
 	if result.RequestID == "" {
@@ -230,6 +231,27 @@ func (s *MCPToolService) createGenerationJob(ctx context.Context, reqCtx Request
 		}
 		targetScope = "section"
 	}
+	materialIDs, err := stringSliceArgumentStrict(args, "materialIds", "material_ids", "materialRefs", "material_refs")
+	if err != nil {
+		result.Status = documentMCPToolResultFailed
+		result.Error = toolErrorFromError(ValidationError(map[string]string{"materialIds": "must be an array of strings"}))
+		s.recordToolCall(ctx, reqCtx, result, generationParameterSummary(args, jobType, requiresSection))
+		return result
+	}
+	options, err := mapArgumentStrict(args, "options")
+	if err != nil {
+		result.Status = documentMCPToolResultFailed
+		result.Error = toolErrorFromError(ValidationError(map[string]string{"options": "must be a JSON object"}))
+		s.recordToolCall(ctx, reqCtx, result, generationParameterSummary(args, jobType, requiresSection))
+		return result
+	}
+	retrieval, err := mapArgumentStrict(args, "retrieval")
+	if err != nil {
+		result.Status = documentMCPToolResultFailed
+		result.Error = toolErrorFromError(ValidationError(map[string]string{"retrieval": "must be a JSON object"}))
+		s.recordToolCall(ctx, reqCtx, result, generationParameterSummary(args, jobType, requiresSection))
+		return result
+	}
 	job, err := s.jobs.CreateJob(ctx, reqCtx, CreateJobInput{
 		RequestID:    reqCtx.RequestID,
 		UserID:       reqCtx.UserID,
@@ -238,9 +260,9 @@ func (s *MCPToolService) createGenerationJob(ctx context.Context, reqCtx Request
 		TargetScope:  targetScope,
 		SectionID:    sectionID,
 		Requirements: stringArgument(args, "requirements"),
-		MaterialIDs:  stringSliceArgument(args, "materialIds", "material_ids", "materialRefs", "material_refs"),
-		Options:      mapArgument(args, "options"),
-		Retrieval:    mapArgument(args, "retrieval"),
+		MaterialIDs:  materialIDs,
+		Options:      options,
+		Retrieval:    retrieval,
 	})
 	if err != nil {
 		result.Status = documentMCPToolResultFailed
@@ -494,6 +516,11 @@ func stringArgument(args map[string]any, names ...string) string {
 }
 
 func stringSliceArgument(args map[string]any, names ...string) []string {
+	values, _ := stringSliceArgumentStrict(args, names...)
+	return values
+}
+
+func stringSliceArgumentStrict(args map[string]any, names ...string) ([]string, error) {
 	for _, name := range names {
 		value, ok := args[name]
 		if !ok {
@@ -501,18 +528,24 @@ func stringSliceArgument(args map[string]any, names ...string) []string {
 		}
 		switch typed := value.(type) {
 		case []string:
-			return compactStrings(typed)
+			return compactStrings(typed), nil
 		case []any:
 			values := make([]string, 0, len(typed))
 			for _, item := range typed {
-				if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+				text, ok := item.(string)
+				if !ok {
+					return nil, fmt.Errorf("argument %s must be an array of strings", name)
+				}
+				if strings.TrimSpace(text) != "" {
 					values = append(values, strings.TrimSpace(text))
 				}
 			}
-			return values
+			return values, nil
+		default:
+			return nil, fmt.Errorf("argument %s must be an array of strings", name)
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func compactStrings(values []string) []string {
@@ -526,16 +559,22 @@ func compactStrings(values []string) []string {
 }
 
 func mapArgument(args map[string]any, names ...string) map[string]any {
+	value, _ := mapArgumentStrict(args, names...)
+	return value
+}
+
+func mapArgumentStrict(args map[string]any, names ...string) (map[string]any, error) {
 	for _, name := range names {
 		value, ok := args[name]
-		if !ok {
+		if !ok || value == nil {
 			continue
 		}
 		if mapped, ok := value.(map[string]any); ok {
-			return mapped
+			return mapped, nil
 		}
+		return nil, fmt.Errorf("argument %s must be a JSON object", name)
 	}
-	return nil
+	return nil, nil
 }
 
 func rawJSONArgument(args map[string]any, names ...string) (json.RawMessage, error) {
