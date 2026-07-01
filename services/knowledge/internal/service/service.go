@@ -13,15 +13,14 @@ type Clock func() time.Time
 
 type IDGenerator func(prefix string) string
 
-// Service supports parser-config admin CRUD for adapter mode. KB/document/query
-// traffic is handled by the contract adapter via vendorclient.
+// Service supports parser-config admin CRUD for adapter mode.
 type Service struct {
-	repo  Repository
+	repo  ParserConfigRepository
 	now   Clock
 	newID IDGenerator
 }
 
-func New(repo Repository) *Service {
+func New(repo ParserConfigRepository) *Service {
 	return &Service{
 		repo:  repo,
 		now:   func() time.Time { return time.Now().UTC() },
@@ -29,7 +28,7 @@ func New(repo Repository) *Service {
 	}
 }
 
-func NewWithOptions(repo Repository, now Clock, idGenerator IDGenerator) *Service {
+func NewWithOptions(repo ParserConfigRepository, now Clock, idGenerator IDGenerator) *Service {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}

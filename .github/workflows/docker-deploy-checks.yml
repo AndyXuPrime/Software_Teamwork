@@ -101,7 +101,6 @@ jobs:
               'scripts/local/dev-up.sh',
               'scripts/local/run-backend.sh',
               'scripts/local/stop-backend.sh',
-              'services/parser/uv.lock',
               'scripts/tests/test_check_docker_environment.py',
               'scripts/tests/test_check_docker_policy.py',
               'scripts/tests/test_local_seed_contract.py',
