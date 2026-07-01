@@ -727,3 +727,36 @@ Fixed report generation failure compensation to use narrow section status update
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: PR 350 deleted-report section version review fix
+
+**Date**: 2026-07-01
+**Task**: PR 350 deleted-report section version review fix
+**Branch**: `PrimeTeam/feat/report-section-versions`
+
+### Summary
+
+Addressed PR #350 review feedback by rejecting section-version creation on deleted reports, rechecking report state inside the write transaction, documenting 409 in Gateway OpenAPI, regenerating frontend Gateway types, and adding regression/contract tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d376913` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
