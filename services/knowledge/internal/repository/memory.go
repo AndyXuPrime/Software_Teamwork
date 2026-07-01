@@ -246,6 +246,23 @@ func (r *MemoryRepository) CreateKnowledgeBase(ctx context.Context, input servic
 	return r.hydrateKnowledgeBaseLocked(kb), nil
 }
 
+func (r *MemoryRepository) GetGlobalStats(ctx context.Context) (service.GlobalStats, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var kbCount, docCount int64
+	for _, kb := range r.knowledgeBases {
+		if kb.DeletedAt == nil {
+			kbCount++
+		}
+	}
+	for _, doc := range r.documents {
+		if doc.DeletedAt == nil {
+			docCount++
+		}
+	}
+	return service.GlobalStats{KnowledgeBaseCount: kbCount, DocumentCount: docCount}, nil
+}
+
 func (r *MemoryRepository) ListKnowledgeBases(ctx context.Context, scope service.AccessScope, page service.PageInput) (service.KnowledgeBaseList, error) {
 	if err := ctx.Err(); err != nil {
 		return service.KnowledgeBaseList{}, err

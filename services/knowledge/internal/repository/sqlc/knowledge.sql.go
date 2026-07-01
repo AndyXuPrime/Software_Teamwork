@@ -84,6 +84,28 @@ func (q *Queries) CountKnowledgeBases(ctx context.Context, arg CountKnowledgeBas
 	return column_1, err
 }
 
+const countKnowledgeBasesGlobal = `-- name: CountKnowledgeBasesGlobal :one
+SELECT COUNT(*)::bigint FROM knowledge_bases WHERE deleted_at IS NULL;
+`
+
+func (q *Queries) CountKnowledgeBasesGlobal(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countKnowledgeBasesGlobal)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countDocumentsGlobal = `-- name: CountDocumentsGlobal :one
+SELECT COUNT(*)::bigint FROM knowledge_documents WHERE deleted_at IS NULL;
+`
+
+func (q *Queries) CountDocumentsGlobal(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countDocumentsGlobal)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createDocument = `-- name: CreateDocument :one
 INSERT INTO knowledge_documents (
   id,

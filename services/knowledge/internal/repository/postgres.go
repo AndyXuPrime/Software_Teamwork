@@ -220,6 +220,18 @@ func (r *PostgresRepository) CreateKnowledgeBase(ctx context.Context, input serv
 	return knowledgeBaseFromCreateRow(row), nil
 }
 
+func (r *PostgresRepository) GetGlobalStats(ctx context.Context) (service.GlobalStats, error) {
+	kbCount, err := r.queries.CountKnowledgeBasesGlobal(ctx)
+	if err != nil {
+		return service.GlobalStats{}, wrapPostgresError("count knowledge bases global", err)
+	}
+	docCount, err := r.queries.CountDocumentsGlobal(ctx)
+	if err != nil {
+		return service.GlobalStats{}, wrapPostgresError("count documents global", err)
+	}
+	return service.GlobalStats{KnowledgeBaseCount: kbCount, DocumentCount: docCount}, nil
+}
+
 func (r *PostgresRepository) ListKnowledgeBases(ctx context.Context, scope service.AccessScope, page service.PageInput) (service.KnowledgeBaseList, error) {
 	limit, offset, err := limitOffset(page)
 	if err != nil {

@@ -94,6 +94,7 @@ func main() {
 		Environment:    cfg.Environment,
 		Logger:         logger,
 		MaxUploadBytes: cfg.MaxUploadBytes,
+		ServiceToken:   cfg.ServiceToken,
 	})
 
 	server := &http.Server{

@@ -164,67 +164,38 @@ func (c *Client) CheckCitationSources(ctx context.Context, userID string, docume
 	return availability, nil
 }
 
-// GetStats fetches knowledge base and document counts from the knowledge
-// service by paginating through all knowledge bases. It forwards the
-// caller's full identity (roles + permissions) so that users who also
-// hold knowledge:read or admin role see global counts. Users without
-// knowledge access trigger a 403 which the ResourceService gracefully
-// degrades to zero. A true service-level stats endpoint on the knowledge
-// side is tracked as future work.
-// This is a best-effort call: errors are returned to the caller so the
-// ResourceService can fall back to zero counts.
-func (c *Client) GetStats(ctx context.Context, userID string) (int, int, error) {
-	const pageSize = 100
-	var (
-		kbCount  int
-		docCount int
-		page     = 1
-	)
-	for {
-		url := fmt.Sprintf("%s/internal/v1/knowledge-bases?page=%d&pageSize=%d", c.baseURL, page, pageSize)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return 0, 0, fmt.Errorf("create knowledge stats request: %w", err)
-		}
-		c.setTrustedHeaders(ctx, req, userID)
-		resp, err := c.http.Do(req)
-		if err != nil {
-			return 0, 0, fmt.Errorf("knowledge stats request: %w", err)
-		}
-		var body struct {
-			Data []struct {
-				ID            string `json:"id"`
-				DocumentCount int    `json:"documentCount"`
-			} `json:"data"`
-			Page struct {
-				Page     int `json:"page"`
-				PageSize int `json:"pageSize"`
-				Total    int `json:"total"`
-			} `json:"page"`
-		}
-		decodeErr := json.NewDecoder(resp.Body).Decode(&body)
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return 0, 0, fmt.Errorf("knowledge stats returned HTTP %d", resp.StatusCode)
-		}
-		if decodeErr != nil {
-			return 0, 0, fmt.Errorf("decode knowledge stats: %w", decodeErr)
-		}
-		if page == 1 {
-			kbCount = body.Page.Total
-			if kbCount == 0 {
-				kbCount = len(body.Data)
-			}
-		}
-		for _, kb := range body.Data {
-			docCount += kb.DocumentCount
-		}
-		if len(body.Data) < pageSize {
-			break
-		}
-		page++
+// GetStats fetches global knowledge base and document counts from the
+// knowledge service's internal statistics endpoint. The endpoint uses
+// service-level authentication (X-Service-Token) so the caller does not
+// need knowledge:read permissions. This is a best-effort call: errors
+// are returned to the caller so the ResourceService can fall back to
+// zero counts.
+func (c *Client) GetStats(ctx context.Context, _ string) (int, int, error) {
+	endpoint := c.baseURL + "/internal/v1/knowledge-statistics"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, 0, fmt.Errorf("create knowledge stats request: %w", err)
 	}
-	return kbCount, docCount, nil
+	req.Header.Set("X-Service-Token", c.serviceToken)
+	req.Header.Set("X-Caller-Service", "qa")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return 0, 0, fmt.Errorf("knowledge stats request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, 0, fmt.Errorf("knowledge stats returned HTTP %d", resp.StatusCode)
+	}
+	var body struct {
+		Data struct {
+			KnowledgeBaseCount int64 `json:"knowledgeBaseCount"`
+			DocumentCount      int64 `json:"documentCount"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return 0, 0, fmt.Errorf("decode knowledge stats: %w", err)
+	}
+	return int(body.Data.KnowledgeBaseCount), int(body.Data.DocumentCount), nil
 }
 
 func (c *Client) setTrustedHeaders(ctx context.Context, req *http.Request, userID string) {
