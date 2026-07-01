@@ -445,6 +445,136 @@ func TestPostgresRepositoryDocumentLifecycleUpdateAndDelete(t *testing.T) {
 	}
 }
 
+func TestPostgresRepositoryKnowledgeBaseDeleteCreatesCleanupJobs(t *testing.T) {
+	repo, _, cleanup := newPostgresRepositoryForTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	now := time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
+	scope := service.AccessScope{UserID: "usr_owner", CanWrite: true}
+
+	kb, err := repo.CreateKnowledgeBase(ctx, service.CreateKnowledgeBaseRecord{
+		ID:                "kb_bulk_delete",
+		Name:              "批量删除库",
+		Description:       "",
+		DocType:           "GENERAL",
+		ChunkStrategy:     json.RawMessage(`{"type":"fixed"}`),
+		RetrievalStrategy: json.RawMessage(`{"mode":"vector"}`),
+		CreatedBy:         scope.UserID,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err != nil {
+		t.Fatalf("CreateKnowledgeBase() error = %v", err)
+	}
+	fileRefs := map[string]string{
+		"doc_kb_delete_1": "file_kb_delete_1",
+		"doc_kb_delete_2": "file_kb_delete_2",
+	}
+	for documentID, fileRef := range fileRefs {
+		if _, _, err := repo.CreateDocumentWithJob(ctx, service.CreateDocumentWithJobRecord{
+			DocumentID:      documentID,
+			KnowledgeBaseID: kb.ID,
+			FileRef:         fileRef,
+			Name:            documentID + ".pdf",
+			ContentType:     "application/pdf",
+			SizeBytes:       16,
+			Status:          service.DocumentStatusReady,
+			CurrentJobID:    "job_ingest_" + documentID,
+			CreatedBy:       scope.UserID,
+			JobID:           "job_ingest_" + documentID,
+			JobType:         service.JobTypeDocumentIngestion,
+			JobStatus:       service.JobStatusSucceeded,
+			JobStage:        "ready",
+			JobMessage:      "document ready",
+			MaxAttempts:     service.DefaultIngestionMaxAttempts,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		}, scope); err != nil {
+			t.Fatalf("CreateDocumentWithJob(%s) error = %v", documentID, err)
+		}
+	}
+
+	deletedAt := now.Add(time.Hour)
+	tasks, err := repo.SoftDeleteKnowledgeBase(ctx, service.DeleteKnowledgeBaseRecord{
+		KnowledgeBaseID:    kb.ID,
+		CleanupJobIDPrefix: "job_kb_cleanup",
+		JobType:            service.JobTypeDeleteCleanup,
+		JobStatus:          service.JobStatusQueued,
+		JobStage:           "delete_cleanup",
+		JobMessage:         "document marked deleted; cleanup is pending",
+		MaxAttempts:        service.DefaultIngestionMaxAttempts,
+		DeletedAt:          deletedAt,
+		CreatedAt:          deletedAt,
+		UpdatedAt:          deletedAt,
+	}, scope)
+	if err != nil {
+		t.Fatalf("SoftDeleteKnowledgeBase() error = %v", err)
+	}
+	if len(tasks) != len(fileRefs) {
+		t.Fatalf("cleanup tasks = %+v", tasks)
+	}
+
+	tasksByDocument := map[string]service.DocumentDeleteCleanupTask{}
+	for _, task := range tasks {
+		tasksByDocument[task.DocumentID] = task
+	}
+	for documentID, fileRef := range fileRefs {
+		task, ok := tasksByDocument[documentID]
+		if !ok {
+			t.Fatalf("cleanup task for %s missing from %+v", documentID, tasks)
+		}
+		wantJobID := "job_kb_cleanup_" + documentID
+		if task.JobID != wantJobID || task.KnowledgeBaseID != kb.ID || task.UserID != scope.UserID || task.RequestID != "" {
+			t.Fatalf("cleanup task for %s = %+v", documentID, task)
+		}
+		if _, err := repo.GetDocument(ctx, documentID, scope); err == nil {
+			t.Fatalf("GetDocument(%s) after kb delete succeeded, want hidden", documentID)
+		}
+		job, err := repo.GetProcessingJob(ctx, task.JobID)
+		if err != nil {
+			t.Fatalf("GetProcessingJob(%s) error = %v", task.JobID, err)
+		}
+		if job.JobType != service.JobTypeDeleteCleanup ||
+			job.Status != service.JobStatusQueued ||
+			job.CurrentStage == nil || *job.CurrentStage != "delete_cleanup" ||
+			job.Message == nil || *job.Message != "document marked deleted; cleanup is pending" ||
+			job.DocumentID == nil || *job.DocumentID != documentID ||
+			job.KnowledgeBaseID != kb.ID ||
+			job.MaxAttempts != service.DefaultIngestionMaxAttempts {
+			t.Fatalf("cleanup job for %s = %+v", documentID, job)
+		}
+		target, err := repo.GetDeletedDocumentCleanupTarget(ctx, task.JobID)
+		if err != nil {
+			t.Fatalf("GetDeletedDocumentCleanupTarget(%s) error = %v", task.JobID, err)
+		}
+		if target.DocumentID != documentID || target.KnowledgeBaseID != kb.ID || target.FileRef == nil || *target.FileRef != fileRef {
+			t.Fatalf("cleanup target for %s = %+v", documentID, target)
+		}
+	}
+
+	retryableTasks, err := repo.ListRetryableDeleteCleanupTasks(ctx, service.DeleteCleanupTaskListInput{
+		RequestID: "req_reconcile",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("ListRetryableDeleteCleanupTasks() error = %v", err)
+	}
+	if len(retryableTasks) != len(fileRefs) {
+		t.Fatalf("retryable cleanup tasks = %+v", retryableTasks)
+	}
+	for _, task := range retryableTasks {
+		originalTask, ok := tasksByDocument[task.DocumentID]
+		if !ok ||
+			task.RequestID != "req_reconcile" ||
+			task.JobID != originalTask.JobID ||
+			task.KnowledgeBaseID != originalTask.KnowledgeBaseID ||
+			task.UserID != originalTask.UserID {
+			t.Fatalf("retryable cleanup task = %+v, original tasks = %+v", task, tasks)
+		}
+	}
+}
+
 func newPostgresRepositoryForTest(t *testing.T) (*repository.PostgresRepository, *pgxpool.Pool, func()) {
 	t.Helper()
 

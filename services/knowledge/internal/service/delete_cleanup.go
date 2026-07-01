@@ -217,6 +217,38 @@ func (s *Service) RequeueDeleteCleanupTasks(ctx context.Context, reqCtx RequestC
 	return result, nil
 }
 
+func (s *Service) enqueueDeleteCleanupTasks(ctx context.Context, reqCtx RequestContext, tasks []DocumentDeleteCleanupTask, requestIDSeed string) error {
+	if len(tasks) == 0 {
+		return nil
+	}
+	requestID := strings.TrimSpace(reqCtx.RequestID)
+	if requestID == "" {
+		requestID = "delete_cleanup_" + strings.TrimSpace(requestIDSeed)
+	}
+	if requestID == "delete_cleanup_" {
+		requestID = "delete_cleanup"
+	}
+	if s.queue == nil {
+		for _, task := range tasks {
+			_ = s.repo.MarkDocumentJobFailed(ctx, task.DocumentID, task.JobID, nil, string(CodeDependency), "delete cleanup queue is not configured", s.now())
+		}
+		return DependencyError("delete cleanup queue is not configured", nil)
+	}
+	for _, task := range tasks {
+		task.RequestID = requestID
+		normalized, err := normalizeDeleteCleanupTask(task)
+		if err != nil {
+			_ = s.repo.MarkDocumentJobFailed(ctx, task.DocumentID, task.JobID, nil, string(CodeDependency), "delete cleanup queue handoff failed", s.now())
+			return DependencyError("delete cleanup task payload is invalid", err)
+		}
+		if err := s.queue.EnqueueDocumentDeleteCleanup(ctx, normalized); err != nil {
+			_ = s.repo.MarkDocumentJobFailed(ctx, normalized.DocumentID, normalized.JobID, nil, string(CodeDependency), "delete cleanup queue handoff failed", s.now())
+			return DependencyError("delete cleanup queue handoff failed", err)
+		}
+	}
+	return nil
+}
+
 func (s *Service) failDeleteCleanupAndReturn(ctx context.Context, job ProcessingJob, documentID string, code string, message string, cleanupErr error) (ProcessingJob, error) {
 	failed, err := s.failDeleteCleanup(ctx, job, documentID, code, message)
 	if err != nil {
