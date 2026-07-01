@@ -126,7 +126,7 @@
 - `FILE_DATABASE_URL` 配置后 `/internal/v1/files/**` 需要 `X-Service-Token`；如果 owner service 或 worker 直连 File，必须配置并传递相同 token。
 - 兼容 document routes 仍使用 knowledge-document 形态并保存 `knowledgeBaseId` / tags；这与最终 owner service 边界不一致，但当前实现说明已登记为短期兼容。
 - 当前仓库测试策略仍说明缺少统一后端跨服务 E2E smoke；File 自身 smoke 不能证明 Gateway -> Knowledge/Document -> File 的完整链路。
-- `docs/services/knowledge/docs/api-contract.md` 的“存储与数据归属”仍写到 bucket 首期拆为 `source-files`、`templates`、`generated-reports`。当前 File 文档和 runtime 口径是 File 内部封装 bucket/object key，根级本地 Compose 使用单 bucket `software-teamwork-local`；该旧表述容易让 owner service 误以为可以依赖 bucket 分类，建议后续文档清理。
+- 已确认当前 Knowledge 契约和 File 边界对齐：owner service 只保存不透明 `file_ref`，bucket/object key/storage backend 由 File Service 内部封装；本地 Compose 单 bucket `software-teamwork-local` 只是 File Service local runtime 实现细节。
 
 ## 9. 后续可追加测试想法
 
@@ -135,4 +135,4 @@
 - 增加 Knowledge -> File content handoff 和 Document -> File report file content 的跨服务 smoke，证明 owner service 不泄露 file ID、bucket 或 object key。
 - 增加 service-token 轮换/缺失配置 smoke，覆盖 worker 直连 File 的失败形态。
 - 增加异步清理 worker 后的失败重试测试：对象删除失败时 metadata 状态、`last_error_*`、attempt 计数和后续重试。
-- 清理 Knowledge 历史 API contract 中关于 bucket 拆分的旧说法，统一到 File Service 内部封装 bucket/object key、owner service 只保存不透明 `file_ref` 的口径。
+- 增加自动化文档回归检查，防止后续重新引入 owner service 可依赖 bucket/object key 或按业务 bucket 分类的旧口径。
