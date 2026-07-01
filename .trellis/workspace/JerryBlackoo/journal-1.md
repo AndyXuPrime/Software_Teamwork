@@ -123,3 +123,36 @@ Addressed both Codex findings for PR #300, completed Trellis audit records, and 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Fix PR 428 attachment review findings
+
+**Date**: 2026-07-01
+**Task**: Fix PR 428 attachment review findings
+**Branch**: `JerryTeam/feat/qa-session-attachments`
+
+### Summary
+
+Aligned QA attachment upload, filtering, public DTOs, atomic quotas, cleanup compensation, purged lifecycle, migrations, and default attachment search; verified Gateway/QA tests, builds, contract checks, Compose config, and PostgreSQL goose up/down integration.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `db4d9235f39972798a2e259c61ea4520481ee91f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
