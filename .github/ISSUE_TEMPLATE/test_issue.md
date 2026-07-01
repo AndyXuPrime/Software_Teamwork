@@ -40,7 +40,9 @@ assignees: ''
 
 ## 权威依据
 
+- `docs/testing/README.md`
 - `docs/testing/strategy.md`
+- `docs/testing/templates/test-report-template.md`
 - `docs/...`
 - `docs/services/...`
 - GitHub issue 或 PR 链接
@@ -54,6 +56,7 @@ assignees: ''
 ## 测试执行与缺陷处理规则
 
 - 本任务不只交付测试代码或测试清单，主责人必须实际运行测试，并在 issue/PR 中记录执行命令、环境、结果和失败证据。
+- 本任务必须基于 `docs/testing/templates/test-report-template.md` 生成完整测试报告，并按实际执行日期保存到 `docs/testing/reports/YYYY-MM-DD/`。
 - 如果测试发现问题，先判断问题等级：
   - 小问题：测试主责人可以在本任务 PR 中顺手修复，但必须说明修复范围、验证命令和风险。
   - 大问题：不要在测试任务里扩大修改范围；应新建独立 issue 指派给对应 owner 小组，并在本任务中链接该 issue。
@@ -63,13 +66,15 @@ assignees: ''
 
 ## 交付物
 
-- 测试代码、测试清单、脚本、runbook 或测试报告。
+- 测试报告：必须使用 `docs/testing/templates/test-report-template.md`，并提交到 `docs/testing/reports/YYYY-MM-DD/<scope>-test-report.md`。
+- 测试代码、测试清单、脚本或 runbook。
 - 实际执行记录：命令、环境、结果、失败证据和未运行原因。
 - 发现问题的处理结论：已修复、已转 issue 或暂不处理及原因。
 
 ## 验收标准
 
 - [ ] 已按任务范围实际运行测试，而不是只提交测试代码或清单。
+- [ ] 已按测试报告模板生成完整报告，并按日期提交到 `docs/testing/reports/YYYY-MM-DD/`。
 - [ ] issue/PR 中记录了执行命令、环境、结果和失败证据。
 - [ ] 测试失败时已判断问题等级，并按规则修复或新建 owner issue。
 - [ ] 未运行的测试写清楚环境缺口、跳过条件和残余风险。

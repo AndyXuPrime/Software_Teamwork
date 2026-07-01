@@ -1,0 +1,43 @@
+# 测试资料目录
+
+本目录是测试组的统一资料入口，用于存放测试策略、测试报告模板、测试执行记录和按日期归档的测试报告。
+
+## 目录结构
+
+| 路径 | 用途 |
+| --- | --- |
+| `docs/testing/strategy.md` | 仓库当前测试策略、CI 覆盖和本地验证矩阵。 |
+| `docs/testing/templates/test-report-template.md` | 测试报告标准模板。每次测试任务都应以此为基础生成报告。 |
+| `docs/testing/reports/YYYY-MM-DD/` | 按测试执行日期归档的测试报告。 |
+
+旧的 `docs/tests/` 目录已迁移到 `docs/testing/reports/`。后续不要再向 `docs/tests/` 新增报告。
+
+## 测试报告规则
+
+- 每个 `T-*` 测试任务必须产出一份完整测试报告；只提交测试代码、测试清单或口头结论不算完成。
+- 测试报告必须基于 `docs/testing/templates/test-report-template.md`，并保留“执行命令与结果”“缺陷处理”“证据清单”“最终结论”等关键章节。
+- 报告按实际执行日期放入 `docs/testing/reports/YYYY-MM-DD/`。例如：`docs/testing/reports/2026-07-01/auth-gateway-test-report.md`。
+- 文件名使用小写英文、数字和连字符，建议格式为 `<module-or-flow>-test-report.md`。
+- 如果同一天同一模块有多轮测试，可以在文件名追加范围或轮次，例如 `knowledge-rerank-regression-test-report.md`。
+- 报告中的测试结论必须区分：测试通过、测试失败且已修复、测试失败已转 issue、因环境缺失未运行。
+- 未运行的测试不能写成通过，必须记录缺失环境、跳过条件、残余风险和后续归属。
+
+## 缺陷处理规则
+
+测试主责人需要先判断测试发现的问题等级：
+
+- 小问题：可以在当前测试任务 PR 中顺手修复，但报告中必须说明修复范围、验证命令和风险。
+- 大问题：不要在测试任务中扩大修改范围；新建独立 issue 指派给对应 owner 小组，并在测试报告、测试 issue 和 PR 中互相链接。
+
+大问题包括但不限于：跨服务契约变更、数据模型或 migration 变更、权限或安全边界缺陷、需要 owner service 重构、需要产品或架构决策、会影响多个模块的行为变更。
+
+对于发现但暂不修复的问题，报告中必须记录复现步骤、实际结果、预期结果、相关日志或 request id、影响范围、建议归属小组和阻塞关系。
+
+## 提交流程
+
+1. 在测试 issue 中确认范围、依据和预期交付物。
+2. 按 `docs/testing/strategy.md` 选择需要运行的命令和人工验证项。
+3. 实际运行测试，保留命令、环境、结果和失败证据。
+4. 复制 `docs/testing/templates/test-report-template.md` 生成当日测试报告。
+5. 将报告放入 `docs/testing/reports/YYYY-MM-DD/`。
+6. 在测试 issue 和 PR 中链接报告路径，并说明未运行项、失败项、已修复项和已转 issue。
