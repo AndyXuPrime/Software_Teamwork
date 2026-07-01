@@ -74,6 +74,124 @@ func TestDocumentOpenAPIReportBaseResourcesMatchImplementedEnvelope(t *testing.T
 	}
 }
 
+func TestGatewayPublicOpenAPIContainsDocumentOwnerRoutes(t *testing.T) {
+	spec := readGatewayPublicOpenAPI(t)
+	document := parseOpenAPIDocument(t, spec)
+
+	documentRoutes := []struct {
+		method string
+		path   string
+	}{
+		{"get", "/api/v1/report-types"},
+		{"get", "/api/v1/report-templates"},
+		{"post", "/api/v1/report-templates"},
+		{"get", "/api/v1/report-templates/{reportTemplateId}"},
+		{"patch", "/api/v1/report-templates/{reportTemplateId}"},
+		{"delete", "/api/v1/report-templates/{reportTemplateId}"},
+		{"get", "/api/v1/report-templates/{reportTemplateId}/structure"},
+		{"patch", "/api/v1/report-templates/{reportTemplateId}/structure"},
+		{"get", "/api/v1/report-materials"},
+		{"post", "/api/v1/report-materials"},
+		{"get", "/api/v1/report-materials/{materialId}"},
+		{"delete", "/api/v1/report-materials/{materialId}"},
+		{"get", "/api/v1/reports"},
+		{"post", "/api/v1/reports"},
+		{"get", "/api/v1/reports/{reportId}"},
+		{"patch", "/api/v1/reports/{reportId}"},
+		{"delete", "/api/v1/reports/{reportId}"},
+		{"get", "/api/v1/reports/{reportId}/outlines"},
+		{"post", "/api/v1/reports/{reportId}/outlines"},
+		{"get", "/api/v1/reports/{reportId}/outlines/{outlineId}"},
+		{"patch", "/api/v1/reports/{reportId}/outlines/{outlineId}"},
+		{"delete", "/api/v1/reports/{reportId}/outlines/{outlineId}/sections/{sectionId}"},
+		{"get", "/api/v1/reports/{reportId}/sections"},
+		{"post", "/api/v1/reports/{reportId}/sections"},
+		{"get", "/api/v1/reports/{reportId}/sections/{sectionId}"},
+		{"patch", "/api/v1/reports/{reportId}/sections/{sectionId}"},
+		{"get", "/api/v1/reports/{reportId}/sections/{sectionId}/versions"},
+		{"post", "/api/v1/reports/{reportId}/sections/{sectionId}/versions"},
+		{"get", "/api/v1/reports/{reportId}/jobs"},
+		{"post", "/api/v1/reports/{reportId}/jobs"},
+		{"get", "/api/v1/report-jobs/{jobId}"},
+		{"get", "/api/v1/report-jobs/{jobId}/attempts"},
+		{"post", "/api/v1/report-jobs/{jobId}/attempts"},
+		{"get", "/api/v1/reports/{reportId}/events"},
+		{"get", "/api/v1/report-files"},
+		{"post", "/api/v1/report-files"},
+		{"get", "/api/v1/report-files/{reportFileId}"},
+		{"get", "/api/v1/report-files/{reportFileId}/content"},
+		{"get", "/api/v1/report-statistics/overview"},
+		{"get", "/api/v1/report-statistics/daily"},
+		{"get", "/api/v1/report-operation-logs"},
+		{"get", "/api/v1/report-settings"},
+		{"patch", "/api/v1/report-settings"},
+	}
+
+	for _, route := range documentRoutes {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			operation, ok := digMap(document, "paths", route.path, route.method)
+			if !ok {
+				t.Fatalf("gateway OpenAPI missing route %s %s", strings.ToUpper(route.method), route.path)
+			}
+			owner, _ := operation["x-owner-service"].(string)
+			if owner != "document" {
+				t.Fatalf("%s %s x-owner-service = %q, want \"document\"", strings.ToUpper(route.method), route.path, owner)
+			}
+		})
+	}
+
+	for _, schemaName := range []string{
+		"ReportTypeListResponse",
+		"ReportTemplateListResponse",
+		"ReportTemplateResponse",
+		"ReportTemplateStructureResponse",
+		"ReportMaterialListResponse",
+		"ReportMaterialResponse",
+		"ReportListResponse",
+		"ReportResponse",
+		"ReportOutlineListResponse",
+		"ReportOutlineResponse",
+		"ReportSectionListResponse",
+		"ReportSectionResponse",
+		"ReportSectionVersionListResponse",
+		"ReportSectionVersionResponse",
+		"ReportJobListResponse",
+		"ReportJobResponse",
+		"ReportJobAttemptListResponse",
+		"ReportJobAttemptResponse",
+		"ReportEventListResponse",
+		"ReportFileListResponse",
+		"ReportFileResponse",
+		"ReportStatisticsOverviewResponse",
+		"ReportDailyStatisticsResponse",
+		"ReportOperationLogListResponse",
+		"ReportSettingsResponse",
+		"ReportSettingsUpdateResponse",
+	} {
+		t.Run("schema/"+schemaName, func(t *testing.T) {
+			assertSchemaHasFields(t, spec, schemaName, "data:", "requestId:")
+		})
+	}
+}
+
+func readGatewayPublicOpenAPI(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Skip("runtime.Caller failed; skipping gateway OpenAPI contract test")
+	}
+	dir := filepath.Dir(file)
+	for i := 0; i < 12; i++ {
+		candidate := filepath.Join(dir, "docs", "services", "gateway", "api", "public.openapi.yaml")
+		if data, err := os.ReadFile(candidate); err == nil {
+			return string(data)
+		}
+		dir = filepath.Dir(dir)
+	}
+	t.Skip("docs/services/gateway/api/public.openapi.yaml not found; skipping gateway OpenAPI contract test")
+	return ""
+}
+
 func readDocumentDocsOpenAPI(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
