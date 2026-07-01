@@ -88,6 +88,8 @@
 
 当前状态：B-016 已实现 QA 侧 Document report 工具摘要映射。默认工具白名单包含 `document__generate_report_outline`、`document__generate_report_text`、`document__get_generation_status`、`document__export_report_docx` 和 `document__get_report_result`；当运行时注册 alias 为 `document` 的 MCP server 且 tools/list 返回这些工具时，Agent 可在 `report_generation` 模式选择调用。QA 仅把 Document MCP tool result 映射为 `reportArtifact`，不透传原始 JSON。
 
+运行时配置：数据库 `mcp_servers.alias=document` 是正式配置路径；环境变量 bootstrap 可用 `MCP_TRANSPORT=streamable_http`、`MCP_SERVER_ALIAS=document`、`MCP_SERVER_URL=<document-mcp-endpoint>`、`MCP_SERVER_TOKEN`、`MCP_SERVER_TOKEN_HEADER` 临时接入。`MCP_TOOL_TIMEOUT` 限制单次工具调用；QA 不在工具适配层做无界轮询，模型同一 run 内继续调用 `document__get_generation_status` 时由 `AGENT_MAX_ITERATIONS` 与单次工具超时共同约束。真实 Document worker / Gateway 下载链路 smoke 需要用 `QA_DOCUMENT_MCP_SMOKE=1` 显式开启，普通 CI 仅跑 fake Document MCP / 单服务契约测试。
+
 ## 7. MVP / mock / memory backend / 占位
 
 | 项目 | 当前用途 | 退出条件 | 关联任务 |

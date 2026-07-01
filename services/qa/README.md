@@ -142,7 +142,10 @@ not try to launch local source-only helper commands.
 
 Set `MCP_TRANSPORT=streamable_http` and provide `MCP_SERVER_URL` to merge remote
 tools with the built-in registry. Optional credentials use `MCP_SERVER_TOKEN`
-and `MCP_SERVER_TOKEN_HEADER`.
+and `MCP_SERVER_TOKEN_HEADER`. `MCP_SERVER_ALIAS` controls the model-facing tool
+prefix for the environment bootstrap server and defaults to `env_default`; use
+`document` for the Document MCP server so report tools are exposed as
+`document__<tool>`.
 
 ### Document report tools
 
@@ -171,6 +174,26 @@ listed to the model when a reachable MCP server actually returns matching
 tools, so environments without Document MCP support degrade to "tool not
 available" instead of panicking. Additional Document tools may be enabled by a
 new QA config version when their service contract is stable.
+
+For environment-based smoke or deployment bootstrap, configure:
+
+```powershell
+$env:MCP_TRANSPORT = "streamable_http"
+$env:MCP_SERVER_ALIAS = "document"
+$env:MCP_SERVER_URL = "http://localhost:8087/mcp"
+$env:MCP_SERVER_TOKEN = [Environment]::GetEnvironmentVariable('INTERNAL_SERVICE_TOKEN', 'User')
+$env:MCP_SERVER_TOKEN_HEADER = "X-Service-Token"
+$env:MCP_TOOL_TIMEOUT = "30s"
+$env:AGENT_MAX_ITERATIONS = "8"
+$env:QA_DOCUMENT_MCP_SMOKE = "1"
+```
+
+`MCP_TOOL_TIMEOUT` bounds each Document tool call. QA does not perform an
+unbounded status-poll loop inside the tool adapter; if the model calls
+`document__get_generation_status` in the same run, the number of attempts is
+bounded by `AGENT_MAX_ITERATIONS` and the per-tool timeout. Full QA -> Document
+worker -> Gateway download smoke should stay env-gated with
+`QA_DOCUMENT_MCP_SMOKE=1` so ordinary CI does not require a live Document worker.
 
 Document MCP results are never forwarded as raw JSON to SSE, logs, or
 `agent_tool_calls.result_summary`. QA maps them into the Gateway

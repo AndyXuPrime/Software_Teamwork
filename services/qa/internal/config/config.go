@@ -47,6 +47,7 @@ type Config struct {
 	MCPServerCommand     string
 	MCPServerArgs        []string
 	MCPServerURL         string
+	MCPServerAlias       string
 	MCPServerToken       string
 	MCPServerTokenHeader string
 	MCPToolTimeout       time.Duration
@@ -81,6 +82,7 @@ func Load() (Config, error) {
 		MCPTransport:         strings.ToLower(envOr("MCP_TRANSPORT", TransportDisabled)),
 		MCPServerCommand:     strings.TrimSpace(os.Getenv("MCP_SERVER_COMMAND")),
 		MCPServerURL:         strings.TrimSpace(os.Getenv("MCP_SERVER_URL")),
+		MCPServerAlias:       envOr("MCP_SERVER_ALIAS", "env_default"),
 		MCPServerToken:       os.Getenv("MCP_SERVER_TOKEN"),
 		MCPServerTokenHeader: envOr("MCP_SERVER_TOKEN_HEADER", "Authorization"),
 		SystemPrompt:         envOr("AGENT_SYSTEM_PROMPT", "You are a helpful QA agent. Use available tools when they are needed, and answer from tool results without inventing sources."),
@@ -163,6 +165,9 @@ func (c Config) Validate() error {
 	if !validHeaderName(c.MCPServerTokenHeader) {
 		return errors.New("MCP_SERVER_TOKEN_HEADER is invalid")
 	}
+	if c.MCPServerAlias == "" || !validMCPAlias(c.MCPServerAlias) {
+		return errors.New("MCP_SERVER_ALIAS must match ^[a-z0-9_]{2,32}$")
+	}
 	root, err := filepath.Abs(c.WorkDir)
 	if err != nil {
 		return fmt.Errorf("AGENT_WORKDIR is invalid: %w", err)
@@ -210,6 +215,19 @@ func validateHTTPURL(name, value string) error {
 
 func validHeaderName(value string) bool {
 	return value != "" && !strings.ContainsAny(value, "\r\n:")
+}
+
+func validMCPAlias(value string) bool {
+	if len(value) < 2 || len(value) > 32 {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func envOr(name, fallback string) string {

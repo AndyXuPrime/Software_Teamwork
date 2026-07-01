@@ -53,7 +53,7 @@ func main() {
 	}
 	if cfg.MCPTransport != config.TransportDisabled {
 		bootstrap.MCPServer = &service.RuntimeMCPConfig{
-			Alias: "env_default", Transport: cfg.MCPTransport,
+			Alias: cfg.MCPServerAlias, Transport: cfg.MCPTransport,
 			Command: cfg.MCPServerCommand, Args: cfg.MCPServerArgs,
 			EndpointURL: cfg.MCPServerURL, Token: cfg.MCPServerToken,
 			TokenHeader: cfg.MCPServerTokenHeader, ToolTimeout: cfg.MCPToolTimeout,

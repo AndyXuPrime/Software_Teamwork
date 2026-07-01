@@ -17,6 +17,7 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("MCP_TRANSPORT", "")
 	t.Setenv("MCP_SERVER_COMMAND", "")
 	t.Setenv("MCP_SERVER_ARGS_JSON", "")
+	t.Setenv("MCP_SERVER_ALIAS", "")
 }
 
 func TestLoadDefaultConfiguration(t *testing.T) {
@@ -25,7 +26,7 @@ func TestLoadDefaultConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.MCPTransport != TransportDisabled || len(cfg.MCPServerArgs) != 0 {
+	if cfg.MCPTransport != TransportDisabled || cfg.MCPServerAlias != "env_default" || len(cfg.MCPServerArgs) != 0 {
 		t.Fatalf("unexpected MCP config: %+v", cfg)
 	}
 	if cfg.ModelTimeout != 60*time.Second || cfg.MaxIterations != 8 {
@@ -115,12 +116,21 @@ func TestLoadStreamableHTTPConfiguration(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("MCP_TRANSPORT", TransportStreamableHTTP)
 	t.Setenv("MCP_SERVER_URL", "https://mcp.example.test/mcp")
+	t.Setenv("MCP_SERVER_ALIAS", "document")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.MCPServerURL != "https://mcp.example.test/mcp" {
-		t.Fatalf("unexpected endpoint: %s", cfg.MCPServerURL)
+	if cfg.MCPServerURL != "https://mcp.example.test/mcp" || cfg.MCPServerAlias != "document" {
+		t.Fatalf("unexpected MCP config: %+v", cfg)
+	}
+}
+
+func TestLoadRejectsInvalidMCPAlias(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("MCP_SERVER_ALIAS", "Document-Tools")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid MCP alias to fail")
 	}
 }
 
