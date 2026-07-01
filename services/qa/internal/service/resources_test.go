@@ -13,7 +13,9 @@ import (
 type resourceRepositoryStub struct {
 	activeQAConfig   QAConfigVersion
 	createdQAInput   CreateQAConfigVersionInput
+	createdLLMInput  CreateLLMConfigVersionInput
 	createQACalled   bool
+	createLLMCalled  bool
 	savedInput       RetrievalTestInput
 	savedRunErr      error
 	saveCalled       bool
@@ -56,8 +58,10 @@ func (r *resourceRepositoryStub) CreateQAConfigVersionResource(_ context.Context
 func (r *resourceRepositoryStub) GetActiveLLMConfigVersion(context.Context) (LLMConfigVersion, error) {
 	return LLMConfigVersion{}, nil
 }
-func (r *resourceRepositoryStub) CreateLLMConfigVersionResource(context.Context, string, CreateLLMConfigVersionInput) (LLMConfigVersion, error) {
-	return LLMConfigVersion{}, nil
+func (r *resourceRepositoryStub) CreateLLMConfigVersionResource(_ context.Context, _ string, input CreateLLMConfigVersionInput) (LLMConfigVersion, error) {
+	r.createLLMCalled = true
+	r.createdLLMInput = input
+	return LLMConfigVersion{ID: "llm-config-id"}, nil
 }
 func (r *resourceRepositoryStub) SaveLLMConnectionTest(context.Context, string, LLMProfileTestResult) (LLMProfileTestResult, error) {
 	return LLMProfileTestResult{}, nil
@@ -110,6 +114,16 @@ func (llmTesterStub) TestLLM(context.Context, RuntimeLLMConfig) (LLMConnectionTe
 type runCancellerStub struct{}
 
 func (runCancellerStub) CancelActiveRun(string) {}
+
+type resourceReloaderStub struct {
+	called int
+	err    error
+}
+
+func (r *resourceReloaderStub) Reload(context.Context) error {
+	r.called++
+	return r.err
+}
 
 func TestListStreamEventsRejectsCursorOverflow(t *testing.T) {
 	repository := &resourceRepositoryStub{}
@@ -328,6 +342,71 @@ func TestCreateQAConfigVersionPreservesExplicitEmptyAgentToolWhitelist(t *testin
 	}
 	if repository.createdQAInput.Agent.EnabledToolNames == nil || len(repository.createdQAInput.Agent.EnabledToolNames) != 0 {
 		t.Fatalf("agent.enabledToolNames=%#v, want explicit empty whitelist", repository.createdQAInput.Agent.EnabledToolNames)
+	}
+}
+
+func TestCreateQAConfigVersionReloadsRuntimeWhenActivated(t *testing.T) {
+	repository := &resourceRepositoryStub{}
+	reloader := &resourceReloaderStub{}
+	resources, err := NewResourceService(repository, &knowledgeRetrieverStub{}, llmTesterStub{}, RuntimeLLMConfig{}, runCancellerStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources.SetReloader(reloader)
+
+	_, err = resources.CreateQAConfigVersion(context.Background(), "user-1", CreateQAConfigVersionInput{
+		Retrieval: RetrievalSettings{TopK: 5, ScoreThreshold: .2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloader.called != 1 {
+		t.Fatalf("reload called %d times, want 1", reloader.called)
+	}
+}
+
+func TestCreateQAConfigVersionSkipsRuntimeReloadWhenInactive(t *testing.T) {
+	repository := &resourceRepositoryStub{}
+	reloader := &resourceReloaderStub{}
+	resources, err := NewResourceService(repository, &knowledgeRetrieverStub{}, llmTesterStub{}, RuntimeLLMConfig{}, runCancellerStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources.SetReloader(reloader)
+	activate := false
+
+	_, err = resources.CreateQAConfigVersion(context.Background(), "user-1", CreateQAConfigVersionInput{
+		Retrieval: RetrievalSettings{TopK: 5, ScoreThreshold: .2},
+		Activate:  &activate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloader.called != 0 {
+		t.Fatalf("reload called %d times, want 0", reloader.called)
+	}
+}
+
+func TestCreateLLMConfigVersionReloadsRuntimeWhenActivated(t *testing.T) {
+	repository := &resourceRepositoryStub{}
+	reloader := &resourceReloaderStub{}
+	resources, err := NewResourceService(repository, &knowledgeRetrieverStub{}, llmTesterStub{}, RuntimeLLMConfig{}, runCancellerStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources.SetReloader(reloader)
+
+	_, err = resources.CreateLLMConfigVersion(context.Background(), "user-1", CreateLLMConfigVersionInput{
+		Provider: "ai-gateway", ProfileID: "profile-1", ModelName: "K2.6", TimeoutSeconds: 60,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloader.called != 1 {
+		t.Fatalf("reload called %d times, want 1", reloader.called)
+	}
+	if !repository.createLLMCalled || repository.createdLLMInput.ModelName != "K2.6" {
+		t.Fatalf("llm input not persisted through stub: called=%v input=%+v", repository.createLLMCalled, repository.createdLLMInput)
 	}
 }
 

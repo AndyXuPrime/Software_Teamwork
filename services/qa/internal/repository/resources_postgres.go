@@ -265,30 +265,9 @@ func applyQAConfigVersionCompatibilityFields(v *service.QAConfigVersion) {
 }
 
 func (r *Postgres) CreateQAConfigVersionResource(ctx context.Context, userID string, input service.CreateQAConfigVersionInput) (service.QAConfigVersion, error) {
-	retrieval := input.Retrieval
-	if retrieval.TopK == 0 {
-		retrieval.TopK = input.TopK
-	}
-	if retrieval.TopK == 0 {
-		retrieval.TopK = 5
-	}
-	if retrieval.ScoreThreshold == 0 {
-		retrieval.ScoreThreshold = input.SimilarityThreshold
-	}
-	if retrieval.ScoreThreshold == 0 {
-		retrieval.ScoreThreshold = .7
-	}
-	if input.UseRerank {
-		retrieval.EnableRerank = true
-	}
-	if retrieval.RerankThreshold == 0 {
-		retrieval.RerankThreshold = input.RerankThreshold
-	}
-	if retrieval.RerankTopN == 0 {
-		retrieval.RerankTopN = input.RerankTopN
-	}
+	retrieval := retrievalConfigFromCreateInput(input)
 	agent := agentConfigFromCreateInput(input)
-	activate := input.Activate == nil || *input.Activate
+	activate := shouldActivateConfigResource(input.Activate)
 	kbs := input.KnowledgeBases
 	if len(kbs) == 0 {
 		for i, id := range input.DefaultKnowledgeBaseIDs {
@@ -323,6 +302,36 @@ func (r *Postgres) CreateQAConfigVersionResource(ctx context.Context, userID str
 		return service.QAConfigVersion{}, err
 	}
 	return r.getQAConfigVersion(ctx, id, false)
+}
+
+func retrievalConfigFromCreateInput(input service.CreateQAConfigVersionInput) service.RetrievalSettings {
+	retrieval := input.Retrieval
+	if retrieval.TopK == 0 {
+		retrieval.TopK = input.TopK
+	}
+	if retrieval.TopK == 0 {
+		retrieval.TopK = 5
+	}
+	if !retrieval.HasScoreThreshold() {
+		retrieval.ScoreThreshold = input.SimilarityThreshold
+		if retrieval.ScoreThreshold == 0 {
+			retrieval.ScoreThreshold = .7
+		}
+	}
+	if input.UseRerank {
+		retrieval.EnableRerank = true
+	}
+	if retrieval.RerankThreshold == 0 {
+		retrieval.RerankThreshold = input.RerankThreshold
+	}
+	if retrieval.RerankTopN == 0 {
+		retrieval.RerankTopN = input.RerankTopN
+	}
+	return retrieval
+}
+
+func shouldActivateConfigResource(activate *bool) bool {
+	return activate == nil || *activate
 }
 
 func agentConfigFromCreateInput(input service.CreateQAConfigVersionInput) service.AgentConfig {

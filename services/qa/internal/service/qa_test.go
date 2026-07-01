@@ -480,7 +480,7 @@ func TestAskMergesRequestRetrievalOverridesIntoToolContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := contextutil.RetrievalSettings{TopK: 3, ScoreThreshold: 0.42, EnableRerank: false, RerankThreshold: 0.25, RerankTopN: 2}
+	want := contextutil.RetrievalSettings{TopK: 3, ScoreThreshold: 0.42, ScoreThresholdConfigured: true, EnableRerank: false, RerankThreshold: 0.25, RerankTopN: 2}
 	if runner.retrievalSettings != want {
 		t.Fatalf("retrieval settings=%+v, want %+v", runner.retrievalSettings, want)
 	}
