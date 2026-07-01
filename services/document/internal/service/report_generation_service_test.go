@@ -927,6 +927,64 @@ func TestReportGenerationServiceRetrievesKnowledgeContextForOutline(t *testing.T
 	}
 }
 
+func TestReportGenerationServiceHandlesAIMalformedResponse(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "empty content string", content: ""},
+		{name: "plain text non-JSON", content: "抱歉，我无法生成大纲"},
+		{name: "truncated JSON", content: `{"sections":[{`},
+		{name: "empty sections array", content: `{"sections":[]}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newFakeReportGenerationRepository()
+			repo.reports["report-1"] = Report{
+				ID:         "report-1",
+				Name:       "Summer peak inspection",
+				ReportType: "summer_peak_inspection",
+				TemplateID: "template-1",
+				Topic:      "summer power supply",
+				CreatorID:  "user-1",
+				Status:     ReportStatusDraft,
+			}
+			repo.jobs["job-1"] = ReportJob{
+				ID:       "job-1",
+				JobType:  JobTypeOutlineGeneration,
+				ReportID: "report-1",
+			}
+			repo.templateStructures["template-1"] = ReportTemplateStructure{
+				OutlineSchema: []byte(`{"sections":["overview"]}`),
+			}
+			chat := &fakeGenerationChatClient{
+				responses: []ChatCompletionResponse{{Content: tc.content}},
+			}
+			svc := NewReportGenerationService(repo, chat)
+
+			_, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+				RequestID: "req-malformed",
+				JobType:   JobTypeOutlineGeneration,
+				JobID:     "job-1",
+				UserID:    "user-1",
+			})
+
+			if err == nil {
+				t.Fatalf("expected error for malformed AI content %q, got nil", tc.content)
+			}
+			if len(repo.outlines) != 0 {
+				t.Fatalf("outlines written despite malformed content: %v", repo.outlines)
+			}
+			if len(repo.sections) != 0 {
+				t.Fatalf("sections written despite malformed content: %v", repo.sections)
+			}
+			if !hasReportEvent(repo.events, "outline.failed") {
+				t.Fatalf("no outline.failed event recorded; events = %v", repo.events)
+			}
+		})
+	}
+}
+
 type fakeGenerationChatClient struct {
 	requests  []ChatCompletionRequest
 	responses []ChatCompletionResponse
