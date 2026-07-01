@@ -3,6 +3,18 @@
 日期：2026-07-01
 范围：`services/file`、File Service 所依赖的 PostgreSQL / MinIO 本地工作区，以及验证 File 能否服务 `knowledge`、`document` 等 owner service 的相关边界。
 
+## 0. 测试基准与环境摘要
+
+| 项目 | 记录 |
+| --- | --- |
+| Branch | `Special/docs/sync-trellis-spec-docs` |
+| Tested commit / PR head | 本报告随 `4b6664777cd5` 归档；后续 `22ce0bdd3925` 仅修正文档空白。PR review 首轮基准为 `300e02138125`，rebase 后等价提交为 `22ce0bdd3925`。 |
+| Base branch | `develop` |
+| 运行方式 | `services/file` 本地 Go 测试/构建，Docker Compose 提供 PostgreSQL、MinIO、`minio-init` 和 `migrate-file`。 |
+| 基础依赖 | `postgres:16-alpine`、MinIO server/mc、本地 bucket `software-teamwork-local`，配置来源 `deploy/docker-compose.yml` + `deploy/.env.example`。 |
+| 关键环境变量 | `FILE_TEST_DATABASE_URL=postgres://file_app:file_app_dev@localhost:5432/file_system?sslmode=disable`，`FILE_MINIO_ENDPOINT=localhost:9000`，`FILE_MINIO_BUCKET=software-teamwork-local`。 |
+| 阻塞环境 | 本轮证明 File 自身 PostgreSQL + MinIO smoke；未证明 Gateway -> Knowledge/Document -> File 的统一跨服务 E2E。 |
+
 ## 1. 测试目标
 
 本轮测试不只验证 file 模块能否编译，而是验证它是否能作为系统里的基础文件能力可靠服务其他模块。
