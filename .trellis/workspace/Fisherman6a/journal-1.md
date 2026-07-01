@@ -114,3 +114,36 @@ Aligned Knowledge active-operation contracts for chunks, content, and knowledge-
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: A-021 Knowledge ingestion real dependency smoke
+
+**Date**: 2026-07-01
+**Task**: A-021 Knowledge ingestion real dependency smoke
+**Branch**: `L1nggTeam/test/knowledge-ingestion-real-deps`
+
+### Summary
+
+Added env-gated Knowledge ingestion real dependency smoke and Gateway owner route smoke, documented Parser image cache prerequisites, updated backend smoke spec, and verified default/enabled smoke paths plus cleanup.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ca055db` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
