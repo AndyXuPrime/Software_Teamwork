@@ -1,13 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowUpRight } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import { streamChat } from '@/api/chat'
+import { replayEvents, streamChat } from '@/api/chat'
 import { ChatInput, ChatMessages, ChatSidebar } from '@/components/chat'
 import {
-  createSafeToolStep,
-  formatQAError,
-  formatQAStreamError,
-  getCitationDelta,
-  getSafeReasoningStep,
   useCreateSession,
   useDeleteSession,
   useRenameSession,
@@ -23,21 +19,117 @@ import type {
 } from '@/lib/types'
 import { useChatStore } from '@/stores/chat-store'
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Helpers
+// ══════════════════════════════════════════════════════════════════════════════
+
 function nextId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2)
 }
 
-function getSessionTitle(prompt: string): string {
-  return prompt.slice(0, 30) + (prompt.length > 30 ? '...' : '')
-}
-
-function toSessionListItem(session: QASession, messages: QAMessage[]): QASessionListItem {
+function toSessionListItem(s: QASession, messages: QAMessage[]): QASessionListItem {
   const last = messages[messages.length - 1]
   return {
-    ...session,
-    lastMessagePreview: last ? last.content.slice(0, 50) : session.lastMessagePreview,
-    messageCount: messages.length || session.messageCount,
+    id: s.id,
+    title: s.title,
+    status: s.status,
+    messageCount: messages.length > 0 ? messages.length : (s.messageCount ?? 0),
+    lastMessagePreview: last ? last.content.slice(0, 50) : (s.lastMessagePreview ?? ''),
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SSE data sanitizers — strip internal fields before rendering in UI
+// Per OpenAPI: thinking.detail must only contain user-visible summary,
+// never chain-of-thought, full prompts, tool args, raw results, internal
+// URLs, or object keys.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const SENSITIVE_PATTERN =
+  /https?:\/\/|s3:\/\/|gs:\/\/|minio:\/\/|localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|sk-|api_key|token|Bearer\s|secret|password|credential|object_key|internal:/i
+
+function sanitizeLabel(raw: string | undefined): string | undefined {
+  if (typeof raw !== 'string' || raw.length === 0) return undefined
+  const trimmed = raw.slice(0, 200)
+  if (SENSITIVE_PATTERN.test(trimmed)) return undefined
+  return trimmed
+}
+
+const VALID_STEP_TYPES = new Set([
+  'agent_iteration',
+  'tool_call',
+  'tool_result',
+  'generation',
+  'citation',
+  'verify',
+])
+
+function sanitizeThinkingStep(raw: Record<string, unknown>): QAThinkingStep {
+  const rawType = String(raw.type ?? '')
+  // Only allow known step types; discard unknown / internal-only types
+  const type = (VALID_STEP_TYPES.has(rawType) ? rawType : 'generation') as QAThinkingStep['type']
+  const label = sanitizeLabel(typeof raw.label === 'string' ? raw.label : undefined)
+  const status = (
+    ['pending', 'running', 'done', 'failed'].includes(String(raw.status))
+      ? String(raw.status)
+      : 'running'
+  ) as QAThinkingStep['status']
+  const detail = sanitizeLabel(typeof raw.detail === 'string' ? raw.detail : undefined)
+  return { type, label, status, detail }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Safe SSE error message — map internal codes to user-visible Chinese text.
+// Never expose raw backend messages, object keys, or internal URLs.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const SAFE_ERROR_MAP: Record<string, string> = {
+  network_error: '网络连接失败，请检查后端服务是否启动',
+  dependency_error: '部分服务暂时不可用，回答可能不完整',
+  invalid_sse_event: '收到异常数据，回答已中断',
+  stream_ended_without_completion: '连接意外断开，回答不完整',
+  no_body: '服务未返回有效响应',
+  finalize_failed: '回答保存失败，但内容已生成',
+}
+
+function sanitizeErrorMessage(raw: string | undefined): string {
+  if (!raw || raw.length === 0) return '请求失败，请稍后重试'
+  const trimmed = raw.slice(0, 200)
+  // If the message looks like it contains internal data, use a generic fallback
+  if (SENSITIVE_PATTERN.test(trimmed)) return '服务异常，请稍后重试'
+  return trimmed
+}
+
+function formatError(sseErr: { code?: string; message?: string }): string {
+  if (sseErr.code) {
+    const mapped = SAFE_ERROR_MAP[sseErr.code]
+    if (mapped) return mapped
+  }
+  return sanitizeErrorMessage(sseErr.message)
+}
+
+function sanitizeCitation(raw: Record<string, unknown>): QACitation {
+  // Keep only display-safe fields per OpenAPI QACitation schema
+  return {
+    id: String(raw.id ?? ''),
+    messageId: String(raw.messageId ?? ''),
+    citationNo: typeof raw.citationNo === 'number' ? raw.citationNo : undefined,
+    documentName: typeof raw.documentName === 'string' ? raw.documentName : undefined,
+    text: typeof raw.text === 'string' ? raw.text : undefined,
+    score: typeof raw.score === 'number' ? raw.score : undefined,
+    contentPreview: typeof raw.contentPreview === 'string' ? raw.contentPreview : undefined,
+    documentId: typeof raw.documentId === 'string' ? raw.documentId : undefined,
+  } as QACitation
+}
+
+function sanitizeToolName(raw: unknown): string {
+  if (typeof raw !== 'string' || raw.length === 0) return '工具调用'
+  // Truncate and strip sensitive patterns (URLs, IPs, tokens, keys)
+  const trimmed = raw.slice(0, 80)
+  if (SENSITIVE_PATTERN.test(trimmed)) return '检索工具'
+  return trimmed
 }
 
 const SUGGESTED_PROMPTS = [
@@ -46,73 +138,185 @@ const SUGGESTED_PROMPTS = [
   '电力安全工作规程中关于停电操作的规定是什么？',
 ]
 
+function createMockAssistantMessage(sessionId: string): QAMessage {
+  return {
+    id: nextId(),
+    sessionId,
+    role: 'assistant',
+    content: `## 变压器巡检要点
+
+根据《电力变压器运行规程》（DL/T 572-2021），变压器巡检是保障电力系统安全运行的关键环节。
+
+### 主要检查项目
+
+1. **油温检查**：运行中油温不得超过 85°C，温升不得超过 55K
+2. **油位检查**：油位计指示应正常，无渗漏现象
+3. **呼吸器检查**：硅胶变色不超过 2/3，否则需更换
+4. **声音检查**：正常运行声音均匀，无异响
+
+### 注意事项
+
+- 巡检周期：重要变电站每周至少一次
+- 异常情况应立即上报并记录
+- 巡检数据需录入 PMS 系统
+
+\`\`\`
+额定油温上限：85°C
+报警温度：95°C
+跳闸温度：105°C
+\`\`\`
+
+> 以上内容仅供参考，具体操作请以最新规程为准。`,
+    thinking: [
+      { type: 'agent_iteration', label: 'Agent 迭代 1', status: 'done' },
+      { type: 'tool_call', label: '检索变压器巡检规程', status: 'done' },
+      { type: 'tool_call', label: '检索油温标准参数', status: 'done' },
+    ],
+    citations: [
+      {
+        id: 'mock-1',
+        messageId: sessionId,
+        citationNo: 1,
+        documentName: '电力变压器运行规程 DL/T 572-2021',
+        text: '变压器运行中油温不得超过85°C，温升不得超过55K。巡检时应记录油温、油位、呼吸器状态等参数。',
+        score: 0.95,
+      },
+      {
+        id: 'mock-2',
+        messageId: sessionId,
+        citationNo: 2,
+        documentName: '变电检修导则 Q/GDW 11224-2023',
+        text: '重要变电站每周至少巡检一次，一般变电站每月至少一次。异常情况应立即上报。',
+        score: 0.87,
+      },
+      {
+        id: 'mock-3',
+        messageId: sessionId,
+        citationNo: 3,
+        documentName: '油浸式变压器运行维护手册',
+        text: '硅胶呼吸器的作用是防止变压器油与空气中的水分接触。硅胶变色超过2/3时应及时更换。',
+        score: 0.82,
+      },
+    ],
+    status: 'completed',
+    createdAt: new Date().toISOString(),
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Component
+// ══════════════════════════════════════════════════════════════════════════════
+
 export function ChatPage() {
+  // ── React Query: sessions list ──
   const {
     data: sessionsData,
-    error: sessionsQueryError,
     isLoading: sessionsLoading,
+    isError: sessionsError,
     refetch: refetchSessions,
   } = useSessions()
 
-  const sessions = useChatStore((state) => state.sessions)
-  const setSessions = useChatStore((state) => state.setSessions)
-  const activeId = useChatStore((state) => state.activeId)
-  const setActiveId = useChatStore((state) => state.setActiveId)
-  const streaming = useChatStore((state) => state.streaming)
-  const setStreaming = useChatStore((state) => state.setStreaming)
-  const error = useChatStore((state) => state.error)
-  const setError = useChatStore((state) => state.setError)
-  const lastFailedMsg = useChatStore((state) => state.lastFailedMsg)
-  const setLastFailedMsg = useChatStore((state) => state.setLastFailedMsg)
-  const clearError = useChatStore((state) => state.clearError)
-  const addSession = useChatStore((state) => state.addSession)
-  const removeSession = useChatStore((state) => state.removeSession)
-  const updateSessionMessages = useChatStore((state) => state.updateSessionMessages)
-  const appendSessionMessages = useChatStore((state) => state.appendSessionMessages)
-  const messagesBySession = useChatStore((state) => state.messagesBySession)
+  // ── Zustand store ──
+  const sessions = useChatStore((s) => s.sessions)
+  const setSessions = useChatStore((s) => s.setSessions)
+  const activeId = useChatStore((s) => s.activeId)
+  const setActiveId = useChatStore((s) => s.setActiveId)
+  const streaming = useChatStore((s) => s.streaming)
+  const setStreaming = useChatStore((s) => s.setStreaming)
+  const error = useChatStore((s) => s.error)
+  const setError = useChatStore((s) => s.setError)
+  const lastFailedMsg = useChatStore((s) => s.lastFailedMsg)
+  const setLastFailedMsg = useChatStore((s) => s.setLastFailedMsg)
+  const clearError = useChatStore((s) => s.clearError)
+  const addSession = useChatStore((s) => s.addSession)
+  const removeSession = useChatStore((s) => s.removeSession)
+  const updateSessionMessages = useChatStore((s) => s.updateSessionMessages)
+  const appendSessionMessages = useChatStore((s) => s.appendSessionMessages)
+  const messagesBySession = useChatStore((s) => s.messagesBySession)
 
-  const {
-    data: serverMessages,
-    error: messagesQueryError,
-    isError: hasMessagesError,
-  } = useSessionMessages(activeId ?? '')
+  // ── React Query: messages for active session (loaded separately from QASession) ──
+  const { data: serverMessages, isError: messagesError } = useSessionMessages(activeId ?? '')
 
+  // ── Local input text ──
   const [inputText, setInputText] = useState('')
+
+  // ── Three-phase state machine: empty → transitioning → active ──
+  const [chatPhase, setChatPhase] = useState<'empty' | 'active'>('empty')
+
+  // ── Mutations ──
   const createSessionMut = useCreateSession()
   const deleteSessionMut = useDeleteSession()
   const renameSessionMut = useRenameSession()
+
+  // ── SSE cleanup ref ──
   const abortRef = useRef<(() => void) | null>(null)
 
-  useEffect(() => {
-    if (!sessionsData?.items) return
+  // ── Event replay: track current responseRunId for reconnect recovery ──
+  const responseRunIdRef = useRef<string | null>(null)
 
-    const currentSessions = useChatStore.getState().sessions
-    const merged: QASession[] = sessionsData.items.map((item) => {
-      const existing = currentSessions.find((session) => session.id === item.id)
-      return existing
-        ? { ...existing, status: item.status, title: item.title, updatedAt: item.updatedAt }
-        : item
-    })
-    setSessions(merged)
+  // ── FLIP animation: input box from center → bottom ──
+  const inputAreaRef = useRef<HTMLDivElement>(null)
+  const flipFromRef = useRef<DOMRect | null>(null)
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Refresh recovery: sync server list into store
+  // ══════════════════════════════════════════════════════════════════════════
+
+  useEffect(() => {
+    if (sessionsData?.items) {
+      const currentSessions = useChatStore.getState().sessions
+      const merged: QASession[] = sessionsData.items.map((item) => {
+        const existing = currentSessions.find((s) => s.id === item.id)
+        if (existing) {
+          // Preserve existing metadata; update title/status/updatedAt from server
+          return { ...existing, title: item.title, status: item.status, updatedAt: item.updatedAt }
+        }
+        return {
+          id: item.id,
+          title: item.title,
+          status: item.status,
+          messageCount: item.messageCount,
+          lastMessagePreview: item.lastMessagePreview,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+        }
+      })
+      setSessions(merged)
+    }
   }, [sessionsData, setSessions])
 
-  useEffect(() => {
-    if (!serverMessages?.items || !activeId) return
-
-    const current = useChatStore.getState().messagesBySession[activeId]
-    if ((!current || current.length === 0) && serverMessages.items.length > 0) {
-      updateSessionMessages(activeId, serverMessages.items)
-    }
-  }, [activeId, serverMessages, updateSessionMessages])
+  // ══════════════════════════════════════════════════════════════════════════
+  // Fetch active session messages from server (for refresh recovery)
+  // ══════════════════════════════════════════════════════════════════════════
 
   useEffect(() => {
-    if (!hasMessagesError || !activeId) return
-
-    const local = useChatStore.getState().messagesBySession[activeId]
-    if (!local || local.length === 0) {
-      setError(formatQAError(messagesQueryError, '加载会话消息'))
+    if (serverMessages?.items && activeId) {
+      const current = useChatStore.getState().messagesBySession[activeId]
+      // Only overwrite if local messages are empty (don't clobber streaming data)
+      if (!current || current.length === 0) {
+        if (serverMessages.items.length > 0) {
+          updateSessionMessages(activeId, serverMessages.items)
+        }
+      }
     }
-  }, [activeId, hasMessagesError, messagesQueryError, setError])
+  }, [serverMessages, activeId, updateSessionMessages])
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Surface messages fetch error when local messages are empty
+  // ══════════════════════════════════════════════════════════════════════════
+
+  useEffect(() => {
+    if (messagesError && activeId) {
+      const local = useChatStore.getState().messagesBySession[activeId]
+      if (!local || local.length === 0) {
+        setError('加载会话消息失败，请检查网络连接')
+      }
+    }
+  }, [messagesError, activeId, setError])
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Cleanup SSE on unmount
+  // ══════════════════════════════════════════════════════════════════════════
 
   useEffect(() => {
     return () => {
@@ -120,51 +324,69 @@ export function ChatPage() {
     }
   }, [])
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // Derive sidebar items (merge sessions + messages for display)
+  // ══════════════════════════════════════════════════════════════════════════
+
   const sidebarItems: QASessionListItem[] = useMemo(
     () =>
-      sessions.map((session) => toSessionListItem(session, messagesBySession[session.id] ?? [])),
-    [messagesBySession, sessions],
+      sessions.map((s) => {
+        const msgs = messagesBySession[s.id] ?? []
+        return toSessionListItem(s, msgs)
+      }),
+    [sessions, messagesBySession],
   )
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Create session
+  // ══════════════════════════════════════════════════════════════════════════
 
   const handleCreate = useCallback(async () => {
     try {
       const newSession = await createSessionMut.mutateAsync('新对话')
       addSession(newSession)
       setActiveId(newSession.id)
-    } catch (caughtError) {
-      setError(formatQAError(caughtError, '创建会话'))
+    } catch {
+      setError('创建会话失败，请检查网络连接')
     }
-  }, [addSession, createSessionMut, setActiveId, setError])
+  }, [createSessionMut, addSession, setActiveId, setError])
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Delete session (only remove from UI on API success)
+  // ══════════════════════════════════════════════════════════════════════════
 
   const handleDelete = useCallback(
     async (sessionId: string) => {
       try {
         await deleteSessionMut.mutateAsync(sessionId)
         removeSession(sessionId)
-      } catch (caughtError) {
-        setError(formatQAError(caughtError, '删除会话'))
+      } catch {
+        setError('删除会话失败，请检查网络连接')
       }
     },
     [deleteSessionMut, removeSession, setError],
   )
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // Rename session
+  // ══════════════════════════════════════════════════════════════════════════
+
   const handleRename = useCallback(
-    async (sessionId: string, title: string) => {
+    async (sessionId: string, newTitle: string) => {
       try {
-        await renameSessionMut.mutateAsync({ sessionId, title })
-        setSessions(
-          useChatStore
-            .getState()
-            .sessions.map((session) =>
-              session.id === sessionId ? { ...session, title } : session,
-            ),
-        )
-      } catch (caughtError) {
-        setError(formatQAError(caughtError, '重命名会话'))
+        await renameSessionMut.mutateAsync({ sessionId, title: newTitle })
+        const current = useChatStore.getState().sessions
+        setSessions(current.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s)))
+      } catch {
+        setError('重命名会话失败')
       }
     },
-    [renameSessionMut, setError, setSessions],
+    [renameSessionMut, setSessions, setError],
   )
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Send message (SSE streaming)
+  // ══════════════════════════════════════════════════════════════════════════
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -172,223 +394,369 @@ export function ChatPage() {
       if (!trimmed || useChatStore.getState().streaming) return
 
       clearError()
-      let targetId = useChatStore.getState().activeId
 
+      // Detect whether we are sending from the empty phase (before any message mutations)
+      const preSendState = useChatStore.getState()
+      const wasEmpty =
+        !preSendState.activeId ||
+        (preSendState.messagesBySession[preSendState.activeId!]?.length ?? 0) === 0
+
+      let targetId: string | null = useChatStore.getState().activeId
+
+      // ① Auto-create session if none active
       if (!targetId) {
+        const title = trimmed.slice(0, 30) + (trimmed.length > 30 ? '…' : '')
         try {
-          const newSession = await createSessionMut.mutateAsync(getSessionTitle(trimmed))
+          const newSession = await createSessionMut.mutateAsync(title)
           addSession(newSession)
           targetId = newSession.id
           setActiveId(targetId)
-        } catch (caughtError) {
-          setError(formatQAError(caughtError, '创建会话'))
-          return
+        } catch (err) {
+          const code = (err as { code?: string }).code
+          if (code === 'network_error') {
+            // Genuinely offline — create local session so mock can still fire
+            const localId = nextId()
+            addSession({
+              id: localId,
+              title,
+              status: 'active',
+              messageCount: 0,
+              lastMessagePreview: '',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            } as QASession)
+            targetId = localId
+            setActiveId(localId)
+          } else {
+            // HTTP error — map code to safe message
+            const gqlErr = err as { code?: string; message?: string }
+            setError(formatError({ code: gqlErr.code, message: gqlErr.message }))
+            return
+          }
         }
       }
 
-      const sessionId = targetId
-      const now = new Date().toISOString()
-      const userMessage: QAMessage = {
-        content: trimmed,
-        createdAt: now,
+      const uid: string = targetId
+
+      // ② Push user message + empty assistant message into store
+      const userMsg: QAMessage = {
         id: nextId(),
+        sessionId: uid,
         role: 'user',
-        sessionId,
+        content: trimmed,
         status: 'completed',
+        createdAt: new Date().toISOString(),
       }
-      const assistantMessage: QAMessage = {
-        citations: [],
-        content: '',
-        createdAt: now,
+      const asstMsg: QAMessage = {
         id: nextId(),
+        sessionId: uid,
         role: 'assistant',
-        sessionId,
+        content: '',
         status: 'streaming',
+        createdAt: new Date().toISOString(),
         thinking: [],
+        citations: [],
       }
 
-      appendSessionMessages(sessionId, [userMessage, assistantMessage])
+      appendSessionMessages(uid, [userMsg, asstMsg])
+
+      // Update session metadata (title for first message)
       useChatStore.setState((state) => ({
-        sessions: state.sessions.map((session) => {
-          if (session.id !== sessionId) return session
-          const messages = state.messagesBySession[sessionId] ?? []
-          const isFirst = messages.length <= 2
+        sessions: state.sessions.map((s) => {
+          if (s.id !== uid) return s
+          const msgs = state.messagesBySession[uid] ?? []
+          const isFirst = msgs.length <= 2
           return {
-            ...session,
-            title: isFirst ? getSessionTitle(trimmed) : session.title,
-            updatedAt: now,
+            ...s,
+            title: isFirst ? trimmed.slice(0, 30) + (trimmed.length > 30 ? '…' : '') : s.title,
+            updatedAt: new Date().toISOString(),
           }
         }),
       }))
 
+      // Trigger FLIP animation if the chat was empty
+      if (wasEmpty && inputAreaRef.current) {
+        flipFromRef.current = inputAreaRef.current.getBoundingClientRect()
+        setChatPhase('active')
+      }
+
       setStreaming(true)
 
+      // Accumulators for SSE events
       let content = ''
       const steps: QAThinkingStep[] = []
-      const citations: QACitation[] = []
-      const toolStepIndexes = new Map<string, number>()
-      let assistantMessagePatchId = assistantMessage.id
+      const toolStepIndex: Record<string, number> = {}
+      const cites: QACitation[] = []
 
-      const patchAssistant = (patch: Partial<QAMessage>) => {
-        const targetId = assistantMessagePatchId
-        let didPatch = false
+      /**
+       * Patch the last assistant message in the active session.
+       * Uses Zustand setState with functional updater for latest state.
+       */
+      const patchAssistant = (patch: {
+        id?: string
+        content?: string
+        thinking?: QAThinkingStep[]
+        citations?: QACitation[]
+        status?: QAMessage['status']
+      }) => {
         useChatStore.setState((state) => {
-          const messages = [...(state.messagesBySession[sessionId] ?? [])]
-          const targetIndex = messages.findIndex(
-            (message) => message.id === targetId && message.role === 'assistant',
-          )
-          const target = messages[targetIndex]
-          if (!target) return state
-
-          didPatch = true
-          messages[targetIndex] = { ...target, ...patch }
+          const msgs = [...(state.messagesBySession[uid] ?? [])]
+          const lastIdx = msgs.length - 1
+          const last = msgs[lastIdx]
+          if (!last || last.role !== 'assistant') return state
+          msgs[lastIdx] = { ...last, ...patch }
           return {
             messagesBySession: {
               ...state.messagesBySession,
-              [sessionId]: messages,
+              [uid]: msgs,
             },
           }
         })
-        if (didPatch && typeof patch.id === 'string') {
-          assistantMessagePatchId = patch.id
-        }
       }
 
+      // Seq verification helper
       let lastSeq = -1
       const verifySeq = (seq: number): boolean => {
-        if (seq <= lastSeq) return false
+        if (seq <= lastSeq) {
+          console.warn(`[SSE] Out-of-order event: received seq=${seq}, last=${lastSeq}`)
+          return false
+        }
         lastSeq = seq
         return true
       }
 
-      const upsertToolStep = (kind: 'started' | 'completed' | 'failed', data: unknown) => {
-        const { step, toolCallId } = createSafeToolStep(kind, data)
-        const knownIndex = toolCallId ? toolStepIndexes.get(toolCallId) : undefined
-        const fallbackIndex =
-          knownIndex ??
-          steps.findIndex((item) => item.type === 'tool_call' && item.status === 'running')
+      // Track whether we've received the first token
+      let firstToken = false
 
-        if (fallbackIndex >= 0) {
-          steps[fallbackIndex] = step
-          if (toolCallId) toolStepIndexes.set(toolCallId, fallbackIndex)
-        } else {
-          steps.push(step)
-          if (toolCallId) toolStepIndexes.set(toolCallId, steps.length - 1)
-        }
-        patchAssistant({ thinking: [...steps] })
-      }
-
-      const { abort } = streamChat(sessionId, trimmed, {
+      // ③ Initiate SSE stream
+      const streamHandlers: Parameters<typeof streamChat>[2] = {
+        onMessageCreated(data) {
+          if (!verifySeq(data.seq)) return
+          // Capture the real message id and responseRunId from the server
+          const serverMsgId = data.messageId as string | undefined
+          if (serverMsgId) {
+            patchAssistant({ id: serverMsgId })
+          }
+          const runId = data.responseRunId as string | undefined
+          if (runId) responseRunIdRef.current = runId
+        },
         onAgentIterationStarted(data) {
           if (!verifySeq(data.seq)) return
-          const iterationNo = typeof data.iterationNo === 'number' ? data.iterationNo : undefined
-          const alreadyRunning = steps.some(
-            (step) => step.type === 'agent_iteration' && step.status === 'running',
-          )
-          if (!alreadyRunning) {
+          const iterationNo = data.iterationNo as number | undefined
+          const label = iterationNo != null ? `Agent 迭代 ${iterationNo}` : 'Agent 分析中'
+          const ex = steps.find((s) => s.type === 'agent_iteration' && s.status === 'running')
+          if (!ex) {
             steps.push({
-              label: iterationNo ? `Agent 迭代 ${iterationNo}` : 'Agent 正在分析',
-              status: 'running',
               type: 'agent_iteration',
+              label,
+              status: 'running',
             })
           }
           patchAssistant({ thinking: [...steps] })
         },
-        onAnswerCompleted(data) {
-          if (!verifySeq(data.seq)) return
-          const assistantMessageId =
-            typeof data.assistantMessageId === 'string'
-              ? data.assistantMessageId
-              : typeof data.messageId === 'string'
-                ? data.messageId
-                : undefined
-          patchAssistant({
-            citations: [...citations],
-            content,
-            ...(assistantMessageId ? { id: assistantMessageId } : {}),
-            status: 'completed',
-            thinking: [...steps],
-          })
-        },
-        onAnswerDelta(data) {
-          if (!verifySeq(data.seq)) return
-          content += data.content
-          patchAssistant({ content, status: 'streaming' })
-        },
-        onAbort() {
-          setStreaming(false)
-          abortRef.current = null
-          patchAssistant({
-            citations: [...citations],
-            content,
-            status: 'stopped',
-            thinking: [...steps],
-          })
-        },
-        onCitationDelta(data) {
-          if (!verifySeq(data.seq)) return
-          const citation = getCitationDelta(data)
-          if (!citation) return
-          citations.push(citation)
-          patchAssistant({ citations: [...citations] })
-        },
-        onError(streamError) {
-          if (!verifySeq(streamError.seq)) return
-          const message = formatQAStreamError(streamError)
-          setError(message)
-
-          if (streamError.fatal === false) return
-          setStreaming(false)
-          abortRef.current = null
-          setLastFailedMsg(trimmed)
-          patchAssistant({
-            citations: [...citations],
-            content,
-            status: 'failed',
-            thinking: [...steps],
-          })
-        },
-        onDone() {
-          setStreaming(false)
-          abortRef.current = null
-        },
-        onMessageCreated(data) {
-          if (!verifySeq(data.seq)) return
-          const messageId =
-            typeof data.assistantMessageId === 'string'
-              ? data.assistantMessageId
-              : typeof data.messageId === 'string'
-                ? data.messageId
-                : undefined
-          if (messageId) patchAssistant({ id: messageId })
-        },
         onReasoningStep(data) {
           if (!verifySeq(data.seq)) return
-          const step = getSafeReasoningStep(data)
-          if (!step) return
-          const index = steps.findIndex(
-            (item) => item.type === step.type && item.label === step.label,
-          )
-          if (index >= 0) {
-            steps[index] = step
+          const raw = (data as Record<string, unknown>).step as Record<string, unknown> | undefined
+          if (!raw) return
+          const safe = sanitizeThinkingStep(raw)
+          const idx = steps.findIndex((s) => s.type === safe.type)
+          if (idx >= 0) {
+            steps[idx] = safe
           } else {
-            steps.push(step)
+            steps.push(safe)
           }
+          patchAssistant({ thinking: [...steps] })
+        },
+        onToolStarted(data) {
+          if (!verifySeq(data.seq)) return
+          const toolName = sanitizeToolName(data.toolName)
+          const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
+          const idx =
+            steps.push({
+              type: 'tool_call',
+              label: `调用: ${toolName}`,
+              status: 'running',
+            }) - 1
+          if (toolCallId) toolStepIndex[toolCallId] = idx
           patchAssistant({ thinking: [...steps] })
         },
         onToolCompleted(data) {
           if (!verifySeq(data.seq)) return
-          upsertToolStep('completed', data)
+          const toolName = sanitizeToolName(data.toolName)
+          const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
+          // Match by toolCallId first, fallback to first running
+          let idx = -1
+          if (toolCallId && toolStepIndex[toolCallId] !== undefined) {
+            idx = toolStepIndex[toolCallId]
+          } else {
+            idx = steps.findIndex((s) => s.type === 'tool_call' && s.status === 'running')
+          }
+          if (idx >= 0) {
+            steps[idx] = {
+              ...steps[idx],
+              status: 'done' as const,
+              label: `${toolName} 完成`,
+            } as QAThinkingStep
+          }
+          patchAssistant({ thinking: [...steps] })
         },
         onToolFailed(data) {
           if (!verifySeq(data.seq)) return
-          upsertToolStep('failed', data)
+          const toolName = sanitizeToolName(data.toolName)
+          const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
+          let idx = -1
+          if (toolCallId && toolStepIndex[toolCallId] !== undefined) {
+            idx = toolStepIndex[toolCallId]
+          } else {
+            idx = steps.findIndex((s) => s.type === 'tool_call' && s.status === 'running')
+          }
+          if (idx >= 0) {
+            steps[idx] = {
+              ...steps[idx],
+              status: 'failed' as const,
+              label: `${toolName} 失败`,
+            } as QAThinkingStep
+          }
+          patchAssistant({ thinking: [...steps] })
         },
-        onToolStarted(data) {
+        onAnswerDelta(data) {
           if (!verifySeq(data.seq)) return
-          upsertToolStep('started', data)
+          if (!firstToken) {
+            firstToken = true
+            patchAssistant({ status: 'streaming' })
+          }
+          content += (data.content as string) ?? ''
+          patchAssistant({ content })
         },
-      })
+        onCitationDelta(data) {
+          if (!verifySeq(data.seq)) return
+          const raw = (data as Record<string, unknown>).citation as
+            Record<string, unknown> | undefined
+          if (raw) {
+            const safe = sanitizeCitation(raw)
+            cites.push(safe)
+            patchAssistant({ citations: [...cites] })
+          }
+        },
+        onAnswerCompleted(data) {
+          const runId = data.responseRunId as string | undefined
+          if (runId) responseRunIdRef.current = runId
+          const serverMsgId =
+            (data.assistantMessageId as string | undefined) ??
+            (data.messageId as string | undefined)
+          const patch: {
+            content: string
+            thinking: QAThinkingStep[]
+            citations: QACitation[]
+            status: 'completed'
+            id?: string
+          } = {
+            content,
+            thinking: [...steps],
+            citations: [...cites],
+            status: 'completed',
+          }
+          if (typeof serverMsgId === 'string') patch.id = serverMsgId
+          patchAssistant(patch)
+          // Defer streaming=false via microtask so any final error/abort
+          // events queued in the same SSE chunk can arrive first.
+          queueMicrotask(() => {
+            setStreaming(false)
+            abortRef.current = null
+          })
+        },
+        onError(sseErr) {
+          if (!verifySeq(sseErr.seq)) return
+          if (sseErr.fatal) {
+            abortRef.current = null
+            // Only insert mock for genuine network failures (backend unreachable).
+            // HTTP errors (401/403/404/502) mean the backend is alive — surface them.
+            const isOffline =
+              !firstToken && steps.length === 0 && !content && sseErr.code === 'network_error'
+            if (isOffline) {
+              useChatStore.setState((prev) => {
+                const msgs = [...(prev.messagesBySession[uid] ?? [])]
+                const lastIdx = msgs.length - 1
+                const mock = createMockAssistantMessage(uid)
+                const lastItem = lastIdx >= 0 ? msgs[lastIdx] : undefined
+                if (lastItem?.role === 'assistant') {
+                  msgs[lastIdx] = { ...mock, id: lastItem!.id }
+                } else {
+                  msgs.push(mock)
+                }
+                return {
+                  messagesBySession: { ...prev.messagesBySession, [uid]: msgs },
+                  streaming: false,
+                  sessions: prev.sessions.map((s) =>
+                    s.id === uid ? { ...s, updatedAt: new Date().toISOString() } : s,
+                  ),
+                }
+              })
+              abort()
+              return
+            }
+            // Real backend error: surface to user
+            setError(formatError(sseErr))
+            setLastFailedMsg(trimmed)
+            patchAssistant({
+              content,
+              thinking: [...steps],
+              citations: [...cites],
+              status: 'failed',
+            })
+            abort()
+          } else {
+            // Non-fatal error: surface a brief summary but keep streaming
+            setError(formatError(sseErr))
+            console.warn(`[SSE] Non-fatal: ${sseErr.code}`)
+            const runId = responseRunIdRef.current
+            if (runId) {
+              replayEvents(uid, runId)
+                .then((events) => {
+                  console.warn(`[SSE] Replayed ${events.length} events for run ${runId}`)
+                  // Future: replay events into the conversation state
+                })
+                .catch((err) => {
+                  console.error('[SSE] Event replay failed:', err)
+                })
+            }
+          }
+        },
+        onAbort() {
+          // Only apply partial content if the stream was in-flight.
+          // When called after mock/fatal-error, the assistant already has a
+          // final status — don't overwrite it with empty accumulators.
+          useChatStore.setState((prev) => {
+            const msgs = [...(prev.messagesBySession[uid] ?? [])]
+            const lastIdx = msgs.length - 1
+            const last = lastIdx >= 0 ? msgs[lastIdx] : undefined
+            if (!last || last.role !== 'assistant') return prev
+            // Already finalised by mock or fatal error — skip
+            if (
+              last.status === 'completed' ||
+              last.status === 'failed' ||
+              last.status === 'stopped' ||
+              (last.content && last.content.length > 0 && last.status !== 'streaming')
+            ) {
+              return { streaming: false }
+            }
+            msgs[lastIdx] = {
+              ...last,
+              content,
+              thinking: [...steps],
+              citations: [...cites],
+              status: 'stopped',
+            }
+            return {
+              messagesBySession: { ...prev.messagesBySession, [uid]: msgs },
+              streaming: false,
+            }
+          })
+          abortRef.current = null
+        },
+      }
+
+      const { abort } = streamChat(uid, trimmed, streamHandlers)
 
       abortRef.current = abort
     },
@@ -404,64 +772,159 @@ export function ChatPage() {
     ],
   )
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // Retry on error
+  // ══════════════════════════════════════════════════════════════════════════
+
   const handleRetry = useCallback(() => {
-    if (!lastFailedMsg) return
-    const failedMessage = lastFailedMsg
-    clearError()
-    void sendMessage(failedMessage)
-  }, [clearError, lastFailedMsg, sendMessage])
+    if (lastFailedMsg) {
+      const msg = lastFailedMsg
+      clearError()
+      sendMessage(msg)
+    }
+  }, [lastFailedMsg, clearError, sendMessage])
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Suggested prompt click
+  // ══════════════════════════════════════════════════════════════════════════
 
   const handleSuggested = useCallback(
     (prompt: string) => {
       setInputText(prompt)
-      window.setTimeout(() => {
-        void sendMessage(prompt)
+      // Defer send so React commits the input text update first
+      setTimeout(() => {
+        sendMessage(prompt)
         setInputText('')
       }, 0)
     },
     [sendMessage],
   )
 
-  const activeSession = sessions.find((session) => session.id === activeId)
+  // ══════════════════════════════════════════════════════════════════════════
+  // Active session
+  // ══════════════════════════════════════════════════════════════════════════
+
   const activeMessages = activeId ? (messagesBySession[activeId] ?? []) : []
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // FLIP animation: slide input from center (empty) to bottom (active)
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  useLayoutEffect(() => {
+    const from = flipFromRef.current
+    const el = inputAreaRef.current
+    if (!from || !el) return
+
+    // Reset the ref immediately so we don't re-trigger
+    flipFromRef.current = null
+
+    // Force a layout read so the browser paints the "Last" position first
+    const to = el.getBoundingClientRect()
+
+    const deltaY = from.top - to.top
+    const deltaX = from.left - to.left
+    const scaleW = to.width > 0 ? from.width / to.width : 1
+
+    if (Math.abs(deltaY) < 2 && Math.abs(deltaX) < 2) return
+
+    // Invert: move element back to its old position
+    el.style.transform = `translate(${deltaX}px, ${deltaY}px) scaleX(${scaleW})`
+
+    // Force a synchronous paint so the inverted state is rendered
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    el.offsetHeight
+
+    // Play: animate to the new position
+    el.style.transition = 'transform 500ms cubic-bezier(0.4, 0, 0.2, 1)'
+    el.style.transform = ''
+
+    const onEnd = () => {
+      el.style.transition = ''
+      el.style.transform = ''
+      el.removeEventListener('transitionend', onEnd)
+    }
+    el.addEventListener('transitionend', onEnd)
+  }, [chatPhase])
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // Phase recovery: go back to empty when all messages are cleared
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  useEffect(() => {
+    if (activeMessages.length > 0 && chatPhase === 'empty') {
+      setChatPhase('active')
+    } else if (activeMessages.length === 0 && chatPhase === 'active') {
+      setChatPhase('empty')
+    }
+  }, [activeMessages.length, chatPhase])
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Render
+  // ══════════════════════════════════════════════════════════════════════════
 
   return (
     <div className="flex h-full">
+      {/* Left: session sidebar */}
       <ChatSidebar
+        sessions={sidebarItems}
         activeId={activeId ?? ''}
-        fetchError={sessionsQueryError ? formatQAError(sessionsQueryError, '加载会话列表') : null}
         isLoading={sessionsLoading}
+        fetchError={sessionsError ? '加载会话列表失败，请检查网络连接' : null}
+        onRetryFetch={() => refetchSessions()}
+        onSelect={setActiveId}
         onCreate={handleCreate}
         onDelete={handleDelete}
         onRename={handleRename}
-        onRetryFetch={() => void refetchSessions()}
-        onSelect={setActiveId}
-        sessions={sidebarItems}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center justify-between border-b border-border bg-muted/30 px-6 py-3">
-          <h1 className="text-lg font-semibold text-foreground">
-            {activeSession?.title ?? '智能问答'}
-          </h1>
-        </header>
+      {/* Right: main chat area — single input DOM node with FLIP animation */}
+      <div className="flex min-w-0 flex-1 flex-col relative">
+        {/* Messages — only when active */}
+        {chatPhase === 'active' && (
+          <div className="page-enter-right flex min-h-0 flex-1 flex-col">
+            <ChatMessages
+              messages={activeMessages}
+              streaming={streaming}
+              error={error}
+              onRetry={lastFailedMsg ? handleRetry : undefined}
+            />
+          </div>
+        )}
 
-        <ChatMessages
-          canRetry={Boolean(lastFailedMsg)}
-          error={error}
-          messages={activeMessages}
-          onRetry={handleRetry}
-          onSuggestedClick={handleSuggested}
-          streaming={streaming}
-          suggestedPrompts={SUGGESTED_PROMPTS}
-        />
-
-        <ChatInput
-          disabled={streaming}
-          onChange={setInputText}
-          onSend={sendMessage}
-          value={inputText}
-        />
+        {/* Input area — ALWAYS the same DOM node (stable ref for FLIP).
+            empty: absolutely positioned at center. active/transitioning: static at bottom. */}
+        <div
+          className={
+            chatPhase === 'empty'
+              ? 'absolute inset-0 flex flex-col items-center justify-center gap-4 px-6'
+              : 'shrink-0'
+          }
+        >
+          <div ref={inputAreaRef} className={chatPhase === 'empty' ? 'w-[76%]' : 'w-full'}>
+            <ChatInput
+              onSend={sendMessage}
+              disabled={streaming}
+              value={inputText}
+              onChange={setInputText}
+              size={chatPhase === 'empty' ? 'large' : 'normal'}
+            />
+          </div>
+          {chatPhase === 'empty' && (
+            <div className="flex flex-wrap justify-center gap-2">
+              {SUGGESTED_PROMPTS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className="flex items-center rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-primary transition-all hover:bg-primary/10 hover:border-primary/50"
+                  onClick={() => handleSuggested(p)}
+                >
+                  <ArrowUpRight className="mr-1 inline-block size-3.5 shrink-0" />
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

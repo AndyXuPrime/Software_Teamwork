@@ -194,9 +194,23 @@ export function AdminSidebar() {
     toggle(key)
   }
 
-  const isActive = (path?: string): boolean => {
+  /** Exact match — for link highlighting. Avoids sibling prefix collision
+   *  e.g. /admin/knowledge won't match /admin/knowledge/documents */
+  const isExactActive = (path?: string): boolean => {
+    if (!path) return false
+    return pathname === path
+  }
+
+  /** Prefix match — for group indicators. Covers deep routes without menu items
+   *  e.g. /admin/knowledge/chunks would still match /admin/knowledge */
+  const isPrefixActive = (path?: string): boolean => {
     if (!path) return false
     return pathname === path || pathname.startsWith(`${path}/`)
+  }
+
+  const hasActiveChild = (item: AdminNavigationItem): boolean => {
+    if (!item.children) return false
+    return item.children.some((child) => isPrefixActive(child.path))
   }
 
   return (
@@ -209,7 +223,7 @@ export function AdminSidebar() {
     >
       <div className="flex items-center border-b border-border">
         {!sidebarCollapsed && (
-          <h2 className="flex-1 whitespace-nowrap px-4 py-3 text-sm font-semibold text-sidebar-foreground">
+          <h2 className="flex-1 whitespace-nowrap px-4 py-3 text-sm font-semibold text-sidebar-foreground transition-opacity duration-300">
             管理面板
           </h2>
         )}
@@ -241,7 +255,7 @@ export function AdminSidebar() {
               <div key={item.key}>
                 <button
                   className={cn(
-                    'flex w-full items-center text-left text-sm font-medium text-sidebar-foreground transition-colors hover:bg-primary/5 hover:text-primary',
+                    'flex w-full items-center text-left text-sm font-medium text-sidebar-foreground transition-all duration-300 hover:bg-primary/5 hover:text-primary',
                     sidebarCollapsed ? 'justify-center px-0 py-2' : 'gap-1.5 px-4 py-2',
                   )}
                   title={sidebarCollapsed ? item.label : undefined}
@@ -249,7 +263,16 @@ export function AdminSidebar() {
                   onClick={() => handleGroupClick(item.key)}
                 >
                   {sidebarCollapsed ? (
-                    Icon && <Icon className="size-5 shrink-0" />
+                    Icon && (
+                      <span
+                        className={cn(
+                          'inline-flex items-center justify-center rounded-full p-1.5 transition-all duration-300',
+                          hasActiveChild(item) && 'shadow-[0_0_0_2px_var(--primary)] bg-primary/5',
+                        )}
+                      >
+                        <Icon className="size-5 shrink-0" />
+                      </span>
+                    )
                   ) : (
                     <>
                       {open ? (
@@ -265,7 +288,14 @@ export function AdminSidebar() {
                           size={12}
                         />
                       )}
-                      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                      <span
+                        className={cn(
+                          'inline-block h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-300',
+                          hasActiveChild(item)
+                            ? 'bg-primary shadow-[0_0_4px_var(--primary)]'
+                            : 'bg-muted-foreground/30',
+                        )}
+                      />
                       <span className="whitespace-nowrap">{item.label}</span>
                     </>
                   )}
@@ -276,8 +306,9 @@ export function AdminSidebar() {
                       <Link
                         key={child.key}
                         className={cn(
-                          'block whitespace-nowrap px-4 py-1.5 pl-10 text-sm text-muted-foreground transition-colors hover:bg-primary/5 hover:text-primary',
-                          isActive(child.path) && 'bg-primary/10 font-medium text-primary',
+                          'relative block whitespace-nowrap px-4 py-1.5 pl-10 text-sm text-muted-foreground transition-all duration-300 hover:bg-primary/5 hover:text-primary',
+                          isExactActive(child.path) &&
+                            'border-l-[3px] border-l-primary bg-primary/5 font-medium text-primary pl-[37px]',
                         )}
                         to={child.path!}
                       >
@@ -294,17 +325,37 @@ export function AdminSidebar() {
             <Link
               key={item.key}
               className={cn(
-                'flex items-center text-sm font-medium text-sidebar-foreground transition-colors hover:bg-primary/5 hover:text-primary',
+                'relative flex items-center gap-2 text-sm font-medium text-sidebar-foreground transition-all duration-300 hover:bg-primary/5 hover:text-primary',
                 sidebarCollapsed ? 'justify-center px-0 py-2' : 'px-4 py-2',
-                isActive(item.path) && 'bg-primary/10 font-medium text-primary',
+                isExactActive(item.path) &&
+                  !sidebarCollapsed &&
+                  'border-l-[3px] border-l-primary bg-primary/5 font-medium text-primary pl-[13px]',
+                isExactActive(item.path) && sidebarCollapsed && 'bg-primary/5',
               )}
               title={sidebarCollapsed ? item.label : undefined}
               to={item.path!}
             >
               {sidebarCollapsed && Icon ? (
-                <Icon className="size-5 shrink-0" />
+                <span
+                  className={cn(
+                    'inline-flex items-center justify-center rounded-full p-1.5 transition-all duration-300',
+                    isExactActive(item.path) && 'shadow-[0_0_0_2px_var(--primary)] bg-primary/5',
+                  )}
+                >
+                  <Icon className="size-5 shrink-0" />
+                </span>
               ) : (
-                <span className="whitespace-nowrap">{item.label}</span>
+                <>
+                  <span
+                    className={cn(
+                      'inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                      isExactActive(item.path)
+                        ? 'bg-primary shadow-[0_0_4px_var(--primary)]'
+                        : 'bg-muted-foreground/30',
+                    )}
+                  />
+                  <span className="whitespace-nowrap">{item.label}</span>
+                </>
               )}
             </Link>
           )

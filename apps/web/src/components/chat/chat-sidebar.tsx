@@ -1,4 +1,13 @@
-import { Check, Edit3, MessageSquare, Plus, Trash2, X } from 'lucide-react'
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Edit3,
+  MessageSquare,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import { ConfirmDialog, StateBlock } from '@/components/common'
@@ -30,6 +39,7 @@ export default function ChatSidebar({
   onDelete,
   onRename,
 }: ChatSidebarProps) {
+  const [collapsed, setCollapsed] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
@@ -81,24 +91,55 @@ export default function ChatSidebar({
   // ── Render ──
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-card">
-      {/* ── Header ── */}
-      <div className="flex flex-col gap-2 border-b border-border p-4">
-        <h2 className="text-lg font-semibold text-foreground">对话历史</h2>
-        <Button
-          onClick={onCreate}
-          className="group w-full bg-primary text-primary-foreground transition-all duration-200 hover:bg-primary/90 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]"
+    <aside
+      className={cn(
+        'flex shrink-0 flex-col bg-card shadow-[1px_0_6px_rgba(0,0,0,0.04),3px_0_12px_rgba(0,0,0,0.03)] transition-[width] duration-300',
+        collapsed ? 'w-14' : 'w-72',
+      )}
+    >
+      {/* ── Toggle bar ── */}
+      <div className="flex items-center border-b border-border/30">
+        {!collapsed && (
+          <h2 className="flex-1 truncate px-4 py-2.5 text-sm font-semibold">对话历史</h2>
+        )}
+        <button
+          aria-label={collapsed ? '展开侧栏' : '折叠侧栏'}
+          className={cn(
+            'flex shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-all',
+            collapsed ? 'mx-auto my-2 size-7' : 'mr-1 size-7',
+          )}
+          onClick={() => setCollapsed(!collapsed)}
         >
-          <Plus className="size-4 transition-transform duration-300 group-hover:rotate-90" />
-          新建对话
-        </Button>
+          {collapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
+        </button>
+      </div>
+
+      {/* ── New session button (sticky) ── */}
+      <div className="p-2">
+        {collapsed ? (
+          <button
+            onClick={onCreate}
+            className="group mx-auto flex size-9 items-center justify-center rounded-full bg-primary text-primary-foreground transition-all hover:bg-primary/90 hover:scale-105 active:scale-95"
+            title="新建对话"
+          >
+            <Plus className="size-4 transition-transform duration-300 group-hover:rotate-90" />
+          </button>
+        ) : (
+          <Button
+            onClick={onCreate}
+            className="group w-full bg-primary text-primary-foreground transition-all duration-200 hover:bg-primary/90 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]"
+          >
+            <Plus className="size-4 transition-transform duration-300 group-hover:rotate-90" />
+            新建对话
+          </Button>
+        )}
       </div>
 
       {/* ── Session list ── */}
       <ScrollArea className="flex-1">
         <div className="flex flex-col gap-1 p-2">
-          {/* Fetch error state */}
-          {fetchError && !isLoading && (
+          {/* Fetch error state — hidden when collapsed */}
+          {!collapsed && fetchError && !isLoading && (
             <StateBlock
               action={
                 <Button variant="outline" size="sm" onClick={onRetryFetch}>
@@ -113,18 +154,18 @@ export default function ChatSidebar({
             />
           )}
 
-          {/* Loading state */}
-          {!fetchError && isLoading && sessions.length === 0 && (
+          {/* Loading state — hidden when collapsed */}
+          {!collapsed && !fetchError && isLoading && sessions.length === 0 && (
             <StateBlock className="mx-2" size="compact" title="加载会话列表..." variant="loading" />
           )}
 
-          {/* Empty state (after loading) */}
-          {!fetchError && !isLoading && sessions.length === 0 && (
+          {/* Empty state — hidden when collapsed */}
+          {!collapsed && !fetchError && !isLoading && sessions.length === 0 && (
             <StateBlock className="mx-2" size="compact" title="暂无对话记录" variant="empty" />
           )}
 
           {/* Session items */}
-          {sessions.map((sess) => {
+          {sessions.map((sess, index) => {
             const isEditing = editingId === sess.id
             const isActive = sess.id === activeId
 
@@ -133,13 +174,32 @@ export default function ChatSidebar({
                 key={sess.id}
                 type="button"
                 className={cn(
-                  'group relative flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-primary/5',
-                  isActive && 'bg-primary/10 text-primary border-l-[3px] border-l-primary',
+                  'group relative flex items-center rounded-md transition-all hover:bg-primary/5',
+                  collapsed
+                    ? 'justify-center px-0 py-2'
+                    : 'w-full flex-col items-start gap-0.5 px-3 py-2.5',
+                  isActive &&
+                    !collapsed &&
+                    'bg-primary/10 text-primary border-l-[3px] border-l-primary',
+                  isActive && collapsed && 'bg-primary/10',
                 )}
                 onClick={() => onSelect(sess.id)}
-                onDoubleClick={() => startEdit(sess.id, sess.title ?? '')}
+                onDoubleClick={() => !collapsed && startEdit(sess.id, sess.title ?? '')}
+                title={collapsed ? (sess.title ?? `对话 ${index + 1}`) : undefined}
               >
-                {isEditing ? (
+                {collapsed ? (
+                  /* ── Collapsed: numbered circle ── */
+                  <span
+                    className={cn(
+                      'flex size-7 items-center justify-center rounded-full text-xs font-medium transition-colors',
+                      isActive
+                        ? 'bg-primary text-primary-foreground shadow-[0_0_0_2px_var(--primary)_/_0.2]'
+                        : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    {index + 1}
+                  </span>
+                ) : isEditing ? (
                   /* ── Inline rename ── */
                   <span
                     className="flex w-full items-center gap-1"
