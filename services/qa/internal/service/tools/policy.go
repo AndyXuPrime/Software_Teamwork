@@ -124,10 +124,9 @@ func generateSearchArgumentsSummary(args map[string]any) map[string]any {
 		"tool": ToolSearchKnowledge,
 	}
 
-	// Safe fields to expose
 	if query, ok := args["query"].(string); ok {
-		// Truncate query to prevent logging full user input
-		summary["query_preview"] = truncateString(query, 50)
+		summary["query_length"] = len(query)
+		summary["query_empty"] = len(strings.TrimSpace(query)) == 0
 	}
 
 	if kbIDs, ok := args["knowledge_base_ids"].([]any); ok {
