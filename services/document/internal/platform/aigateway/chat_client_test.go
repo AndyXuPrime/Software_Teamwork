@@ -302,6 +302,24 @@ func TestChatClientMapsEmptyChoicesToDependencyError(t *testing.T) {
 	}
 }
 
+func TestChatClientMapsWhitespaceContentToDependencyError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"   \t\n"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	client := newChatTestClient(t, server)
+	_, err := client.CreateChatCompletion(context.Background(), service.RequestContext{},
+		service.ChatCompletionRequest{Messages: []service.ChatMessage{{Role: "user", Content: "hi"}}})
+	if err == nil {
+		t.Fatal("CreateChatCompletion() error = nil, want error for whitespace-only content")
+	}
+	appErr, ok := service.Classify(err)
+	if !ok || appErr.Code != service.CodeDependency {
+		t.Fatalf("error code = %v, want %q", err, service.CodeDependency)
+	}
+}
+
 func TestChatClientHandlesNetworkError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	defer server.Close()
@@ -322,9 +340,16 @@ func TestChatClientHandlesNetworkError(t *testing.T) {
 }
 
 func TestChatClientHandlesOversizeResponse(t *testing.T) {
-	oversized := strings.Repeat("x", maxChatResponseBytes+1)
+	// Construct a syntactically valid JSON response whose total byte length
+	// exceeds maxChatResponseBytes. Using valid JSON ensures the test would
+	// still catch a regression if the size guard were removed — the body
+	// would then reach json.Unmarshal, succeed, and return non-empty content
+	// instead of an error, causing the assertion to fire.
+	content := strings.Repeat("x", maxChatResponseBytes)
+	body := `{"choices":[{"message":{"role":"assistant","content":"` +
+		content + `"},"finish_reason":"stop"}]}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(oversized))
+		_, _ = w.Write([]byte(body))
 	}))
 	defer server.Close()
 
