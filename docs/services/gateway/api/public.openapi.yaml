@@ -4787,9 +4787,11 @@ components:
           items:
             type: string
           description: |
-            IDs of session attachments associated with this message at creation
-            time. Preserved in history even after the attachment is purged;
-            the attachment record will have status `purged` but the ID remains.
+            IDs of session attachments linked to this message at creation time.
+            IDs are retained in message history even after TTL purge. Once an
+            attachment is purged, GET /attachments/{attachmentId} returns 404;
+            the ID is a historical reference only — clients must not assume the
+            attachment remains retrievable.
         createdAt:
           type: string
           format: date-time
@@ -4934,6 +4936,7 @@ components:
       - sessionId
       - filename
       - contentType
+      - sizeBytes
       - status
       - createdAt
       properties:

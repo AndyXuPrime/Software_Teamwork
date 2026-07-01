@@ -581,9 +581,9 @@ components:
           type: array
           items: { type: string }
           description: >-
-            IDs of session attachments associated with this message. Retained
-            in history after attachments are purged; look up the attachment
-            record for current status.
+            IDs of session attachments linked at message creation. Retained as
+            historical reference after TTL purge; purged attachments return 404
+            and are no longer retrievable.
         createdAt: { type: string, format: date-time }
     MessagePage:
       allOf:
@@ -602,7 +602,7 @@ components:
       enum: [uploaded, parsing, ready, failed, purged]
     SessionAttachment:
       type: object
-      required: [id, sessionId, filename, contentType, status, createdAt]
+      required: [id, sessionId, filename, contentType, sizeBytes, status, createdAt]
       properties:
         id: { type: string }
         sessionId: { type: string }
