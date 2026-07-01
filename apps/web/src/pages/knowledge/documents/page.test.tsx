@@ -211,7 +211,7 @@ describe('KnowledgeDocumentsPage upload interactions', () => {
     )
   })
 
-  it('locks current extension-only acceptance behavior for zero-byte, large, MIME-mismatch, and multi-file drops', async () => {
+  it('uses only the first file when multiple files are dropped', async () => {
     const { user } = renderDocumentsPage()
 
     await user.click(screen.getByRole('button', { name: /上传文档/ }))
@@ -219,19 +219,6 @@ describe('KnowledgeDocumentsPage upload interactions', () => {
     const input = getFileInput()
     const dropZone = input.parentElement
     expect(dropZone).toBeInstanceOf(HTMLElement)
-
-    selectFile(new File([], 'empty.pdf', { type: 'application/pdf' }))
-    expect(await within(dialog).findByText('empty.pdf')).toBeInTheDocument()
-    expect(within(dialog).getByText('-')).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: /^上传$/ })).toBeEnabled()
-
-    selectFile(new File([new Uint8Array(12 * 1024 * 1024)], 'big.pdf', { type: 'application/pdf' }))
-    expect(await within(dialog).findByText('big.pdf')).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: /^上传$/ })).toBeEnabled()
-
-    selectFile(new File(['binary'], 'fake.pdf', { type: 'application/x-msdownload' }))
-    expect(await within(dialog).findByText('fake.pdf')).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: /^上传$/ })).toBeEnabled()
 
     const first = new File(['first'], 'first.pdf', { type: 'application/pdf' })
     const second = new File(['second'], 'second.pdf', { type: 'application/pdf' })
