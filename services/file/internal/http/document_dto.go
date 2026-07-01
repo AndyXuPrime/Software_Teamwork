@@ -6,18 +6,6 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/file/internal/service"
 )
 
-type documentSummary struct {
-	ID              string                 `json:"id"`
-	KnowledgeBaseID string                 `json:"knowledgeBaseId"`
-	Name            string                 `json:"name"`
-	Status          service.DocumentStatus `json:"status"`
-	Tags            []string               `json:"tags,omitempty"`
-	ErrorMessage    *string                `json:"errorMessage,omitempty"`
-	CreatedAt       string                 `json:"createdAt"`
-	ContentType     string                 `json:"contentType"`
-	SizeBytes       int64                  `json:"sizeBytes"`
-}
-
 type fileObjectResponse struct {
 	ID             string  `json:"id"`
 	Filename       string  `json:"filename"`
@@ -26,20 +14,6 @@ type fileObjectResponse struct {
 	ChecksumSHA256 *string `json:"checksumSha256"`
 	CreatedAt      string  `json:"createdAt"`
 	DeletedAt      *string `json:"deletedAt"`
-}
-
-func documentSummaryFromDomain(doc service.Document) documentSummary {
-	return documentSummary{
-		ID:              doc.ID,
-		KnowledgeBaseID: doc.KnowledgeBaseID,
-		Name:            doc.Name,
-		Status:          doc.Status,
-		Tags:            append([]string(nil), doc.Tags...),
-		ErrorMessage:    doc.ErrorMessage,
-		CreatedAt:       doc.CreatedAt.UTC().Format(time.RFC3339),
-		ContentType:     doc.ContentType,
-		SizeBytes:       doc.SizeBytes,
-	}
 }
 
 func fileObjectFromDomain(file service.FileObject) fileObjectResponse {

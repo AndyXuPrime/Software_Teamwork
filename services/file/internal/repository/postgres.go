@@ -19,22 +19,6 @@ func NewPostgresRepository(db *sql.DB) *PostgresRepository {
 	return &PostgresRepository{db: db}
 }
 
-func (r *PostgresRepository) Create(ctx context.Context, doc service.Document) (service.Document, error) {
-	return service.Document{}, service.ErrConflict
-}
-
-func (r *PostgresRepository) FindByID(ctx context.Context, id string) (service.Document, error) {
-	return service.Document{}, service.ErrNotFound
-}
-
-func (r *PostgresRepository) ReplaceTags(ctx context.Context, id string, tags []string) (service.Document, error) {
-	return service.Document{}, service.ErrNotFound
-}
-
-func (r *PostgresRepository) MarkDeleted(ctx context.Context, id string, deletedAt time.Time) (service.Document, error) {
-	return service.Document{}, service.ErrNotFound
-}
-
 func (r *PostgresRepository) CreateFile(ctx context.Context, file service.FileObject) (service.FileObject, error) {
 	const query = `
 		INSERT INTO file_objects (
@@ -144,12 +128,11 @@ func (r *PostgresRepository) FindFileByID(ctx context.Context, id string) (servi
 func (r *PostgresRepository) MarkFileDeleteRequested(ctx context.Context, id string, deletedAt time.Time) (service.FileObject, error) {
 	const query = `
 		UPDATE file_objects
-		SET status = 'delete_requested',
-			deleted_at = $2,
-			delete_requested_at = $2,
+		SET status = CASE WHEN status = 'purged' THEN status ELSE 'delete_requested' END,
+			deleted_at = COALESCE(deleted_at, $2),
+			delete_requested_at = COALESCE(delete_requested_at, $2),
 			updated_at = $2
 		WHERE id = $1
-		  AND deleted_at IS NULL
 		RETURNING
 			id,
 			filename,
@@ -178,6 +161,44 @@ func (r *PostgresRepository) MarkFileDeleteRequested(ctx context.Context, id str
 			return service.FileObject{}, service.ErrNotFound
 		}
 		return service.FileObject{}, fmt.Errorf("mark file delete requested: %w", err)
+	}
+	return file, nil
+}
+
+func (r *PostgresRepository) MarkFilePurging(ctx context.Context, id string, purgingAt time.Time) (service.FileObject, error) {
+	const query = `
+		UPDATE file_objects
+		SET status = CASE WHEN status = 'purged' THEN status ELSE 'purging' END,
+			updated_at = $2
+		WHERE id = $1
+		RETURNING
+			id,
+			filename,
+			content_type,
+			size_bytes,
+			checksum_sha256,
+			storage_backend,
+			storage_bucket,
+			storage_object_key,
+			storage_version_id,
+			storage_etag,
+			status,
+			created_by_service,
+			request_id,
+			created_at,
+			updated_at,
+			deleted_at,
+			delete_requested_at,
+			purged_at,
+			last_error_code,
+			last_error_message
+	`
+	file, err := scanFileObject(r.db.QueryRowContext(ctx, query, id, purgingAt.UTC()))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return service.FileObject{}, service.ErrNotFound
+		}
+		return service.FileObject{}, fmt.Errorf("mark file purging: %w", err)
 	}
 	return file, nil
 }

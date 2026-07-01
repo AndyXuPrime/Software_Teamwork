@@ -15,26 +15,15 @@ import (
 )
 
 const (
-	maxTags      = 32
-	maxTagLength = 64
-
-	permissionUpload = "document:upload"
-	permissionRead   = "document:read"
-	permissionUpdate = "document:update"
-	permissionDelete = "document:delete"
-
 	checksumSHA256HexLength = 64
 	storageBackendMemory    = "memory"
 )
 
-type DocumentRepository interface {
-	Create(ctx context.Context, doc Document) (Document, error)
-	FindByID(ctx context.Context, id string) (Document, error)
-	ReplaceTags(ctx context.Context, id string, tags []string) (Document, error)
-	MarkDeleted(ctx context.Context, id string, deletedAt time.Time) (Document, error)
+type FileRepository interface {
 	CreateFile(ctx context.Context, file FileObject) (FileObject, error)
 	FindFileByID(ctx context.Context, id string) (FileObject, error)
 	MarkFileDeleteRequested(ctx context.Context, id string, deletedAt time.Time) (FileObject, error)
+	MarkFilePurging(ctx context.Context, id string, purgingAt time.Time) (FileObject, error)
 	MarkFilePurged(ctx context.Context, id string, purgedAt time.Time) (FileObject, error)
 	MarkFilePurgeFailed(ctx context.Context, id string, code string, message string, failedAt time.Time) (FileObject, error)
 }
@@ -46,7 +35,7 @@ type ObjectStore interface {
 }
 
 type Service struct {
-	repo           DocumentRepository
+	repo           FileRepository
 	store          ObjectStore
 	storageBackend string
 	now            func() time.Time
@@ -55,7 +44,7 @@ type Service struct {
 
 type Option func(*Service)
 
-func New(repo DocumentRepository, store ObjectStore, opts ...Option) *Service {
+func New(repo FileRepository, store ObjectStore, opts ...Option) *Service {
 	s := &Service{
 		repo:           repo,
 		store:          store,
@@ -85,6 +74,7 @@ func WithStorageBackend(backend string) Option {
 		}
 	}
 }
+
 func WithIDGenerator(newID func(prefix string) (string, error)) Option {
 	return func(s *Service) {
 		if newID != nil {
@@ -206,6 +196,14 @@ func (s *Service) DeleteFile(ctx context.Context, reqCtx RequestContext, fileID 
 	if err != nil {
 		return mapFileRepositoryError(err, "file not found")
 	}
+	if file.Status == FileStatusPurged {
+		return nil
+	}
+
+	file, err = s.repo.MarkFilePurging(ctx, id, s.now())
+	if err != nil {
+		return DependencyError("file cleanup metadata update failed", err)
+	}
 	if strings.TrimSpace(file.StorageObjectKey) == "" {
 		_, _ = s.repo.MarkFilePurgeFailed(ctx, id, string(CodeDependency), "object storage reference is missing", s.now())
 		return DependencyError("object storage reference is missing", errors.New("missing storage object key"))
@@ -258,238 +256,11 @@ func (s *Service) GetFileContent(ctx context.Context, reqCtx RequestContext, fil
 	return FileContent{File: file, Body: object.Body, ContentType: contentType, SizeBytes: sizeBytes}, nil
 }
 
-func (s *Service) UploadDocument(ctx context.Context, reqCtx RequestContext, input UploadDocumentInput) (Document, error) {
-	if err := validateActor(reqCtx); err != nil {
-		return Document{}, err
-	}
-
-	if err := requirePermission(reqCtx, permissionUpload); err != nil {
-		return Document{}, err
-	}
-	fields := map[string]string{}
-	knowledgeBaseID := strings.TrimSpace(input.KnowledgeBaseID)
-	if knowledgeBaseID == "" {
-		fields["knowledgeBaseId"] = "is required"
-	}
-
-	name, err := normalizeFileName(input.FileName)
-	if err != nil {
-		fields["file"] = err.Error()
-	}
-	if input.SizeBytes <= 0 {
-		fields["file"] = "must not be empty"
-	}
-	if input.Content == nil {
-		fields["file"] = "is required"
-	}
-
-	tags, err := NormalizeTags(input.Tags)
-	if err != nil {
-		fields["tags"] = err.Error()
-	}
-	if len(fields) > 0 {
-		return Document{}, ValidationError("request validation failed", fields)
-	}
-
-	docID, err := s.newID("doc")
-	if err != nil {
-		return Document{}, DependencyError("document id generation failed", err)
-	}
-
-	contentType := strings.TrimSpace(input.ContentType)
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
-	objectKey := "documents/" + docID
-	if err := s.store.Put(ctx, objectKey, input.Content, contentType, input.SizeBytes); err != nil {
-		return Document{}, DependencyError("object storage write failed", err)
-	}
-
-	doc := Document{
-		ID:              docID,
-		KnowledgeBaseID: knowledgeBaseID,
-		Name:            name,
-		Status:          DocumentStatusUploaded,
-		Tags:            tags,
-		CreatedAt:       s.now(),
-		ContentType:     contentType,
-		SizeBytes:       input.SizeBytes,
-		ObjectKey:       objectKey,
-		OwnerUserID:     strings.TrimSpace(reqCtx.UserID),
-	}
-
-	created, err := s.repo.Create(ctx, doc)
-	if err != nil {
-		_ = s.store.Delete(ctx, objectKey)
-		if errors.Is(err, ErrConflict) {
-			return Document{}, ConflictError("document already exists", err)
-		}
-		return Document{}, DependencyError("document metadata write failed", err)
-	}
-
-	return created, nil
-}
-
-func (s *Service) GetDocument(ctx context.Context, reqCtx RequestContext, documentID string) (Document, error) {
-	if err := validateActor(reqCtx); err != nil {
-		return Document{}, err
-	}
-	if err := requirePermission(reqCtx, permissionRead); err != nil {
-		return Document{}, err
-	}
-	id := strings.TrimSpace(documentID)
-	if id == "" {
-		return Document{}, ValidationError("request validation failed", map[string]string{"documentId": "is required"})
-	}
-
-	doc, err := s.repo.FindByID(ctx, id)
-	if err != nil {
-		return Document{}, mapRepositoryError(err, "document not found")
-	}
-	return doc, nil
-}
-
-func (s *Service) UpdateDocument(ctx context.Context, reqCtx RequestContext, input UpdateDocumentInput) (Document, error) {
-	if err := validateActor(reqCtx); err != nil {
-		return Document{}, err
-	}
-	if err := requirePermission(reqCtx, permissionUpdate); err != nil {
-		return Document{}, err
-	}
-	id := strings.TrimSpace(input.DocumentID)
-	if id == "" {
-		return Document{}, ValidationError("request validation failed", map[string]string{"documentId": "is required"})
-	}
-	tags, err := NormalizeTags(input.Tags)
-	if err != nil {
-		return Document{}, ValidationError("request validation failed", map[string]string{"tags": err.Error()})
-	}
-
-	doc, err := s.repo.ReplaceTags(ctx, id, tags)
-	if err != nil {
-		return Document{}, mapRepositoryError(err, "document not found")
-	}
-	return doc, nil
-}
-
-func (s *Service) DeleteDocument(ctx context.Context, reqCtx RequestContext, documentID string) error {
-	if err := validateActor(reqCtx); err != nil {
-		return err
-	}
-	if err := requirePermission(reqCtx, permissionDelete); err != nil {
-		return err
-	}
-	id := strings.TrimSpace(documentID)
-	if id == "" {
-		return ValidationError("request validation failed", map[string]string{"documentId": "is required"})
-	}
-
-	doc, err := s.repo.MarkDeleted(ctx, id, s.now())
-	if err != nil {
-		return mapRepositoryError(err, "document not found")
-	}
-	if err := s.store.Delete(ctx, doc.ObjectKey); err != nil && !errors.Is(err, ErrNotFound) {
-		return DependencyError("object storage delete failed", err)
-	}
-	return nil
-}
-
-func (s *Service) GetDocumentContent(ctx context.Context, reqCtx RequestContext, documentID string) (DocumentContent, error) {
-	if err := validateActor(reqCtx); err != nil {
-		return DocumentContent{}, err
-	}
-	if err := requirePermission(reqCtx, permissionRead); err != nil {
-		return DocumentContent{}, err
-	}
-
-	id := strings.TrimSpace(documentID)
-	if id == "" {
-		return DocumentContent{}, ValidationError("request validation failed", map[string]string{"documentId": "is required"})
-	}
-
-	doc, err := s.repo.FindByID(ctx, id)
-	if err != nil {
-		return DocumentContent{}, mapRepositoryError(err, "document not found")
-	}
-
-	object, err := s.store.Get(ctx, doc.ObjectKey)
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return DocumentContent{}, NotFoundError("document content not found")
-		}
-		return DocumentContent{}, DependencyError("object storage read failed", err)
-	}
-
-	contentType := object.ContentType
-	if contentType == "" {
-		contentType = doc.ContentType
-	}
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
-	sizeBytes := object.SizeBytes
-	if sizeBytes < 0 {
-		sizeBytes = doc.SizeBytes
-	}
-
-	return DocumentContent{
-		Document:    doc,
-		Body:        object.Body,
-		ContentType: contentType,
-		SizeBytes:   sizeBytes,
-	}, nil
-}
-
-func NormalizeTags(tags []string) ([]string, error) {
-	if len(tags) > maxTags {
-		return nil, fmt.Errorf("must contain at most %d tags", maxTags)
-	}
-
-	seen := map[string]struct{}{}
-	normalized := make([]string, 0, len(tags))
-	for _, raw := range tags {
-		if strings.ContainsAny(raw, "\x00\r\n") {
-			return nil, fmt.Errorf("must not contain control characters")
-		}
-		tag := strings.TrimSpace(raw)
-		if tag == "" {
-			continue
-		}
-		if len(tag) > maxTagLength {
-			return nil, fmt.Errorf("each tag must be at most %d characters", maxTagLength)
-		}
-		if _, ok := seen[tag]; ok {
-			continue
-		}
-		seen[tag] = struct{}{}
-		normalized = append(normalized, tag)
-	}
-	return normalized, nil
-}
-
-func validateActor(reqCtx RequestContext) error {
-	if strings.TrimSpace(reqCtx.UserID) == "" {
-		return UnauthorizedError()
-	}
-	return nil
-}
-
 func validateInternalCaller(reqCtx RequestContext) error {
 	if strings.TrimSpace(reqCtx.CallerService) == "" && strings.TrimSpace(reqCtx.UserID) == "" {
 		return UnauthorizedError()
 	}
 	return nil
-}
-
-func requirePermission(reqCtx RequestContext, permission string) error {
-	for _, candidate := range reqCtx.Permissions {
-		if strings.TrimSpace(candidate) == permission {
-			return nil
-		}
-	}
-	return ForbiddenError("permission is required")
 }
 
 func normalizeFileName(name string) (string, error) {
@@ -524,16 +295,6 @@ func callerService(reqCtx RequestContext) string {
 		return caller
 	}
 	return "gateway"
-}
-
-func mapRepositoryError(err error, notFoundMessage string) error {
-	if errors.Is(err, ErrNotFound) {
-		return NotFoundError(notFoundMessage)
-	}
-	if errors.Is(err, ErrConflict) {
-		return ConflictError("document state conflict", err)
-	}
-	return DependencyError("document metadata access failed", err)
 }
 
 func mapFileRepositoryError(err error, notFoundMessage string) error {

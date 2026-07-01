@@ -4,7 +4,7 @@
 
 Public frontend routes remain owned by gateway and are documented in `docs/services/gateway/api/public.openapi.yaml`. Frontend callers must not call this service directly. Stable file capability must be reached through gateway `/api/v1/**` resources owned by `knowledge` or `document`, while those owner services reuse this service's internal base file APIs.
 
-The implemented internal contract is generic file-object shaped (`/internal/v1/files/**`). The knowledge-document routes remain available only for compatibility and should not be extended for report templates, report materials, generated report files, or new knowledge business metadata.
+The implemented internal contract is generic file-object shaped (`/internal/v1/files/**`). Legacy knowledge-document compatibility routes have been removed from this service boundary; owner services must model their own business resources and call `/internal/v1/files/**` for raw object storage.
 
 ## Current Scope
 
@@ -16,18 +16,12 @@ Implemented now:
 - `GET /internal/v1/files/{fileId}`
 - `DELETE /internal/v1/files/{fileId}`
 - `GET /internal/v1/files/{fileId}/content`
-- `POST /internal/v1/knowledge-bases/{knowledgeBaseId}/documents`
-- `GET /internal/v1/documents/{documentId}`
-- `PATCH /internal/v1/documents/{documentId}`
-- `DELETE /internal/v1/documents/{documentId}`
-- `GET /internal/v1/documents/{documentId}/content`
 - Memory, local, and MinIO object-store adapters behind `service.ObjectStore`
 - Env-gated PostgreSQL metadata + MinIO object-store smoke test
 
 
 Out of scope for this MVP:
 
-- Async object cleanup worker
 - Knowledge ingestion handoff and knowledge document state
 - Report template, report material, and generated report file business state
 - Public knowledge-owned document list/detail/chunks/content contracts
@@ -51,18 +45,15 @@ $env:FILE_INTERNAL_SERVICE_TOKEN = "local-file-service-token"
 go run ./cmd/server
 ```
 
-Business endpoints require gateway context headers for local testing:
+Internal file endpoints require trusted caller context headers for local testing:
 
 ```text
 X-Request-Id: req_local
-X-User-Id: usr_local
-X-User-Roles: admin
-X-User-Permissions: document:upload,document:read,document:update,document:delete
+X-Caller-Service: knowledge
+X-Service-Token: local-file-service-token
 ```
 
-The service enforces the permission header for business routes. Missing user
-context returns `401 unauthorized`; missing operation permission returns
-`403 forbidden`.
+Missing trusted caller context returns `401 unauthorized`.
 
 When `FILE_INTERNAL_SERVICE_TOKEN` or `INTERNAL_SERVICE_TOKEN` is configured,
 base file routes under `/internal/v1/files/**` also require `X-Service-Token`.
@@ -117,6 +108,13 @@ $env:FILE_TEST_DATABASE_URL = "postgres://file:file@localhost:5432/file?sslmode=
 go test ./internal/repository
 ```
 
+Regenerate the service-local sqlc query package after changing `internal/repository/queries/*.sql`:
+
+```powershell
+cd services/file
+go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
+```
+
 PostgreSQL + MinIO smoke tests are also env-gated. They use the public File
 Service HTTP handler, create an isolated PostgreSQL schema, write the object to
 MinIO, read it back through `/internal/v1/files/{fileId}/content`, then delete
@@ -164,7 +162,6 @@ Upload uses `multipart/form-data`:
 
 - `file`: required binary part
 - `checksumSha256`: optional SHA-256 checksum for `/internal/v1/files`; when omitted, the service computes it
-- `tags`: optional repeated fields for compatibility document uploads, for example `tags=policy` and `tags=inspection`
 
 ## Response Shape
 
