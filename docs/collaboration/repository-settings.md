@@ -68,11 +68,14 @@ check 名称补入 `contexts`。
   `GitHub Project：Software Teamwork` 的任务 issue。
 - 根据 issue 标题前缀强制同步 `Group`，并根据任务正文的 `优先级`、
   `批次`、`模块`、`预期工时（小时数）`、`实际工时（小时数）`、`Risk`、`依赖任务` 同步 GitHub Project 字段。
+  `模块` 可写单个模块，也可用 `/`、`，`、`、` 等分隔多个模块；Project `Module`
+  是单选字段，workflow 会使用第一个在 Project 字段中存在的模块同步 Project 字段；
+  如果没有匹配选项，会跳过 `Module` 更新并继续同步其他字段。
 - 根据任务正文的 `依赖任务` 和 `阻塞任务` 写入 GitHub Issue 原生 relationship。
   清理旧 relationship 时，只删除本次正文编辑确实从当前字段移除、对端也是受管
   任务 issue、且两端任务字段都不再声明的关系；`并行任务` 只保留在正文中，不创建
   blocking relationship。
-- 根据主责小组和模块自动补可用 label；当前 `L1nggTeam`、`JerryTeam`、`PrimeTeam` 和 `Test`
+- 根据主责小组和所有可识别模块自动补可用 label；当前 `L1nggTeam`、`JerryTeam`、`PrimeTeam` 和 `Test`
   会作为小组 label，`Frontend` 和 `Special` 只同步为 Project `Group`，通常通过
   `frontend`、`ci`、`deployment`、`service:<name>` 等模块 label 标记。仓库不存在的
   label 会跳过并在日志中提示。
