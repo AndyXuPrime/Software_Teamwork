@@ -1917,15 +1917,27 @@ paths:
         parser internally. The attachment begins in `uploaded` status and is
         purged by TTL cleanup. Sessions not owned by the current user return
         404 so other users' sessions are not disclosed.
+
+        **File limits (authoritative, enforced by Gateway before forwarding):**
+        - Single file maximum: 20 MB (20 971 520 bytes). Larger payloads are
+          rejected with 413 before any storage or parser call is made.
+        - Per-session attachment count: maximum 10 active (non-purged)
+          attachments. Exceeding this limit returns 409.
+        - Per-session total size quota: 100 MB across all active attachments.
+          Exceeding this limit returns 409.
+
+        **Accepted MIME types** (declared in `Content-Type` of the `file`
+        part): `application/pdf`, `image/png`, `image/jpeg`, `text/plain`,
+        `application/vnd.openxmlformats-officedocument.wordprocessingml.document`.
+        Other types are rejected with 415. Clients should set the part
+        `Content-Type` header explicitly; Gateway rejects requests where the
+        part content type does not match the allowlist.
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/UploadSessionAttachmentRequest'
-            encoding:
-              file:
-                contentType: application/pdf, image/png, image/jpeg, text/plain, application/vnd.openxmlformats-officedocument.wordprocessingml.document
       responses:
         '201':
           description: QA session attachment accepted for processing.
@@ -4928,7 +4940,8 @@ components:
         sizeBytes:
           type: integer
           minimum: 0
-          nullable: true
+          maximum: 20971520
+          description: File size in bytes. Always present after upload is accepted.
         status:
           $ref: '#/components/schemas/SessionAttachmentStatus'
         errorCode:
@@ -4954,9 +4967,14 @@ components:
         file:
           type: string
           format: binary
+          maxLength: 20971520
           description: |
-            Attachment binary. Accepted content types include PDF, PNG, JPEG,
-            plain text, and DOCX; other types are rejected with 415.
+            Attachment binary. Maximum size: 20 MB (20 971 520 bytes); larger
+            payloads are rejected with 413. The `Content-Type` of this multipart
+            part must be one of: `application/pdf`, `image/png`, `image/jpeg`,
+            `text/plain`,
+            `application/vnd.openxmlformats-officedocument.wordprocessingml.document`.
+            Other content types are rejected with 415.
     SessionAttachmentResponse:
       type: object
       required:
