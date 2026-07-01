@@ -288,7 +288,7 @@ func knowledgeQueryFromVendor(queryID, query string, data *vendorclient.Retrieva
 			EmbeddingProvider:  "vendor",
 			EmbeddingModel:     "vendor-default",
 			EmbeddingDimension: 0,
-			QdrantCollection:   service.DefaultVectorCollection,
+			QdrantCollection:   "vendor",
 			SearchTopK:         topK,
 			ScoreThreshold:     scoreThreshold,
 			HitCount:           hitCount,

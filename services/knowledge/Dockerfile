@@ -13,13 +13,12 @@ ENV GOPROXY=${GOPROXY} \
 RUN if [ -n "$ALPINE_MIRROR" ]; then \
         sed -i "s|https://dl-cdn.alpinelinux.org/alpine|$ALPINE_MIRROR|g" /etc/apk/repositories; \
     fi
+# vendor/ragflow-runtime is upstream source, not Go module vendoring.
+ENV GOFLAGS=-mod=mod
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 COPY . .
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/knowledge ./cmd/server
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/knowledge-adapter ./cmd/adapter
@@ -35,7 +34,6 @@ RUN --mount=type=cache,target=/var/cache/apk \
 
 RUN apk add --no-cache wget && \
     addgroup -S knowledge && adduser -S -G knowledge knowledge
-COPY --from=build /out/knowledge /usr/local/bin/knowledge
 COPY --from=build /out/knowledge-adapter /usr/local/bin/knowledge-adapter
 COPY runtime/entrypoint.sh /usr/local/bin/knowledge-entrypoint
 RUN chmod +x /usr/local/bin/knowledge-entrypoint

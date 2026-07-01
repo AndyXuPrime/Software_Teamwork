@@ -1,16 +1,8 @@
-name: Parser Service
+name: Parser Service (deprecated)
 
+# Retired with Knowledge vendor runtime (Phase 5). Manual runs only.
 on:
-  pull_request:
-    branches: [develop]
-    paths:
-      - 'services/parser/**'
-      - '.github/workflows/parser-service.yml'
-  push:
-    branches: [develop]
-    paths:
-      - 'services/parser/**'
-      - '.github/workflows/parser-service.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read

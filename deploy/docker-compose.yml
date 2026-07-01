@@ -304,6 +304,7 @@ services:
       retries: 30
 
   parser:
+    profiles: ["legacy"]
     build:
       context: ../services/parser
       dockerfile: Dockerfile
@@ -328,10 +329,9 @@ services:
       timeout: 3s
       retries: 30
 
-  # Legacy mode (default) ingests via services/parser. Adapter mode
-  # (KNOWLEDGE_RUNTIME_MODE=adapter) routes upload/parse through the vendor runtime
-  # deepdoc pipeline and does not call PARSER_SERVICE_BASE_URL; parser remains in
-  # compose for legacy Knowledge only.
+  # Knowledge contract adapter (vendor runtime proxy). Upload/parse/retrieve go
+  # through VENDOR_RUNTIME_URL (deepdoc + ES/Infinity). MinIO bucket
+  # software-teamwork-knowledge is configured in vendor service_conf.
   knowledge:
     build:
       context: ../services/knowledge
@@ -345,36 +345,15 @@ services:
       KNOWLEDGE_HTTP_ADDR: :8083
       KNOWLEDGE_ENV: local
       KNOWLEDGE_SERVICE_VERSION: local
-      KNOWLEDGE_RUNTIME_MODE: ${KNOWLEDGE_RUNTIME_MODE:-legacy}
-      VENDOR_RUNTIME_URL: ${VENDOR_RUNTIME_URL:-http://127.0.0.1:9380}
+      VENDOR_RUNTIME_URL: ${VENDOR_RUNTIME_URL:-http://host.docker.internal:9380}
       DATABASE_URL: postgres://knowledge_app:knowledge_app_dev@postgres:5432/knowledge_system?sslmode=disable
-      FILE_SERVICE_BASE_URL: http://file:8082
-      PARSER_SERVICE_BASE_URL: http://parser:8087
-      PARSER_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
-      KNOWLEDGE_REDIS_ADDR: redis:6379
-      KNOWLEDGE_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
-      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local_hashing}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-local_hashing}
-      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-384}
-      QDRANT_URL: ${KNOWLEDGE_QDRANT_URL:-}
-      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-knowledge_chunks}
-      AI_GATEWAY_BASE_URL: ${KNOWLEDGE_AI_GATEWAY_BASE_URL:-}
-      AI_GATEWAY_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
-      AI_GATEWAY_EMBEDDING_PROFILE_ID: ${AI_GATEWAY_EMBEDDING_PROFILE_ID:-}
-      RERANK_MODEL: ${RERANK_MODEL:-}
-      RERANK_PROFILE_ID: ${RERANK_PROFILE_ID:-}
+      KNOWLEDGE_AUTO_START_INGESTION: ${KNOWLEDGE_AUTO_START_INGESTION:-true}
       DOC_ENGINE: ${DOC_ENGINE:-elasticsearch}
     ports:
       - "${KNOWLEDGE_HTTP_PORT:-8083}:8083"
     depends_on:
       migrate-knowledge:
         condition: service_completed_successfully
-      file:
-        condition: service_healthy
-      parser:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
       seed-local:
         condition: service_completed_successfully
     healthcheck:

@@ -3,7 +3,6 @@ module github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge
 go 1.25.0
 
 require (
-	github.com/hibiken/asynq v0.26.0
 	github.com/jackc/pgx/v5 v5.9.2
 )
 

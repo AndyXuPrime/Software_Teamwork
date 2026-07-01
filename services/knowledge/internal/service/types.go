@@ -354,6 +354,21 @@ type VectorIndex interface {
 	Search(ctx context.Context, request VectorSearchRequest) ([]VectorSearchHit, error)
 }
 
+type VectorSearchRequest struct {
+	Vector           []float32
+	KnowledgeBaseIDs []string
+	Tags             []string
+	MetadataFilter   map[string]string
+	Limit            int
+	ScoreThreshold   float64
+}
+
+type VectorSearchHit struct {
+	ID      string
+	Score   float64
+	Payload map[string]any
+}
+
 type DocumentIngestionTask struct {
 	RequestID       string `json:"requestId"`
 	JobID           string `json:"jobId"`
