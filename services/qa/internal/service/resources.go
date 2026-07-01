@@ -45,6 +45,7 @@ type Citation struct {
 	DocName                 string          `json:"docName,omitempty"`
 	KnowledgeBaseID         string          `json:"knowledgeBaseId,omitempty"`
 	ChunkID                 string          `json:"chunkId,omitempty"`
+	AttachmentID            string          `json:"attachmentId,omitempty"`
 	SectionPath             string          `json:"sectionPath,omitempty"`
 	Text                    string          `json:"text,omitempty"`
 	ContentPreview          string          `json:"contentPreview,omitempty"`
@@ -78,6 +79,7 @@ func NormalizeCitation(item Citation) Citation {
 	item.DocName = item.DocumentName
 	item.KnowledgeBaseID = strings.TrimSpace(item.KnowledgeBaseID)
 	item.ChunkID = strings.TrimSpace(item.ChunkID)
+	item.AttachmentID = strings.TrimSpace(item.AttachmentID)
 	item.SectionPath = strings.TrimSpace(item.SectionPath)
 	item.Text = strings.TrimSpace(item.Text)
 	item.ContentPreview = strings.TrimSpace(firstNonBlank(item.ContentPreview, item.Text))
@@ -107,7 +109,7 @@ func ApplyCitationSourceAvailability(item Citation, available bool) Citation {
 	documentID := strings.TrimSpace(firstNonBlank(item.DocumentID, item.DocID))
 	item.DocumentID = documentID
 	item.DocID = documentID
-	item.IsSourceAvailable = available && documentID != ""
+	item.IsSourceAvailable = (available && documentID != "") || strings.TrimSpace(item.AttachmentID) != ""
 	if item.IsSourceAvailable {
 		item.SourceUnavailableReason = ""
 	} else if strings.TrimSpace(item.SourceUnavailableReason) == "" {

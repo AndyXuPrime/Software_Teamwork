@@ -35,6 +35,10 @@ paths:
     $ref: '../../../docs/services/gateway/api/public.openapi.yaml#/paths/~1api~1v1~1qa-sessions~1{sessionId}'
   /internal/v1/qa-sessions/{sessionId}/messages:
     $ref: '../../../docs/services/gateway/api/public.openapi.yaml#/paths/~1api~1v1~1qa-sessions~1{sessionId}~1messages'
+  /internal/v1/qa-sessions/{sessionId}/attachments:
+    $ref: '../../../docs/services/gateway/api/public.openapi.yaml#/paths/~1api~1v1~1qa-sessions~1{sessionId}~1attachments'
+  /internal/v1/qa-sessions/{sessionId}/attachments/{attachmentId}:
+    $ref: '../../../docs/services/gateway/api/public.openapi.yaml#/paths/~1api~1v1~1qa-sessions~1{sessionId}~1attachments~1{attachmentId}'
   /internal/v1/qa-sessions/{sessionId}/events:
     $ref: '../../../docs/services/gateway/api/public.openapi.yaml#/paths/~1api~1v1~1qa-sessions~1{sessionId}~1events'
   /internal/v1/qa-sessions/{sessionId}/attachments:

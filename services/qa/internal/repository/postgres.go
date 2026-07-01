@@ -759,6 +759,15 @@ func (r *Postgres) SaveCitations(ctx context.Context, userID, messageID string, 
 		if metadata == nil {
 			metadata = []byte("{}")
 		}
+		if strings.TrimSpace(citation.AttachmentID) != "" {
+			var meta map[string]any
+			_ = json.Unmarshal(metadata, &meta)
+			if meta == nil {
+				meta = map[string]any{}
+			}
+			meta["attachmentId"] = citation.AttachmentID
+			metadata, _ = json.Marshal(meta)
+		}
 		var pageNum *int32
 		if citation.PageNumber != nil {
 			pn := int32(*citation.PageNumber)

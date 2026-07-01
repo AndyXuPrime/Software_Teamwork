@@ -62,29 +62,32 @@ type SettingsService interface {
 }
 
 type Config struct {
-	MaxRequestBytes int64
-	Logger          *slog.Logger
-	Ready           func(context.Context) error
-	AdminUserIDs    []string
-	SettingsOpen    bool
-	ServiceToken    string
+	MaxRequestBytes    int64
+	AttachmentMaxBytes int64
+	Logger             *slog.Logger
+	Ready              func(context.Context) error
+	AdminUserIDs       []string
+	SettingsOpen       bool
+	ServiceToken       string
 }
 
 type Server struct {
-	qa              QAService
-	settings        SettingsService
-	resources       ResourceService
-	maxRequestBytes int64
-	logger          *slog.Logger
-	ready           func(context.Context) error
-	adminUserIDs    map[string]struct{}
-	settingsOpen    bool
-	serviceToken    string
-	mux             *http.ServeMux
+	qa                 QAService
+	settings           SettingsService
+	resources          ResourceService
+	attachments        AttachmentService
+	maxRequestBytes    int64
+	attachmentMaxBytes int64
+	logger             *slog.Logger
+	ready              func(context.Context) error
+	adminUserIDs       map[string]struct{}
+	settingsOpen       bool
+	serviceToken       string
+	mux                *http.ServeMux
 }
 
-func NewServer(qa QAService, settings SettingsService, resources ResourceService, cfg Config) (*Server, error) {
-	if qa == nil || settings == nil || resources == nil || strings.TrimSpace(cfg.ServiceToken) == "" {
+func NewServer(qa QAService, settings SettingsService, resources ResourceService, attachments AttachmentService, cfg Config) (*Server, error) {
+	if qa == nil || settings == nil || resources == nil || attachments == nil || strings.TrimSpace(cfg.ServiceToken) == "" {
 		return nil, errors.New("QA, settings, resource services and service token are required")
 	}
 	if cfg.MaxRequestBytes <= 0 {
@@ -98,7 +101,8 @@ func NewServer(qa QAService, settings SettingsService, resources ResourceService
 		admins[id] = struct{}{}
 	}
 	s := &Server{
-		qa: qa, settings: settings, resources: resources, maxRequestBytes: cfg.MaxRequestBytes,
+		qa: qa, settings: settings, resources: resources, attachments: attachments,
+		maxRequestBytes: cfg.MaxRequestBytes, attachmentMaxBytes: cfg.AttachmentMaxBytes,
 		logger: cfg.Logger, ready: cfg.Ready, adminUserIDs: admins,
 		settingsOpen: cfg.SettingsOpen, serviceToken: cfg.ServiceToken, mux: http.NewServeMux(),
 	}
@@ -116,6 +120,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /internal/v1/qa-sessions/{sessionId}", s.handleDeleteConversation)
 	s.mux.HandleFunc("GET /internal/v1/qa-sessions/{sessionId}/messages", s.handleListMessages)
 	s.mux.HandleFunc("POST /internal/v1/qa-sessions/{sessionId}/messages", s.handleAsk)
+	s.mux.HandleFunc("GET /internal/v1/qa-sessions/{sessionId}/attachments", s.handleListAttachments)
+	s.mux.HandleFunc("POST /internal/v1/qa-sessions/{sessionId}/attachments", s.handleUploadAttachment)
+	s.mux.HandleFunc("GET /internal/v1/qa-sessions/{sessionId}/attachments/{attachmentId}", s.handleGetAttachment)
+	s.mux.HandleFunc("DELETE /internal/v1/qa-sessions/{sessionId}/attachments/{attachmentId}", s.handleDeleteAttachment)
 	s.registerResourceRoutes()
 	s.mux.HandleFunc("/", s.handleNotFound)
 }

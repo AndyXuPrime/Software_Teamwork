@@ -13,6 +13,7 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/app"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/config"
 	httpapi "github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/http"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/platform/attachmentclient"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/platform/connectiontest"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/platform/knowledgeclient"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/platform/secrets"
@@ -70,7 +71,12 @@ func main() {
 		logger.Error("knowledge client initialization failed", "service", "qa", "error", err)
 		os.Exit(1)
 	}
-	manager, err := app.NewManager(ctx, settingsService, repo, retriever, app.ManagerConfig{
+	attachmentService, err := service.NewAttachmentService(repo, attachmentclient.NewMemoryFileClient(), attachmentclient.PlainTextParserClient{}, service.AttachmentServiceConfig{TTL: cfg.AttachmentTTL, MaxBytes: cfg.AttachmentMaxBytes, MaxPerSession: cfg.AttachmentMaxPerSession, ProcessTimeout: cfg.AttachmentProcessTimeout})
+	if err != nil {
+		logger.Error("attachment service initialization failed", "service", "qa", "error", err)
+		os.Exit(1)
+	}
+	manager, err := app.NewManager(ctx, settingsService, repo, retriever, attachmentService, app.ManagerConfig{
 		WorkDir: cfg.WorkDir, MaxFileBytes: cfg.MaxFileBytes,
 		MaxToolResultBytes: cfg.MaxToolResultBytes, EnableCommandTool: cfg.EnableCommandTool,
 		CommandTimeout: cfg.CommandTimeout, MaxIterations: cfg.MaxIterations,
@@ -98,8 +104,10 @@ func main() {
 		os.Exit(1)
 	}
 	resourceService.SetReloader(manager)
-	handler, err := httpapi.NewServer(qaService, settingsService, resourceService, httpapi.Config{
-		MaxRequestBytes: cfg.MaxRequestBytes, Logger: logger, Ready: repo.Ping,
+	handler, err := httpapi.NewServer(qaService, settingsService, resourceService, attachmentService, httpapi.Config{
+		MaxRequestBytes:    cfg.MaxRequestBytes,
+		AttachmentMaxBytes: cfg.AttachmentMaxBytes,
+		Logger:             logger, Ready: repo.Ping,
 		AdminUserIDs: cfg.AdminUserIDs, SettingsOpen: cfg.SettingsOpen,
 		ServiceToken: cfg.ServiceToken,
 	})
@@ -121,6 +129,7 @@ func main() {
 			stop()
 		}
 	}()
+	go runAttachmentCleanup(ctx, logger, attachmentService)
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
@@ -131,4 +140,26 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("QA service shutdown complete", "service", "qa")
+}
+
+func runAttachmentCleanup(ctx context.Context, logger *slog.Logger, attachments *service.AttachmentService) {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			expired, err := attachments.CleanupExpired(cleanupCtx, 100)
+			cancel()
+			if err != nil {
+				logger.Warn("attachment cleanup failed", "service", "qa", "error", err)
+				continue
+			}
+			if len(expired) > 0 {
+				logger.Info("attachment cleanup completed", "service", "qa", "count", len(expired))
+			}
+		}
+	}
 }

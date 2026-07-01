@@ -23,6 +23,21 @@ type fakeQAService struct {
 }
 
 type fakeSettingsService struct{}
+
+type fakeAttachmentService struct{}
+
+func (fakeAttachmentService) Upload(context.Context, string, string, service.CreateAttachmentInput) (service.AttachmentUploadResult, error) {
+	return service.AttachmentUploadResult{}, nil
+}
+func (fakeAttachmentService) List(context.Context, string, string, service.AttachmentListOptions) (service.Page[service.SessionAttachment], error) {
+	return service.Page[service.SessionAttachment]{}, nil
+}
+func (fakeAttachmentService) Get(context.Context, string, string, string) (service.SessionAttachment, error) {
+	return service.SessionAttachment{}, nil
+}
+func (fakeAttachmentService) Delete(context.Context, string, string, string) error  { return nil }
+func (fakeAttachmentService) Process(context.Context, string, string, string) error { return nil }
+
 type fakeResourceService struct{}
 type fakeResourceServiceWithListEvents struct {
 	fakeResourceService
@@ -659,7 +674,7 @@ func newTestServerWithResources(t *testing.T, qa fakeQAService, resources Resour
 			return service.AskResult{}, nil
 		}
 	}
-	server, err := NewServer(qa, fakeSettingsService{}, resources, Config{MaxRequestBytes: 4096, ServiceToken: "test-service-token"})
+	server, err := NewServer(qa, fakeSettingsService{}, resources, fakeAttachmentService{}, Config{MaxRequestBytes: 4096, ServiceToken: "test-service-token"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -50,7 +50,7 @@ func citationsFromAgentMessages(messageID, runID string, messages []agent.Messag
 func isCitationToolName(name string) bool {
 	name = strings.TrimSpace(strings.ToLower(name))
 	switch name {
-	case "search_knowledge", "get_citation_source", "knowledge_query":
+	case "search_knowledge", "get_citation_source", "knowledge_query", "search_session_attachments":
 		return true
 	}
 	return strings.HasSuffix(name, "__search_knowledge") ||
@@ -89,6 +89,7 @@ func looksLikeCitationRecord(record map[string]any) bool {
 	for _, key := range []string{
 		"documentId", "docId", "externalDocId", "external_doc_id",
 		"document_id", "documentName", "docName", "document_name", "chunkId", "chunk_id", "externalChunkId",
+		"attachmentId", "attachment_id", "filename",
 		"contentPreview", "content_preview", "quoteText", "quote_text", "text",
 	} {
 		if _, ok := record[key]; ok {
@@ -104,6 +105,7 @@ func citationFromRecord(record map[string]any) (Citation, bool) {
 		DocumentName:            firstString(record, "documentName", "docName", "document_name", "doc_name", "title", "filename"),
 		KnowledgeBaseID:         firstString(record, "knowledgeBaseId", "knowledge_base_id", "externalKbId", "external_kb_id", "kbId"),
 		ChunkID:                 firstString(record, "chunkId", "chunk_id", "externalChunkId", "external_chunk_id"),
+		AttachmentID:            firstString(record, "attachmentId", "attachment_id"),
 		SectionPath:             firstString(record, "sectionPath", "section_path"),
 		Text:                    firstString(record, "quoteText", "quote_text", "text"),
 		ContentPreview:          firstString(record, "contentPreview", "content_preview", "preview"),
@@ -127,9 +129,9 @@ func citationFromRecord(record map[string]any) (Citation, bool) {
 	if available, ok := firstBool(record, "isSourceAvailable", "sourceAvailable", "source_available"); ok {
 		citation.IsSourceAvailable = available
 	} else {
-		citation.IsSourceAvailable = citation.DocumentID != ""
+		citation.IsSourceAvailable = citation.DocumentID != "" || citation.AttachmentID != ""
 	}
-	if firstNonBlank(citation.DocumentID, citation.DocumentName, citation.ChunkID, citation.Text, citation.ContentPreview, citation.Context) == "" {
+	if firstNonBlank(citation.DocumentID, citation.DocumentName, citation.ChunkID, citation.AttachmentID, citation.Text, citation.ContentPreview, citation.Context) == "" {
 		return Citation{}, false
 	}
 	return NormalizeCitation(citation), true
@@ -139,6 +141,7 @@ func citationSnapshotKey(citation Citation) string {
 	return strings.Join([]string{
 		citation.KnowledgeBaseID,
 		citation.DocumentID,
+		citation.AttachmentID,
 		citation.ChunkID,
 		citation.Text,
 		citation.ContentPreview,

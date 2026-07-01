@@ -131,6 +131,12 @@ func (r *fakeRepository) SaveModelInvocation(ctx context.Context, _ string, invo
 func (r *fakeRepository) SaveCitations(_ context.Context, _, _ string, citations []Citation) error {
 	return nil
 }
+func (r *fakeRepository) ValidateReadyAttachments(context.Context, string, string, []string) ([]SessionAttachment, error) {
+	return nil, nil
+}
+func (r *fakeRepository) BindMessageAttachments(context.Context, string, string, string, []string, time.Time) error {
+	return nil
+}
 
 type fakeAgentRunner struct {
 	input             []agent.Message

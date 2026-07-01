@@ -175,6 +175,7 @@ type AskInput struct {
 	Mode             string           `json:"mode,omitempty"`
 	KnowledgeBaseIDs []string         `json:"knowledgeBaseIds,omitempty"`
 	Retrieval        RetrievalOptions `json:"retrieval,omitempty"`
+	AttachmentIDs    []string         `json:"attachmentIds,omitempty"`
 }
 
 type AskResult struct {
@@ -253,6 +254,8 @@ type Repository interface {
 	SaveStreamEvents(context.Context, string, string, []StreamEvent) error
 	SaveCitations(context.Context, string, string, []Citation) error
 	SaveModelInvocation(context.Context, string, ModelInvocation) (string, error)
+	ValidateReadyAttachments(context.Context, string, string, []string) ([]SessionAttachment, error)
+	BindMessageAttachments(context.Context, string, string, string, []string, time.Time) error
 	GetResponseRun(context.Context, string, string) (ResponseRun, error)
 }
 
@@ -404,6 +407,13 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	userMessage := Message{ID: newID("msg"), ConversationID: conversationID, Role: agent.RoleUser, Content: strings.TrimSpace(input.Message), Intent: intent, Status: "completed", CreatedAt: now}
 	assistantMessage := Message{ID: newID("msg"), ConversationID: conversationID, Role: agent.RoleAssistant, Intent: intent, Status: "streaming", CreatedAt: now}
 
+	attachmentIDs := normalizeIDList(input.AttachmentIDs)
+	if len(attachmentIDs) > 0 {
+		if _, err := s.repository.ValidateReadyAttachments(ctx, userID, conversationID, attachmentIDs); err != nil {
+			return AskResult{}, err
+		}
+	}
+
 	if runtime.DefaultKnowledgeBaseIDs != nil {
 		if len(input.KnowledgeBaseIDs) > 0 {
 			allowed := make(map[string]struct{}, len(runtime.DefaultKnowledgeBaseIDs))
@@ -427,11 +437,18 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	if err != nil {
 		return AskResult{}, err
 	}
+	if len(attachmentIDs) > 0 {
+		if err := s.repository.BindMessageAttachments(ctx, userID, conversationID, userMessage.ID, attachmentIDs, now); err != nil {
+			return AskResult{}, err
+		}
+	}
 	baseCtx := WithUserID(ctx, userID)
 	baseCtx = contextutil.WithKnowledgeBaseIDs(baseCtx, input.KnowledgeBaseIDs)
 	baseCtx = contextutil.WithDefaultKnowledgeBaseIDs(baseCtx, runtime.DefaultKnowledgeBaseIDs)
 	baseCtx = contextutil.WithRetrievalSettings(baseCtx, retrievalSettingsForAsk(runtime.RetrievalSettings, input.Retrieval))
 	baseCtx = contextutil.WithCitationNo(baseCtx, 1)
+	baseCtx = contextutil.WithSessionID(baseCtx, conversationID)
+	baseCtx = contextutil.WithMessageAttachmentIDs(baseCtx, attachmentIDs)
 	cancelBase := func() {}
 	if runtime.OverallTimeout > 0 {
 		var cancel context.CancelFunc
@@ -496,7 +513,10 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 		if observation.Type != agent.EventToolCompleted {
 			return
 		}
-		if observation.ToolName == tools.ToolSearchKnowledge && observation.Result != "" {
+		if observation.Result == "" {
+			return
+		}
+		if observation.ToolName == tools.ToolSearchKnowledge || observation.ToolName == tools.ToolSearchSessionAttachments {
 			startNo := contextutil.CitationNoFromContext(runCtx)
 			if startNo <= 0 {
 				startNo = 1
@@ -888,7 +908,7 @@ func toolProgressPayload(summary string, event agent.Event, observation agent.To
 
 func toolSourceName(toolName string) string {
 	switch toolName {
-	case tools.ToolSearchKnowledge, tools.ToolGetCitationSource:
+	case tools.ToolSearchKnowledge, tools.ToolGetCitationSource, tools.ToolSearchSessionAttachments:
 		return "qa_builtin"
 	}
 	if before, _, ok := strings.Cut(toolName, "__"); ok {
@@ -1006,4 +1026,21 @@ func extractCitationsFromToolResult(result string, startCitationNo int) []Citati
 		citationNo++
 	}
 	return citations
+}
+
+func normalizeIDList(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }

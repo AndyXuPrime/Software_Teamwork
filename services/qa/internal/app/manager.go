@@ -42,20 +42,21 @@ type runtimeState struct {
 }
 
 type Manager struct {
-	stateMu   sync.RWMutex
-	reloadMu  sync.Mutex
-	state     *runtimeState
-	loader    service.RuntimeConfigLoader
-	status    service.MCPStatusUpdater
-	cfg       ManagerConfig
-	retriever service.KnowledgeRetriever
+	stateMu     sync.RWMutex
+	reloadMu    sync.Mutex
+	state       *runtimeState
+	loader      service.RuntimeConfigLoader
+	status      service.MCPStatusUpdater
+	cfg         ManagerConfig
+	retriever   service.KnowledgeRetriever
+	attachments service.SessionAttachmentSearcher
 }
 
-func NewManager(ctx context.Context, loader service.RuntimeConfigLoader, status service.MCPStatusUpdater, retriever service.KnowledgeRetriever, cfg ManagerConfig) (*Manager, error) {
+func NewManager(ctx context.Context, loader service.RuntimeConfigLoader, status service.MCPStatusUpdater, retriever service.KnowledgeRetriever, attachments service.SessionAttachmentSearcher, cfg ManagerConfig) (*Manager, error) {
 	if loader == nil || status == nil {
 		return nil, errors.New("runtime config loader and MCP status updater are required")
 	}
-	manager := &Manager{loader: loader, status: status, retriever: retriever, cfg: cfg}
+	manager := &Manager{loader: loader, status: status, retriever: retriever, attachments: attachments, cfg: cfg}
 	if err := manager.Reload(ctx); err != nil {
 		return nil, err
 	}
@@ -147,6 +148,33 @@ func (a *knowledgeRetrieverAdapter) Retrieve(ctx context.Context, userID string,
 			Score:           r.Score,
 			RerankScore:     r.RerankScore,
 			Metadata:        r.Metadata,
+		})
+	}
+	return results, nil
+}
+
+type sessionAttachmentSearcherAdapter struct {
+	searcher service.SessionAttachmentSearcher
+}
+
+func (a *sessionAttachmentSearcherAdapter) SearchSessionAttachments(ctx context.Context, userID, sessionID string, attachmentIDs []string, query string, limit int) ([]toolspkg.SessionAttachmentHit, error) {
+	if a.searcher == nil {
+		return nil, errors.New("session attachment searcher is unavailable")
+	}
+	chunks, err := a.searcher.SearchSessionAttachments(ctx, userID, sessionID, attachmentIDs, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]toolspkg.SessionAttachmentHit, 0, len(chunks))
+	for _, chunk := range chunks {
+		results = append(results, toolspkg.SessionAttachmentHit{
+			AttachmentID:   chunk.AttachmentID,
+			ChunkID:        chunk.ID,
+			Filename:       chunk.Filename,
+			SectionPath:    chunk.SectionPath,
+			ContentPreview: chunk.ContentPreview,
+			PageNumber:     chunk.PageNumber,
+			ChunkIndex:     chunk.ChunkIndex,
 		})
 	}
 	return results, nil
@@ -246,6 +274,17 @@ func (m *Manager) buildState(ctx context.Context, runtimeConfig service.RuntimeC
 			return nil, fmt.Errorf("init knowledge tool client: %w", err)
 		}
 		providers = append(providers, knowledgeTool)
+	}
+	if m.attachments != nil {
+		attachmentTool, err := toolspkg.NewAttachmentToolClient(toolspkg.AttachmentToolConfig{
+			Searcher: &sessionAttachmentSearcherAdapter{searcher: m.attachments},
+			Timeout:  m.cfg.DefaultToolTimeout,
+		})
+		if err != nil {
+			closeClients(clients)
+			return nil, fmt.Errorf("init attachment tool client: %w", err)
+		}
+		providers = append(providers, attachmentTool)
 	}
 	toolClient, err := toolclient.New(providers...)
 	if err != nil {
