@@ -39,6 +39,7 @@ CHINA_IMAGES = {
     "qdrant": "docker.m.daocloud.io/qdrant/qdrant:v1.18.2",
     "minio server": "docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z",
     "minio mc": "docker.m.daocloud.io/minio/mc:RELEASE.2025-08-13T08-35-41Z",
+    "ragflow deps": "docker.m.daocloud.io/infiniflow/ragflow_deps:51ce6aab",
 }
 
 DEFAULT_IMAGES = {
@@ -47,6 +48,7 @@ DEFAULT_IMAGES = {
     "qdrant": "qdrant/qdrant:v1.18.2",
     "minio server": "minio/minio:RELEASE.2025-09-07T16-13-09Z",
     "minio mc": "minio/mc:RELEASE.2025-08-13T08-35-41Z",
+    "ragflow deps": "infiniflow/ragflow_deps:51ce6aab",
 }
 
 DOCKER_HUB_DIRECT_IMAGES = {
@@ -55,6 +57,7 @@ DOCKER_HUB_DIRECT_IMAGES = {
     "qdrant": "registry-1.docker.io/qdrant/qdrant:v1.18.2",
     "minio server": "registry-1.docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z",
     "minio mc": "registry-1.docker.io/minio/mc:RELEASE.2025-08-13T08-35-41Z",
+    "ragflow deps": "registry-1.docker.io/infiniflow/ragflow_deps:51ce6aab",
 }
 
 

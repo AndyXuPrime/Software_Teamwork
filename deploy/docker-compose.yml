@@ -129,8 +129,8 @@ services:
       MINIO_BUCKET: software-teamwork-knowledge
       ES_HOST: elasticsearch
       REDIS_HOST: redis
-    ports:
-      - "${KNOWLEDGE_RUNTIME_API_PORT:-9380}:9380"
+    expose:
+      - "9380"
     depends_on:
       postgres:
         condition: service_healthy

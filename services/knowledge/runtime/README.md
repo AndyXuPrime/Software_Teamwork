@@ -30,8 +30,7 @@ Full in-compose vendor stack:
 
 ```bash
 cd deploy
-VENDOR_RUNTIME_URL=http://knowledge-runtime-api:9380 \
-  docker compose --profile knowledge-v2 up -d \
+docker compose --profile knowledge-v2 up -d \
   elasticsearch knowledge-minio-init \
   knowledge-runtime-api knowledge-runtime-worker knowledge
 ```
@@ -40,6 +39,7 @@ External vendor (local Python dev):
 
 ```bash
 cd deploy
+VENDOR_RUNTIME_URL=http://host.docker.internal:9380 \
 docker compose --profile knowledge-v2 up -d elasticsearch knowledge-minio-init knowledge
 # In another terminal: services/knowledge-runtime/deploy/api/run-local.sh
 # and deploy/worker/run-local.sh
@@ -49,7 +49,7 @@ docker compose --profile knowledge-v2 up -d elasticsearch knowledge-minio-init k
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `VENDOR_RUNTIME_URL` | `http://host.docker.internal:9380` | Vendor HTTP base URL for adapter |
+| `VENDOR_RUNTIME_URL` | `http://knowledge-runtime-api:9380` | Vendor HTTP base URL for adapter in Compose |
 | `KNOWLEDGE_AUTO_START_INGESTION` | `true` | After upload, call vendor parse API |
 | `KNOWLEDGE_RUNTIME_WORKERS` | `2` | Worker count for `knowledge-runtime-worker` |
 | `DOC_ENGINE` | `elasticsearch` | Vendor doc engine selector |
