@@ -17,20 +17,22 @@ const (
 )
 
 type Config struct {
-	HTTPAddr            string
-	ServiceVersion      string
-	Environment         string
-	VendorRuntimeURL    string
-	DatabaseURL         string
-	AutoStartIngestion  bool
-	ShutdownTimeout     time.Duration
+	HTTPAddr           string
+	MCPAddr            string
+	ServiceVersion     string
+	Environment        string
+	VendorRuntimeURL   string
+	DatabaseURL        string
+	AutoStartIngestion bool
+	ShutdownTimeout    time.Duration
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr:       stringValue("KNOWLEDGE_HTTP_ADDR", DefaultHTTPAddr),
-		ServiceVersion: stringValue("KNOWLEDGE_SERVICE_VERSION", DefaultServiceVersion),
-		Environment:    stringValue("KNOWLEDGE_ENV", DefaultEnvironment),
+		HTTPAddr:        stringValue("KNOWLEDGE_HTTP_ADDR", DefaultHTTPAddr),
+		MCPAddr:         strings.TrimSpace(os.Getenv("KNOWLEDGE_MCP_ADDR")),
+		ServiceVersion:  stringValue("KNOWLEDGE_SERVICE_VERSION", DefaultServiceVersion),
+		Environment:     stringValue("KNOWLEDGE_ENV", DefaultEnvironment),
 		ShutdownTimeout: DefaultShutdownTimeout,
 	}
 	cfg.VendorRuntimeURL = trimTrailingSlash(stringValue("VENDOR_RUNTIME_URL", DefaultVendorRuntimeURL))

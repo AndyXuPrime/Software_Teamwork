@@ -46,6 +46,7 @@ service and let Go services call it over the documented internal HTTP API.
 | [Error Handling](./error-handling.md) | Go error propagation and HTTP error responses | Active |
 | [Quality Guidelines](./quality-guidelines.md) | Build, test, lint, review expectations | Active |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging and sensitive-data rules | Active |
+| [MCP Agent Runtime](./mcp-agent-runtime.md) | QA Agent Loop + Knowledge MCP Server contracts | Active |
 
 ---
 

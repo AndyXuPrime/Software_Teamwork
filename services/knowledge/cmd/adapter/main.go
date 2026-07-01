@@ -13,6 +13,8 @@ import (
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/adapter"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/adapterconfig"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/aigateway"
+	kmcp "github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/mcp"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/repository"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
 )
@@ -49,6 +51,15 @@ func main() {
 		Handler: server.Handler(),
 	}
 
+	chatClient, err := aigateway.NewChatClientFromEnv()
+	if err != nil {
+		logger.Error("ai gateway client configuration failed", "service", "knowledge-adapter", "error", err)
+		os.Exit(1)
+	}
+	if chatClient != nil {
+		logger.Info("ai gateway client enabled for answer_from_knowledge", "service", "knowledge-adapter")
+	}
+
 	go func() {
 		logger.Info("knowledge adapter listening", "addr", cfg.HTTPAddr, "vendor_runtime_url", cfg.VendorRuntimeURL)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -57,12 +68,33 @@ func main() {
 		}
 	}()
 
+	var mcpServer *http.Server
+	if cfg.MCPAddr != "" {
+		mcpServer = &http.Server{
+			Addr:    cfg.MCPAddr,
+			Handler: kmcp.NewStreamableHTTPHandler(server, chatClient),
+		}
+		go func() {
+			logger.Info("knowledge MCP server listening", "addr", cfg.MCPAddr)
+			if err := mcpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logger.Error("MCP server failed", "error", err)
+				os.Exit(1)
+			}
+		}()
+	}
+
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("adapter shutdown failed", "error", err)
 		os.Exit(1)
+	}
+	if mcpServer != nil {
+		if err := mcpServer.Shutdown(shutdownCtx); err != nil {
+			logger.Error("MCP shutdown failed", "error", err)
+			os.Exit(1)
+		}
 	}
 }
 

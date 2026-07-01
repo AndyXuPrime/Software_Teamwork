@@ -20,9 +20,10 @@
 
 ## Out of scope (follow-up)
 
-- Vendor runtime container in compose (still external `VENDOR_RUNTIME_URL` until vendor Dockerfile lands)
+- ~~Vendor runtime container in compose~~ → done Phase 6 (`knowledge-runtime-api` / `worker`)
 - Data migration from legacy goose KB tables to vendor `knowledgebase` tables
 - Removing goose `parser_configs` table (admin CRUD stays via adapter + `DATABASE_URL`)
+- **Knowledge MCP Server** — see [`design-knowledge-mcp.md`](design-knowledge-mcp.md) (confirmed 2026-07-01)
 
 ## Acceptance criteria
 
