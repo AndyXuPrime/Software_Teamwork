@@ -953,3 +953,43 @@ Fixed the latest PR #350 review findings by returning dependency errors when sec
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: Issue 305 local seed baseline
+
+**Date**: 2026-07-01
+**Task**: Issue 305 local seed baseline
+**Branch**: `Special/chore/local-seed-baseline`
+
+### Summary
+
+Added deterministic local integration seed data for Auth, Knowledge, Document, QA, kept AI Gateway placeholder seed coverage, documented admin login and cleanup commands, added seed contract verification, and validated Compose seed/idempotency plus Gateway admin login smoke.
+
+### Main Changes
+
+- Added deterministic root local seed fixtures across Auth, Knowledge, Document, and QA with stable IDs and a local admin demo account.
+- Added local demo cleanup SQL, a seed contract verifier, and regression tests for seed idempotency and dependency expectations.
+- Documented seed execution, resource IDs, admin login/permissions checks, cleanup/reset, password hash source, and rotation guidance.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0290afb` | chore(deploy): add local seed baseline |
+
+### Testing
+
+- [OK] `python -m unittest scripts.tests.test_local_seed_contract scripts.tests.test_check_docker_policy scripts.tests.test_verify_gateway_active_api` (15 tests)
+- [OK] `python scripts/verify_local_seed_contract.py`
+- [OK] `python scripts/check_docker_policy.py`
+- [OK] `python scripts/verify_gateway_active_api.py`
+- [OK] Root Compose config checks with and without the `ai` profile
+- [OK] Isolated Compose seed/idempotency/cleanup, AI seed, and Gateway admin login smoke
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
