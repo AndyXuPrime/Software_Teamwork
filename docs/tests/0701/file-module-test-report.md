@@ -8,7 +8,8 @@
 | 项目 | 记录 |
 | --- | --- |
 | Branch | `Special/docs/sync-trellis-spec-docs` |
-| Tested commit / PR head | 本报告随 `4b6664777cd5` 归档；后续 `22ce0bdd3925` 仅修正文档空白。PR review 首轮基准为 `300e02138125`，rebase 后等价提交为 `22ce0bdd3925`。 |
+| 原始测试执行 / 归档提交 | 测试执行结果随 `4b6664777cd5` 归档；后续 `22ce0bdd3925` 仅修正文档空白。PR #357 首轮 review 看到的 head 为 `300e02138125`，rebase 后等价提交为 `22ce0bdd3925`。 |
+| 元数据修复 PR | PR #361 只补充测试基准、环境摘要和归档元数据；当前 PR head 以 GitHub PR 页面为准，不作为原始测试执行依据。 |
 | Base branch | `develop` |
 | 运行方式 | `services/file` 本地 Go 测试/构建，Docker Compose 提供 PostgreSQL、MinIO、`minio-init` 和 `migrate-file`。 |
 | 基础依赖 | `postgres:16-alpine`、MinIO server/mc、本地 bucket `software-teamwork-local`，配置来源 `deploy/docker-compose.yml` + `deploy/.env.example`。 |
