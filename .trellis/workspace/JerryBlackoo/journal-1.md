@@ -156,3 +156,36 @@ Aligned QA attachment upload, filtering, public DTOs, atomic quotas, cleanup com
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Fix attachment size limit drift
+
+**Date**: 2026-07-01
+**Task**: Fix attachment size limit drift
+**Branch**: `JerryTeam/feat/qa-session-attachments`
+
+### Summary
+
+Aligned QA attachment configuration with the public 20 MiB contract and made File Service content reads use the validated limit with explicit overflow errors; added config and HTTP client regression tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c6dbe1d92af55dca3be7dfa600670248dc5d8364` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
