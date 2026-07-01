@@ -1,0 +1,44 @@
+# Project compose template (PostgreSQL knowledge_system, MinIO, Elasticsearch).
+# Rendered by docker/entrypoint.sh into conf/service_conf.yaml.
+
+ragflow:
+  host: ${RAGFLOW_HOST:-0.0.0.0}
+  http_port: 9380
+
+postgres:
+  name: '${POSTGRES_DBNAME:-knowledge_system}'
+  user: '${POSTGRES_USER:-knowledge_app}'
+  password: '${POSTGRES_PASSWORD:-knowledge_app_dev}'
+  host: '${POSTGRES_HOST:-postgres}'
+  port: ${POSTGRES_PORT:-5432}
+  max_connections: 100
+  stale_timeout: 30
+
+minio:
+  user: '${MINIO_USER:-minio_local_demo}'
+  password: '${MINIO_PASSWORD:-minio-local-demo-password}'
+  host: '${MINIO_HOST:-minio}:9000'
+  bucket: '${MINIO_BUCKET:-software-teamwork-knowledge}'
+  prefix_path: '${MINIO_PREFIX_PATH:-ragflow}'
+
+es:
+  hosts: 'http://${ES_HOST:-elasticsearch}:9200'
+  username: '${ES_USER:-}'
+  password: '${ELASTIC_PASSWORD:-}'
+
+redis:
+  db: 1
+  username: '${REDIS_USERNAME:-}'
+  password: '${REDIS_PASSWORD:-}'
+  host: '${REDIS_HOST:-redis}:6379'
+
+task_executor:
+  message_queue_type: redis
+
+user_default_llm:
+  default_models:
+    embedding_model:
+      name: bge-m3
+      factory: Builtin
+      api_key: local
+      base_url: http://127.0.0.1:6380

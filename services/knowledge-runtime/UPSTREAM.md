@@ -29,7 +29,7 @@ directory deliberately:
 tmpdir=$(mktemp -d)
 git clone --depth 1 https://github.com/infiniflow/ragflow.git "$tmpdir/ragflow"
 rm -rf "$tmpdir/ragflow/.git"
-rsync -a --delete "$tmpdir/ragflow/" services/knowledge/vendor/ragflow-runtime/
+rsync -a --delete "$tmpdir/ragflow/" services/knowledge-runtime/
 rm -rf "$tmpdir"
 ```
 

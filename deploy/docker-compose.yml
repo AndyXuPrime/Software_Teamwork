@@ -94,6 +94,78 @@ services:
       timeout: 5s
       retries: 30
 
+  knowledge-runtime-api:
+    profiles: ["knowledge-v2"]
+    build:
+      context: ../services/knowledge-runtime
+      dockerfile: Dockerfile
+    command: ["./entrypoint.sh", "--disable-taskexecutor"]
+    environment:
+      DB_TYPE: postgres
+      DOC_ENGINE: ${DOC_ENGINE:-elasticsearch}
+      POSTGRES_DBNAME: knowledge_system
+      POSTGRES_USER: knowledge_app
+      POSTGRES_PASSWORD: knowledge_app_dev
+      POSTGRES_HOST: postgres
+      MINIO_USER: ${MINIO_ROOT_USER:-minio_local_demo}
+      MINIO_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio-local-demo-password}
+      MINIO_HOST: minio
+      MINIO_BUCKET: software-teamwork-knowledge
+      ES_HOST: elasticsearch
+      REDIS_HOST: redis
+    ports:
+      - "${KNOWLEDGE_RUNTIME_API_PORT:-9380}:9380"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      knowledge-minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9380/api/v1/system/healthz >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 120s
+
+  knowledge-runtime-worker:
+    profiles: ["knowledge-v2"]
+    build:
+      context: ../services/knowledge-runtime
+      dockerfile: Dockerfile
+    command: ["./entrypoint.sh", "--disable-webserver", "--workers=${KNOWLEDGE_RUNTIME_WORKERS:-2}"]
+    environment:
+      DB_TYPE: postgres
+      DOC_ENGINE: ${DOC_ENGINE:-elasticsearch}
+      POSTGRES_DBNAME: knowledge_system
+      POSTGRES_USER: knowledge_app
+      POSTGRES_PASSWORD: knowledge_app_dev
+      POSTGRES_HOST: postgres
+      MINIO_USER: ${MINIO_ROOT_USER:-minio_local_demo}
+      MINIO_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio-local-demo-password}
+      MINIO_HOST: minio
+      MINIO_BUCKET: software-teamwork-knowledge
+      ES_HOST: elasticsearch
+      REDIS_HOST: redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      knowledge-minio-init:
+        condition: service_completed_successfully
+      knowledge-runtime-api:
+        condition: service_healthy
+
   migrate-auth:
     build:
       context: .
@@ -270,6 +342,9 @@ services:
         condition: service_completed_successfully
       seed-local:
         condition: service_completed_successfully
+      knowledge-runtime-api:
+        condition: service_healthy
+        required: false
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8083/readyz"]
       interval: 5s

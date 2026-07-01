@@ -1,0 +1,3 @@
+# API-only container command overlay.
+# Build uses the root Dockerfile; this documents the split entrypoint.
+./entrypoint.sh --disable-taskexecutor

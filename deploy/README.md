@@ -133,12 +133,96 @@ Seeded local resources:
 | QA | conversation `33333333-3333-4333-8333-333333333301`, user message `33333333-3333-4333-8333-333333333401`, assistant message `33333333-3333-4333-8333-333333333402` |
 | AI Gateway | optional placeholder profiles `default-chat`, `default-embedding`, and `default-rerank` |
 
+`001-local-demo-seed.sql` 里的本地管理员密码 hash 是
+`LOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345` 对应的 `argon2id` PHC 字符串，
+参数为 `m=65536`、`t=3`、`p=2`、16-byte salt、32-byte key。轮换本地密码时，
+需要一起更新 `deploy/.env.example`、`001-local-demo-seed.sql` 和本文档，然后重新
+运行 `seed-local`。不要把 demo 密码或 hash 用在共享环境或长期环境。
+
 ## 排障入口
 
 - Docker 拉取慢、registry rewrite、daemon mirror、proxy 和 WSL 内存：
   [docs/runbooks/docker-image-pull-environment.md](../docs/runbooks/docker-image-pull-environment.md)
 - 本地联调顺序、端口和故障判断：
   [docs/runbooks/local-integration.md](../docs/runbooks/local-integration.md)
+
+后端启动后，可以通过 Gateway 确认 seed 管理员和权限：
+
+```bash
+curl --noproxy '*' -fsS http://localhost:8080/api/v1/sessions \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"LocalDemoAdmin#12345"}'
+```
+
+响应应包含 `admin` 角色，以及 `admin:model-profile:write`、
+`admin:parser-config:write`、`qa:settings:read` 等本地演示权限。拿到 token 后，
+可以请求 `/api/v1/admin/parser-configs` 或 `/api/v1/admin/model-profiles` 确认
+Gateway 管理路由鉴权正常。
+
+只清理本地 demo seed 数据：
+
+```bash
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env run --rm seed-local \
+  sh -c "psql -v ON_ERROR_STOP=1 -h postgres -U postgres -d postgres -f /seeds/099-local-demo-cleanup.sql"
+```
+
+完整重置本地 infra 数据：
+
+```bash
+./scripts/local/stop-backend.sh
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env down -v
+./scripts/local/dev-up.sh
+```
+
+AI Gateway 的本地 placeholder profile 只用于 readiness 检查，里面不是可用的真实
+provider key。真正调用模型前，需要运维或开发者配置真实 provider credential。默认
+OpenAI-compatible 地址是 `http://host.docker.internal:11434/v1`。
+
+## Request ID 排障
+
+所有服务都会返回或透传 `X-Request-Id`。
+
+```bash
+rid=req_local_debug_001
+curl --noproxy '*' -fsS http://localhost:8080/readyz -H "X-Request-Id: ${rid}"
+rg "${rid}" .local/logs
+```
+
+前端问题先记录响应里的 `requestId` 或 `X-Request-Id`，再查 Gateway 日志。如果
+Gateway 报依赖错误，用同一个 id 继续查 owner service 日志。
+
+## Knowledge 集成确认
+
+Knowledge 主路径通过 Gateway 暴露：
+
+```bash
+curl --noproxy '*' -fsS http://localhost:8080/api/v1/knowledge-bases \
+  -H "Authorization: Bearer ${token}" \
+  -H "X-Request-Id: req_knowledge_local_001"
+curl --noproxy '*' -fsS http://localhost:8080/api/v1/knowledge-bases/kb_local_demo/documents \
+  -H "Authorization: Bearer ${token}"
+curl --noproxy '*' -fsS http://localhost:8080/api/v1/documents/<documentId>/chunks \
+  -H "Authorization: Bearer ${token}"
+curl --noproxy '*' -fsS http://localhost:8080/api/v1/knowledge-queries \
+  -H "Authorization: Bearer ${token}" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"local demo","topK":3}'
+```
+
+Knowledge 路由依赖 `VENDOR_RUNTIME_URL` 指向 RAGFlow runtime。runtime 负责 PDF
+解析、切块、embedding、索引和检索；不要再启动 `services/parser`。
+
+如果用 Compose profile 运行 runtime API 和 worker：
+
+```bash
+cd deploy
+VENDOR_RUNTIME_URL=http://knowledge-runtime-api:9380 \
+  docker compose --env-file .env --profile knowledge-v2 up -d \
+  elasticsearch knowledge-minio-init knowledge-runtime-api knowledge-runtime-worker
+```
+
+更多 runtime 说明见 [services/knowledge/runtime/README.md](../services/knowledge/runtime/README.md)
+和 [services/knowledge-runtime/README.md](../services/knowledge-runtime/README.md)。
 
 ## Common Dependency Failures
 

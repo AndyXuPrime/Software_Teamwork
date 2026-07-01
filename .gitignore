@@ -136,5 +136,5 @@ reports/rendered_pages/
 *.orig
 
 # Vendored upstream source snapshots.
-!services/knowledge/vendor/ragflow-runtime/bin/
-!services/knowledge/vendor/ragflow-runtime/bin/.gitkeep
+!services/knowledge-runtime/bin/
+!services/knowledge-runtime/bin/.gitkeep

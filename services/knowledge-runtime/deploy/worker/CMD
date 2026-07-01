@@ -1,0 +1,3 @@
+# Worker-only container command overlay.
+# Scale with KNOWLEDGE_RUNTIME_WORKERS (compose) or --workers=N.
+./entrypoint.sh --disable-webserver --workers=${KNOWLEDGE_RUNTIME_WORKERS:-2}
