@@ -38,7 +38,10 @@ KNOWLEDGE_RUNTIME_MODE=adapter VENDOR_RUNTIME_URL=http://host.docker.internal:93
 
 Default compose keeps the legacy Knowledge server. Adapter mode is opt-in via
 `KNOWLEDGE_RUNTIME_MODE=adapter` once the vendor runtime is reachable at
-`VENDOR_RUNTIME_URL`.
+`VENDOR_RUNTIME_URL`. In adapter mode the Knowledge container does **not** call
+`services/parser`; document chunking and embedding run in the vendor task executor
+(deepdoc). The compose `parser` service and `depends_on: parser` remain for
+legacy mode only.
 
 ## Environment
 
@@ -46,13 +49,26 @@ Default compose keeps the legacy Knowledge server. Adapter mode is opt-in via
 | --- | --- | --- |
 | `KNOWLEDGE_RUNTIME_MODE` | `legacy` | `adapter` runs `cmd/adapter` |
 | `VENDOR_RUNTIME_URL` | `http://127.0.0.1:9380` | Vendor HTTP base URL |
+| `KNOWLEDGE_AUTO_START_INGESTION` | `true` | After upload, call vendor `/documents/parse` (deepdoc pipeline) |
 | `DATABASE_URL` | optional | Legacy goose PostgreSQL (`postgres://...`); adapter parser-config routes and Go `DatabaseConfig` |
 | `DOC_ENGINE` | `elasticsearch` | Vendor doc engine selector |
 | `DB_TYPE` | `mysql` (legacy vendor default) / `postgres` (Knowledge replacement) | Metadata backend selector |
 
+## Ingestion (Phase 4)
+
+Adapter upload flow:
+
+1. `POST /internal/v1/knowledge-bases/{id}/documents` → vendor
+   `POST /api/v1/datasets/{id}/documents?type=local`
+2. When `KNOWLEDGE_AUTO_START_INGESTION=true` (default), adapter immediately calls
+   vendor `POST /api/v1/datasets/{id}/documents/parse` with the new document id.
+3. Vendor task executor runs deepdoc chunking/embedding; document `run` progresses
+   `UNSTART` → `RUNNING` → `DONE`.
+
+Contract tests (`internal/adapter/contract_test.go`) use a fake vendor HTTP server.
+Live vendor tests use `-tags=integration` with `KNOWLEDGE_VENDOR_INTEGRATION_URL` and
+`KNOWLEDGE_INTEGRATION_USER_ID`.
+
 ## Next phases
 
-1. Phase 2 — PostgreSQL metadata port + schema migration
-2. Phase 3 — Implement `/internal/v1/*` contract routes in adapter
-3. Phase 4 — deepdoc ingestion pipeline, drop parser dependency
-4. Phase 5 — Remove legacy Go implementation
+1. Phase 5 — Remove legacy Go implementation

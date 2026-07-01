@@ -20,6 +20,30 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadAutoStartIngestionDefault(t *testing.T) {
+	t.Setenv("KNOWLEDGE_AUTO_START_INGESTION", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.AutoStartIngestion {
+		t.Fatal("AutoStartIngestion should default to true")
+	}
+}
+
+func TestLoadAutoStartIngestionDisabled(t *testing.T) {
+	t.Setenv("KNOWLEDGE_AUTO_START_INGESTION", "false")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AutoStartIngestion {
+		t.Fatal("AutoStartIngestion should be false")
+	}
+}
+
 func TestLoadCustomVendorURL(t *testing.T) {
 	t.Setenv("VENDOR_RUNTIME_URL", "http://knowledge-vendor:9380/")
 

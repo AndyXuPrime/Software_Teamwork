@@ -195,6 +195,25 @@ func (c *Client) UploadDocument(ctx context.Context, userID, datasetID, filename
 	return decodeUploadDocument(payload.Data)
 }
 
+// StartDocumentParse queues deepdoc ingestion for uploaded documents in a dataset.
+// Both document_ids (Python API) and documents (Go API) are sent for compatibility.
+func (c *Client) StartDocumentParse(ctx context.Context, userID, datasetID string, documentIDs []string) error {
+	if len(documentIDs) == 0 {
+		return fmt.Errorf("document ids are required")
+	}
+	body, err := json.Marshal(map[string]any{
+		"dataset_id":    datasetID,
+		"document_ids":  documentIDs,
+		"documents":     documentIDs,
+	})
+	if err != nil {
+		return err
+	}
+	path := fmt.Sprintf("/api/v1/datasets/%s/documents/parse", url.PathEscape(datasetID))
+	var payload envelope
+	return c.doJSON(ctx, userID, http.MethodPost, path, body, &payload)
+}
+
 func (c *Client) GetDocument(ctx context.Context, userID, documentID string) (map[string]interface{}, error) {
 	path := "/api/v1/documents/" + url.PathEscape(documentID)
 	req, err := c.newRequest(ctx, userID, http.MethodGet, path, nil)

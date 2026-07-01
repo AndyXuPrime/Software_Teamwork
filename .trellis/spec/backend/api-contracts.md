@@ -1035,6 +1035,7 @@ Vendor runtime mapping (adapter → RAGFlow):
 ```text
 knowledge-bases -> /api/v1/datasets
 documents upload  -> /api/v1/datasets/{id}/documents?type=local
+documents parse   -> /api/v1/datasets/{id}/documents/parse  # auto after upload when KNOWLEDGE_AUTO_START_INGESTION=true
 documents CRUD    -> /api/v1/documents/{id}
 chunks            -> /api/v1/datasets/{kb}/documents/{doc}/chunks
 content           -> /api/v1/datasets/{kb}/documents/{doc} (binary)
@@ -1052,6 +1053,12 @@ knowledge-queries -> /api/v1/datasets/search
   `DATABASE_URL` is configured; without it they return `502 dependency_error`.
 - Document `PATCH` with `tags` maps to vendor dataset-document metadata updates;
   other fields remain validation errors until explicitly supported.
+- After upload, adapter mode queues vendor deepdoc ingestion via
+  `POST /api/v1/datasets/{id}/documents/parse` when
+  `KNOWLEDGE_AUTO_START_INGESTION` is true (default). Adapter mode does not call
+  `services/parser` or `PARSER_SERVICE_BASE_URL`.
+- Vendor document `run` maps to Gateway status: `RUNNING` → `parsing`, `DONE` →
+  `ready`, `FAIL`/`CANCEL` → `parse_failed`.
 - `GET /documents/{documentId}/content` streams bytes without JSON envelope.
 
 ### 4. Validation & Error Matrix
