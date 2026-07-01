@@ -475,6 +475,9 @@ components:
         knowledgeBaseIds:
           type: array
           items: { type: string }
+        documentIds:
+          type: array
+          items: { type: string }
         topK: { type: integer, minimum: 1, maximum: 100, default: 10 }
         scoreThreshold: { type: number, minimum: 0, default: 0.35 }
         tags:

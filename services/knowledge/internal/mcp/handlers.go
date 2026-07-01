@@ -37,16 +37,14 @@ func (h *toolHandlers) effectiveCaller() CallerContext {
 	return caller
 }
 
-func (h *toolHandlers) effectiveWriteCaller() CallerContext {
+func (h *toolHandlers) requireWriteCaller() (CallerContext, error) {
 	caller := h.effectiveCaller()
-	if !strings.Contains(caller.Permissions, service.PermissionKnowledgeWrite) {
-		if caller.Permissions == "" || caller.Permissions == service.PermissionKnowledgeRead {
-			caller.Permissions = service.PermissionKnowledgeWrite
-		} else if !strings.Contains(caller.Permissions, service.PermissionKnowledgeWrite) {
-			caller.Permissions = caller.Permissions + "," + service.PermissionKnowledgeWrite
+	for _, permission := range strings.Split(caller.Permissions, ",") {
+		if strings.TrimSpace(permission) == service.PermissionKnowledgeWrite {
+			return caller, nil
 		}
 	}
-	return caller
+	return CallerContext{}, fmt.Errorf("knowledge:write permission is required")
 }
 
 func (h *toolHandlers) chatRequestContext(caller CallerContext) aigateway.RequestContext {
@@ -306,7 +304,11 @@ func (h *toolHandlers) createKnowledgeBase(ctx context.Context, _ *sdkmcp.CallTo
 	if len(input.RetrievalStrategy) > 0 {
 		payload["retrievalStrategy"] = input.RetrievalStrategy
 	}
-	return h.adapterCreate(ctx, h.effectiveWriteCaller(), "/internal/v1/knowledge-bases", payload)
+	caller, err := h.requireWriteCaller()
+	if err != nil {
+		return nil, nil, err
+	}
+	return h.adapterCreate(ctx, caller, "/internal/v1/knowledge-bases", payload)
 }
 
 func (h *toolHandlers) updateKnowledgeBase(ctx context.Context, _ *sdkmcp.CallToolRequest, input updateKnowledgeBaseInput) (*sdkmcp.CallToolResult, map[string]any, error) {
@@ -333,7 +335,11 @@ func (h *toolHandlers) updateKnowledgeBase(ctx context.Context, _ *sdkmcp.CallTo
 	if len(payload) == 0 {
 		return nil, nil, fmt.Errorf("at least one field must be provided for update")
 	}
-	return h.adapterUpdate(ctx, h.effectiveWriteCaller(), "/internal/v1/knowledge-bases/"+url.PathEscape(kbID), payload)
+	caller, err := h.requireWriteCaller()
+	if err != nil {
+		return nil, nil, err
+	}
+	return h.adapterUpdate(ctx, caller, "/internal/v1/knowledge-bases/"+url.PathEscape(kbID), payload)
 }
 
 func (h *toolHandlers) deleteKnowledgeBase(ctx context.Context, _ *sdkmcp.CallToolRequest, input deleteKnowledgeBaseInput) (*sdkmcp.CallToolResult, deleteResourceOutput, error) {
@@ -341,7 +347,11 @@ func (h *toolHandlers) deleteKnowledgeBase(ctx context.Context, _ *sdkmcp.CallTo
 	if kbID == "" {
 		return nil, deleteResourceOutput{}, fmt.Errorf("knowledgeBaseId is required")
 	}
-	if err := h.adapterDelete(ctx, h.effectiveWriteCaller(), "/internal/v1/knowledge-bases/"+url.PathEscape(kbID)); err != nil {
+	caller, err := h.requireWriteCaller()
+	if err != nil {
+		return nil, deleteResourceOutput{}, err
+	}
+	if err := h.adapterDelete(ctx, caller, "/internal/v1/knowledge-bases/"+url.PathEscape(kbID)); err != nil {
 		return nil, deleteResourceOutput{}, err
 	}
 	return nil, deleteResourceOutput{Deleted: true, ID: kbID}, nil
@@ -412,7 +422,12 @@ func (h *toolHandlers) createDocument(ctx context.Context, _ *sdkmcp.CallToolReq
 		file.ContentType = strings.TrimSpace(*input.ContentType)
 	}
 
-	status, respBody, _, err := h.bridge.DoMultipart(ctx, h.effectiveWriteCaller(), http.MethodPost,
+	caller, err := h.requireWriteCaller()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	status, respBody, _, err := h.bridge.DoMultipart(ctx, caller, http.MethodPost,
 		"/internal/v1/knowledge-bases/"+url.PathEscape(kbID)+"/documents", fields, []MultipartFile{file})
 	if err != nil {
 		return nil, nil, err
@@ -439,7 +454,11 @@ func (h *toolHandlers) updateDocument(ctx context.Context, _ *sdkmcp.CallToolReq
 	if input.Tags == nil {
 		return nil, nil, fmt.Errorf("tags is required")
 	}
-	return h.adapterUpdate(ctx, h.effectiveWriteCaller(), "/internal/v1/documents/"+url.PathEscape(docID), map[string]any{
+	caller, err := h.requireWriteCaller()
+	if err != nil {
+		return nil, nil, err
+	}
+	return h.adapterUpdate(ctx, caller, "/internal/v1/documents/"+url.PathEscape(docID), map[string]any{
 		"tags": input.Tags,
 	})
 }
@@ -449,7 +468,11 @@ func (h *toolHandlers) deleteDocument(ctx context.Context, _ *sdkmcp.CallToolReq
 	if docID == "" {
 		return nil, deleteResourceOutput{}, fmt.Errorf("documentId is required")
 	}
-	if err := h.adapterDelete(ctx, h.effectiveWriteCaller(), "/internal/v1/documents/"+url.PathEscape(docID)); err != nil {
+	caller, err := h.requireWriteCaller()
+	if err != nil {
+		return nil, deleteResourceOutput{}, err
+	}
+	if err := h.adapterDelete(ctx, caller, "/internal/v1/documents/"+url.PathEscape(docID)); err != nil {
 		return nil, deleteResourceOutput{}, err
 	}
 	return nil, deleteResourceOutput{Deleted: true, ID: docID}, nil

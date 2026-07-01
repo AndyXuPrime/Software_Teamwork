@@ -15,10 +15,13 @@ import (
 )
 
 type fakeVendorState struct {
-	mu        sync.Mutex
-	datasets  map[string]map[string]any
-	documents map[string]map[string]any
+	mu         sync.Mutex
+	datasets   map[string]map[string]any
+	documents  map[string]map[string]any
 	parseCalls []string
+	deleteCalls []string
+	failParse  bool
+	searchBody []byte
 }
 
 func newFakeVendorState() *fakeVendorState {
@@ -59,6 +62,10 @@ func startFakeVendor(t *testing.T, state *fakeVendorState) *httptest.Server {
 			writeVendorJSON(w, http.StatusOK, map[string]any{"code": 0, "data": item})
 			return
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/documents/parse"):
+			if state.failParse {
+				writeVendorJSON(w, http.StatusBadRequest, map[string]any{"code": 100, "message": "parse failed"})
+				return
+			}
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			ids := documentIDsFromParseBody(body)
@@ -92,10 +99,18 @@ func startFakeVendor(t *testing.T, state *fakeVendorState) *httptest.Server {
 			writeVendorJSON(w, http.StatusOK, map[string]any{"code": 0, "data": doc})
 			return
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/datasets/search":
+			raw, _ := io.ReadAll(r.Body)
+			state.searchBody = append([]byte(nil), raw...)
 			writeVendorJSON(w, http.StatusOK, map[string]any{
 				"code": 0,
 				"data": map[string]any{"total": 0, "chunks": []any{}},
 			})
+			return
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v1/documents/"):
+			docID := strings.TrimPrefix(r.URL.Path, "/api/v1/documents/")
+			state.deleteCalls = append(state.deleteCalls, docID)
+			delete(state.documents, docID)
+			w.WriteHeader(http.StatusOK)
 			return
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -219,5 +234,82 @@ func TestAdapterDocumentUploadSkipsIngestionWhenDisabled(t *testing.T) {
 	}
 	if len(state.parseCalls) != 0 {
 		t.Fatalf("parseCalls=%v want none", state.parseCalls)
+	}
+}
+
+func TestAdapterKnowledgeQueryForwardsDocumentIDs(t *testing.T) {
+	state := newFakeVendorState()
+	vendor := startFakeVendor(t, state)
+	defer vendor.Close()
+
+	server := NewServer(adapterconfig.Config{
+		ServiceVersion:   "test",
+		VendorRuntimeURL: vendor.URL,
+		VendorRerankID:   "rerank-model",
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-queries", strings.NewReader(`{"query":"maintenance","knowledgeBaseIds":["kb_fake_1"],"documentIds":["doc_1"],"tags":["锅炉"],"metadataFilter":{"专业":"锅炉"},"rerank":true,"rerankTopN":5,"topK":8,"scoreThreshold":0.4}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-User-Permissions", "knowledge:read")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("query status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if len(state.searchBody) == 0 {
+		t.Fatal("vendor search body missing")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(state.searchBody, &payload); err != nil {
+		t.Fatalf("decode search body: %v", err)
+	}
+	docIDs, _ := payload["doc_ids"].([]any)
+	if len(docIDs) != 1 || docIDs[0] != "doc_1" {
+		t.Fatalf("doc_ids=%v", payload["doc_ids"])
+	}
+	if payload["rerank_id"] != "rerank-model" {
+		t.Fatalf("rerank_id=%v", payload["rerank_id"])
+	}
+}
+
+func TestAdapterDocumentUploadRollsBackWhenParseFails(t *testing.T) {
+	state := newFakeVendorState()
+	state.failParse = true
+	vendor := startFakeVendor(t, state)
+	defer vendor.Close()
+
+	server := NewServer(adapterconfig.Config{
+		ServiceVersion:     "test",
+		VendorRuntimeURL:   vendor.URL,
+		AutoStartIngestion: true,
+	}, nil)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "notes.txt")
+	_, _ = io.WriteString(part, "hello")
+	_ = writer.Close()
+
+	uploadReq := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases/kb_fake_1/documents", body)
+	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+	uploadReq.Header.Set("X-User-Id", "usr_test")
+	uploadReq.Header.Set("X-User-Permissions", "knowledge:write")
+	uploadRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code == http.StatusCreated {
+		t.Fatalf("expected upload failure, got status=%d body=%s", uploadRec.Code, uploadRec.Body.String())
+	}
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if len(state.deleteCalls) != 1 || state.deleteCalls[0] != "doc_fake_1" {
+		t.Fatalf("deleteCalls=%v", state.deleteCalls)
+	}
+	if _, ok := state.documents["doc_fake_1"]; ok {
+		t.Fatal("document should be removed after parse failure")
 	}
 }

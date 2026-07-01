@@ -51,12 +51,17 @@ type updateDocumentRequest struct {
 type knowledgeQueryRequest struct {
 	Query            string            `json:"query"`
 	KnowledgeBaseIDs []string          `json:"knowledgeBaseIds,omitempty"`
+	DocumentIDs      []string          `json:"documentIds,omitempty"`
 	TopK             int               `json:"topK,omitempty"`
 	ScoreThreshold   *float64          `json:"scoreThreshold,omitempty"`
 	Tags             []string          `json:"tags,omitempty"`
 	MetadataFilter   map[string]string `json:"metadataFilter,omitempty"`
 	Rerank           bool              `json:"rerank,omitempty"`
 	RerankTopN       *int              `json:"rerankTopN,omitempty"`
+}
+
+type retrievalBuildOptions struct {
+	VendorRerankID string
 }
 
 type knowledgeQuerySummary struct {
@@ -288,7 +293,7 @@ func knowledgeQueryFromVendor(queryID, query string, data *vendorclient.Retrieva
 			EmbeddingProvider:  "vendor",
 			EmbeddingModel:     "vendor-default",
 			EmbeddingDimension: 0,
-			QdrantCollection:   "vendor",
+			QdrantCollection:   "elasticsearch",
 			SearchTopK:         topK,
 			ScoreThreshold:     scoreThreshold,
 			HitCount:           hitCount,
@@ -396,7 +401,7 @@ func tagsFromVendor(raw map[string]interface{}) []string {
 	}
 }
 
-func buildRetrievalBody(req knowledgeQueryRequest) ([]byte, error) {
+func buildRetrievalBody(req knowledgeQueryRequest, opts retrievalBuildOptions) ([]byte, error) {
 	query := strings.TrimSpace(req.Query)
 	if query == "" {
 		return nil, service.ValidationError("request validation failed", map[string]string{"query": "is required"})
@@ -416,14 +421,60 @@ func buildRetrievalBody(req knowledgeQueryRequest) ([]byte, error) {
 	if req.ScoreThreshold != nil {
 		payload["similarity_threshold"] = *req.ScoreThreshold
 	}
-	if len(req.MetadataFilter) > 0 {
-		filter := make(map[string]any, len(req.MetadataFilter))
-		for key, value := range req.MetadataFilter {
-			filter[key] = value
-		}
+	if len(req.DocumentIDs) > 0 {
+		payload["doc_ids"] = req.DocumentIDs
+	}
+	if filter := vendorMetaDataFilter(req); filter != nil {
 		payload["meta_data_filter"] = filter
 	}
+	if req.Rerank {
+		if rerankID := strings.TrimSpace(opts.VendorRerankID); rerankID != "" {
+			payload["rerank_id"] = rerankID
+		}
+		if req.RerankTopN != nil && *req.RerankTopN > 0 {
+			size := *req.RerankTopN
+			if size > topK {
+				size = topK
+			}
+			payload["size"] = size
+		}
+	}
 	return json.Marshal(payload)
+}
+
+func vendorMetaDataFilter(req knowledgeQueryRequest) map[string]any {
+	conditions := make([]map[string]any, 0, len(req.MetadataFilter)+len(req.Tags))
+	for key, value := range req.MetadataFilter {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		conditions = append(conditions, map[string]any{
+			"key":   key,
+			"op":    "=",
+			"value": value,
+		})
+	}
+	for _, tag := range req.Tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		conditions = append(conditions, map[string]any{
+			"key":   "tags",
+			"op":    "contains",
+			"value": tag,
+		})
+	}
+	if len(conditions) == 0 {
+		return nil
+	}
+	return map[string]any{
+		"method": "manual",
+		"manual": conditions,
+		"logic":  "and",
+	}
 }
 
 func mapDocumentStatus(raw map[string]interface{}) service.DocumentStatus {
