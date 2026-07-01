@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"strings"
@@ -15,6 +16,7 @@ const (
 	AttachmentStatusParsing  = "parsing"
 	AttachmentStatusReady    = "ready"
 	AttachmentStatusFailed   = "failed"
+	AttachmentStatusPurged   = "purged"
 )
 
 const maxSessionAttachmentBytes = int64(100 << 20)
@@ -36,13 +38,13 @@ type SessionAttachment struct {
 	ContentType  string     `json:"contentType"`
 	SizeBytes    int64      `json:"sizeBytes"`
 	Status       string     `json:"status"`
-	ErrorSummary string     `json:"errorSummary,omitempty"`
-	PageCount    int        `json:"pageCount"`
-	ChunkCount   int        `json:"chunkCount"`
+	ErrorSummary string     `json:"-"`
+	PageCount    int        `json:"-"`
+	ChunkCount   int        `json:"-"`
 	ExpiresAt    time.Time  `json:"expiresAt"`
-	DeletedAt    *time.Time `json:"deletedAt,omitempty"`
+	DeletedAt    *time.Time `json:"-"`
 	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
+	UpdatedAt    time.Time  `json:"-"`
 }
 
 type SessionAttachmentChunk struct {
@@ -72,6 +74,7 @@ type AttachmentUploadResult struct {
 type AttachmentListOptions struct {
 	Page     int
 	PageSize int
+	Status   string
 }
 
 type ParsedAttachmentChunk struct {
@@ -101,7 +104,7 @@ type SessionAttachmentSearcher interface {
 
 type AttachmentRepository interface {
 	GetConversation(context.Context, string, string) (Conversation, error)
-	CreateAttachment(context.Context, SessionAttachment) (SessionAttachment, error)
+	CreateAttachment(context.Context, SessionAttachment, int, int64) (SessionAttachment, error)
 	ListAttachments(context.Context, string, string, AttachmentListOptions) (Page[SessionAttachment], error)
 	GetAttachment(context.Context, string, string, string) (SessionAttachment, error)
 	SoftDeleteAttachment(context.Context, string, string, string, time.Time) error
@@ -175,34 +178,28 @@ func (s *AttachmentService) Upload(ctx context.Context, userID, sessionID string
 	if _, err := s.repository.GetConversation(ctx, userID, sessionID); err != nil {
 		return AttachmentUploadResult{}, err
 	}
-	page, err := s.repository.ListAttachments(ctx, userID, sessionID, AttachmentListOptions{Page: 1, PageSize: s.maxPerSession + 1})
-	if err != nil {
-		return AttachmentUploadResult{}, err
-	}
-	if page.Total >= s.maxPerSession {
-		return AttachmentUploadResult{}, NewError(CodeConflict, "session attachment limit reached", nil)
-	}
-	var currentBytes int64
-	for _, attachment := range page.Items {
-		currentBytes += attachment.SizeBytes
-	}
-	if currentBytes+input.SizeBytes > maxSessionAttachmentBytes {
-		return AttachmentUploadResult{}, NewError(CodeConflict, "session attachment size quota exceeded", nil)
-	}
 	fileRef, err := s.fileClient.Upload(ctx, filename, contentType, input.SizeBytes, input.Body)
 	if err != nil {
 		return AttachmentUploadResult{}, NewError(CodeDependency, "file upload failed", err)
 	}
 	now := s.now().UTC()
 	attachment := SessionAttachment{ID: newID("att"), SessionID: sessionID, OwnerUserID: userID, FileRef: fileRef, Filename: filename, ContentType: contentType, SizeBytes: input.SizeBytes, Status: AttachmentStatusUploaded, ExpiresAt: now.Add(s.ttl), CreatedAt: now, UpdatedAt: now}
-	created, err := s.repository.CreateAttachment(ctx, attachment)
+	created, err := s.repository.CreateAttachment(ctx, attachment, s.maxPerSession, maxSessionAttachmentBytes)
 	if err != nil {
+		if cleanupErr := s.fileClient.Delete(context.WithoutCancel(ctx), fileRef); cleanupErr != nil {
+			return AttachmentUploadResult{}, errors.Join(err, fmt.Errorf("delete uploaded file after metadata failure: %w", cleanupErr))
+		}
 		return AttachmentUploadResult{}, err
 	}
 	return AttachmentUploadResult{Attachment: created}, nil
 }
 
 func (s *AttachmentService) List(ctx context.Context, userID, sessionID string, opts AttachmentListOptions) (Page[SessionAttachment], error) {
+	status := strings.TrimSpace(opts.Status)
+	if status != "" && !isAttachmentStatus(status) {
+		return Page[SessionAttachment]{}, ValidationError(map[string]string{"status": "must be uploaded, parsing, ready, failed, or purged"})
+	}
+	opts.Status = status
 	if opts.Page <= 0 {
 		opts.Page = 1
 	}
@@ -213,6 +210,15 @@ func (s *AttachmentService) List(ctx context.Context, userID, sessionID string, 
 		opts.PageSize = 100
 	}
 	return s.repository.ListAttachments(ctx, userID, sessionID, opts)
+}
+
+func isAttachmentStatus(status string) bool {
+	switch status {
+	case AttachmentStatusUploaded, AttachmentStatusParsing, AttachmentStatusReady, AttachmentStatusFailed, AttachmentStatusPurged:
+		return true
+	default:
+		return false
+	}
 }
 func (s *AttachmentService) Get(ctx context.Context, userID, sessionID, attachmentID string) (SessionAttachment, error) {
 	return s.repository.GetAttachment(ctx, userID, sessionID, attachmentID)

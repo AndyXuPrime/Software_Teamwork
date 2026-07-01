@@ -15,7 +15,7 @@ func BodyLimitForRequest(maxBytes int64, limitForRequest func(*http.Request) int
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			limit := maxBytes
 			if limitForRequest != nil {
-				if override := limitForRequest(r); override > limit {
+				if override := limitForRequest(r); override > 0 {
 					limit = override
 				}
 			}

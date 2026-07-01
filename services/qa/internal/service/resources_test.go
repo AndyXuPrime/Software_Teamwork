@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+func TestDefaultAgentConfigEnablesAttachmentSearch(t *testing.T) {
+	config := DefaultAgentConfig()
+	if !containsString(config.EnabledToolNames, "search_session_attachments") {
+		t.Fatalf("enabledToolNames=%v, want search_session_attachments", config.EnabledToolNames)
+	}
+}
+
 type resourceRepositoryStub struct {
 	activeQAConfig   QAConfigVersion
 	activeLLMConfig  LLMConfigVersion

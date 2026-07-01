@@ -14,10 +14,40 @@ import (
 
 type attachmentScanner interface{ Scan(...any) error }
 
-func (r *Postgres) CreateAttachment(ctx context.Context, a service.SessionAttachment) (service.SessionAttachment, error) {
+func (r *Postgres) CreateAttachment(ctx context.Context, a service.SessionAttachment, maxPerSession int, maxSessionBytes int64) (service.SessionAttachment, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return service.SessionAttachment{}, fmt.Errorf("begin attachment create: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var conversationID string
+	err = tx.QueryRow(ctx, `SELECT id::text FROM conversations WHERE id::text=$1 AND external_user_id=$2 AND deleted_at IS NULL FOR UPDATE`, a.SessionID, a.OwnerUserID).Scan(&conversationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return service.SessionAttachment{}, service.NewError(service.CodeNotFound, "conversation not found", err)
+	}
+	if err != nil {
+		return service.SessionAttachment{}, fmt.Errorf("lock attachment conversation: %w", err)
+	}
+
+	var activeCount int
+	var activeBytes int64
+	if err := tx.QueryRow(ctx, `SELECT count(*), COALESCE(sum(size_bytes),0) FROM session_attachments WHERE conversation_id::text=$1 AND external_user_id=$2 AND deleted_at IS NULL`, a.SessionID, a.OwnerUserID).Scan(&activeCount, &activeBytes); err != nil {
+		return service.SessionAttachment{}, fmt.Errorf("read session attachment quota: %w", err)
+	}
+	if activeCount >= maxPerSession {
+		return service.SessionAttachment{}, service.NewError(service.CodeConflict, "session attachment limit reached", nil)
+	}
+	if a.SizeBytes > maxSessionBytes-activeBytes {
+		return service.SessionAttachment{}, service.NewError(service.CodeConflict, "session attachment size quota exceeded", nil)
+	}
+
 	const q = `INSERT INTO session_attachments (id, conversation_id, external_user_id, file_ref, filename, content_type, size_bytes, status, error_summary, page_count, chunk_count, expires_at, created_at, updated_at) VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
-	if _, err := r.pool.Exec(ctx, q, a.ID, a.SessionID, a.OwnerUserID, a.FileRef, a.Filename, a.ContentType, a.SizeBytes, a.Status, a.ErrorSummary, a.PageCount, a.ChunkCount, a.ExpiresAt, a.CreatedAt, a.UpdatedAt); err != nil {
+	if _, err := tx.Exec(ctx, q, a.ID, a.SessionID, a.OwnerUserID, a.FileRef, a.Filename, a.ContentType, a.SizeBytes, a.Status, a.ErrorSummary, a.PageCount, a.ChunkCount, a.ExpiresAt, a.CreatedAt, a.UpdatedAt); err != nil {
 		return service.SessionAttachment{}, fmt.Errorf("insert session attachment: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return service.SessionAttachment{}, fmt.Errorf("commit attachment create: %w", err)
 	}
 	return a, nil
 }
@@ -33,10 +63,10 @@ func (r *Postgres) ListAttachments(ctx context.Context, userID, sessionID string
 		return service.Page[service.SessionAttachment]{}, err
 	}
 	var total int
-	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM session_attachments WHERE conversation_id::text=$1 AND external_user_id=$2 AND deleted_at IS NULL`, sessionID, userID).Scan(&total); err != nil {
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM session_attachments WHERE conversation_id::text=$1 AND external_user_id=$2 AND deleted_at IS NULL AND ($3='' OR status=$3)`, sessionID, userID, opts.Status).Scan(&total); err != nil {
 		return service.Page[service.SessionAttachment]{}, fmt.Errorf("count attachments: %w", err)
 	}
-	rows, err := r.pool.Query(ctx, `SELECT id::text, conversation_id::text, external_user_id, file_ref, filename, content_type, size_bytes, status, COALESCE(error_summary,''), page_count, chunk_count, expires_at, deleted_at, created_at, updated_at FROM session_attachments WHERE conversation_id::text=$1 AND external_user_id=$2 AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT $3 OFFSET $4`, sessionID, userID, opts.PageSize, (opts.Page-1)*opts.PageSize)
+	rows, err := r.pool.Query(ctx, `SELECT id::text, conversation_id::text, external_user_id, file_ref, filename, content_type, size_bytes, status, COALESCE(error_summary,''), page_count, chunk_count, expires_at, deleted_at, created_at, updated_at FROM session_attachments WHERE conversation_id::text=$1 AND external_user_id=$2 AND deleted_at IS NULL AND ($3='' OR status=$3) ORDER BY created_at DESC, id DESC LIMIT $4 OFFSET $5`, sessionID, userID, opts.Status, opts.PageSize, (opts.Page-1)*opts.PageSize)
 	if err != nil {
 		return service.Page[service.SessionAttachment]{}, fmt.Errorf("list attachments: %w", err)
 	}
@@ -191,7 +221,7 @@ func (r *Postgres) SearchSessionAttachmentChunks(ctx context.Context, userID, se
 	return out, rows.Err()
 }
 func (r *Postgres) CleanupExpiredAttachments(ctx context.Context, now time.Time, limit int) ([]service.SessionAttachment, error) {
-	rows, err := r.pool.Query(ctx, `UPDATE session_attachments SET deleted_at=$1, updated_at=$1 WHERE id IN (SELECT id FROM session_attachments WHERE deleted_at IS NULL AND expires_at <= $1 ORDER BY expires_at LIMIT $2) RETURNING id::text, conversation_id::text, external_user_id, file_ref, filename, content_type, size_bytes, status, COALESCE(error_summary,''), page_count, chunk_count, expires_at, deleted_at, created_at, updated_at`, now, limit)
+	rows, err := r.pool.Query(ctx, `UPDATE session_attachments SET status='purged', deleted_at=$1, updated_at=$1 WHERE id IN (SELECT id FROM session_attachments WHERE deleted_at IS NULL AND expires_at <= $1 ORDER BY expires_at LIMIT $2) RETURNING id::text, conversation_id::text, external_user_id, file_ref, filename, content_type, size_bytes, status, COALESCE(error_summary,''), page_count, chunk_count, expires_at, deleted_at, created_at, updated_at`, now, limit)
 	if err != nil {
 		return nil, err
 	}

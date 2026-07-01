@@ -15,6 +15,7 @@ type attachmentRepoStub struct {
 	conversation Conversation
 	attachments  []SessionAttachment
 	chunks       []SessionAttachmentChunk
+	createErr    error
 }
 
 func (s *attachmentRepoStub) GetConversation(_ context.Context, _, sessionID string) (Conversation, error) {
@@ -24,7 +25,24 @@ func (s *attachmentRepoStub) GetConversation(_ context.Context, _, sessionID str
 	return s.conversation, nil
 }
 
-func (s *attachmentRepoStub) CreateAttachment(_ context.Context, attachment SessionAttachment) (SessionAttachment, error) {
+func (s *attachmentRepoStub) CreateAttachment(_ context.Context, attachment SessionAttachment, maxPerSession int, maxSessionBytes int64) (SessionAttachment, error) {
+	if s.createErr != nil {
+		return SessionAttachment{}, s.createErr
+	}
+	var activeCount int
+	var activeBytes int64
+	for _, item := range s.attachments {
+		if item.SessionID == attachment.SessionID && item.DeletedAt == nil {
+			activeCount++
+			activeBytes += item.SizeBytes
+		}
+	}
+	if activeCount >= maxPerSession {
+		return SessionAttachment{}, NewError(CodeConflict, "session attachment limit reached", nil)
+	}
+	if attachment.SizeBytes > maxSessionBytes-activeBytes {
+		return SessionAttachment{}, NewError(CodeConflict, "session attachment size quota exceeded", nil)
+	}
 	s.attachments = append(s.attachments, attachment)
 	return attachment, nil
 }
@@ -32,7 +50,7 @@ func (s *attachmentRepoStub) CreateAttachment(_ context.Context, attachment Sess
 func (s *attachmentRepoStub) ListAttachments(_ context.Context, _, sessionID string, opts AttachmentListOptions) (Page[SessionAttachment], error) {
 	items := make([]SessionAttachment, 0, len(s.attachments))
 	for _, item := range s.attachments {
-		if item.SessionID == sessionID {
+		if item.SessionID == sessionID && (opts.Status == "" || item.Status == opts.Status) {
 			items = append(items, item)
 		}
 	}
@@ -176,8 +194,10 @@ func removeAttachmentChunks(chunks []SessionAttachmentChunk, attachmentID string
 }
 
 type testFileClient struct {
-	data map[string][]byte
-	next int
+	data      map[string][]byte
+	next      int
+	deleteErr error
+	deleted   []string
 }
 
 func (c *testFileClient) Upload(_ context.Context, _ string, _ string, _ int64, body io.Reader) (string, error) {
@@ -196,6 +216,10 @@ func (c *testFileClient) Read(_ context.Context, fileRef string) ([]byte, error)
 }
 
 func (c *testFileClient) Delete(_ context.Context, fileRef string) error {
+	c.deleted = append(c.deleted, fileRef)
+	if c.deleteErr != nil {
+		return c.deleteErr
+	}
 	delete(c.data, fileRef)
 	return nil
 }
@@ -272,6 +296,73 @@ func TestAttachmentServiceUploadRejectsSessionSizeQuota(t *testing.T) {
 	var appErr *AppError
 	if !errors.As(err, &appErr) || appErr.Code != CodeConflict {
 		t.Fatalf("Upload() error = %v, want conflict", err)
+	}
+}
+
+func TestAttachmentServiceUploadDeletesFileWhenMetadataCreateFails(t *testing.T) {
+	createErr := errors.New("metadata unavailable")
+	repo := &attachmentRepoStub{conversation: Conversation{ID: "sess-1"}, createErr: createErr}
+	files := &testFileClient{data: map[string][]byte{}}
+	svc, err := NewAttachmentService(repo, files, testParserClient{}, AttachmentServiceConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = svc.Upload(context.Background(), "user-1", "sess-1", CreateAttachmentInput{
+		Filename: "notes.txt", ContentType: "text/plain", SizeBytes: 4,
+		Body: bytes.NewReader([]byte("test")),
+	})
+	if !errors.Is(err, createErr) {
+		t.Fatalf("Upload() error = %v, want metadata error", err)
+	}
+	if len(files.deleted) != 1 || len(files.data) != 0 {
+		t.Fatalf("deleted=%v data=%v, want uploaded object removed", files.deleted, files.data)
+	}
+}
+
+func TestAttachmentServiceUploadPreservesMetadataAndCleanupFailures(t *testing.T) {
+	createErr := errors.New("metadata unavailable")
+	deleteErr := errors.New("file cleanup unavailable")
+	repo := &attachmentRepoStub{conversation: Conversation{ID: "sess-1"}, createErr: createErr}
+	files := &testFileClient{data: map[string][]byte{}, deleteErr: deleteErr}
+	svc, err := NewAttachmentService(repo, files, testParserClient{}, AttachmentServiceConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = svc.Upload(context.Background(), "user-1", "sess-1", CreateAttachmentInput{
+		Filename: "notes.txt", ContentType: "text/plain", SizeBytes: 4,
+		Body: bytes.NewReader([]byte("test")),
+	})
+	if !errors.Is(err, createErr) || !errors.Is(err, deleteErr) {
+		t.Fatalf("Upload() error = %v, want both metadata and cleanup failures", err)
+	}
+}
+
+func TestAttachmentServiceListValidatesAndForwardsStatus(t *testing.T) {
+	repo := &attachmentRepoStub{
+		conversation: Conversation{ID: "sess-1"},
+		attachments: []SessionAttachment{
+			{ID: "ready", SessionID: "sess-1", Status: AttachmentStatusReady},
+			{ID: "failed", SessionID: "sess-1", Status: AttachmentStatusFailed},
+		},
+	}
+	svc, err := NewAttachmentService(repo, &testFileClient{data: map[string][]byte{}}, testParserClient{}, AttachmentServiceConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := svc.List(context.Background(), "user-1", "sess-1", AttachmentListOptions{Status: AttachmentStatusReady})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != "ready" {
+		t.Fatalf("List() items = %+v, want ready attachment", page.Items)
+	}
+	_, err = svc.List(context.Background(), "user-1", "sess-1", AttachmentListOptions{Status: "unknown"})
+	var appErr *AppError
+	if !errors.As(err, &appErr) || appErr.Code != CodeValidation {
+		t.Fatalf("List() invalid status error = %v, want validation error", err)
 	}
 }
 

@@ -7,11 +7,27 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/service"
 )
 
 const multipartUploadEnvelopeBytes = int64(1 << 20)
+
+const attachmentParseFailedCode = "attachment_parse_failed"
+
+type sessionAttachmentSummary struct {
+	ID           string     `json:"id"`
+	SessionID    string     `json:"sessionId"`
+	Filename     string     `json:"filename"`
+	ContentType  string     `json:"contentType"`
+	SizeBytes    int64      `json:"sizeBytes"`
+	Status       string     `json:"status"`
+	ErrorCode    *string    `json:"errorCode"`
+	ErrorMessage *string    `json:"errorMessage"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	ExpiresAt    *time.Time `json:"expiresAt"`
+}
 
 type AttachmentService interface {
 	Upload(ctx context.Context, userID, sessionID string, input service.CreateAttachmentInput) (service.AttachmentUploadResult, error)
@@ -73,7 +89,7 @@ func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request) 
 	go func() {
 		_ = s.attachments.Process(context.WithoutCancel(r.Context()), userID, r.PathValue("sessionId"), result.Attachment.ID)
 	}()
-	writeData(w, r, http.StatusCreated, result.Attachment)
+	writeData(w, r, http.StatusCreated, publicSessionAttachment(result.Attachment))
 }
 
 func (s *Server) handleListAttachments(w http.ResponseWriter, r *http.Request) {
@@ -86,12 +102,21 @@ func (s *Server) handleListAttachments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	result, err := s.attachments.List(r.Context(), userID, r.PathValue("sessionId"), service.AttachmentListOptions{Page: page, PageSize: pageSize})
+	result, err := s.attachments.List(r.Context(), userID, r.PathValue("sessionId"), service.AttachmentListOptions{Page: page, PageSize: pageSize, Status: r.URL.Query().Get("status")})
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	writePage(w, r, http.StatusOK, result)
+	publicResult := service.Page[sessionAttachmentSummary]{
+		Items:    make([]sessionAttachmentSummary, 0, len(result.Items)),
+		Page:     result.Page,
+		PageSize: result.PageSize,
+		Total:    result.Total,
+	}
+	for _, attachment := range result.Items {
+		publicResult.Items = append(publicResult.Items, publicSessionAttachment(attachment))
+	}
+	writePage(w, r, http.StatusOK, publicResult)
 }
 
 func (s *Server) handleGetAttachment(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +129,29 @@ func (s *Server) handleGetAttachment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	writeData(w, r, http.StatusOK, result)
+	writeData(w, r, http.StatusOK, publicSessionAttachment(result))
+}
+
+func publicSessionAttachment(attachment service.SessionAttachment) sessionAttachmentSummary {
+	expiresAt := attachment.ExpiresAt
+	result := sessionAttachmentSummary{
+		ID:          attachment.ID,
+		SessionID:   attachment.SessionID,
+		Filename:    attachment.Filename,
+		ContentType: attachment.ContentType,
+		SizeBytes:   attachment.SizeBytes,
+		Status:      attachment.Status,
+		CreatedAt:   attachment.CreatedAt,
+		ExpiresAt:   &expiresAt,
+	}
+	if attachment.Status == service.AttachmentStatusFailed {
+		code := attachmentParseFailedCode
+		result.ErrorCode = &code
+		if summary := strings.TrimSpace(attachment.ErrorSummary); summary != "" {
+			result.ErrorMessage = &summary
+		}
+	}
+	return result
 }
 
 func (s *Server) handleDeleteAttachment(w http.ResponseWriter, r *http.Request) {

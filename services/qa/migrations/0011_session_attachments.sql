@@ -40,3 +40,8 @@ CREATE TABLE IF NOT EXISTS message_attachments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (message_id, attachment_id)
 );
+
+-- +goose Down
+DROP TABLE IF EXISTS message_attachments;
+DROP TABLE IF EXISTS session_attachment_chunks;
+DROP TABLE IF EXISTS session_attachments;

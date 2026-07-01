@@ -111,7 +111,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
 }
 
-const qaAttachmentUploadMaxBodyBytes = int64(20 << 20)
+const (
+	qaAttachmentMaxFileBytes       = int64(20 << 20)
+	qaAttachmentMultipartOverhead  = int64(1 << 20)
+	qaAttachmentUploadMaxBodyBytes = qaAttachmentMaxFileBytes + qaAttachmentMultipartOverhead
+)
 
 func bodyLimitForRequest(r *http.Request) int64 {
 	if r.Method != http.MethodPost {
