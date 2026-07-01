@@ -105,7 +105,7 @@ func assertKnowledgeToolAvailable(t *testing.T, ctx context.Context, client *htt
 func assertQAKnowledgeRAGResponse(t *testing.T, ctx context.Context, client *http.Client, cfg qaSmokeConfig, session smokeSession, requestID string) {
 	t.Helper()
 
-	// Create a QA session
+	// Create a QA session and use its ID for subsequent requests
 	sessionBody, _ := json.Marshal(map[string]string{"title": "smoke test rag"})
 	createReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, cfg.gatewayBaseURL+"/api/v1/qa-sessions", bytes.NewReader(sessionBody))
 	createReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
@@ -115,17 +115,27 @@ func assertQAKnowledgeRAGResponse(t *testing.T, ctx context.Context, client *htt
 	if err != nil {
 		t.Fatalf("create qa session: %v", err)
 	}
-	sessionResp.Body.Close()
+	defer sessionResp.Body.Close()
 	if sessionResp.StatusCode != http.StatusCreated {
 		t.Fatalf("create qa session returned %d", sessionResp.StatusCode)
 	}
+	var created struct {
+		Data struct{ ID string `json:"id"` } `json:"data"`
+	}
+	if err := json.NewDecoder(sessionResp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created qa session: %v", err)
+	}
+	createdSessionID := created.Data.ID
+	if createdSessionID == "" {
+		t.Fatal("created qa session has empty id")
+	}
 
-	// Send a message — accept SSE stream
+	// Send a message to the newly created session — accept SSE stream
 	msgBody, _ := json.Marshal(map[string]any{
 		"message": "根据规程，锅炉巡检时油温正常范围是多少？",
 		"mode":    "knowledge_qa",
 	})
-	sendReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, cfg.gatewayBaseURL+"/api/v1/qa-sessions/33333333-3333-4333-8333-333333333301/messages", bytes.NewReader(msgBody))
+	sendReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, cfg.gatewayBaseURL+"/api/v1/qa-sessions/"+createdSessionID+"/messages", bytes.NewReader(msgBody))
 	sendReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	sendReq.Header.Set("Content-Type", "application/json")
 	sendReq.Header.Set("Accept", "text/event-stream")
@@ -161,16 +171,32 @@ func assertQAKnowledgeRAGResponse(t *testing.T, ctx context.Context, client *htt
 	}
 }
 
-// assertQAResponseEnvelope validates that SSE events and plain response
-// include requestId and no internal identifiers.
+// assertQAResponseEnvelope creates a new QA session, sends a non-streaming
+// message, and validates the response envelope contains requestId.
 func assertQAResponseEnvelope(t *testing.T, ctx context.Context, client *http.Client, cfg qaSmokeConfig, session smokeSession, requestID string) {
 	t.Helper()
+	// Create a fresh QA session
+	sessionBody, _ := json.Marshal(map[string]string{"title": "smoke envelope test"})
+	createReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, cfg.gatewayBaseURL+"/api/v1/qa-sessions", bytes.NewReader(sessionBody))
+	createReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("X-Request-Id", requestID+"_create")
+	cr, err := client.Do(createReq)
+	if err != nil {
+		t.Fatalf("create qa session: %v", err)
+	}
+	defer cr.Body.Close()
+	if cr.StatusCode != http.StatusCreated {
+		t.Fatalf("create qa session returned %d", cr.StatusCode)
+	}
+	var created struct{ Data struct{ ID string `json:"id"` } `json:"data"` }
+	if err := json.NewDecoder(cr.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created session: %v", err)
+	}
+
 	// Non-streaming ask
-	msgBody, _ := json.Marshal(map[string]any{
-		"message": "你好",
-		"mode":    "general_chat",
-	})
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, cfg.gatewayBaseURL+"/api/v1/qa-sessions/33333333-3333-4333-8333-333333333301/messages", bytes.NewReader(msgBody))
+	msgBody, _ := json.Marshal(map[string]any{"message": "你好", "mode": "general_chat"})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, cfg.gatewayBaseURL+"/api/v1/qa-sessions/"+created.Data.ID+"/messages", bytes.NewReader(msgBody))
 	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-Id", requestID+"_plain")
@@ -201,14 +227,33 @@ func assertQAResponseEnvelope(t *testing.T, ctx context.Context, client *http.Cl
 }
 
 // assertQANoSensitiveLeaks sends a knowledge_qa request and checks the
-// response body does not contain secrets, raw prompts, or internal URLs.
+// RAG response does not contain secrets, raw prompts, or internal URLs.
 func assertQANoSensitiveLeaks(t *testing.T, ctx context.Context, client *http.Client, cfg qaSmokeConfig, session smokeSession, requestID string) {
 	t.Helper()
+	// Create a fresh QA session
+	sessionBody, _ := json.Marshal(map[string]string{"title": "smoke leak test"})
+	createReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, cfg.gatewayBaseURL+"/api/v1/qa-sessions", bytes.NewReader(sessionBody))
+	createReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("X-Request-Id", requestID+"_create")
+	cr, err := client.Do(createReq)
+	if err != nil {
+		t.Fatalf("create qa session: %v", err)
+	}
+	defer cr.Body.Close()
+	if cr.StatusCode != http.StatusCreated {
+		t.Fatalf("create qa session returned %d", cr.StatusCode)
+	}
+	var created struct{ Data struct{ ID string `json:"id"` } `json:"data"` }
+	if err := json.NewDecoder(cr.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created session: %v", err)
+	}
+
 	msgBody, _ := json.Marshal(map[string]any{
 		"message": "search for grid inspection procedure",
-		"mode":    "general_chat",
+		"mode":    "knowledge_qa",
 	})
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, cfg.gatewayBaseURL+"/api/v1/qa-sessions/33333333-3333-4333-8333-333333333301/messages", bytes.NewReader(msgBody))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, cfg.gatewayBaseURL+"/api/v1/qa-sessions/"+created.Data.ID+"/messages", bytes.NewReader(msgBody))
 	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-Id", requestID+"_noleak")

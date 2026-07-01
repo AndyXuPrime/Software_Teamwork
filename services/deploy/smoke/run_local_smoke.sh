@@ -33,26 +33,26 @@ export LOCAL_ADMIN_PASSWORD="${LOCAL_ADMIN_PASSWORD:-LocalDemoAdmin#12345}"
 # ---- simple arg parsing ----
 SMOKE="${1:-all}"
 
-cd "$REPO_ROOT"
+cd "$REPO_ROOT/services/deploy/smoke"
 
 case "$SMOKE" in
   file|all)
     echo "=== File Owner-Service E2E Smoke ==="
-    FILE_OWNER_E2E_SMOKE=1 go test -v -count=1 -timeout=120s ./services/deploy/smoke/ -run TestFileOwnerE2ESmoke
+    FILE_OWNER_E2E_SMOKE=1 go test -v -count=1 -timeout=120s ./... -run TestFileOwnerE2ESmoke
     ;;
 esac
 
 case "$SMOKE" in
   qa|all)
     echo "=== QA MCP RAG Smoke ==="
-    QA_MCP_RAG_SMOKE=1 go test -v -count=1 -timeout=180s ./services/deploy/smoke/ -run TestQAMCPRAGSmoke
+    QA_MCP_RAG_SMOKE=1 go test -v -count=1 -timeout=180s ./... -run TestQAMCPRAGSmoke
     ;;
 esac
 
 case "$SMOKE" in
   document|all)
     echo "=== Document MCP Tool Smoke ==="
-    DOCUMENT_MCP_SMOKE=1 go test -v -count=1 -timeout=120s ./services/deploy/smoke/ -run TestDocumentMCPToolSmoke
+    DOCUMENT_MCP_SMOKE=1 go test -v -count=1 -timeout=120s ./... -run TestDocumentMCPToolSmoke
     ;;
 esac
 
