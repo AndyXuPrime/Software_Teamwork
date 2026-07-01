@@ -29,7 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
-| 27 | 2026-07-01 | Issue 305 local seed baseline | `1e328af` | `Special/chore/local-seed-baseline` |
+| 27 | 2026-07-01 | Issue 305 local seed baseline | `0290afb` | `Special/chore/local-seed-baseline` |
 | 26 | 2026-07-01 | PR 350 running marker and journal cleanup | `2a4b4a0` | `PrimeTeam/feat/report-section-versions` |
 | 25 | 2026-07-01 | PR 350 stale conflict handling | `0242872` | `PrimeTeam/feat/report-section-versions` |
 | 24 | 2026-07-01 | PR 350 section write concurrency guards | `7108a3e` | `PrimeTeam/feat/report-section-versions` |

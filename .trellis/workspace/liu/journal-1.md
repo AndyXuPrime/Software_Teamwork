@@ -967,17 +967,24 @@ Added deterministic local integration seed data for Auth, Knowledge, Document, Q
 
 ### Main Changes
 
-(Add details)
+- Added deterministic root local seed fixtures across Auth, Knowledge, Document, and QA with stable IDs and a local admin demo account.
+- Added local demo cleanup SQL, a seed contract verifier, and regression tests for seed idempotency and dependency expectations.
+- Documented seed execution, resource IDs, admin login/permissions checks, cleanup/reset, password hash source, and rotation guidance.
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
-| `1e328af` | (see git log) |
+| `0290afb` | chore(deploy): add local seed baseline |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `python -m unittest scripts.tests.test_local_seed_contract scripts.tests.test_check_docker_policy scripts.tests.test_verify_gateway_active_api` (15 tests)
+- [OK] `python scripts/verify_local_seed_contract.py`
+- [OK] `python scripts/check_docker_policy.py`
+- [OK] `python scripts/verify_gateway_active_api.py`
+- [OK] Root Compose config checks with and without the `ai` profile
+- [OK] Isolated Compose seed/idempotency/cleanup, AI seed, and Gateway admin login smoke
 
 ### Status
 
