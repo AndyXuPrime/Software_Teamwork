@@ -480,6 +480,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	citations := make([]Citation, 0, 8)
 	iterationStartedAt := map[int]time.Time{}
 	completedIterations := map[int]struct{}{}
+	modelInvocationIDs := map[int]string{}
 	usage := agent.TokenUsage{}
 	var invocationErr error
 	profileID := runtime.LLMProfileID
@@ -530,7 +531,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 			completedIterations[event.Iteration] = struct{}{}
 			saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
-			_, err := s.repository.SaveModelInvocation(saveCtx, userID, ModelInvocation{
+			invocationID, err := s.repository.SaveModelInvocation(saveCtx, userID, ModelInvocation{
 				ResponseRunID:    run.ID,
 				IterationNo:      event.Iteration,
 				Provider:         "ai-gateway",
@@ -549,15 +550,18 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 			if err != nil && invocationErr == nil {
 				invocationErr = err
 			}
+			if invocationID != "" {
+				modelInvocationIDs[event.Iteration] = invocationID
+			}
 		case agent.EventToolStarted:
 			observation := toolObservations[event.ToolCallID]
-			emit("tool.started", map[string]any{"toolCallId": event.ToolCallID, "tool": event.ToolName, "mcpServerName": toolSourceName(event.ToolName), "iterationNo": event.Iteration, "summary": "正在执行工具 " + event.ToolName, "arguments": tools.GenerateArgumentsSummary(event.ToolName, observation.Arguments)})
+			emit("tool.started", toolProgressPayload("正在执行工具 "+event.ToolName, event, observation, modelInvocationIDs[event.Iteration], false))
 		case agent.EventToolCompleted:
 			observation := toolObservations[event.ToolCallID]
-			emit("tool.completed", map[string]any{"toolCallId": event.ToolCallID, "tool": event.ToolName, "mcpServerName": toolSourceName(event.ToolName), "iterationNo": event.Iteration, "summary": "工具 " + event.ToolName + " 执行完成", "arguments": tools.GenerateArgumentsSummary(event.ToolName, observation.Arguments), "result": tools.GenerateResultSummary(event.ToolName, observation.Result)})
+			emit("tool.completed", toolProgressPayload("工具 "+event.ToolName+" 执行完成", event, observation, modelInvocationIDs[event.Iteration], true))
 		case agent.EventToolFailed:
 			observation := toolObservations[event.ToolCallID]
-			emit("tool.failed", map[string]any{"toolCallId": event.ToolCallID, "tool": event.ToolName, "mcpServerName": toolSourceName(event.ToolName), "iterationNo": event.Iteration, "summary": "工具 " + event.ToolName + " 执行失败", "arguments": tools.GenerateArgumentsSummary(event.ToolName, observation.Arguments), "result": tools.GenerateResultSummary(event.ToolName, observation.Result)})
+			emit("tool.failed", toolProgressPayload("工具 "+event.ToolName+" 执行失败", event, observation, modelInvocationIDs[event.Iteration], true))
 		}
 		step, ok := stepFromAgentEvent(assistantMessage.ID, event, s.now().UTC())
 		if !ok {
@@ -847,6 +851,24 @@ func requestDirective(input AskInput) string {
 		parts = append(parts, "When a knowledge tool supports knowledge-base filtering, restrict it to: "+strings.Join(input.KnowledgeBaseIDs, ", ")+".")
 	}
 	return strings.Join(parts, " ")
+}
+
+func toolProgressPayload(summary string, event agent.Event, observation agent.ToolObservation, modelInvocationID string, includeResult bool) map[string]any {
+	payload := map[string]any{
+		"toolCallId":    event.ToolCallID,
+		"tool":          event.ToolName,
+		"mcpServerName": toolSourceName(event.ToolName),
+		"iterationNo":   event.Iteration,
+		"summary":       summary,
+		"arguments":     tools.GenerateArgumentsSummary(event.ToolName, observation.Arguments),
+	}
+	if modelInvocationID != "" {
+		payload["modelInvocationId"] = modelInvocationID
+	}
+	if includeResult {
+		payload["result"] = tools.GenerateResultSummary(event.ToolName, observation.Result)
+	}
+	return payload
 }
 
 func toolSourceName(toolName string) string {

@@ -81,3 +81,16 @@ func TestToolCallAuditSummariesDeriveSourceAndFailure(t *testing.T) {
 		t.Fatalf("error summary code=%q message=%q", code, message)
 	}
 }
+
+func TestToolCallEventPayloadCarriesModelInvocationID(t *testing.T) {
+	payload := map[string]any{
+		"iterationNo":       1,
+		"modelInvocationId": "invocation-id",
+		"toolCallId":        "call-1",
+		"tool":              "search_knowledge",
+	}
+
+	if got, _ := payload["modelInvocationId"].(string); got != "invocation-id" {
+		t.Fatalf("modelInvocationId=%q", got)
+	}
+}

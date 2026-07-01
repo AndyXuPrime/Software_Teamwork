@@ -191,9 +191,9 @@ type toolProgressRunner struct{}
 
 func (toolProgressRunner) RunWithObserver(_ context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
 	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
+	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1, Usage: agent.TokenUsage{PromptTokens: 7, CompletionTokens: 5, TotalTokens: 12}})
 	observer(agent.Event{Type: agent.EventToolStarted, Iteration: 1, ToolCallID: "call-1", ToolName: "search_knowledge"})
 	observer(agent.Event{Type: agent.EventToolCompleted, Iteration: 1, ToolCallID: "call-1", ToolName: "search_knowledge"})
-	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1, Usage: agent.TokenUsage{PromptTokens: 7, CompletionTokens: 5, TotalTokens: 12}})
 	final := agent.Message{Role: agent.RoleAssistant, Content: "tool answer"}
 	return agent.Result{Final: final, Messages: append(input, final), Iterations: 1}, nil
 }
@@ -804,6 +804,9 @@ func TestAskToolProgressEventsExposeOnlySafeSummaries(t *testing.T) {
 		}
 		if event.Payload["toolCallId"] != "call-1" || event.Payload["tool"] != "search_knowledge" || event.Payload["iterationNo"] != 1 {
 			t.Fatalf("unexpected safe tool payload: %#v", event.Payload)
+		}
+		if event.Payload["modelInvocationId"] != "invocation-1" {
+			t.Fatalf("tool event missing model invocation id: %#v", event.Payload)
 		}
 	}
 	if !seenToolEvent {

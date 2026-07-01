@@ -150,6 +150,72 @@ func TestRunnerReturnsUnknownToolToModel(t *testing.T) {
 	}
 }
 
+func TestRunnerObservesUnauthorizedAndInvalidToolFailures(t *testing.T) {
+	tests := []struct {
+		name      string
+		toolCall  ToolCall
+		wantCode  string
+		wantArgs  string
+		wantID    string
+		wantTools int
+	}{
+		{
+			name:     "unknown tool",
+			toolCall: ToolCall{ID: "call-1", Type: "function", Function: FunctionCall{Name: "delete_everything", Arguments: `{"target":"secret"}`}},
+			wantCode: "unknown_tool",
+			wantArgs: `{"target":"secret"}`,
+			wantID:   "call-1",
+		},
+		{
+			name:     "invalid arguments",
+			toolCall: ToolCall{ID: "call-1", Type: "function", Function: FunctionCall{Name: "add", Arguments: `{"a":`}},
+			wantCode: "invalid_tool_arguments",
+			wantArgs: `{"a":`,
+			wantID:   "call-1",
+		},
+		{
+			name:     "missing tool call id",
+			toolCall: ToolCall{Type: "function", Function: FunctionCall{Name: "add", Arguments: `{}`}},
+			wantCode: "invalid_tool_call",
+			wantArgs: `{}`,
+			wantID:   "invalid_tool_call_1_1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := &fakeModel{responses: []Completion{
+				{Message: Message{Role: RoleAssistant, ToolCalls: []ToolCall{tt.toolCall}}, FinishReason: "tool_calls"},
+				{Message: Message{Role: RoleAssistant, Content: "handled"}, FinishReason: "stop"},
+			}}
+			tools := &fakeTools{definitions: []ToolDefinition{addToolDefinition()}}
+			runner := testRunner(t, model, tools, 3)
+			var observations []ToolObservation
+			_, err := runner.RunWithToolResultCallback(
+				context.Background(),
+				[]Message{{Role: RoleUser, Content: "use tool"}},
+				nil,
+				func(event ToolObservation) { observations = append(observations, event) },
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(observations) != 1 {
+				t.Fatalf("tool observations = %d, want 1", len(observations))
+			}
+			got := observations[0]
+			if got.Type != EventToolFailed || got.ToolCallID != tt.wantID || got.ToolName != tt.toolCall.Function.Name {
+				t.Fatalf("unexpected observation: %+v", got)
+			}
+			if string(got.Arguments) != tt.wantArgs || !strings.Contains(got.Result, tt.wantCode) {
+				t.Fatalf("observation args=%s result=%s", got.Arguments, got.Result)
+			}
+			if len(tools.calls) != tt.wantTools {
+				t.Fatalf("tool executions = %d, want %d", len(tools.calls), tt.wantTools)
+			}
+		})
+	}
+}
+
 func TestRunnerExecutesAllToolCallsFromOneModelTurn(t *testing.T) {
 	model := &fakeModel{responses: []Completion{
 		{Message: Message{Role: RoleAssistant, ToolCalls: []ToolCall{

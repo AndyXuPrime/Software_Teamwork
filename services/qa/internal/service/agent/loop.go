@@ -158,8 +158,8 @@ func (r *Runner) run(ctx context.Context, input []Message, observer Observer, to
 			return Result{Messages: messages, Final: assistant, Iterations: iteration}, nil
 		}
 
-		for _, call := range assistant.ToolCalls {
-			resultMessage := r.executeTool(ctx, iteration, allowed, call, observer, toolObserver)
+		for index, call := range assistant.ToolCalls {
+			resultMessage := r.executeTool(ctx, iteration, index, allowed, call, observer, toolObserver)
 			messages = append(messages, resultMessage)
 		}
 	}
@@ -167,40 +167,45 @@ func (r *Runner) run(ctx context.Context, input []Message, observer Observer, to
 	return Result{Messages: messages, Iterations: r.cfg.MaxIterations}, ErrMaxIterations
 }
 
-func (r *Runner) executeTool(ctx context.Context, iteration int, allowed map[string]struct{}, call ToolCall, observer Observer, toolObserver ToolObserver) Message {
+func (r *Runner) executeTool(ctx context.Context, iteration, callIndex int, allowed map[string]struct{}, call ToolCall, observer Observer, toolObserver ToolObserver) Message {
 	name := strings.TrimSpace(call.Function.Name)
 	base := Message{Role: RoleTool, ToolCallID: call.ID, Name: name}
-	if call.ID == "" || name == "" {
+	toolCallID := strings.TrimSpace(call.ID)
+	auditToolCallID := toolCallID
+	if auditToolCallID == "" {
+		auditToolCallID = fmt.Sprintf("invalid_tool_call_%d_%d", iteration, callIndex+1)
+	}
+	arguments := normalizedToolArguments(call.Function.Arguments)
+	if toolCallID == "" || name == "" {
 		base.Content = toolErrorJSON("invalid_tool_call", "model returned an invalid tool call")
-		emit(observer, Event{Type: EventToolFailed, Iteration: iteration, ToolCallID: call.ID, ToolName: name, Err: ErrInvalidResponse})
+		emitTool(toolObserver, ToolObservation{Type: EventToolFailed, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name, Arguments: arguments, Result: base.Content, Err: ErrInvalidResponse})
+		emit(observer, Event{Type: EventToolFailed, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name, Err: ErrInvalidResponse})
 		return base
 	}
 	if _, ok := allowed[name]; !ok {
 		base.Content = toolErrorJSON("unknown_tool", "requested tool is not available")
-		emit(observer, Event{Type: EventToolFailed, Iteration: iteration, ToolCallID: call.ID, ToolName: name, Err: errors.New("unknown tool")})
+		emitTool(toolObserver, ToolObservation{Type: EventToolFailed, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name, Arguments: arguments, Result: base.Content, Err: errors.New("unknown tool")})
+		emit(observer, Event{Type: EventToolFailed, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name, Err: errors.New("unknown tool")})
 		return base
 	}
 
-	arguments := json.RawMessage(call.Function.Arguments)
-	if len(arguments) == 0 {
-		arguments = json.RawMessage(`{}`)
-	}
 	var object map[string]any
 	if err := json.Unmarshal(arguments, &object); err != nil {
 		base.Content = toolErrorJSON("invalid_tool_arguments", "tool arguments must be a JSON object")
-		emit(observer, Event{Type: EventToolFailed, Iteration: iteration, ToolCallID: call.ID, ToolName: name, Err: err})
+		emitTool(toolObserver, ToolObservation{Type: EventToolFailed, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name, Arguments: arguments, Result: base.Content, Err: err})
+		emit(observer, Event{Type: EventToolFailed, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name, Err: err})
 		return base
 	}
 
-	emitTool(toolObserver, ToolObservation{Type: EventToolStarted, Iteration: iteration, ToolCallID: call.ID, ToolName: name, Arguments: arguments})
-	emit(observer, Event{Type: EventToolStarted, Iteration: iteration, ToolCallID: call.ID, ToolName: name})
+	emitTool(toolObserver, ToolObservation{Type: EventToolStarted, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name, Arguments: arguments})
+	emit(observer, Event{Type: EventToolStarted, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name})
 	toolCtx, cancel := context.WithTimeout(ctx, r.cfg.ToolTimeout)
 	defer cancel()
 	result, err := r.tools.CallTool(toolCtx, name, arguments)
 	if err != nil {
 		base.Content = toolErrorJSON("tool_execution_failed", "tool execution failed")
-		emitTool(toolObserver, ToolObservation{Type: EventToolFailed, Iteration: iteration, ToolCallID: call.ID, ToolName: name, Arguments: arguments, Result: base.Content, Err: err})
-		emit(observer, Event{Type: EventToolFailed, Iteration: iteration, ToolCallID: call.ID, ToolName: name, Err: err})
+		emitTool(toolObserver, ToolObservation{Type: EventToolFailed, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name, Arguments: arguments, Result: base.Content, Err: err})
+		emit(observer, Event{Type: EventToolFailed, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name, Err: err})
 		return base
 	}
 	content := result.Content
@@ -210,13 +215,21 @@ func (r *Runner) executeTool(ctx context.Context, iteration int, allowed map[str
 	base.Content = truncateToolResult(content, r.cfg.MaxToolResultBytes)
 	if result.IsError {
 		err := errors.New("tool reported an error")
-		emitTool(toolObserver, ToolObservation{Type: EventToolFailed, Iteration: iteration, ToolCallID: call.ID, ToolName: name, Arguments: arguments, Result: base.Content, Err: err})
-		emit(observer, Event{Type: EventToolFailed, Iteration: iteration, ToolCallID: call.ID, ToolName: name, Err: err})
+		emitTool(toolObserver, ToolObservation{Type: EventToolFailed, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name, Arguments: arguments, Result: base.Content, Err: err})
+		emit(observer, Event{Type: EventToolFailed, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name, Err: err})
 	} else {
-		emitTool(toolObserver, ToolObservation{Type: EventToolCompleted, Iteration: iteration, ToolCallID: call.ID, ToolName: name, Arguments: arguments, Result: base.Content})
-		emit(observer, Event{Type: EventToolCompleted, Iteration: iteration, ToolCallID: call.ID, ToolName: name})
+		emitTool(toolObserver, ToolObservation{Type: EventToolCompleted, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name, Arguments: arguments, Result: base.Content})
+		emit(observer, Event{Type: EventToolCompleted, Iteration: iteration, ToolCallID: auditToolCallID, ToolName: name})
 	}
 	return base
+}
+
+func normalizedToolArguments(raw string) json.RawMessage {
+	arguments := json.RawMessage(raw)
+	if len(arguments) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	return arguments
 }
 
 func emit(observer Observer, event Event) {

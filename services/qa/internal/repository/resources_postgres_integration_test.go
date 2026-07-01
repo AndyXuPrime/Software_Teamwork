@@ -35,14 +35,6 @@ func TestDocumentedResourceRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events := []service.StreamEvent{
-		{EventSeq: 1, EventType: "agent.iteration.started", Payload: map[string]any{"iterationNo": 1}, CreatedAt: now},
-		{EventSeq: 2, EventType: "tool.started", Payload: map[string]any{"iterationNo": 1, "toolCallId": "call-1", "tool": "search_knowledge"}, CreatedAt: now},
-		{EventSeq: 3, EventType: "tool.failed", Payload: map[string]any{"iterationNo": 1, "toolCallId": "call-1", "tool": "search_knowledge", "result": map[string]any{"error": "retrieval_failed", "message": "knowledge retrieval service failed", "sanitized": true}}, CreatedAt: now.Add(time.Millisecond)},
-	}
-	if err = repo.SaveStreamEvents(ctx, "integration-user", run.ID, events); err != nil {
-		t.Fatal(err)
-	}
 	invocationID, err := repo.SaveModelInvocation(ctx, "integration-user", service.ModelInvocation{
 		ResponseRunID: run.ID, IterationNo: 1, Provider: "ai-gateway", ProfileID: "default",
 		ModelName: "deepseek-v4-pro", FinishReason: "stop", Status: "completed",
@@ -50,6 +42,14 @@ func TestDocumentedResourceRoundTrip(t *testing.T) {
 	})
 	if err != nil || invocationID == "" {
 		t.Fatalf("invocation=%q err=%v", invocationID, err)
+	}
+	events := []service.StreamEvent{
+		{EventSeq: 1, EventType: "agent.iteration.started", Payload: map[string]any{"iterationNo": 1}, CreatedAt: now},
+		{EventSeq: 2, EventType: "tool.started", Payload: map[string]any{"iterationNo": 1, "modelInvocationId": invocationID, "toolCallId": "call-1", "tool": "search_knowledge"}, CreatedAt: now},
+		{EventSeq: 3, EventType: "tool.failed", Payload: map[string]any{"iterationNo": 1, "modelInvocationId": invocationID, "toolCallId": "call-1", "tool": "search_knowledge", "result": map[string]any{"error": "retrieval_failed", "message": "knowledge retrieval service failed", "sanitized": true}}, CreatedAt: now.Add(time.Millisecond)},
+	}
+	if err = repo.SaveStreamEvents(ctx, "integration-user", run.ID, events); err != nil {
+		t.Fatal(err)
 	}
 	rows, err := repo.queries.ListModelInvocationsByRun(ctx, run.ID, "integration-user")
 	if err != nil || len(rows) != 1 || rows[0].Status != "completed" {
@@ -67,7 +67,7 @@ func TestDocumentedResourceRoundTrip(t *testing.T) {
 	if err != nil || len(calls) != 1 || calls[0].Status != "failed" {
 		t.Fatalf("calls=%+v err=%v", calls, err)
 	}
-	if calls[0].MCPServerName != "qa_builtin" || calls[0].ErrorCode != "retrieval_failed" || calls[0].ErrorMessage != "knowledge retrieval service failed" {
+	if calls[0].ModelInvocationID != invocationID || calls[0].MCPServerName != "qa_builtin" || calls[0].ErrorCode != "retrieval_failed" || calls[0].ErrorMessage != "knowledge retrieval service failed" {
 		t.Fatalf("tool call audit fields=%+v", calls[0])
 	}
 	cancelled, err := repo.CancelResponseRun(ctx, "integration-user", run.ID)

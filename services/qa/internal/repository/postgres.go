@@ -446,6 +446,7 @@ func replaceStreamEvents(ctx context.Context, tx pgx.Tx, q *sqlc.Queries, runID 
 			if mcpServerName == "" {
 				mcpServerName = toolSourceName(toolName)
 			}
+			modelInvocationID, _ := event.Payload["modelInvocationId"].(string)
 			errorCode, errorMessage := toolCallErrorSummary(event.EventType, resultSummary)
 			status := "running"
 			if event.EventType == "tool.completed" {
@@ -456,7 +457,7 @@ func replaceStreamEvents(ctx context.Context, tx pgx.Tx, q *sqlc.Queries, runID 
 			}
 			argsJSON, _ := json.Marshal(argumentsSummary)
 			resultJSON, _ := json.Marshal(resultSummary)
-			if err := upsertAgentToolCall(ctx, tx, runID, int32(iteration), toolCallID, toolName, mcpServerName, status, argsJSON, resultJSON, errorCode, errorMessage, event.CreatedAt); err != nil {
+			if err := upsertAgentToolCall(ctx, tx, runID, modelInvocationID, int32(iteration), toolCallID, toolName, mcpServerName, status, argsJSON, resultJSON, errorCode, errorMessage, event.CreatedAt); err != nil {
 				return fmt.Errorf("save tool call summary: %w", err)
 			}
 		}
@@ -611,10 +612,11 @@ func nullableFloat(value *float64) any {
 	return *value
 }
 
-func upsertAgentToolCall(ctx context.Context, tx pgx.Tx, runID string, iteration int32, toolCallID, toolName, mcpServerName, status string, argumentsSummary, resultSummary []byte, errorCode, errorMessage string, startedAt time.Time) error {
+func upsertAgentToolCall(ctx context.Context, tx pgx.Tx, runID, modelInvocationID string, iteration int32, toolCallID, toolName, mcpServerName, status string, argumentsSummary, resultSummary []byte, errorCode, errorMessage string, startedAt time.Time) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO agent_tool_calls (
 			response_run_id,
+			model_invocation_id,
 			iteration_no,
 			tool_call_id,
 			tool_name,
@@ -628,22 +630,24 @@ func upsertAgentToolCall(ctx context.Context, tx pgx.Tx, runID string, iteration
 			finished_at
 		) VALUES (
 			$1::uuid,
-			GREATEST($2, 1),
-			$3,
+			NULLIF($2, '')::uuid,
+			GREATEST($3, 1),
 			$4,
-			NULLIF($5, ''),
-			$6,
-			$7::jsonb,
+			$5,
+			NULLIF($6, ''),
+			$7,
 			$8::jsonb,
-			NULLIF($9, ''),
+			$9::jsonb,
 			NULLIF($10, ''),
-			$11::timestamptz,
+			NULLIF($11, ''),
+			$12::timestamptz,
 			CASE
-				WHEN $6 = 'running' THEN NULL
-				ELSE $11::timestamptz
+				WHEN $7 = 'running' THEN NULL
+				ELSE $12::timestamptz
 			END
 		)
 		ON CONFLICT (response_run_id, tool_call_id) DO UPDATE SET
+			model_invocation_id = COALESCE(EXCLUDED.model_invocation_id, agent_tool_calls.model_invocation_id),
 			mcp_server_name = COALESCE(EXCLUDED.mcp_server_name, agent_tool_calls.mcp_server_name),
 			status = EXCLUDED.status,
 			arguments_summary = EXCLUDED.arguments_summary,
@@ -659,6 +663,7 @@ func upsertAgentToolCall(ctx context.Context, tx pgx.Tx, runID string, iteration
 				ELSE EXTRACT(EPOCH FROM (EXCLUDED.finished_at - agent_tool_calls.started_at)) * 1000
 			END`,
 		runID,
+		modelInvocationID,
 		iteration,
 		toolCallID,
 		toolName,
