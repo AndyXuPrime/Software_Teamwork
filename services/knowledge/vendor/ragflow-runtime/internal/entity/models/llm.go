@@ -18,8 +18,7 @@
 //
 // Bridges the existing RAGFlow provider-specific *ChatModel (OpenAI, Anthropic,
 // Gemini, …) to eino's model.BaseChatModel / model.ToolCallingChatModel
-// interface so the ReAct agent (internal/agent/component/agent.go) can
-// consume it directly. The wrapper does NOT reimplement provider logic — it
+// interface. The wrapper does NOT reimplement provider logic — it
 // translates eino's []schema.Message + model.Option into the existing
 // ChatModel + APIConfig + ChatConfig call shape, and converts the
 // *ChatResponse back into a *schema.Message.

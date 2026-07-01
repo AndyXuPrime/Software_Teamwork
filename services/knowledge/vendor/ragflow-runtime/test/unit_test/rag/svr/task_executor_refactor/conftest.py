@@ -106,15 +106,6 @@ def standard_task_dict() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def dataflow_task_dict() -> Dict[str, Any]:
-    """Provide a task dict for dataflow tasks."""
-    task = standard_task_dict()
-    task["task_type"] = "dataflow"
-    task["dataflow_id"] = "dataflow_test"
-    return task
-
-
-@pytest.fixture
 def raptor_task_dict() -> Dict[str, Any]:
     """Provide a task dict for RAPTOR tasks."""
     task = standard_task_dict()
@@ -130,18 +121,6 @@ def graphrag_task_dict() -> Dict[str, Any]:
     task["task_type"] = "graphrag"
     task["doc_ids"] = ["doc_1"]
     return task
-
-
-@pytest.fixture
-def memory_task_dict() -> Dict[str, Any]:
-    """Provide a task dict for memory tasks."""
-    return {
-        "id": f"task_{uuid.uuid4().hex[:8]}",
-        "task_type": "memory",
-        "memory_id": "mem_test",
-        "source_id": "src_test",
-        "message_dict": {"role": "user", "content": "test"},
-    }
 
 
 # =============================================================================
@@ -504,12 +483,8 @@ def make_task_context(**overrides):
         "size": 1000,
         "pagerank": 0,
         "task_type": "standard",
-        "dataflow_id": "",
         "doc_ids": [],
         "file": None,
-        "memory_id": "",
-        "source_id": "",
-        "message_dict": {},
     }
     ctx = MagicMock()
     for k, v in defaults.items():

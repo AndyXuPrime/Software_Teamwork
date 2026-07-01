@@ -22,7 +22,6 @@ from peewee import fn
 
 from api.db import VALID_PIPELINE_TASK_TYPES
 from api.db.db_models import DB, Document, PipelineOperationLog
-from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -121,18 +120,10 @@ class PipelineOperationLogService(CommonService):
         process_begin_at = document.process_begin_at
         process_duration = document.process_duration
 
-        if pipeline_id:
-            ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)
-            if not ok:
-                raise RuntimeError(f"Pipeline {pipeline_id} not found")
-            tenant_id = user_pipeline.user_id
-            title = user_pipeline.title
-            avatar = user_pipeline.avatar
-        else:
-            ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
-            if not ok:
-                raise RuntimeError(f"Cannot find dataset {document.kb_id} for referred_document {referred_document_id}")
-            tenant_id = kb_info.tenant_id
+        ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
+        if not ok:
+            raise RuntimeError(f"Cannot find dataset {document.kb_id} for referred_document {referred_document_id}")
+        tenant_id = kb_info.tenant_id
 
         if task_type not in VALID_PIPELINE_TASK_TYPES:
             raise ValueError(f"Invalid task type: {task_type}")

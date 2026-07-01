@@ -737,8 +737,8 @@ class Markdown(MarkdownParser):
                     # document, so validate and DNS-pin every hop before connecting.
                     # Otherwise a markdown image like ![x](http://169.254.169.254/...)
                     # would make the server fetch internal services / cloud metadata.
-                    # Redirects are followed manually so each hop is re-validated,
-                    # mirroring common/data_source/rss_connector.py.
+                    # Redirects are followed manually so each hop is
+                    # re-validated before the next request.
                     current_hostname, current_ip = assert_url_is_safe(url)
                     current_url = url
                     response = None

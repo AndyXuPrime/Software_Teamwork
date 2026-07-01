@@ -65,31 +65,6 @@ func (h *SystemHandler) Healthz(c *gin.Context) {
 	c.JSON(statusCode, result)
 }
 
-// GetConfig get system configuration
-// @Summary Get System Configuration
-// @Description Get system configuration including register enabled status
-// @Tags system
-// @Accept json
-// @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/system/config [get]
-func (h *SystemHandler) GetConfig(c *gin.Context) {
-	config, err := h.systemService.GetConfig()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "Failed to get system configuration",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    config,
-	})
-}
-
 // GetConfigs get all system configurations
 // @Summary Get All System Configurations
 // @Description Get all system configurations from globalConfig

@@ -77,11 +77,6 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete):
     )
     _stub(
         monkeypatch,
-        "api.db.services.connector_service",
-        Connector2KbService=SimpleNamespace(),
-    )
-    _stub(
-        monkeypatch,
         "api.db.services.task_service",
         TaskService=SimpleNamespace(),
         GRAPH_RAPTOR_FAKE_DOC_ID="fake-doc",

@@ -18,7 +18,7 @@ from datetime import datetime
 from peewee import fn, JOIN
 
 from api.db import TenantPermission
-from api.db.db_models import DB, Document, Knowledgebase, User, UserCanvas
+from api.db.db_models import DB, Document, Knowledgebase, User
 from api.db.services.common_service import CommonService
 from common.time_utils import current_timestamp, datetime_format
 from api.db.services import duplicate_name
@@ -277,8 +277,6 @@ class KnowledgebaseService(CommonService):
             cls.model.chunk_num,
             cls.model.parser_id,
             cls.model.pipeline_id,
-            UserCanvas.title.alias("pipeline_name"),
-            UserCanvas.avatar.alias("pipeline_avatar"),
             cls.model.parser_config,
             cls.model.pagerank,
             cls.model.graphrag_task_id,
@@ -290,9 +288,7 @@ class KnowledgebaseService(CommonService):
             cls.model.create_time,
             cls.model.update_time
             ]
-        kbs = cls.model.select(*fields)\
-                .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
-            .where(
+        kbs = cls.model.select(*fields).where(
             (cls.model.id == kb_id),
             (cls.model.status == StatusEnum.VALID.value)
         ).dicts()

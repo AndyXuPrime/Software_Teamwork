@@ -46,20 +46,3 @@ def test_document_download_by_id_invalid_id_contract(rest_client):
     payload = res.json()
     assert payload["code"] == 102, payload
     assert payload["message"] == "Document not found!", payload
-
-
-@pytest.mark.p2
-def test_document_artifact_requires_auth(rest_client_noauth):
-    res = rest_client_noauth.get("/documents/artifact/not-an-artifact.txt")
-    assert res.status_code == 401
-    payload = res.json()
-    assert payload["code"] == 401, payload
-
-
-@pytest.mark.p2
-def test_document_artifact_rejects_unsafe_filename(rest_client):
-    res = rest_client.get("/documents/artifact/not-an-artifact.exe")
-    assert res.status_code == 200
-    payload = res.json()
-    assert payload["code"] == 102, payload
-    assert payload["message"] == "Invalid file type.", payload

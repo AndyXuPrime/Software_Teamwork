@@ -50,18 +50,6 @@ def clear_datasets(rest_client):
 
 
 @pytest.fixture
-def clear_chats(rest_client):
-    def _cleanup():
-        res = rest_client.delete("/chats", json={"ids": None, "delete_all": True})
-        assert res.status_code == 200, res.text
-        payload = res.json()
-        assert payload["code"] in (0, 102), payload
-
-    yield
-    _cleanup()
-
-
-@pytest.fixture
 def create_dataset(rest_client, clear_datasets):
     created_ids: list[str] = []
 
@@ -81,28 +69,6 @@ def create_dataset(rest_client, clear_datasets):
         assert res.status_code == 200
         payload = res.json()
         # Dataset may already be removed by test logic/cleanup.
-        assert payload["code"] in (0, 102), payload
-
-
-@pytest.fixture
-def create_chat(rest_client, clear_chats):
-    created_ids: list[str] = []
-
-    def _create(name: str = "restful_chat") -> str:
-        res = rest_client.post("/chats", json={"name": name, "dataset_ids": []})
-        assert res.status_code == 200
-        payload = res.json()
-        assert payload["code"] == 0, payload
-        chat_id = payload["data"]["id"]
-        created_ids.append(chat_id)
-        return chat_id
-
-    yield _create
-
-    if created_ids:
-        res = rest_client.delete("/chats", json={"ids": created_ids})
-        assert res.status_code == 200, res.text
-        payload = res.json()
         assert payload["code"] in (0, 102), payload
 
 

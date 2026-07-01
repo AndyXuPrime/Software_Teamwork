@@ -53,7 +53,7 @@ doc_engine:
 
 ### 1. Initialize Engine
 
-The engine is automatically initialized on service startup (see `cmd/server_main.go`):
+The engine is initialized by whichever retained runtime entrypoint wires `internal/engine`:
 
 ```go
 // Initialize doc engine

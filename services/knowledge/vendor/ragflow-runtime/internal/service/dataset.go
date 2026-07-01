@@ -106,13 +106,11 @@ const (
 type DatasetService struct {
 	kbDAO          *dao.KnowledgebaseDAO
 	documentDAO    *dao.DocumentDAO
-	connectorDAO   *dao.ConnectorDAO
 	tenantDAO      *dao.TenantDAO
 	tenantLLMDAO   *dao.TenantLLMDAO
 	pipelineLogDAO *dao.PipelineOperationLogDAO
 	userTenantDAO  *dao.UserTenantDAO
 	taskDAO        *dao.TaskDAO
-	searchService  *SearchService
 	docEngine      engine.DocEngine
 	embeddingCache *utility.EmbeddingLRU
 	engineType     server.EngineType
@@ -128,13 +126,11 @@ func NewDatasetService() *DatasetService {
 	return &DatasetService{
 		kbDAO:          dao.NewKnowledgebaseDAO(),
 		documentDAO:    dao.NewDocumentDAO(),
-		connectorDAO:   dao.NewConnectorDAO(),
 		tenantDAO:      dao.NewTenantDAO(),
 		tenantLLMDAO:   dao.NewTenantLLMDAO(),
 		pipelineLogDAO: dao.NewPipelineOperationLogDAO(),
 		userTenantDAO:  dao.NewUserTenantDAO(),
 		taskDAO:        dao.NewTaskDAO(),
-		searchService:  NewSearchService(),
 		docEngine:      engine.Get(),
 		embeddingCache: utility.NewEmbeddingLRU(1000),
 		engineType:     engineType,
@@ -1702,7 +1698,6 @@ type SearchDatasetsRequest struct {
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"`
 	CrossLanguages         []string               `json:"cross_languages,omitempty"`
-	SearchID               *string                `json:"search_id,omitempty"`
 	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
 	RerankID               *string                `json:"rerank_id,omitempty"`
 	Keyword                *bool                  `json:"keyword,omitempty"`
@@ -1727,7 +1722,6 @@ type SearchDatasetRequest struct {
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"`
 	CrossLanguages         []string               `json:"cross_languages,omitempty"`
-	SearchID               *string                `json:"search_id,omitempty"`
 	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
 	RerankID               *string                `json:"rerank_id,omitempty"`
 	Keyword                *bool                  `json:"keyword,omitempty"`
@@ -1749,7 +1743,6 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 		UseKG:                  req.UseKG,
 		TopK:                   req.TopK,
 		CrossLanguages:         req.CrossLanguages,
-		SearchID:               req.SearchID,
 		MetadataFilter:         req.MetadataFilter,
 		RerankID:               req.RerankID,
 		Keyword:                req.Keyword,
@@ -1811,10 +1804,6 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	if req.Keyword != nil {
 		keyword = *req.Keyword
 	}
-	searchID := ""
-	if req.SearchID != nil {
-		searchID = *req.SearchID
-	}
 	rerankID := ""
 	if req.RerankID != nil {
 		rerankID = *req.RerankID
@@ -1832,14 +1821,13 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		"    docIDs=%v\n"+
 		"    useKG=%v, topK=%v\n"+
 		"    crossLanguages=%v\n"+
-		"    searchID=%v\n"+
 		"    metadataFilter=%v\n"+
 		"    rerankID=%v\n"+
 		"    keyword=%v\n"+
 		"    similarityThreshold=%v, vectorSimilarityWeight=%v",
 		datasetIDs, req.Question,
 		common.PtrString(req.Page), common.PtrString(req.Size), req.DocIDs,
-		useKG, topK, crossLanguages, searchID,
+		useKG, topK, crossLanguages,
 		metadataFilter,
 		rerankID,
 		keyword,
@@ -1880,99 +1868,19 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		}
 	}
 
-	// Override request fields with values from saved search config (if search_id is provided)
-	var chatID string
-	if searchID != "" {
-		if s.searchService == nil {
-			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
-			return nil, fmt.Errorf("Invalid search_id")
-		}
-		searchDetail, err := s.searchService.GetDetail(searchID)
-		if err != nil || searchDetail == nil || len(searchDetail) == 0 {
-			common.Warn("Invalid search_id", zap.String("searchID", searchID), zap.Error(err))
-			return nil, fmt.Errorf("Invalid search_id")
-		} else if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
-			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
-				metadataFilter = scMetadataFilter
-			}
-			if scST, ok := searchConfig["similarity_threshold"].(float64); ok {
-				similarityThreshold = scST
-			}
-			if scVSW, ok := searchConfig["vector_similarity_weight"].(float64); ok {
-				vectorSimilarityWeight = scVSW
-			}
-			if scTopK, ok := searchConfig["top_k"].(float64); ok {
-				topK = int(scTopK)
-				if topK < 1 {
-					topK = 1
-				} else if topK > 2048 {
-					topK = 2048
-				}
-			}
-			if scUseKG, ok := searchConfig["use_kg"].(bool); ok {
-				useKG = scUseKG
-			}
-			if scLangs, ok := searchConfig["cross_languages"].([]interface{}); ok {
-				crossLanguages = make([]string, len(scLangs))
-				for i, l := range scLangs {
-					if s, ok := l.(string); ok {
-						crossLanguages[i] = s
-					}
-				}
-			}
-			if scKeyword, ok := searchConfig["keyword"].(bool); ok {
-				keyword = scKeyword
-			}
-			if scRerankID, ok := searchConfig["rerank_id"].(string); ok {
-				rerankID = scRerankID
-			}
-			chatID, _ = searchConfig["chat_id"].(string)
-
-			common.Debug("SearchDatasets loaded Search config",
-				zap.String("searchID", searchID),
-				zap.Strings("datasetIDs", datasetIDs),
-				zap.Float64("vectorSimilarityWeight", vectorSimilarityWeight),
-				zap.Float64("fullTextWeight", 1-vectorSimilarityWeight),
-				zap.Float64("similarityThreshold", similarityThreshold),
-				zap.Int("topK", topK),
-				zap.Strings("crossLanguages", crossLanguages),
-				zap.Bool("keyword", keyword),
-				zap.String("rerankID", rerankID),
-				zap.String("chatID", chatID),
-				zap.Bool("useKG", useKG))
-		} else {
-			common.Warn("Invalid search_id: search_config missing or invalid", zap.String("searchID", searchID))
-			return nil, fmt.Errorf("Invalid search_id")
-		}
-	}
-
 	// If meta_data_filter method is auto/semi_auto, get chat model
 	var err error
 	var chatModelForFilter *models.ChatModel
 	if metadataFilter != nil {
 		method, _ := metadataFilter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
-			if chatID != "" {
-				driver, modelName, apiConfig, _, err := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, chatID)
-				if err != nil {
-					common.Warn("Failed to get chat model config from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
-				} else {
-					chatModelForFilter = models.NewChatModel(driver, &modelName, apiConfig)
-					common.Info("Fetched chat model (from search_config) for metadata filter",
-						zap.String("chatID", chatID),
-						zap.String("tenantID", tenantIDs[0]))
-				}
-			}
-
-			if chatModelForFilter == nil {
-				driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(tenantIDs[0], entity.ModelTypeChat)
-				if err != nil {
-					common.Warn("Failed to get tenant default chat model for meta_data_filter", zap.Error(err))
-				} else {
-					chatModelForFilter = models.NewChatModel(driver, &modelName, apiConfig)
-					common.Info("Fetched chat model (tenant default) for metadata filter",
-						zap.String("tenantID", tenantIDs[0]))
-				}
+			driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(tenantIDs[0], entity.ModelTypeChat)
+			if err != nil {
+				common.Warn("Failed to get tenant default chat model for meta_data_filter", zap.Error(err))
+			} else {
+				chatModelForFilter = models.NewChatModel(driver, &modelName, apiConfig)
+				common.Info("Fetched chat model (tenant default) for metadata filter",
+					zap.String("tenantID", tenantIDs[0]))
 			}
 		}
 	}
@@ -2580,7 +2488,7 @@ func (s *DatasetService) DeleteDatasets(ids []string, deleteAll bool, tenantID s
 	}, common.CodeSuccess, nil
 }
 
-// GetDataset gets a single dataset with its size and linked connectors.
+// GetDataset gets a single dataset with its size.
 func (s *DatasetService) GetDataset(datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
@@ -2610,36 +2518,24 @@ func (s *DatasetService) GetDataset(datasetID, userID string) (map[string]interf
 	}
 	data["size"] = size
 
-	connectors, err := s.connectorDAO.ListByDatasetID(datasetID)
-	if err != nil {
-		return nil, common.CodeServerError, errors.New("Database operation failed")
-	}
-	data["connectors"] = datasetConnectorsOrEmpty(connectors)
-
 	return data, common.CodeSuccess, nil
 }
 
-type DatasetConnectorRequest struct {
-	ID        string `json:"id"`
-	AutoParse string `json:"auto_parse,omitempty"`
-}
-
 type UpdateDatasetRequest struct {
-	Name               *string                    `json:"name,omitempty"`
-	Avatar             *string                    `json:"avatar,omitempty"`
-	Description        *string                    `json:"description,omitempty"`
-	Language           *string                    `json:"language,omitempty"`
-	Connectors         *[]DatasetConnectorRequest `json:"connectors,omitempty"`
-	EmbdID             *string                    `json:"embd_id,omitempty"`
-	EmbeddingModel     *string                    `json:"embedding_model,omitempty"`
-	Permission         *string                    `json:"permission,omitempty"`
-	ParserID           *string                    `json:"parser_id,omitempty"`
-	ChunkMethod        *string                    `json:"chunk_method,omitempty"`
-	Pagerank           *int64                     `json:"pagerank,omitempty"`
-	ParserConfig       map[string]interface{}     `json:"parser_config,omitempty"`
-	PipelineID         *string                    `json:"pipeline_id,omitempty"`
-	AutoMetadataConfig *AutoMetadataConfig        `json:"auto_metadata_config,omitempty"`
-	Ext                map[string]interface{}     `json:"ext,omitempty"`
+	Name               *string                `json:"name,omitempty"`
+	Avatar             *string                `json:"avatar,omitempty"`
+	Description        *string                `json:"description,omitempty"`
+	Language           *string                `json:"language,omitempty"`
+	EmbdID             *string                `json:"embd_id,omitempty"`
+	EmbeddingModel     *string                `json:"embedding_model,omitempty"`
+	Permission         *string                `json:"permission,omitempty"`
+	ParserID           *string                `json:"parser_id,omitempty"`
+	ChunkMethod        *string                `json:"chunk_method,omitempty"`
+	Pagerank           *int64                 `json:"pagerank,omitempty"`
+	ParserConfig       map[string]interface{} `json:"parser_config,omitempty"`
+	PipelineID         *string                `json:"pipeline_id,omitempty"`
+	AutoMetadataConfig *AutoMetadataConfig    `json:"auto_metadata_config,omitempty"`
+	Ext                map[string]interface{} `json:"ext,omitempty"`
 }
 
 // UpdateDataset Update a dataset
@@ -2654,12 +2550,6 @@ func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 
 	if kb == nil || kb.TenantID != tenantID {
 		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
-	}
-
-	connectorsProvided := req.Connectors != nil
-	connectors := make([]DatasetConnectorRequest, 0)
-	if req.Connectors != nil {
-		connectors = *req.Connectors
 	}
 
 	updates := make(map[string]interface{})
@@ -2824,7 +2714,7 @@ func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		}
 	}
 
-	if len(updates) == 0 && !connectorsProvided {
+	if len(updates) == 0 {
 		return nil, common.CodeDataError, errors.New("No properties were modified")
 	}
 
@@ -2834,42 +2724,13 @@ func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		}
 	}
 
-	if connectorsProvided {
-		connectorLinks := make([]dao.DatasetConnectorLink, 0, len(connectors))
-		for _, connector := range connectors {
-			connectorID := strings.TrimSpace(connector.ID)
-			if connectorID == "" {
-				return nil, common.CodeDataError, errors.New("connector id is required")
-			}
-			connectorLinks = append(connectorLinks, dao.DatasetConnectorLink{
-				ID:        connectorID,
-				AutoParse: connector.AutoParse,
-			})
-		}
-		if err = s.connectorDAO.LinkDatasetConnectors(kb.ID, connectorLinks); err != nil {
-			return nil, common.CodeServerError, errors.New("Database operation failed")
-		}
-	}
-
 	updatedKB, err := s.kbDAO.GetByID(kb.ID)
 	if err != nil {
 		return nil, common.CodeDataError, errors.New("Dataset updated failed")
 	}
 
 	data := datasetToMap(updatedKB)
-	linkedConnectors, err := s.connectorDAO.ListByDatasetID(kb.ID)
-	if err != nil {
-		return nil, common.CodeServerError, errors.New("Database operation failed")
-	}
-	data["connectors"] = datasetConnectorsOrEmpty(linkedConnectors)
 	return data, common.CodeSuccess, nil
-}
-
-func datasetConnectorsOrEmpty(connectors []*dao.ConnectorDatasetListItem) []*dao.ConnectorDatasetListItem {
-	if connectors == nil {
-		return make([]*dao.ConnectorDatasetListItem, 0)
-	}
-	return connectors
 }
 
 func datasetUpdateParserID(req UpdateDatasetRequest) (string, bool, error) {

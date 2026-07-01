@@ -48,32 +48,6 @@ func (LLM) TableName() string {
 	return "llm"
 }
 
-// TenantLangfuse tenant langfuse model
-type TenantLangfuse struct {
-	TenantID  string `gorm:"column:tenant_id;primaryKey;size:32" json:"tenant_id"`
-	SecretKey string `gorm:"column:secret_key;size:2048;not null" json:"secret_key"`
-	PublicKey string `gorm:"column:public_key;size:2048;not null" json:"public_key"`
-	Host      string `gorm:"column:host;size:128;not null;index" json:"host"`
-	BaseModel
-}
-
-// TableName specify table name
-func (TenantLangfuse) TableName() string {
-	return "tenant_langfuse"
-}
-
-// LangfuseInfoResponse is the GET /langfuse/api-key payload: the stored
-// credentials enriched with the resolved Langfuse project id/name. Field
-// order mirrors the Python filter_by_tenant_with_info dict plus project info.
-type LangfuseInfoResponse struct {
-	TenantID    string `json:"tenant_id"`
-	Host        string `json:"host"`
-	SecretKey   string `json:"secret_key"`
-	PublicKey   string `json:"public_key"`
-	ProjectID   string `json:"project_id"`
-	ProjectName string `json:"project_name"`
-}
-
 // MyLLM represents LLM information for a tenant with factory details
 type MyLLM struct {
 	ID         string  `gorm:"column:id" json:"id"`

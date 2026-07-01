@@ -783,7 +783,6 @@ class UpdateDatasetReq(CreateDatasetReq):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(default="")]
     pagerank: Annotated[int, Field(default=0, ge=0, le=100)]
     language: Annotated[str | None, Field(default=None, max_length=32)]
-    connectors: Annotated[list[dict[str, Any]], Field(default_factory=list)]
 
     @field_validator("dataset_id", mode="before")
     @classmethod
@@ -887,8 +886,9 @@ class DeleteDocumentReq(DeleteReq):
         """
         Validate document IDs without enforcing UUIDv1.
 
-        Connector-backed documents can use non-UUID identifiers, so we only
-        enforce uniqueness here and leave existence checks to the delete API.
+        Some imported or externally tracked documents may use non-UUID
+        identifiers, so we only enforce uniqueness here and leave existence
+        checks to the delete API.
         """
         if v_list is None:
             return None
@@ -920,7 +920,6 @@ class SearchDatasetReq(BaseModel):
     use_kg: Annotated[bool, Field(default=False)]
     cross_languages: Annotated[list[str], Field(default=[])]
     keyword: Annotated[bool, Field(default=False)]
-    search_id: Annotated[str | None, Field(default=None)]
     rerank_id: Annotated[str | None, Field(default=None)]
     tenant_rerank_id: Annotated[int | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
@@ -942,7 +941,6 @@ class SearchDatasetsReq(BaseModel):
     use_kg: Annotated[bool, Field(default=False)]
     cross_languages: Annotated[list[str], Field(default=[])]
     keyword: Annotated[bool, Field(default=False)]
-    search_id: Annotated[str | None, Field(default=None)]
     rerank_id: Annotated[str | None, Field(default=None)]
     tenant_rerank_id: Annotated[int | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]

@@ -75,33 +75,24 @@ Vector databases excel at semantic similarity search, but RAG requires precise a
 
 Therefore, the retrieval layer of RAG is a composite system based on vector search but must integrate capabilities like full-text search, re-ranking, and metadata filtering.
 
-## RAG and memory: Retrieval from the same source but different streams
-
-Within the agent framework, the essence of the memory mechanism is the same as RAG: both retrieve relevant information from storage based on current needs. The key difference lies in the data source:
-- RAG: Targets pre-existing static or dynamic private data provided by the user in advance (e.g., documents, databases).
-- Memory: Targets dynamic data generated or perceived by the agent in real-time during interaction (e.g., conversation history, environmental state, tool execution results).
-They are highly consistent at the technical base (e.g., vector retrieval, keyword matching) and can be seen as the same retrieval capability applied in different scenarios ("existing knowledge" vs. "interaction memory"). A complete agent system often includes both an RAG module for inherent knowledge and a Memory module for interaction history.
-
 ## RAG applications
 
 RAG has demonstrated clear value in several typical scenarios:
 
-1. Enterprise Knowledge Q&A and Internal Search  
+1. Enterprise Knowledge Q&A and Internal Search
    By vectorizing corporate private data and combining it with an LLM, RAG can directly return natural language answers based on authoritative sources, rather than document lists. While meeting intelligent Q&A needs, it inherently aligns with corporate requirements for data security, access control, and compliance.
-2. Complex Document Understanding and Professional Q&A  
+2. Complex Document Understanding and Professional Q&A
    For structurally complex documents like contracts and regulations, the value of RAG lies in its ability to generate accurate, verifiable answers while maintaining context integrity. Its system accuracy largely depends on text chunking and semantic understanding strategies.
-3. Dynamic Knowledge Fusion and Decision Support  
+3. Dynamic Knowledge Fusion and Decision Support
    In business scenarios requiring the synthesis of information from multiple sources, RAG evolves into a knowledge orchestration and reasoning support system for business decisions. Through a multi-path recall mechanism, it fuses knowledge from different systems and formats, maintaining factual consistency and logical controllability during the generation phase.
 
 ## The future of RAG
 
 The evolution of RAG is unfolding along several clear paths:
 
-1. RAG as the data foundation for Agents  
-   RAG and agents have an architecture vs. scenario relationship. For agents to achieve autonomous and reliable decision-making and execution, they must rely on accurate and timely knowledge. RAG provides them with a standardized capability to access private domain knowledge and is an inevitable choice for building knowledge-aware agents.
-2. Advanced RAG: Using LLMs to optimize retrieval itself  
+1. Advanced RAG: Using LLMs to optimize retrieval itself
    The core feature of next-generation RAG is fully utilizing the reasoning capabilities of LLMs to optimize the retrieval process, such as rewriting queries, summarizing or fusing results, or implementing intelligent routing. Empowering every aspect of retrieval with LLMs is key to breaking through current performance bottlenecks.
-3. Towards context engineering 2.0  
-   Current RAG can be viewed as Context Engineering 1.0, whose core is assembling static knowledge context for single Q&A tasks. The forthcoming Context Engineering 2.0 will extend with RAG technology at its core, becoming a system that automatically and dynamically assembles comprehensive context for agents. The context fused by this system will come not only from documents but also include interaction memory, available tools/skills, and real-time environmental information. This marks the transition of agent development from a "handicraft workshop" model to the industrial starting point of automated context engineering.
+2. Towards context engineering 2.0
+   Current RAG can be viewed as Context Engineering 1.0, whose core is assembling static knowledge context for single Q&A tasks. The forthcoming Context Engineering 2.0 will extend with RAG technology at its core, becoming a system that automatically and dynamically assembles comprehensive context from documents, retrieval policies, tools, and real-time environmental information.
 
-The essence of RAG is to build a dedicated, efficient, and trustworthy external data interface for large language models; its core is Retrieval, not Generation. Starting from the practical need to solve private data access, its technical depth is reflected in the optimization of retrieval for complex unstructured data. With its deep integration into agent architectures and its development towards automated context engineering, RAG is evolving from a technology that improves Q&A quality into the core infrastructure for building the next generation of trustworthy, controllable, and scalable intelligent applications.
+The essence of RAG is to build a dedicated, efficient, and trustworthy external data interface for large language models; its core is Retrieval, not Generation. Starting from the practical need to solve private data access, its technical depth is reflected in the optimization of retrieval for complex unstructured data.

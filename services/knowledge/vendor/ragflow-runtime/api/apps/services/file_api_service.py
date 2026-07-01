@@ -158,7 +158,6 @@ def list_files(tenant_id: str, args: dict):
         root_folder = FileService.get_root_folder(tenant_id)
         pf_id = root_folder["id"]
         FileService.init_knowledgebase_docs(pf_id, tenant_id)
-        FileService.init_skills_folder(pf_id, tenant_id)
 
     e, file = FileService.get_by_id(pf_id)
     if not e:
@@ -230,98 +229,6 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
     errors: list[str] = []
     success_count = 0
 
-    def _get_space_uuid_by_name(tenant_id, space_name, authorization):
-        """Get space UUID by space name from Go backend"""
-        try:
-            import requests
-
-            host = getattr(settings, 'HOST_IP', '127.0.0.1')
-            # Go service runs on port+4 (9384 by default)
-            port = getattr(settings, 'HOST_PORT', 9380) + 4
-            service_url = f"http://{host}:{port}"
-
-            # List all spaces and find the one matching the name
-            url = f"{service_url}/api/v1/skills/spaces"
-            headers = {"Content-Type": "application/json"}
-            if authorization:
-                headers["Authorization"] = authorization
-
-            response = requests.get(url, headers=headers, timeout=10)
-
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("code") == 0:
-                    spaces = data.get("data", {}).get("spaces", [])
-                    for space in spaces:
-                        if space.get("name") == space_name:
-                            return space.get("id")
-        except Exception as e:
-            logging.warning(f"Error getting space UUID: {e}")
-        return None
-
-    def _delete_skill_index(tenant_id, space_name, skill_name, authorization):
-        """Delete skill index from Go backend.
-
-        Returns:
-            bool: True if deletion succeeded (HTTP 200), False otherwise.
-        """
-        try:
-            import requests
-            from urllib.parse import quote
-
-            # Construct service URL from settings
-            host = getattr(settings, 'HOST_IP', '127.0.0.1')
-            # Go service runs on port+4 (9384 by default)
-            port = getattr(settings, 'HOST_PORT', 9380) + 4
-            service_url = f"http://{host}:{port}"
-
-            # Get space UUID from space name
-            space_uuid = _get_space_uuid_by_name(tenant_id, space_name, authorization)
-            space_id = space_uuid if space_uuid else space_name
-
-            url = f"{service_url}/api/v1/skills/index?skill_id={quote(skill_name)}&space_id={quote(space_id)}"
-            headers = {"Content-Type": "application/json"}
-            if authorization:
-                headers["Authorization"] = authorization
-
-            response = requests.delete(url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                try:
-                    data = response.json()
-                    if data.get("code") == 0:
-                        logging.info(
-                            f"Successfully deleted skill index: space={space_name}, skill={skill_name}, "
-                            f"status={response.status_code}, code=0"
-                        )
-                        return True
-                    else:
-                        app_code = data.get("code", "unknown")
-                        app_msg = data.get("message", "no message")
-                        logging.error(
-                            f"Failed to delete skill index: space={space_name}, skill={skill_name}, "
-                            f"status={response.status_code}, app_code={app_code}, app_msg={app_msg}, "
-                            f"response={response.text}"
-                        )
-                        return False
-                except ValueError as json_err:
-                    # JSON decode error - treat as failure
-                    logging.error(
-                        f"Failed to parse delete response JSON: space={space_name}, skill={skill_name}, "
-                        f"error={json_err}, raw_response={response.text}"
-                    )
-                    return False
-            else:
-                logging.error(
-                    f"Failed to delete skill index: space={space_name}, skill={skill_name}, "
-                    f"status={response.status_code}, response={response.text}"
-                )
-                return False
-        except Exception as e:
-            logging.error(
-                f"Exception deleting skill index: space={space_name}, skill={skill_name}, error={e}"
-            )
-            return False
-
     def _delete_single_file(file) -> int:
         try:
             if file.location:
@@ -362,61 +269,8 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
 
         return 0
 
-    def _find_ancestor_skill_space(folder_id, tenant_id):
-        """Walk up the folder hierarchy to find an ancestor with source_type == 'skill_space'.
-
-        Returns:
-            tuple: (success, folder) where folder has source_type == 'skill_space', or (False, None)
-        """
-        visited = set()
-        current_id = folder_id
-        while current_id and current_id not in visited:
-            visited.add(current_id)
-            success, folder = FileService.get_by_id(current_id)
-            if not success or not folder:
-                return False, None
-            if folder.source_type == "skill_space":
-                return True, folder
-            # Move to parent
-            current_id = folder.parent_id
-        return False, None
-
     def _delete_folder_recursive(folder, tenant_id) -> int:
         deleted = 0
-        current_space_name = None
-        is_space_folder = folder.source_type == "skill_space"
-        is_skill_folder = False
-
-        if not is_space_folder:
-            parent_success, parent_folder = FileService.get_by_id(folder.parent_id)
-            if parent_success and parent_folder and parent_folder.source_type == "skill_space":
-                is_skill_folder = True
-                current_space_name = parent_folder.name
-                logging.info(f"Identified skill folder '{folder.name}' (parent space: {current_space_name})")
-            else:
-                ancestor_success, ancestor_folder = _find_ancestor_skill_space(folder.parent_id, tenant_id)
-                if ancestor_success and ancestor_folder:
-                    is_skill_folder = True
-                    current_space_name = ancestor_folder.name
-                    logging.info(f"Identified skill folder '{folder.name}' (ancestor space: {current_space_name})")
-
-        if is_space_folder:
-            current_space_name = folder.name
-            logging.info(f"Processing space folder '{folder.name}' - will delete all skill indexes within")
-
-        if is_skill_folder and current_space_name and not is_space_folder:
-            logging.info(f"Deleting skill index for skill '{folder.name}' in space '{current_space_name}'")
-            index_deleted = _delete_skill_index(tenant_id, current_space_name, folder.name, auth_header)
-            if not index_deleted:
-                logging.error(
-                    f"Aborting folder deletion due to index deletion failure: "
-                    f"folder={folder.name}, space={current_space_name}"
-                )
-                errors.append(
-                    f"Failed to delete skill index for folder '{folder.name}' in space '{current_space_name}'. "
-                    f"Folder deletion aborted to prevent orphaned indexes."
-                )
-                return deleted
         sub_files = FileService.list_all_files_by_parent_id(folder.id)
         logging.info(f"Folder '{folder.name}': found {len(sub_files)} children to delete")
         
@@ -459,9 +313,6 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
                 continue
 
             if file.source_type == FileSource.KNOWLEDGEBASE:
-                continue
-
-            if file.source_type == "skill_space":
                 continue
 
             if file.type == FileType.FOLDER.value:

@@ -196,7 +196,7 @@ func TestTimer_Markdown(t *testing.T) {
 		t.Errorf("Markdown missing header: %q", md)
 	}
 	// Should contain all 6 phase labels
-	for _, label := range []string{"Check LLM", "Check Langfuse tracer", "Bind models", "Query refinement(LLM)", "Retrieval", "Generate answer", "Total"} {
+	for _, label := range []string{"Check LLM", "Check tracing", "Bind models", "Query refinement(LLM)", "Retrieval", "Generate answer", "Total"} {
 		if !strings.Contains(md, label+":") {
 			t.Errorf("Markdown missing label %q: %q", label, md)
 		}

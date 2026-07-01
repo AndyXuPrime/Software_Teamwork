@@ -9,14 +9,11 @@ cat /ragflow/VERSION
 # Usage and command-line argument parsing
 # -----------------------------------------------------------------------------
 function usage() {
-    echo "Usage: $0 [--disable-webserver] [--disable-taskexecutor] [--disable-datasync] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
+    echo "Usage: $0 [--disable-webserver] [--disable-taskexecutor] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
     echo
     echo "  --disable-webserver             Disables the web server (nginx + ragflow_server)."
     echo "  --disable-taskexecutor          Disables task executor workers."
-    echo "  --disable-datasync              Disables synchronization of datasource workers."
     echo "  --enable-mcpserver              Enables the MCP server."
-    echo "  --enable-adminserver            Enables the Admin server."
-    echo "  --init-model-provider-tables  Run model provider table migrations and exit."
     echo "  --init-superuser                Initializes the superuser."
     echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
     echo "  --consumer-no-end=<num>         End range for consumers (if using range-based)."
@@ -28,18 +25,14 @@ function usage() {
     echo "  $0 --disable-webserver --consumer-no-beg=0 --consumer-no-end=5"
     echo "  $0 --disable-webserver --workers=2 --host-id=myhost123"
     echo "  $0 --enable-mcpserver"
-    echo "  $0 --enable-adminserver"
     echo "  $0 --init-superuser"
     exit 1
 }
 
 ENABLE_WEBSERVER=1 # Default to enable web server
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
-ENABLE_DATASYNC=1
 ENABLE_MCP_SERVER=0
-ENABLE_ADMIN_SERVER=0 # Default close admin server
 INIT_SUPERUSER_ARGS="" # Default to not initialize superuser
-INIT_MODEL_PROVIDER_TABLES=0
 CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
@@ -79,20 +72,8 @@ for arg in "$@"; do
       ENABLE_TASKEXECUTOR=0
       shift
       ;;
-    --disable-datasync)
-      ENABLE_DATASYNC=0
-      shift
-      ;;
     --enable-mcpserver)
       ENABLE_MCP_SERVER=1
-      shift
-      ;;
-    --enable-adminserver)
-      ENABLE_ADMIN_SERVER=1
-      shift
-      ;;
-    --init-model-provider-tables)
-      INIT_MODEL_PROVIDER_TABLES=1
       shift
       ;;
     --init-superuser)
@@ -272,17 +253,6 @@ function wait_for_server() {
 ensure_docling
 ensure_db_init
 
-if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
-    echo "Running model provider table migrations..."
-    "$PY" tools/scripts/mysql_migration.py \
-        --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
-        --config conf/service_conf.yaml \
-        --execute \
-        --database-version "v0.26.1" \
-        --mark-database-version-on-success
-    echo "Model provider table migrations completed."
-fi
-
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx
@@ -305,34 +275,6 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     fi
 fi
 
-
-if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
-    while true; do
-        echo "Attempt to start Admin python server..."
-        "$PY" admin/server/admin_server.py
-        echo "Admin python server started"
-        sleep 1;
-    done &
-
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        while true; do
-            echo "Attempt to starting Admin go server..."
-            wait_for_server "http://127.0.0.1:9381/api/v1/admin/ping" "admin_server"
-            echo "Starting Admin go server..."
-            bin/admin_server
-            sleep 1;
-        done &
-    fi
-fi
-
-if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
-    echo "Starting data sync..."
-    while true; do
-        "$PY" rag/svr/sync_data_source.py &
-        wait;
-        sleep 1;
-    done &
-fi
 
 if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
     start_mcp_server

@@ -59,7 +59,6 @@ type documentServiceIface interface {
 	DeleteDocumentMetadata(docID string, keys []string) error
 	DeleteDocumentAllMetadata(docID string) error
 	GetDocumentMetadataByID(docID string) (map[string]interface{}, error)
-	GetDocumentArtifact(filename, userID string) (*service.ArtifactResponse, error)
 	GetDocumentPreview(docID string) (*service.DocumentPreview, error)
 	UploadLocalDocuments(kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
 	UploadWebDocument(kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error)
@@ -216,43 +215,6 @@ func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
 		contentType = "image/JPEG"
 	}
 	c.Data(http.StatusOK, contentType, data)
-}
-
-func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
-		return
-	}
-	filename := c.Param("filename")
-	artifact, err := h.documentService.GetDocumentArtifact(filename, user.ID)
-	if err != nil {
-		switch {
-		case errors.Is(err, service.ErrArtifactInvalidFilename),
-			errors.Is(err, service.ErrArtifactInvalidFileType),
-			errors.Is(err, service.ErrArtifactNotFound):
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeDataError,
-				"message": err.Error(),
-			})
-		default:
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeExceptionError,
-				"data":    nil,
-				"message": err.Error(),
-			})
-		}
-		return
-	}
-
-	c.Header("Content-Type", artifact.ContentType)
-	if artifact.ForceAttachment {
-		c.Header("X-Content-Type-Options", "nosniff")
-		c.Header("Content-Disposition", "attachment")
-	} else {
-		c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, artifact.SafeFilename))
-	}
-	c.Data(http.StatusOK, artifact.ContentType, artifact.Data)
 }
 
 func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
@@ -788,7 +750,6 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"chunk_method":     doc.ParserID,
 		"parser_id":        doc.ParserID,
 		"pipeline_id":      stringValue(doc.PipelineID),
-		"pipeline_name":    stringValue(doc.PipelineName),
 		"nickname":         stringValue(doc.Nickname),
 		"parser_config":    decodeJSONMap(string(doc.ParserConfig)),
 		"meta_fields":      metaFields,

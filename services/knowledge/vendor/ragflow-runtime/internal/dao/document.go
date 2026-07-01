@@ -96,10 +96,9 @@ func (dao *DocumentDAO) ListByKBID(kbID string, offset, limit int) ([]*entity.Do
 	}
 
 	err := DB.Table("document").
-		Select(`document.*, user_canvas.title as pipeline_name, user.nickname`).
+		Select(`document.*, user.nickname`).
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id").
-		Joins("LEFT JOIN user_canvas ON document.pipeline_id = user_canvas.id").
 		Joins("LEFT JOIN user ON document.created_by = user.id").
 		Where("document.kb_id = ?", kbID).
 		Order("document.create_time DESC").

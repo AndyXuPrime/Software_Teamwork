@@ -41,22 +41,12 @@ var ChinesePunctRegex = regexp.MustCompile(`[,，;；、\r\n]+`)
 // CreateChunkStore creates a chunk table in Infinity
 // baseName is the table name prefix (e.g., "ragflow_<tenant_id>")
 // The full table name is built as "{baseName}_{datasetID}"
-// For skill index (datasetID="skill"), tableName is just baseName and uses skill_infinity_mapping.json
 func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
 	vecSize := vectorSize
 
-	// Determine table name and mapping file based on index type
-	var tableName string
-	var mappingFile string
-
-	tableName = buildChunkTableName(baseName, datasetID)
-	if datasetID == "skill" {
-		mappingFile = "skill_infinity_mapping.json"
-		common.Info("Creating skill index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
-	} else {
-		mappingFile = e.mappingFileName
-		common.Info("Creating regular index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
-	}
+	tableName := buildChunkTableName(baseName, datasetID)
+	mappingFile := e.mappingFileName
+	common.Info("Creating regular index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
 
 	// Use configured schema
 	fpMapping := filepath.Join(utility.GetProjectRoot(), "conf", mappingFile)
@@ -603,31 +593,14 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
 
-	isSkillIndex := false
-	for _, idx := range req.IndexNames {
-		if strings.HasPrefix(idx, "skill_") {
-			isSkillIndex = true
-			break
-		}
+	outputColumns := []string{
+		"id", "doc_id", "kb_id", "content_ltks", "content_with_weight",
+		"title_tks", "docnm_kwd", "img_id", "available_int", "important_kwd",
+		"position_int", "page_num_int", "top_int", "chunk_order_int",
+		"create_timestamp_flt", "knowledge_graph_kwd", "question_kwd", "question_tks",
+		"doc_type_kwd", "mom_id", "tag_kwd", "pagerank_fea", "tag_feas",
 	}
-
-	var outputColumns []string
-	if isSkillIndex {
-		outputColumns = []string{
-			"skill_id", "space_id", "folder_id", "name", "tags", "description", "content",
-			"version", "status", "create_time", "update_time",
-		}
-		outputColumns = convertSelectFields(outputColumns, true)
-	} else {
-		outputColumns = []string{
-			"id", "doc_id", "kb_id", "content_ltks", "content_with_weight",
-			"title_tks", "docnm_kwd", "img_id", "available_int", "important_kwd",
-			"position_int", "page_num_int", "top_int", "chunk_order_int",
-			"create_timestamp_flt", "knowledge_graph_kwd", "question_kwd", "question_tks",
-			"doc_type_kwd", "mom_id", "tag_kwd", "pagerank_fea", "tag_feas",
-		}
-		outputColumns = convertSelectFields(outputColumns)
-	}
+	outputColumns = convertSelectFields(outputColumns)
 
 	// Allow caller to override output columns (used by KG search, etc.)
 	if len(req.SelectFields) > 0 {
@@ -676,14 +649,11 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		if hasVectorMatch && !hasTextMatch {
 			outputColumns = append(outputColumns, "similarity()")
 		}
-		// Skill index does not have pagerank_fea and tag_feas columns
-		if !isSkillIndex {
-			if !slices.Contains(outputColumns, common.PAGERANK_FLD) {
-				outputColumns = append(outputColumns, common.PAGERANK_FLD)
-			}
-			if !slices.Contains(outputColumns, common.TAG_FLD) {
-				outputColumns = append(outputColumns, common.TAG_FLD)
-			}
+		if !slices.Contains(outputColumns, common.PAGERANK_FLD) {
+			outputColumns = append(outputColumns, common.PAGERANK_FLD)
+		}
+		if !slices.Contains(outputColumns, common.TAG_FLD) {
+			outputColumns = append(outputColumns, common.TAG_FLD)
 		}
 	}
 
@@ -708,7 +678,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		outputColumns = filtered
 	}
 
-	outputColumns = convertSelectFields(outputColumns, isSkillIndex)
+	outputColumns = convertSelectFields(outputColumns)
 	if hasVectorMatch && matchDense != nil && matchDense.VectorColumnName != "" {
 		outputColumns = append(outputColumns, matchDense.VectorColumnName)
 	}
@@ -722,18 +692,10 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 			} else if status, ok := req.Filter["status"]; ok {
 				filterParts = append(filterParts, fmt.Sprintf("status='%s'", status))
 			} else {
-				if isSkillIndex {
-					filterParts = append(filterParts, "status='1'")
-				} else {
-					filterParts = append(filterParts, "available_int=1")
-				}
-			}
-		} else {
-			if isSkillIndex {
-				filterParts = append(filterParts, "status='1'")
-			} else {
 				filterParts = append(filterParts, "available_int=1")
 			}
+		} else {
+			filterParts = append(filterParts, "available_int=1")
 		}
 	}
 
@@ -834,13 +796,6 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 			var textFields []string
 			if matchText != nil && len(matchText.Fields) > 0 {
 				textFields = matchText.Fields
-			} else if isSkillIndex {
-				textFields = []string{
-					"name^10",
-					"tags^5",
-					"description^3",
-					"content^1",
-				}
 			} else {
 				textFields = []string{
 					"title_tks^10",
@@ -924,11 +879,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 
 				denseFilterStr := filterStr
 				if denseFilterStr == "" {
-					if isSkillIndex {
-						denseFilterStr = "status='1'"
-					} else {
-						denseFilterStr = "available_int=1"
-					}
+					denseFilterStr = "available_int=1"
 				}
 
 				if hasTextMatch {
@@ -1039,20 +990,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 				}
 			}
 
-			// Apply field name mapping and row_id handling
-			// Skill index uses different schema
-			// so we skip the document-specific field mappings
-			if !isSkillIndex {
-				applyFieldMappings(searchChunks)
-			} else {
-				// For skill index, only handle ROW_ID -> row_id() mapping
-				for _, chunk := range searchChunks {
-					if val, ok := chunk["ROW_ID"]; ok {
-						chunk["row_id()"] = val
-						delete(chunk, "ROW_ID")
-					}
-				}
-			}
+			applyFieldMappings(searchChunks)
 
 			// Parse total_hits_count from ExtraInfo
 			var tableTotal int64
@@ -1085,9 +1023,6 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 			scoreColumn = "SIMILARITY"
 		}
 		pagerankField := common.PAGERANK_FLD
-		if isSkillIndex {
-			pagerankField = "" // Skill index has no pagerank field
-		}
 
 		allResults = calculateScores(allResults, scoreColumn, pagerankField)
 		allResults = sortByScore(allResults, len(allResults))
@@ -1293,13 +1228,6 @@ func applyFieldMappings(chunks []map[string]interface{}) {
 			chunk["authors_sm_tks"] = val
 		}
 
-		if val, ok := chunk["message_type_kwd"]; ok {
-			chunk["message_type"] = val
-		}
-		if val, ok := chunk["status_int"]; ok {
-			chunk["status"] = memoryMessageStatusBool(val)
-		}
-
 		// position_int: convert from hex string to array format (grouped by 5)
 		if val, ok := chunk["position_int"].(string); ok {
 			chunk["position_int"] = utility.ConvertHexToPositionIntArray(val)
@@ -1347,26 +1275,6 @@ func applyFieldMappings(chunks []map[string]interface{}) {
 			chunk["row_id()"] = val
 			delete(chunk, "ROW_ID")
 		}
-	}
-}
-
-func memoryMessageStatusBool(value interface{}) bool {
-	switch v := value.(type) {
-	case bool:
-		return v
-	case int:
-		return v != 0
-	case int64:
-		return v != 0
-	case float64:
-		return v != 0
-	case json.Number:
-		n, err := v.Int64()
-		return err == nil && n != 0
-	case string:
-		return v != "" && v != "0" && !strings.EqualFold(v, "false")
-	default:
-		return false
 	}
 }
 
@@ -1855,13 +1763,12 @@ func (e *infinityEngine) GetScores(knnResult map[string]interface{}) map[string]
 }
 
 // convertSelectFields converts field names to Infinity format
-// isSkillIndex indicates if this is a skill index (uses skill_id instead of id)
 //
 // Does NOT mutate the input slice — callers (e.g. retrieval.go) reuse the same
 // SelectFields list both for Search() and GetFields(); mutating it would
 // replace logical names like "content_with_weight" with their Infinity column
 // names ("content"), breaking GetFields's field-presence checks.
-func convertSelectFields(output []string, isSkillIndex ...bool) []string {
+func convertSelectFields(output []string) []string {
 	fieldMapping := map[string]string{
 		"docnm_kwd":           "docnm",
 		"title_tks":           "docnm",
@@ -1875,13 +1782,6 @@ func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 		"content_sm_ltks":     "content",
 		"authors_tks":         "authors",
 		"authors_sm_tks":      "authors",
-		"message_type":        "message_type_kwd",
-		"status":              "status_int",
-	}
-
-	skillIndex := false
-	if len(isSkillIndex) > 0 {
-		skillIndex = isSkillIndex[0]
 	}
 
 	// Copy + map without mutating the caller's slice.
@@ -1908,13 +1808,8 @@ func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 		}
 	}
 
-	// Add id and empty count if needed
-	// For skill index, use skill_id instead of id
 	hasID := false
 	idField := "id"
-	if skillIndex {
-		idField = "skill_id"
-	}
 	for _, f := range result {
 		if f == idField {
 			hasID = true
@@ -2043,12 +1938,6 @@ func equivalentConditionToStr(condition map[string]interface{}) string {
 					convertMatchingField(k), escapeFilterValue(fmt.Sprintf("%v", v))))
 			}
 			continue
-		}
-
-		if k == "message_type" {
-			k = "message_type_kwd"
-		} else if k == "status" {
-			k = "status_int"
 		}
 
 		// Handle list values (mixed types - strings get quotes, numbers don't)
@@ -2256,19 +2145,6 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 			d["questions"] = strings.Join(utility.ConvertToStringSlice(v), "\n")
 		case "tag_kwd":
 			d["tag_kwd"] = strings.Join(utility.ConvertToStringSlice(v), "###")
-		case "message_type":
-			d["message_type_kwd"] = v
-		case "status":
-			switch status := v.(type) {
-			case bool:
-				if status {
-					d["status_int"] = 1
-				} else {
-					d["status_int"] = 0
-				}
-			default:
-				d["status_int"] = v
-			}
 		case "question_tks":
 			if _, exists := chunk["question_kwd"]; !exists {
 				d["questions"] = utility.ConvertToString(v)

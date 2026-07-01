@@ -56,11 +56,6 @@ class InputType(StrEnum):
     SLIM_RETRIEVAL = "slim_retrieval"
 
 
-class CanvasCategory(StrEnum):
-    Agent = "agent_canvas"
-    DataFlow = "dataflow_canvas"
-
-
 VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP}
 
 
@@ -68,4 +63,3 @@ PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES = {PipelineTaskType.RAPTOR.lower(), 
 
 
 KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"
-SKILLS_FOLDER_NAME="skills"

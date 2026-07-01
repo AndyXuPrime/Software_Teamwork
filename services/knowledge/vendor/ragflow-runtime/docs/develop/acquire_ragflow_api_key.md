@@ -16,5 +16,5 @@ An API key is required for the RAGFlow server to authenticate your HTTP/Python o
 ![ragflow_api_key](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_api_key.jpg)
 
 :::tip NOTE
-See the [RAGFlow HTTP API reference](../references/http_api_reference.md) or the [RAGFlow Python API reference](../references/python_api_reference.md) for a complete reference of RAGFlow's HTTP or Python APIs.
+See the [RAGFlow HTTP API reference](../references/http_api_reference.md) and retained MCP documentation for the API surfaces kept in this trimmed runtime.
 :::

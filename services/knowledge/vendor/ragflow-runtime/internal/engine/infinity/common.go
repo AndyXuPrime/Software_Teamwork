@@ -305,12 +305,7 @@ func (e *infinityEngine) columnExists(table *infinity.Table, columnName string) 
 }
 
 // buildChunkTableName returns the chunk table name for a dataset
-// Skill Table: table name is just baseName (e.g., "skill_abc123_def456")
-// Regular chunk Table: table name is {baseName}_{datasetID}
 func buildChunkTableName(baseName, datasetID string) string {
-	if datasetID == "skill" {
-		return baseName
-	}
 	return fmt.Sprintf("%s_%s", baseName, datasetID)
 }
 

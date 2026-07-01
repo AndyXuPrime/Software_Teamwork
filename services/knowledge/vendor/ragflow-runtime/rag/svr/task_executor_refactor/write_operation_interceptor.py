@@ -32,7 +32,6 @@ ALLOWED_METHOD_NAMES = {
     "PipelineOperationLogService.record_pipeline_operation",
     "PipelineOperationLogService.create",
     "delete_raptor_chunks",
-    "handle_save_to_memory_task",
     "docStoreConn.insert",
     "docStoreConn.delete"
 }

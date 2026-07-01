@@ -53,7 +53,6 @@ type DocumentListItem struct {
 	KbID            string     `gorm:"column:kb_id" json:"kb_id"`
 	ParserID        string     `gorm:"column:parser_id" json:"parser_id"`
 	PipelineID      *string    `gorm:"column:pipeline_id" json:"pipeline_id,omitempty"`
-	PipelineName    *string    `gorm:"column:pipeline_name" json:"pipeline_name,omitempty"`
 	ParserConfig    string     `gorm:"column:parser_config" json:"parser_config"`
 	SourceType      string     `gorm:"column:source_type" json:"source_type"`
 	Type            string     `gorm:"column:type" json:"type"`

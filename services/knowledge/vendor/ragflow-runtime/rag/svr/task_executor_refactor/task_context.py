@@ -123,25 +123,10 @@ class TaskDict(TypedDict, total=False):
     """Ending page number for processing (-1 means all pages)."""
 
     task_type: str
-    """Task type (e.g., 'dataflow', 'raptor', 'graphrag', 'memory')."""
-
-    dataflow_id: str
-    """Dataflow/pipeline identifier."""
+    """Task type (e.g., 'raptor', 'graphrag')."""
 
     pagerank: int
     """PageRank value for document scoring."""
-
-    file: Any
-    """File object for dataflow processing."""
-
-    memory_id: str
-    """Memory identifier for memory tasks."""
-
-    source_id: str
-    """Source identifier for memory tasks."""
-
-    message_dict: Dict[str, Any]
-    """Message dictionary for memory tasks."""
 
 # ============================================================================
 # Data Classes
@@ -230,11 +215,7 @@ class TaskContext:
         "from_page": 0,
         "to_page": -1,
         "task_type": "",
-        "dataflow_id": "",
         "pagerank": 0,
-        "memory_id": "",
-        "source_id": "",
-        "message_dict": {},
     }
 
     def __init__(
@@ -386,13 +367,8 @@ class TaskContext:
 
     @property
     def task_type(self) -> str:
-        """Task type (e.g., 'dataflow', 'raptor', 'graphrag', 'memory')."""
+        """Task type (e.g., 'raptor', 'graphrag')."""
         return self._task.get("task_type", self._DEFAULTS["task_type"])
-
-    @property
-    def dataflow_id(self) -> str:
-        """Dataflow/pipeline identifier."""
-        return self._task.get("dataflow_id", self._DEFAULTS["dataflow_id"])
 
     # =========================================================================
     # Additional properties
@@ -405,27 +381,8 @@ class TaskContext:
 
     @property
     def file(self) -> Optional[Any]:
-        """File object for dataflow processing."""
+        """Optional file object attached to a task."""
         return self._task.get("file")
-
-    # =========================================================================
-    # Memory task specific properties
-    # =========================================================================
-
-    @property
-    def memory_id(self) -> str:
-        """Memory identifier for memory tasks."""
-        return self._task.get("memory_id", self._DEFAULTS["memory_id"])
-
-    @property
-    def source_id(self) -> str:
-        """Source identifier for memory tasks."""
-        return self._task.get("source_id", self._DEFAULTS["source_id"])
-
-    @property
-    def message_dict(self) -> Dict[str, Any]:
-        """Message dictionary for memory tasks."""
-        return self._task.get("message_dict", {})
 
     # =========================================================================
     # Raw task dictionary access

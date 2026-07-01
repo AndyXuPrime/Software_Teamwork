@@ -76,24 +76,11 @@ def _install_rag_llm_stubs():
     llm_pkg._rag_llm_stubbed = True
 
 
-def _install_scholarly_stub():
-    if "scholarly" in sys.modules:
-        return
-    stub = types.ModuleType("scholarly")
-
-    def _stub(*_args, **_kwargs):
-        raise RuntimeError("scholarly is stubbed in tests")
-
-    stub.scholarly = _stub
-    sys.modules["scholarly"] = stub
-
-
 _install_rag_llm_stubs()
-_install_scholarly_stub()
 
 import pytest
 import requests
-from configs import EMAIL, HOST_ADDRESS, PASSWORD, VERSION, ZHIPU_AI_API_KEY, SILICONFLOW_API_KEY
+from configs import HOST_ADDRESS, RAGFLOW_API_TOKEN, RAGFLOW_AUTHORIZATION, ZHIPU_AI_API_KEY, SILICONFLOW_API_KEY
 
 MARKER_EXPRESSIONS = {
     "p1": "p1",
@@ -127,40 +114,21 @@ def pytest_configure(config: pytest.Config) -> None:
         print(f"\n[CONFIG] Active test level: {level}")
 
 
-def register():
-    url = HOST_ADDRESS + f"/api/{VERSION}/users"
-    name = "qa"
-    register_data = {"email": EMAIL, "nickname": name, "password": PASSWORD}
-    res = requests.post(url=url, json=register_data)
-    res = res.json()
-    if res.get("code") != 0 and "has already registered" not in res.get("message"):
-        raise Exception(res.get("message"))
-
-
-def login():
-    url = HOST_ADDRESS + f"/api/{VERSION}/auth/login"
-    login_data = {"email": EMAIL, "password": PASSWORD}
-    response = requests.post(url=url, json=login_data)
-    res = response.json()
-    if res.get("code") != 0:
-        raise Exception(res.get("message"))
-    auth = response.headers["Authorization"]
-    return auth
-
-
 @pytest.fixture(scope="session")
 def auth():
-    try:
-        register()
-    except Exception as e:
-        print(e)
-    auth = login()
-    return auth
+    if RAGFLOW_AUTHORIZATION:
+        return RAGFLOW_AUTHORIZATION
+    if RAGFLOW_API_TOKEN:
+        return f"Bearer {RAGFLOW_API_TOKEN}"
+    pytest.exit("Set RAGFLOW_API_TOKEN or RAGFLOW_AUTHORIZATION to run RAGFlow HTTP integration tests.")
 
 
 @pytest.fixture(scope="session")
 def token(auth):
-    url = HOST_ADDRESS + f"/api/{VERSION}/system/tokens"
+    if RAGFLOW_API_TOKEN:
+        return RAGFLOW_API_TOKEN
+
+    url = HOST_ADDRESS + "/api/v1/system/tokens"
     auth = {"Authorization": auth}
     response = requests.post(url=url, headers=auth)
     res = response.json()

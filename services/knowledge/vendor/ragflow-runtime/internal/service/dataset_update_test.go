@@ -75,9 +75,6 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	if result["pipeline_id"] != strings.ToLower(pipelineID) {
 		t.Fatalf("expected normalized pipeline id, got %#v", result["pipeline_id"])
 	}
-	if connectors, ok := result["connectors"].([]*dao.ConnectorDatasetListItem); !ok || len(connectors) != 0 {
-		t.Fatalf("expected empty connector list, got %#v", result["connectors"])
-	}
 
 	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
 	if err != nil {
@@ -115,7 +112,7 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	}
 }
 
-func TestDatasetServiceGetDatasetReturnsEmptyConnectorList(t *testing.T) {
+func TestDatasetServiceGetDatasetReturnsSize(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	datasetID := "11111111111141118111111111111111"
@@ -128,15 +125,8 @@ func TestDatasetServiceGetDatasetReturnsEmptyConnectorList(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
 	}
-	connectors, ok := result["connectors"].([]*dao.ConnectorDatasetListItem)
-	if !ok {
-		t.Fatalf("expected connector list, got %#v", result["connectors"])
-	}
-	if connectors == nil {
-		t.Fatal("expected empty connector list, got nil")
-	}
-	if len(connectors) != 0 {
-		t.Fatalf("expected empty connector list, got %#v", connectors)
+	if _, ok := result["size"]; !ok {
+		t.Fatalf("expected size in response, got %#v", result)
 	}
 }
 
@@ -229,42 +219,6 @@ func TestDatasetServiceUpdateDatasetRejectsNoPropertiesModified(t *testing.T) {
 	}
 }
 
-func TestDatasetServiceUpdateDatasetLinksConnectors(t *testing.T) {
-	db := setupDatasetUpdateTestDB(t)
-	pushServiceDB(t, db)
-	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
-	insertDatasetUpdateConnector(t, "connector-1", "tenant-1")
-
-	autoParse := "0"
-	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
-		Connectors: &[]DatasetConnectorRequest{{ID: "connector-1", AutoParse: autoParse}},
-	})
-	if err != nil {
-		t.Fatalf("UpdateDataset failed: %v", err)
-	}
-	if code != common.CodeSuccess {
-		t.Fatalf("expected success code, got %d", code)
-	}
-	connectors, ok := result["connectors"].([]*dao.ConnectorDatasetListItem)
-	if !ok {
-		t.Fatalf("expected connector list, got %#v", result["connectors"])
-	}
-	if len(connectors) != 1 {
-		t.Fatalf("expected one connector, got %d", len(connectors))
-	}
-	if connectors[0].ID != "connector-1" || connectors[0].AutoParse != autoParse {
-		t.Fatalf("unexpected connector: %#v", connectors[0])
-	}
-
-	var link entity.Connector2Kb
-	if err := dao.DB.Where("kb_id = ? AND connector_id = ?", "kb-1", "connector-1").First(&link).Error; err != nil {
-		t.Fatalf("expected connector link: %v", err)
-	}
-	if link.AutoParse != autoParse {
-		t.Fatalf("expected auto_parse %q, got %q", autoParse, link.AutoParse)
-	}
-}
-
 func TestDatasetServiceUpdateDatasetAcceptsProviderInstanceEmbedding(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
@@ -296,34 +250,11 @@ func TestDatasetServiceUpdateDatasetAcceptsProviderInstanceEmbedding(t *testing.
 	}
 }
 
-func TestDatasetServiceUpdateDatasetRejectsEmptyConnectorID(t *testing.T) {
-	db := setupDatasetUpdateTestDB(t)
-	pushServiceDB(t, db)
-	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
-
-	connectors := []DatasetConnectorRequest{{ID: "  "}}
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
-		Connectors: &connectors,
-	})
-	if err == nil {
-		t.Fatal("expected connector validation error")
-	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
-	}
-	if err.Error() != "connector id is required" {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func setupDatasetUpdateTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	db := setupServiceTestDB(t)
 	if err := db.AutoMigrate(
-		&entity.Connector{},
-		&entity.Connector2Kb{},
-		&entity.SyncLogs{},
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
@@ -337,9 +268,8 @@ func testDatasetUpdateService(t *testing.T) *DatasetService {
 	t.Helper()
 
 	return &DatasetService{
-		kbDAO:        dao.NewKnowledgebaseDAO(),
-		documentDAO:  dao.NewDocumentDAO(),
-		connectorDAO: dao.NewConnectorDAO(),
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
 	}
 }
 
@@ -359,23 +289,6 @@ func insertDatasetUpdateKB(t *testing.T, id, tenantID, name string) {
 	}
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert test kb: %v", err)
-	}
-}
-
-func insertDatasetUpdateConnector(t *testing.T, id, tenantID string) {
-	t.Helper()
-
-	connector := &entity.Connector{
-		ID:        id,
-		TenantID:  tenantID,
-		Name:      "Test Connector",
-		Source:    "google_drive",
-		InputType: "oauth",
-		Config:    entity.JSONMap{"sync_deleted_files": false},
-		Status:    string(entity.TaskStatusDone),
-	}
-	if err := dao.DB.Create(connector).Error; err != nil {
-		t.Fatalf("insert test connector: %v", err)
 	}
 }
 

@@ -41,10 +41,6 @@ from rag.utils.oss_conn import RAGFlowOSS
 
 from rag.nlp import search
 
-import memory.utils.es_conn as memory_es_conn
-import memory.utils.infinity_conn as memory_infinity_conn
-import memory.utils.ob_conn as memory_ob_conn
-
 TIMEZONE = os.getenv("TZ", "Asia/Shanghai")
 
 LLM = None
@@ -73,45 +69,17 @@ ALLOWED_LLM_FACTORIES = None
 DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
 DATABASE = decrypt_database_config(name=DATABASE_TYPE)
 
-# authentication
-AUTHENTICATION_CONF = None
-
-# client
-CLIENT_AUTHENTICATION = None
-HTTP_APP_KEY = None
-GITHUB_OAUTH = None
-FEISHU_OAUTH = None
-OAUTH_CONFIG = None
 DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
 DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
 DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
 
 
 docStoreConn = None
-msgStoreConn = None
 
 retriever = None
 kg_retriever = None
 
-# user registration switch
-REGISTER_ENABLED = 1
-
-# SSO-only mode: hide password login form
-DISABLE_PASSWORD_LOGIN = False
-
-# sandbox-executor-manager
-SANDBOX_HOST = None
 STRONG_TEST_COUNT = int(os.environ.get("STRONG_TEST_COUNT", "8"))
-
-SMTP_CONF = None
-MAIL_SERVER = ""
-MAIL_PORT = 000
-MAIL_USE_SSL = True
-MAIL_USE_TLS = False
-MAIL_USERNAME = ""
-MAIL_PASSWORD = ""
-MAIL_DEFAULT_SENDER = ()
-MAIL_FRONTEND_URL = ""
 
 # move from rag.settings
 ES = {}
@@ -223,23 +191,6 @@ def init_settings():
     LLM_BASE_URL = llm_settings.get("base_url", "") or ""
     ALLOWED_LLM_FACTORIES = llm_settings.get("allowed_factories", None)
 
-    global REGISTER_ENABLED
-    try:
-        REGISTER_ENABLED = int(os.environ.get("REGISTER_ENABLED", "1"))
-    except Exception:
-        pass
-
-    global DISABLE_PASSWORD_LOGIN
-    try:
-        env_val = os.environ.get("DISABLE_PASSWORD_LOGIN", "").lower()
-        if env_val in ("1", "true", "yes"):
-            DISABLE_PASSWORD_LOGIN = True
-        else:
-            authentication_conf = get_base_config("authentication", {})
-            DISABLE_PASSWORD_LOGIN = bool(authentication_conf.get("disable_password_login", False))
-    except Exception:
-        pass
-
     global FACTORY_LLM_INFOS
     try:
         with open(os.path.join(get_project_base_directory(), "conf", "llm_factories.json"), "r") as f:
@@ -286,17 +237,6 @@ def init_settings():
     SECRET_KEY = init_secret_key()
 
 
-    # authentication
-    authentication_conf = get_base_config("authentication", {})
-
-    global CLIENT_AUTHENTICATION, HTTP_APP_KEY, GITHUB_OAUTH, FEISHU_OAUTH, OAUTH_CONFIG
-    # client
-    CLIENT_AUTHENTICATION = authentication_conf.get("client", {}).get("switch", False)
-    HTTP_APP_KEY = authentication_conf.get("client", {}).get("http_app_key")
-    GITHUB_OAUTH = get_base_config("oauth", {}).get("github")
-    FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
-    OAUTH_CONFIG = get_base_config("oauth", {})
-
     global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, docStoreConn, ES, OB, OS, INFINITY
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch").strip()
     DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
@@ -323,21 +263,6 @@ def init_settings():
         docStoreConn = rag.utils.ob_conn.OBConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
-
-    global msgStoreConn
-    # use the same engine for message store
-    if DOC_ENGINE == "elasticsearch":
-        ES = get_base_config("es", {})
-        msgStoreConn = memory_es_conn.ESConnection()
-    elif DOC_ENGINE == "infinity":
-        INFINITY = get_base_config("infinity", {
-            "uri": "infinity:23817",
-            "postgres_port": 5432,
-            "db_name": "default_db"
-        })
-        msgStoreConn = memory_infinity_conn.InfinityConnection()
-    elif lower_case_doc_engine in ["oceanbase", "seekdb"]:
-        msgStoreConn = memory_ob_conn.OBConnection()
 
     global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
@@ -379,25 +304,6 @@ def init_settings():
     from rag.graphrag import search as kg_search
 
     kg_retriever = kg_search.KGSearch(docStoreConn)
-
-    global SANDBOX_HOST
-    if int(os.environ.get("SANDBOX_ENABLED", "0")):
-        SANDBOX_HOST = os.environ.get("SANDBOX_HOST", "sandbox-executor-manager")
-
-    global SMTP_CONF
-    SMTP_CONF = get_base_config("smtp", {})
-
-    global MAIL_SERVER, MAIL_PORT, MAIL_USE_SSL, MAIL_USE_TLS, MAIL_USERNAME, MAIL_PASSWORD, MAIL_DEFAULT_SENDER, MAIL_FRONTEND_URL
-    MAIL_SERVER = SMTP_CONF.get("mail_server", "")
-    MAIL_PORT = SMTP_CONF.get("mail_port", 000)
-    MAIL_USE_SSL = SMTP_CONF.get("mail_use_ssl", True)
-    MAIL_USE_TLS = SMTP_CONF.get("mail_use_tls", False)
-    MAIL_USERNAME = SMTP_CONF.get("mail_username", "")
-    MAIL_PASSWORD = SMTP_CONF.get("mail_password", "")
-    mail_default_sender = SMTP_CONF.get("mail_default_sender", [])
-    if mail_default_sender and len(mail_default_sender) >= 2:
-        MAIL_DEFAULT_SENDER = (mail_default_sender[0], mail_default_sender[1])
-    MAIL_FRONTEND_URL = SMTP_CONF.get("mail_frontend_url", "")
 
     global DOC_MAXIMUM_SIZE, DOC_BULK_SIZE, EMBEDDING_BATCH_SIZE
     DOC_MAXIMUM_SIZE = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
@@ -450,4 +356,3 @@ def _resolve_per_model_config(entry_dict, backup_factory, backup_api_key, backup
 def print_rag_settings():
     logging.info(f"MAX_CONTENT_LENGTH: {DOC_MAXIMUM_SIZE}")
     logging.info(f"MAX_FILE_COUNT_PER_USER: {int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))}")
-

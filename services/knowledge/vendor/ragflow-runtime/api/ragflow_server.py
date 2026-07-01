@@ -43,7 +43,6 @@ from common.versions import get_ragflow_version
 from common.config_utils import show_configs
 from common.mcp_tool_call_conn import shutdown_all_mcp_sessions
 from common.log_utils import init_root_logger
-from agent.plugin import GlobalPluginManager
 from rag.utils.redis_conn import RedisDistributedLock
 
 stop_event = threading.Event()
@@ -131,8 +130,6 @@ if __name__ == '__main__':
     RuntimeConfig.init_env()
     RuntimeConfig.init_config(JOB_SERVER_HOST=settings.HOST_IP, HTTP_PORT=settings.HOST_PORT)
 
-    GlobalPluginManager.load_plugins()
-
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
@@ -141,27 +138,11 @@ if __name__ == '__main__':
         t = threading.Thread(target=update_progress, daemon=True)
         t.start()
 
-    def start_chat_channels():
-        try:
-            from api.channels.bootstrap import start_channel_server
-            logging.info("Starting chat channel server thread")
-            t = threading.Thread(
-                target=start_channel_server,
-                args=(stop_event,),
-                daemon=True,
-                name="chat-channels",
-            )
-            t.start()
-        except Exception:
-            logging.exception("Failed to start chat channel server")
-
     if RuntimeConfig.DEBUG:
         if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
             threading.Timer(1.0, delayed_start_update_progress).start()
-            start_chat_channels()
     else:
         threading.Timer(1.0, delayed_start_update_progress).start()
-        start_chat_channels()
 
     # start http server
     try:

@@ -65,9 +65,6 @@ func ValidateSystemSettingValue(setting entity.SystemSettings, value string) err
 }
 
 func InferSystemSettingDataType(name string) string {
-	if strings.HasPrefix(name, "sandbox.") {
-		return "json"
-	}
 	if strings.HasSuffix(name, ".enabled") {
 		return "bool"
 	}

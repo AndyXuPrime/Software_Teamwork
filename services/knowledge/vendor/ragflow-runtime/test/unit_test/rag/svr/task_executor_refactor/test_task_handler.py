@@ -118,39 +118,6 @@ class TestTaskHandlerHandle:
     # ── Context factory: make_task_context from conftest — see import above
 
     @pytest.mark.asyncio
-    async def test_handle_memory_task(self):
-        """Test handle returns after dispatching memory task — no further processing."""
-        ctx = make_task_context(task_type="memory")
-        ctx.raw_task = {"memory_id": "mem_1", "id": "task_1"}
-
-        with patch("rag.svr.task_executor_refactor.task_handler.handle_save_to_memory_task",
-                   new_callable=AsyncMock) as mock_handle:
-
-            handler = TaskHandler(ctx=ctx)
-            handler._run_standard_chunking = AsyncMock()
-            handler._run_dataflow = AsyncMock()
-            await handler.handle()
-
-            mock_handle.assert_called_once_with(ctx.raw_task)
-            # After memory task, should return immediately — no further routing
-            handler._run_standard_chunking.assert_not_called()
-            handler._run_dataflow.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_handle_dataflow_task(self):
-        """Test handle dispatches dataflow tasks (after embedding binding + init_kb)."""
-        ctx = make_task_context(task_type="dataflow", doc_id="doc_1")
-
-        with patch_embedding_binding(), \
-             patch("rag.svr.task_executor_refactor.task_handler.settings", create_mock_settings()), \
-             patch("rag.svr.task_executor_refactor.task_handler.search.index_name", return_value="test_idx"):
-
-            handler = TaskHandler(ctx=ctx)
-            handler._run_dataflow = AsyncMock()
-            await handler.handle()
-            handler._run_dataflow.assert_called_once()
-
-    @pytest.mark.asyncio
     async def test_handle_canceled_task(self):
         """Test handle returns early when task is canceled."""
         ctx = make_task_context(has_canceled_func=MagicMock(return_value=True))

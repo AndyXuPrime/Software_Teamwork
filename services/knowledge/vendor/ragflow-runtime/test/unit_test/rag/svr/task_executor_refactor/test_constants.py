@@ -18,26 +18,26 @@ Unit tests for constants module.
 """
 
 import pytest
-from rag.svr.task_executor_refactor.constants import CANVAS_DEBUG_DOC_ID
+from rag.svr.task_executor_refactor.constants import GRAPH_RAPTOR_FAKE_DOC_ID
 
 
 class TestConstants:
     """Tests for constants module."""
 
-    def test_canvas_debug_doc_id_exists(self):
-        """Test that CANVAS_DEBUG_DOC_ID constant exists."""
-        assert CANVAS_DEBUG_DOC_ID is not None
+    def test_graph_raptor_fake_doc_id_exists(self):
+        """Test that GRAPH_RAPTOR_FAKE_DOC_ID constant exists."""
+        assert GRAPH_RAPTOR_FAKE_DOC_ID is not None
 
     @pytest.mark.parametrize("expected_type", [str])
-    def test_canvas_debug_doc_id_type(self, expected_type):
-        """Test that CANVAS_DEBUG_DOC_ID is a string."""
-        assert isinstance(CANVAS_DEBUG_DOC_ID, expected_type)
+    def test_graph_raptor_fake_doc_id_type(self, expected_type):
+        """Test that GRAPH_RAPTOR_FAKE_DOC_ID is a string."""
+        assert isinstance(GRAPH_RAPTOR_FAKE_DOC_ID, expected_type)
 
-    @pytest.mark.parametrize("expected_value", ["dataflow_x"])
-    def test_canvas_debug_doc_id_value(self, expected_value):
-        """Test that CANVAS_DEBUG_DOC_ID has expected value."""
-        assert CANVAS_DEBUG_DOC_ID == expected_value
+    @pytest.mark.parametrize("expected_value", ["graph_raptor_x"])
+    def test_graph_raptor_fake_doc_id_value(self, expected_value):
+        """Test that GRAPH_RAPTOR_FAKE_DOC_ID has expected value."""
+        assert GRAPH_RAPTOR_FAKE_DOC_ID == expected_value
 
-    def test_canvas_debug_doc_id_not_empty(self):
-        """Test that CANVAS_DEBUG_DOC_ID is not empty."""
-        assert len(CANVAS_DEBUG_DOC_ID) > 0
+    def test_graph_raptor_fake_doc_id_not_empty(self):
+        """Test that GRAPH_RAPTOR_FAKE_DOC_ID is not empty."""
+        assert len(GRAPH_RAPTOR_FAKE_DOC_ID) > 0

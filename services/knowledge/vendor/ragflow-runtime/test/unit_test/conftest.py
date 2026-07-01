@@ -19,8 +19,8 @@
 Several parsers and the chunking pipeline tokenize text with NLTK, which needs
 the ``punkt_tab`` and ``wordnet`` data sets. Production provisions these via
 ``download_deps.py`` (into ``nltk_data``, exported as ``NLTK_DATA`` by
-``docker/launch_backend_service.sh``) and ``api.validation`` at startup, but the
-unit-test runner has neither. Without the data, tokenizer-backed tests such as
+``docker/launch_backend_service.sh``), but the unit-test runner does not run
+that provisioning step. Without the data, tokenizer-backed tests such as
 ``test_epub_parser`` and ``test_dataflow_service`` fail with
 ``LookupError: Resource 'punkt_tab' not found``. Make sure the data is reachable
 before any test imports a tokenizer: reuse a provisioned ``nltk_data`` directory

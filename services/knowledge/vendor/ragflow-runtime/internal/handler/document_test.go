@@ -19,7 +19,6 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -81,23 +80,9 @@ func (f *fakeDocumentService) UploadDocumentInfoByURL(userID, rawURL string) (ma
 	return nil, common.CodeSuccess, nil
 }
 
-func (f *fakeDocumentService) GetDocumentArtifact(filename, _ string) (*service.ArtifactResponse, error) {
-	if filename == "error.txt" {
-		return nil, service.ErrArtifactNotFound
-	}
-	if filename == "unexpected.txt" {
-		return nil, fmt.Errorf("unexpected error")
-	}
-	return &service.ArtifactResponse{
-		Data:            []byte("artifact content"),
-		ContentType:     "text/plain",
-		SafeFilename:    "safe.txt",
-		ForceAttachment: false,
-	}, nil
-}
 func (f *fakeDocumentService) GetDocumentPreview(docID string) (*service.DocumentPreview, error) {
 	if docID == "not-found" {
-		return nil, fmt.Errorf("not found")
+		return nil, errors.New("not found")
 	}
 	return &service.DocumentPreview{
 		Data:        []byte("preview content"),
@@ -905,67 +890,6 @@ func TestMetadataSummaryByDataset_Success(t *testing.T) {
 	author := summary["author"].(map[string]interface{})
 	if author["type"] != "string" {
 		t.Fatalf("expected author type string, got %v", author["type"])
-	}
-}
-
-func TestGetDocumentArtifact_Success(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	h := &DocumentHandler{
-		documentService: &fakeDocumentService{},
-	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/documents/artifact/test.txt", "")
-	c.Params = gin.Params{{Key: "filename", Value: "test.txt"}}
-
-	h.GetDocumentArtifact(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	if w.Header().Get("Content-Type") != "text/plain" {
-		t.Fatalf("unexpected content type: %s", w.Header().Get("Content-Type"))
-	}
-	if w.Body.String() != "artifact content" {
-		t.Fatalf("unexpected body: %s", w.Body.String())
-	}
-}
-
-func TestGetDocumentArtifact_NotFound(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	h := &DocumentHandler{
-		documentService: &fakeDocumentService{},
-	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/documents/artifact/error.txt", "")
-	c.Params = gin.Params{{Key: "filename", Value: "error.txt"}}
-
-	h.GetDocumentArtifact(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	var resp map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["code"] != float64(common.CodeDataError) {
-		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
-	}
-}
-
-func TestGetDocumentArtifact_UnexpectedError(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	h := &DocumentHandler{
-		documentService: &fakeDocumentService{},
-	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/documents/artifact/unexpected.txt", "")
-	c.Params = gin.Params{{Key: "filename", Value: "unexpected.txt"}}
-
-	h.GetDocumentArtifact(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	var resp map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["code"] != float64(common.CodeExceptionError) {
-		t.Fatalf("expected code %d, got %v", common.CodeExceptionError, resp["code"])
 	}
 }
 

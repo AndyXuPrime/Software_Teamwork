@@ -21,7 +21,7 @@ import os
 import sys
 import time
 import typing
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from functools import wraps
 
@@ -851,19 +851,6 @@ class TenantLLM(DataBaseModel):
         )
 
 
-class TenantLangfuse(DataBaseModel):
-    tenant_id = CharField(max_length=32, null=False, primary_key=True)
-    secret_key = CharField(max_length=2048, null=False, help_text="SECRET KEY", index=True)
-    public_key = CharField(max_length=2048, null=False, help_text="PUBLIC KEY", index=True)
-    host = CharField(max_length=128, null=False, help_text="HOST", index=True)
-
-    def __str__(self):
-        return "Langfuse host" + self.host
-
-    class Meta:
-        db_table = "tenant_langfuse"
-
-
 class Knowledgebase(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
@@ -956,38 +943,6 @@ class File2Document(DataBaseModel):
         db_table = "file2document"
 
 
-class FileCommit(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    folder_id = CharField(max_length=32, null=False, help_text="workspace folder id", index=True)
-    parent_id = CharField(max_length=32, null=True, help_text="parent commit id", index=True)
-    message = CharField(max_length=512, default="", help_text="commit message")
-    author_id = CharField(max_length=32, null=False, help_text="user who created the commit", index=True)
-    file_count = IntegerField(default=0, help_text="number of files in this commit")
-    tree_state = LongTextField(null=True, help_text="JSON snapshot of the full folder tree at this commit")
-
-    class Meta:
-        db_table = "file_commit"
-
-
-class FileCommitItem(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    commit_id = CharField(max_length=32, null=False, help_text="commit id", index=True)
-    file_id = CharField(max_length=32, null=False, help_text="file id", index=True)
-    operation = CharField(max_length=16, null=False, help_text="add / modify / delete / rename", index=True)
-    old_hash = CharField(max_length=64, null=True, help_text="old content hash", index=True)
-    new_hash = CharField(max_length=64, null=True, help_text="new content hash", index=True)
-    old_location = CharField(max_length=255, null=True, help_text="old storage location")
-    new_location = CharField(max_length=255, null=True, help_text="new storage location")
-    old_name = CharField(max_length=255, null=True, help_text="old file name (for rename)")
-    new_name = CharField(max_length=255, null=True, help_text="new file name (for rename)")
-
-    class Meta:
-        db_table = "file_commit_item"
-        indexes = (
-            (("commit_id", "file_id"), True),  # unique composite index
-        )
-
-
 class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)
@@ -1006,130 +961,14 @@ class Task(DataBaseModel):
     chunk_ids = LongTextField(null=True, help_text="chunk ids", default="")
 
 
-class Dialog(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    tenant_id = CharField(max_length=32, null=False, index=True)
-    name = CharField(max_length=255, null=True, help_text="dialog application name", index=True)
-    description = TextField(null=True, help_text="Dialog description")
-    icon = TextField(null=True, help_text="icon base64 string")
-    language = CharField(max_length=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
-    llm_id = CharField(max_length=128, null=False, help_text="default llm ID")
-    tenant_llm_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
-
-    llm_setting = JSONField(null=False, default={"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7, "presence_penalty": 0.4, "max_tokens": 512})
-    prompt_type = CharField(max_length=16, null=False, default="simple", help_text="simple|advanced", index=True)
-    prompt_config = JSONField(
-        null=False,
-        default={"system": "", "prologue": "Hi! I'm your assistant. What can I do for you?", "parameters": [], "empty_response": "Sorry! No relevant content was found in the knowledge base!"},
-    )
-    meta_data_filter = JSONField(null=True, default={})
-
-    similarity_threshold = FloatField(default=0.2)
-    vector_similarity_weight = FloatField(default=0.3)
-
-    top_n = IntegerField(default=6)
-
-    top_k = IntegerField(default=1024)
-
-    do_refer = CharField(max_length=1, null=False, default="1", help_text="it needs to insert reference index into answer or not")
-
-    rerank_id = CharField(max_length=128, null=False, help_text="default rerank model ID")
-    tenant_rerank_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
-    kb_ids = JSONField(null=False, default=[])
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
-
-    class Meta:
-        db_table = "dialog"
-
-
-class Conversation(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    dialog_id = CharField(max_length=32, null=False, index=True)
-    name = CharField(max_length=255, null=True, help_text="conversation name", index=True)
-    message = JSONField(null=True)
-    reference = JSONField(null=True, default=[])
-    user_id = CharField(max_length=255, null=True, help_text="user_id", index=True)
-
-    class Meta:
-        db_table = "conversation"
-
-
 class APIToken(DataBaseModel):
     tenant_id = CharField(max_length=32, null=False, index=True)
     token = CharField(max_length=255, null=False, index=True)
-    dialog_id = CharField(max_length=32, null=True, index=True)
-    source = CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)
     beta = CharField(max_length=255, null=True, index=True)
 
     class Meta:
         db_table = "api_token"
         primary_key = CompositeKey("tenant_id", "token")
-
-
-class API4Conversation(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    name = CharField(max_length=255, null=True, help_text="conversation name", index=False)
-    dialog_id = CharField(max_length=32, null=False, index=True)
-    user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
-    exp_user_id = CharField(max_length=255, null=True, help_text="exp_user_id", index=True)
-    message = JSONField(null=True)
-    reference = JSONField(null=True, default=[])
-    tokens = IntegerField(default=0)
-    source = CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)
-    dsl = JSONField(null=True, default={})
-    duration = FloatField(default=0, index=True)
-    round = IntegerField(default=0, index=True)
-    thumb_up = IntegerField(default=0, index=True)
-    errors = TextField(null=True, help_text="errors")
-    version_title = CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False)
-
-    class Meta:
-        db_table = "api_4_conversation"
-
-
-class UserCanvas(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    avatar = TextField(null=True, help_text="avatar base64 string")
-    user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
-    title = CharField(max_length=255, null=True, help_text="Canvas title")
-
-    permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
-    release = BooleanField(null=False, help_text="is released", default=False, index=True)
-    description = TextField(null=True, help_text="Canvas description")
-    canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
-    canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
-    tags = CharField(max_length=512, null=False, default="", help_text="Comma-separated tags for organizing agents", index=True)
-    dsl = JSONField(null=True, default={})
-
-    class Meta:
-        db_table = "user_canvas"
-
-
-class CanvasTemplate(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    avatar = TextField(null=True, help_text="avatar base64 string")
-    title = JSONField(null=True, default=dict, help_text="Canvas title")
-    description = JSONField(null=True, default=dict, help_text="Canvas description")
-    canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
-    canvas_types = ListField(null=True, default=list, help_text="Canvas types")
-    canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
-    dsl = JSONField(null=True, default={})
-
-    class Meta:
-        db_table = "canvas_template"
-
-
-class UserCanvasVersion(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    user_canvas_id = CharField(max_length=255, null=False, help_text="user_canvas_id", index=True)
-
-    title = CharField(max_length=255, null=True, help_text="Canvas title")
-    description = TextField(null=True, help_text="Canvas description")
-    release = BooleanField(null=False, help_text="is released", default=False, index=True)
-    dsl = JSONField(null=True, default={})
-
-    class Meta:
-        db_table = "user_canvas_version"
 
 
 class MCPServer(DataBaseModel):
@@ -1144,51 +983,6 @@ class MCPServer(DataBaseModel):
 
     class Meta:
         db_table = "mcp_server"
-
-
-class Search(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    avatar = TextField(null=True, help_text="avatar base64 string")
-    tenant_id = CharField(max_length=32, null=False, index=True)
-    name = CharField(max_length=128, null=False, help_text="Search name", index=True)
-    description = TextField(null=True, help_text="KB description")
-    created_by = CharField(max_length=32, null=False, index=True)
-    search_config = JSONField(
-        null=False,
-        default={
-            "kb_ids": [],
-            "doc_ids": [],
-            "similarity_threshold": 0.2,
-            "vector_similarity_weight": 0.3,
-            "use_kg": False,
-            # rerank settings
-            "rerank_id": "",
-            "top_k": 1024,
-            # chat settings
-            "summary": False,
-            "chat_id": "",
-            # Leave it here for reference, don't need to set default values
-            "llm_setting": {
-                # "temperature": 0.1,
-                # "top_p": 0.3,
-                # "frequency_penalty": 0.7,
-                # "presence_penalty": 0.4,
-            },
-            "chat_settingcross_languages": [],
-            "highlight": False,
-            "keyword": False,
-            "web_search": False,
-            "related_search": False,
-            "query_mindmap": False,
-        },
-    )
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
-
-    def __str__(self):
-        return self.name
-
-    class Meta:
-        db_table = "search"
 
 
 class PipelineOperationLog(DataBaseModel):
@@ -1216,180 +1010,6 @@ class PipelineOperationLog(DataBaseModel):
     class Meta:
         db_table = "pipeline_operation_log"
 
-
-class Connector(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    tenant_id = CharField(max_length=32, null=False, index=True)
-    name = CharField(max_length=128, null=False, help_text="Search name", index=False)
-    source = CharField(max_length=128, null=False, help_text="Data source", index=True)
-    input_type = CharField(max_length=128, null=False, help_text="poll/event/..", index=True)
-    config = JSONField(null=False, default={})
-    refresh_freq = IntegerField(default=0, index=False)
-    prune_freq = IntegerField(default=0, index=False)
-    timeout_secs = IntegerField(default=3600, index=False)
-    indexing_start = DateTimeField(null=True, index=True)
-    status = CharField(max_length=16, null=True, help_text="schedule", default="schedule", index=True)
-
-    def __str__(self):
-        return self.name
-
-    class Meta:
-        db_table = "connector"
-
-
-class Connector2Kb(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    connector_id = CharField(max_length=32, null=False, index=True)
-    kb_id = CharField(max_length=32, null=False, index=True)
-    auto_parse = CharField(max_length=1, null=False, default="1", index=False)
-
-    class Meta:
-        db_table = "connector2kb"
-
-
-class ChatChannel(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    tenant_id = CharField(max_length=32, null=False, index=True)
-    name = CharField(max_length=128, null=False, help_text="Bot name", index=False)
-    channel = CharField(max_length=128, null=False, help_text="Chat channel type", index=True)
-    config = JSONField(null=False, default={}, help_text="Channel credential & settings")
-    chat_id = CharField(max_length=32, null=True, default=None, help_text="connected chat id", index=True)
-    status = IntegerField(default=1, index=True)
-
-    def __str__(self):
-        return self.name
-
-    class Meta:
-        db_table = "chat_channel"
-
-
-class DateTimeTzField(CharField):
-    field_type = 'VARCHAR'
-
-    def db_value(self, value: datetime|None) -> str|None:
-        if value is not None:
-            if value.tzinfo is not None:
-                return value.isoformat()
-            else:
-                return value.replace(tzinfo=timezone.utc).isoformat()
-        return value
-
-    def python_value(self, value: str|None) -> datetime|None:
-        if value is not None:
-            dt = datetime.fromisoformat(value)
-            if dt.tzinfo is None:
-                import pytz
-                return dt.replace(tzinfo=pytz.UTC)
-            return dt
-        return value
-
-
-class SyncLogs(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    connector_id = CharField(max_length=32, index=True)
-    task_type = CharField(max_length=32, null=False, default="sync", index=True)
-    status = CharField(max_length=128, null=False, help_text="Processing status", index=True)
-    from_beginning = CharField(max_length=1, null=True, help_text="", default="0", index=False)
-    new_docs_indexed = IntegerField(default=0, index=False)
-    total_docs_indexed = IntegerField(default=0, index=False)
-    docs_removed_from_index = IntegerField(default=0, index=False)
-    error_msg = TextField(null=False, help_text="process message", default="")
-    error_count = IntegerField(default=0, index=False)
-    full_exception_trace = TextField(null=True, help_text="process message", default="")
-    time_started = DateTimeField(null=True, index=True)
-    poll_range_start = DateTimeTzField(max_length=255, null=True, index=True)
-    poll_range_end = DateTimeTzField(max_length=255, null=True, index=True)
-    kb_id = CharField(max_length=32, null=False, index=True)
-
-    class Meta:
-        db_table = "sync_logs"
-
-
-class EvaluationDataset(DataBaseModel):
-    """Ground truth dataset for RAG evaluation"""
-    id = CharField(max_length=32, primary_key=True)
-    tenant_id = CharField(max_length=32, null=False, index=True, help_text="tenant ID")
-    name = CharField(max_length=255, null=False, index=True, help_text="dataset name")
-    description = TextField(null=True, help_text="dataset description")
-    kb_ids = JSONField(null=False, help_text="knowledge base IDs to evaluate against")
-    created_by = CharField(max_length=32, null=False, index=True, help_text="creator user ID")
-    create_time = BigIntegerField(null=False, index=True, help_text="creation timestamp")
-    update_time = BigIntegerField(null=False, help_text="last update timestamp")
-    status = IntegerField(null=False, default=1, help_text="1=valid, 0=invalid")
-
-    class Meta:
-        db_table = "evaluation_datasets"
-
-
-class EvaluationCase(DataBaseModel):
-    """Individual test case in an evaluation dataset"""
-    id = CharField(max_length=32, primary_key=True)
-    dataset_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_datasets")
-    question = TextField(null=False, help_text="test question")
-    reference_answer = TextField(null=True, help_text="optional ground truth answer")
-    relevant_doc_ids = JSONField(null=True, help_text="expected relevant document IDs")
-    relevant_chunk_ids = JSONField(null=True, help_text="expected relevant chunk IDs")
-    metadata = JSONField(null=True, help_text="additional context/tags")
-    create_time = BigIntegerField(null=False, help_text="creation timestamp")
-
-    class Meta:
-        db_table = "evaluation_cases"
-
-
-class EvaluationRun(DataBaseModel):
-    """A single evaluation run"""
-    id = CharField(max_length=32, primary_key=True)
-    dataset_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_datasets")
-    dialog_id = CharField(max_length=32, null=False, index=True, help_text="dialog configuration being evaluated")
-    name = CharField(max_length=255, null=False, help_text="run name")
-    config_snapshot = JSONField(null=False, help_text="dialog config at time of evaluation")
-    metrics_summary = JSONField(null=True, help_text="aggregated metrics")
-    status = CharField(max_length=32, null=False, default="PENDING", help_text="PENDING/RUNNING/COMPLETED/FAILED")
-    created_by = CharField(max_length=32, null=False, index=True, help_text="user who started the run")
-    create_time = BigIntegerField(null=False, index=True, help_text="creation timestamp")
-    complete_time = BigIntegerField(null=True, help_text="completion timestamp")
-
-    class Meta:
-        db_table = "evaluation_runs"
-
-
-class EvaluationResult(DataBaseModel):
-    """Result for a single test case in an evaluation run"""
-    id = CharField(max_length=32, primary_key=True)
-    run_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_runs")
-    case_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_cases")
-    generated_answer = TextField(null=False, help_text="generated answer")
-    retrieved_chunks = JSONField(null=False, help_text="chunks that were retrieved")
-    metrics = JSONField(null=False, help_text="all computed metrics")
-    execution_time = FloatField(null=False, help_text="response time in seconds")
-    token_usage = JSONField(null=True, help_text="prompt/completion tokens")
-    create_time = BigIntegerField(null=False, help_text="creation timestamp")
-
-    class Meta:
-        db_table = "evaluation_results"
-
-
-class Memory(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    name = CharField(max_length=128, null=False, index=False, help_text="Memory name")
-    avatar = TextField(null=True, help_text="avatar base64 string")
-    tenant_id = CharField(max_length=32, null=False, index=True)
-    memory_type = IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=raw, 2=semantic, 4=episodic, 8=procedural. E.g., 5 enables raw + episodic.")
-    storage_type = CharField(max_length=32, default='table', null=False, index=True, help_text="table|graph")
-    embd_id = CharField(max_length=128, null=False, index=False, help_text="embedding model ID")
-    tenant_embd_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
-    llm_id = CharField(max_length=128, null=False, index=False, help_text="chat model ID")
-    tenant_llm_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
-    permissions = CharField(max_length=16, null=False, index=True, help_text="me|team", default="me")
-    description = TextField(null=True, help_text="description")
-    memory_size = IntegerField(default=5242880, null=False, index=False)
-    forgetting_policy = CharField(max_length=32, null=False, default="FIFO", index=False, help_text="LRU|FIFO")
-    temperature = FloatField(default=0.5, index=False)
-    system_prompt = TextField(null=True, help_text="system prompt", index=False)
-    user_prompt = TextField(null=True, help_text="user prompt", index=False)
-
-    class Meta:
-        db_table = "memory"
 
 class SystemSettings(DataBaseModel):
     name = CharField(max_length=128, primary_key=True)
@@ -1709,39 +1329,22 @@ def migrate_db():
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
     alter_db_add_column(migrator, "file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True))
     alter_db_add_column(migrator, "tenant", "rerank_id", CharField(max_length=128, null=False, default="BAAI/bge-reranker-v2-m3", help_text="default rerank model ID"))
-    alter_db_add_column(migrator, "dialog", "rerank_id", CharField(max_length=128, null=False, default="", help_text="default rerank model ID"))
-    alter_db_column_type(migrator, "dialog", "top_k", IntegerField(default=1024))
     alter_db_add_column(migrator, "tenant_llm", "api_key", CharField(max_length=2048, null=True, help_text="API KEY", index=True))
-    alter_db_add_column(migrator, "api_token", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True))
     alter_db_add_column(migrator, "tenant", "tts_id", CharField(max_length=256, null=True, help_text="default tts model ID", index=True))
-    alter_db_add_column(migrator, "api_4_conversation", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True))
     alter_db_add_column(migrator, "task", "retry_count", IntegerField(default=0))
-    alter_db_column_type(migrator, "api_token", "dialog_id", CharField(max_length=32, null=True, index=True))
     alter_db_add_column(migrator, "tenant_llm", "max_tokens", IntegerField(default=8192, index=True))
-    alter_db_add_column(migrator, "api_4_conversation", "dsl", JSONField(null=True, default={}))
     alter_db_add_column(migrator, "knowledgebase", "pagerank", IntegerField(default=0, index=False))
     alter_db_add_column(migrator, "api_token", "beta", CharField(max_length=255, null=True, index=True))
     alter_db_add_column(migrator, "task", "digest", TextField(null=True, help_text="task digest", default=""))
     alter_db_add_column(migrator, "task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default=""))
-    alter_db_add_column(migrator, "conversation", "user_id", CharField(max_length=255, null=True, help_text="user_id", index=True))
     alter_db_add_column(migrator, "task", "task_type", CharField(max_length=32, null=False, default=""))
     alter_db_add_column(migrator, "task", "priority", IntegerField(default=0))
-    alter_db_add_column(migrator, "user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True))
-    alter_db_add_column(migrator, "user_canvas", "release", BooleanField(null=False, help_text="is released", default=False, index=True))
     alter_db_add_column(migrator, "llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False))
     alter_db_add_column(migrator, "mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=dict))
     alter_db_rename_column(migrator, "task", "process_duation", "process_duration")
     alter_db_rename_column(migrator, "document", "process_duation", "process_duration")
     alter_db_add_column(migrator, "document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True))
-    alter_db_add_column(migrator, "api_4_conversation", "errors", TextField(null=True, help_text="errors"))
-    alter_db_add_column(migrator, "dialog", "meta_data_filter", JSONField(null=True, default={}))
-    alter_db_column_type(migrator, "canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title"))
-    alter_db_column_type(migrator, "canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description"))
-    alter_db_add_column(migrator, "user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
-    alter_db_add_column(migrator, "canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
-    alter_db_add_column(migrator, "canvas_template", "canvas_types", ListField(null=True, default=list, help_text="Canvas types"))
     alter_db_add_column(migrator, "knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
-    alter_db_add_column(migrator, "chat_channel", "dialog_id", CharField(max_length=32, null=True, help_text="connected dialog id", index=True))
     alter_db_add_column(migrator, "document", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "raptor_task_id", CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True))
@@ -1751,11 +1354,7 @@ def migrate_db():
     alter_db_add_column(migrator, "knowledgebase", "mindmap_task_finish_at", CharField(null=True))
     alter_db_column_type(migrator, "tenant_llm", "api_key", TextField(null=True, help_text="API KEY"))
     alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
-    alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))
     alter_db_add_column(migrator, "llm_factories", "rank", IntegerField(default=0, index=False))
-    alter_db_add_column(migrator, "api_4_conversation", "name", CharField(max_length=255, null=True, help_text="conversation name", index=False))
-    alter_db_add_column(migrator, "api_4_conversation", "exp_user_id", CharField(max_length=255, null=True, help_text="exp_user_id", index=True))
-    alter_db_add_column(migrator, "sync_logs", "task_type", CharField(max_length=32, null=False, default="sync", index=True))
     # Migrate system_settings.value from CharField to TextField for longer sandbox configs
     alter_db_column_type(migrator, "system_settings", "value", TextField(null=False, help_text="Configuration value (JSON, string, etc.)"))
     alter_db_add_column(migrator, "document", "content_hash", CharField(max_length=32, null=True, help_text="xxhash128 of document content for change detection", default="", index=True))
@@ -1767,18 +1366,9 @@ def migrate_db():
     alter_db_add_column(migrator, "tenant", "tenant_rerank_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "tenant", "tenant_tts_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "knowledgebase", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "dialog", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "dialog", "tenant_rerank_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "memory", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "memory", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "user_canvas_version", "release", BooleanField(null=False, help_text="is released", default=False, index=True))
-    alter_db_add_column(migrator, "user_canvas", "tags", CharField(max_length=512, null=False, default="", help_text="Comma-separated tags for organizing agents", index=True))
-    alter_db_add_column(migrator, "api_4_conversation", "version_title", CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False))
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
     alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
-    alter_db_column_type(migrator, "chat_channel", "status", IntegerField(default=1, index=True))
-    alter_db_rename_column(migrator, "chat_channel", "dialog_id", "chat_id")
     # Drop both the explicit "idx_*" name from later migrations AND the
     # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
     # original TenantModelInstance definition (commit dc4b82523). Databases

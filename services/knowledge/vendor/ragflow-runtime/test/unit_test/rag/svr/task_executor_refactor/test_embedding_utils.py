@@ -94,49 +94,6 @@ class TestEmbeddingUtilsPrepareTexts:
         assert contents == ["Content1"]
 
 
-class TestEmbeddingUtilsPrepareDataflowTexts:
-    """Tests for prepare_texts_for_dataflow_embedding class method."""
-
-    def test_prepare_dataflow_texts_with_questions(self):
-        """Test dataflow text preparation with questions field."""
-        chunks = [
-            {"questions": "Q1\nQ2"},
-            {"questions": "Q3"},
-        ]
-        texts = EmbeddingUtils.prepare_texts_for_dataflow_embedding(chunks)
-        assert texts == ["Q1\nQ2", "Q3"]
-
-    def test_prepare_dataflow_texts_with_summary(self):
-        """Test dataflow text preparation with summary field (no questions)."""
-        chunks = [
-            {"summary": "Summary1"},
-        ]
-        texts = EmbeddingUtils.prepare_texts_for_dataflow_embedding(chunks)
-        assert texts == ["Summary1"]
-
-    def test_prepare_dataflow_texts_with_text(self):
-        """Test dataflow text preparation with text field (no questions/summary)."""
-        chunks = [
-            {"text": "Text content"},
-        ]
-        texts = EmbeddingUtils.prepare_texts_for_dataflow_embedding(chunks)
-        assert texts == ["Text content"]
-
-    def test_prepare_dataflow_texts_priority(self):
-        """Test field priority: questions > summary > text."""
-        chunks = [
-            {"questions": "Q", "summary": "S", "text": "T"},
-        ]
-        texts = EmbeddingUtils.prepare_texts_for_dataflow_embedding(chunks)
-        assert texts == ["Q"]
-
-        chunks = [
-            {"summary": "S", "text": "T"},
-        ]
-        texts = EmbeddingUtils.prepare_texts_for_dataflow_embedding(chunks)
-        assert texts == ["S"]
-
-
 class TestEmbeddingUtilsTruncateTexts:
     """Tests for truncate_texts class method."""
 

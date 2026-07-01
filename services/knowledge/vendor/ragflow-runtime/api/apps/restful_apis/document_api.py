@@ -20,7 +20,7 @@ import os
 import re
 from pathlib import Path
 
-from quart import request, make_response,send_file
+from quart import request, make_response, send_file
 from peewee import OperationalError
 from pydantic import ValidationError
 
@@ -30,7 +30,7 @@ from api.apps.services.document_api_service import validate_document_update_fiel
     map_doc_keys_with_run_status, update_document_name_only, update_chunk_method, update_document_status_only, \
     reset_document_for_reparse
 from api.db import VALID_FILE_TYPES, FileType
-from api.db.db_models import API4Conversation, DB
+from api.db.db_models import DB
 from api.db.services import duplicate_name
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.db_models import Task
@@ -38,7 +38,6 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.canvas_service import UserCanvasService
 from api.common.check_team_permission import check_kb_team_permission
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.utils.api_utils import construct_json_result, get_data_error_result, get_error_data_result, get_result, get_json_result, \
@@ -49,7 +48,7 @@ from api.utils.validation_utils import (
 )
 
 from common import settings
-from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_BUCKET
+from common.constants import ParserType, RetCode, TaskStatus
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.file_utils import filename_type, thumbnail
@@ -1745,95 +1744,6 @@ async def get_document_image(image_id):
         content_type = _content_type_for_document_image(nm, data)
         response = await make_response(data)
         response.headers.set("Content-Type", content_type)
-        return response
-    except Exception as e:
-        return server_error_response(e)
-
-
-ARTIFACT_CONTENT_TYPES = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".svg": "image/svg+xml",
-    ".pdf": "application/pdf",
-    ".csv": "text/csv",
-    ".json": "application/json",
-    ".html": "text/html",
-}
-
-
-@DB.connection_context()
-def _sandbox_artifact_dialog_ids_for_user(filename: str, user_id: str) -> list[str]:
-    """Return agent dialog IDs for sessions owned by *user_id* that reference *filename*."""
-    if not filename:
-        return []
-    artifact_ref = f"documents/artifact/{filename}"
-    rows = (
-        API4Conversation.select(API4Conversation.dialog_id)
-        .where(
-            ((API4Conversation.user_id == user_id) | (API4Conversation.exp_user_id == user_id)),
-            (API4Conversation.message.contains(filename) | API4Conversation.message.contains(artifact_ref)),
-        )
-        .distinct()
-    )
-    return [row.dialog_id for row in rows if row.dialog_id]
-
-
-def _sandbox_artifact_accessible(filename: str, user_id: str) -> bool:
-    """True when a CodeExec sandbox artifact belongs to an agent session the user may access."""
-    for dialog_id in _sandbox_artifact_dialog_ids_for_user(filename, user_id):
-        if UserCanvasService.accessible(dialog_id, user_id):
-            return True
-    return False
-
-
-@manager.route("/documents/artifact/<filename>", methods=["GET"])  # noqa: F821
-@login_required
-async def get_artifact(filename):
-    """
-    Get an artifact file.
-    ---
-    tags:
-      - Documents
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: filename
-        type: string
-        required: true
-        description: Name of the artifact file.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Artifact file returned successfully.
-    """
-    from common import settings
-
-    try:
-        bucket = SANDBOX_ARTIFACT_BUCKET
-        # Validate filename: must be uuid hex + allowed extension, nothing else
-        basename = os.path.basename(filename)
-        if basename != filename or "/" in filename or "\\" in filename:
-            return get_data_error_result(message="Invalid filename.")
-        ext = os.path.splitext(basename)[1].lower()
-        if ext not in ARTIFACT_CONTENT_TYPES:
-            return get_data_error_result(message="Invalid file type.")
-        if not await thread_pool_exec(_sandbox_artifact_accessible, basename, current_user.id):
-            return get_data_error_result(message="Artifact not found.")
-        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, basename)
-        if not data:
-            return get_data_error_result(message="Artifact not found.")
-        content_type = ARTIFACT_CONTENT_TYPES.get(ext, "application/octet-stream")
-        response = await make_response(data)
-        safe_filename = re.sub(r"[^\w.\-]", "_", basename)
-        apply_safe_file_response_headers(response, content_type, ext)
-        if not response.headers.get("Content-Disposition"):
-            response.headers.set("Content-Disposition", f'inline; filename="{safe_filename}"')
         return response
     except Exception as e:
         return server_error_response(e)

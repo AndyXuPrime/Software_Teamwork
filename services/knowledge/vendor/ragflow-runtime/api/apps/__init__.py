@@ -19,14 +19,13 @@ import sys
 import time
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-from quart import Blueprint, Quart, request, g, current_app, session, jsonify
+from quart import Blueprint, Quart, request, g, current_app, jsonify
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from quart_cors import cors
 from common.constants import StatusEnum, RetCode
 from api.db.db_models import close_connection, APIToken
 from api.db.services import UserService
 from api.utils.json_encode import CustomJSONEncoder
-from api.utils import commands
 
 from quart_auth import Unauthorized as QuartAuthUnauthorized
 from werkzeug.exceptions import Unauthorized as WerkzeugUnauthorized
@@ -35,7 +34,6 @@ from common import settings
 from api.utils.api_utils import server_error_response, get_json_result
 from api.constants import API_VERSION
 from common.exceptions import ModelException
-from common.misc_utils import get_uuid
 
 settings.init_settings()
 
@@ -74,16 +72,11 @@ app.config["RESPONSE_TIMEOUT"] = int(os.environ.get("QUART_RESPONSE_TIMEOUT", 60
 app.config["BODY_TIMEOUT"] = int(os.environ.get("QUART_BODY_TIMEOUT", 600))
 
 ## convince for dev and debug
-# app.config["LOGIN_DISABLED"] = True
-app.config["SESSION_PERMANENT"] = False
-app.config["SESSION_TYPE"] = "redis"
-app.config["SESSION_REDIS"] = settings.decrypt_database_config(name="redis")
 app.config["MAX_CONTENT_LENGTH"] = int(
     os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024)
 )
 app.config['SECRET_KEY'] = settings.get_secret_key()
 app.secret_key = settings.get_secret_key()
-commands.register_commands(app)
 
 from functools import wraps
 from typing import ParamSpec, TypeVar
@@ -109,57 +102,22 @@ def _normalize_auth_types(auth_types=None):
     return {str(auth_types).upper()}
 
 
-def _load_user_from_session():
-    """Resolve the current user from the session cookie set by ``login_user()``.
-
-    OAuth/OIDC callbacks call ``login_user(user)`` which writes ``_user_id``
-    into the session. The frontend's response interceptor wipes the
-    Authorization header from localStorage on the first 401, so post-redirect
-    requests can arrive with no header at all — we still want to honour the
-    server-side session in that window.
-
-    The same access-token validity rules used by the JWT path are applied
-    here so that tokens revoked by ``logout`` (which rewrites the column to
-    ``INVALID_<hex>``) or shortened by data corruption can't keep a stale
-    session authenticated.
-    """
-    user_id = session.get("_user_id")
-    if not user_id:
-        return None
-    try:
-        users = UserService.query(id=user_id, status=StatusEnum.VALID.value)
-    except Exception:
-        logging.exception("load_user from session failed")
-        return None
-    if not users:
-        return None
-    user = users[0]
-    access_token = str(user.access_token or "").strip()
-    if not access_token or len(access_token) < 32 or access_token.startswith("INVALID_"):
-        return None
-    logging.debug("Authenticated request via session fallback for user_id=%s", user_id)
-    g.auth_type = AUTH_JWT
-    g.user = user
-    return user
-
-
 def _load_user(auth_types=None):
     explicit_auth_types = auth_types is not None
     auth_types = _normalize_auth_types(auth_types)
     if getattr(g, "user", None) and (not explicit_auth_types or getattr(g, "auth_type", None) in auth_types):
         return g.user
     
-    # No Authorization header, try to load user from session cookie if JWT auth is allowed
     authorization = request.headers.get("Authorization")
     if not authorization:
-        return _load_user_from_session() if AUTH_JWT in auth_types else None
+        return None
 
     # Extract auth_token based on whether Authorization starts with "bearer" (case-insensitive)
     if authorization[:7].lower() == "bearer ":
         parts = authorization.split(maxsplit=1)
         if len(parts) < 2:
             logging.warning("Authorization header has invalid bearer format")
-            return _load_user_from_session() if AUTH_JWT in auth_types else None
+            return None
         auth_token = parts[1]
     else:
         auth_token = authorization
@@ -191,21 +149,20 @@ def _load_user(auth_types=None):
 
             if not access_token or not access_token.strip():
                 logging.warning("Authentication attempt with empty access token")
-                return _load_user_from_session()
+                return None
 
             if len(access_token.strip()) < 32:
                 logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
-                return _load_user_from_session()
+                return None
 
             user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
             if user:
                 if not user[0].access_token or not user[0].access_token.strip():
                     logging.warning(f"User {user[0].email} has empty access_token in database")
-                    return _load_user_from_session()
+                    return None
                 g.auth_type = AUTH_JWT
                 g.user = user[0]
                 return user[0]
-            return _load_user_from_session()
         except Exception as e_jwt:
             logging.warning(f"load_user from jwt got exception {e_jwt}")
 
@@ -218,7 +175,7 @@ def _load_user(auth_types=None):
                 if user:
                     if not user[0].access_token or not user[0].access_token.strip():
                         logging.warning(f"User {user[0].email} has empty access_token in database")
-                        return _load_user_from_session() if AUTH_JWT in auth_types else None
+                        return None
                     g.auth_type = AUTH_API
                     g.user = user[0]
                     return user[0]
@@ -228,7 +185,7 @@ def _load_user(auth_types=None):
         except Exception as e_api_token:
             logging.warning(f"load_user from api token got exception {e_api_token}")
 
-    return _load_user_from_session() if AUTH_JWT in auth_types else None
+    return None
 
 
 current_user = LocalProxy(_load_user)
@@ -282,67 +239,8 @@ def login_required(func: Callable[P, Awaitable[T]] = None, auth_types=None) -> C
     return decorator(func)
 
 
-def login_user(user, remember=False, duration=None, force=False, fresh=True):
-    """
-    Logs a user in. You should pass the actual user object to this. If the
-    user's `is_active` property is ``False``, they will not be logged in
-    unless `force` is ``True``.
-
-    This will return ``True`` if the login attempt succeeds, and ``False`` if
-    it fails (i.e. because the user is inactive).
-
-    :param user: The user object to log in.
-    :type user: object
-    :param remember: Whether to remember the user after their session expires.
-        Defaults to ``False``.
-    :type remember: bool
-    :param duration: The amount of time before the remember cookie expires. If
-        ``None`` the value set in the settings is used. Defaults to ``None``.
-    :type duration: :class:`datetime.timedelta`
-    :param force: If the user is inactive, setting this to ``True`` will log
-        them in regardless. Defaults to ``False``.
-    :type force: bool
-    :param fresh: setting this to ``False`` will log in the user with a session
-        marked as not "fresh". Defaults to ``True``.
-    :type fresh: bool
-    """
-    if not force and not user.is_active:
-        return False
-
-    session["_user_id"] = user.id
-    session["_fresh"] = fresh
-    session["_id"] = get_uuid()
-    return True
-
-
-def logout_user():
-    """
-    Logs a user out. (You do not need to pass the actual user.) This will
-    also clean up the remember me cookie if it exists.
-    """
-    if "_user_id" in session:
-        session.pop("_user_id")
-
-    if "_fresh" in session:
-        session.pop("_fresh")
-
-    if "_id" in session:
-        session.pop("_id")
-
-    COOKIE_NAME = "remember_token"
-    cookie_name = current_app.config.get("REMEMBER_COOKIE_NAME", COOKIE_NAME)
-    if cookie_name in request.cookies:
-        session["_remember"] = "clear"
-        if "_remember_seconds" in session:
-            session.pop("_remember_seconds")
-
-    return True
-
-
 def search_pages_path(page_path):
     app_path_list = [path for path in page_path.glob("*_app.py") if not path.name.startswith(".")]
-    api_path_list = [path for path in page_path.glob("*sdk/*.py") if not path.name.startswith(".")]
-    app_path_list.extend(api_path_list)
     restful_api_path_list = [path for path in page_path.glob("*restful_apis/*.py") if not path.name.startswith(".")]
     app_path_list.extend(restful_api_path_list)
     return app_path_list
@@ -372,15 +270,9 @@ pages_dir = [
     Path(__file__).parent,
     Path(__file__).parent.parent / "api" / "apps",
     Path(__file__).parent.parent / "api" / "apps" / "restful_apis",
-    Path(__file__).parent.parent / "api" / "apps" / "sdk",
 ]
 
 client_urls_prefix = [register_page(path) for directory in pages_dir for path in search_pages_path(directory)]
-
-# Register backward compatibility routes for deprecated APIs
-from api.apps.backward_compat import register_backward_compat_routes
-
-register_backward_compat_routes(app)
 
 
 @app.errorhandler(404)

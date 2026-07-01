@@ -53,16 +53,6 @@ def test_system_status_contract(rest_client):
 
 
 @pytest.mark.p2
-def test_system_config_no_auth_required(rest_client_noauth):
-    res = rest_client_noauth.get("/system/config")
-    assert res.status_code == 200
-    payload = res.json()
-    assert payload["code"] == 0, payload
-    assert "registerEnabled" in payload["data"], payload
-    assert "disablePasswordLogin" in payload["data"], payload
-
-
-@pytest.mark.p2
 def test_system_healthz_contract(rest_client_noauth):
     res = rest_client_noauth.get("/system/healthz")
     assert res.status_code in (200, 500)

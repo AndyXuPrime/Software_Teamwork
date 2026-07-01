@@ -35,7 +35,6 @@ from rag.utils.redis_conn import REDIS_CONN
 from common import settings
 from rag.nlp import search
 
-CANVAS_DEBUG_DOC_ID = "dataflow_x"
 GRAPH_RAPTOR_FAKE_DOC_ID = "graph_raptor_x"
 TASK_MAX_LOG_LENGTH = int(os.environ.get("TASK_MAX_LOG_LENGTH", 3000)) # TEXT MAX is 64 KiB bytes!
 
@@ -88,9 +87,6 @@ class TaskService(CommonService):
                  Returns None if task is not found or has exceeded retry limit.
         """
         doc_id = cls.model.doc_id
-        if doc_id == CANVAS_DEBUG_DOC_ID and doc_ids:
-            doc_id = doc_ids[0]
-
         fields = [
             cls.model.id,
             cls.model.doc_id,
@@ -533,32 +529,3 @@ def has_canceled(task_id):
     except Exception as e:
         logging.exception(e)
     return False
-
-
-def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DEBUG_DOC_ID, file:dict=None, priority: int=0, rerun:bool=False) -> tuple[bool, str]:
-
-    task = dict(
-        id=task_id,
-        doc_id=doc_id,
-        from_page=0,
-        to_page=MAXIMUM_TASK_PAGE_NUMBER,
-        task_type="dataflow" if not rerun else "dataflow_rerun",
-        priority=priority,
-        begin_at= datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    )
-    if doc_id not in [CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID]:
-        TaskService.model.delete().where(TaskService.model.doc_id == doc_id).execute()
-        DocumentService.begin2parse(doc_id)
-    bulk_insert_into_db(model=Task, data_source=[task], replace_on_conflict=True)
-
-    task["kb_id"] = DocumentService.get_knowledgebase_id(doc_id)
-    task["tenant_id"] = tenant_id
-    task["dataflow_id"] = flow_id
-    task["file"] = file
-
-    if not REDIS_CONN.queue_product(
-            settings.get_svr_queue_name(priority, "common"), message=task
-    ):
-        return False, "Can't access Redis. Please check the Redis' status."
-
-    return True, ""

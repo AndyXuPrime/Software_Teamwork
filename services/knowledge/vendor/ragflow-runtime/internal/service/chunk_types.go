@@ -50,7 +50,6 @@ type ChunkService struct {
 	taskDAO        *dao.TaskDAO
 	userTenantDAO  *dao.UserTenantDAO
 	documentDAO    *dao.DocumentDAO
-	searchService  *SearchService
 }
 
 // RetrievalTestRequest retrieval test request
@@ -63,7 +62,6 @@ type RetrievalTestRequest struct {
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"`
 	CrossLanguages         []string               `json:"cross_languages,omitempty"`
-	SearchID               *string                `json:"search_id,omitempty"`
 	Filter                 map[string]interface{} `json:"meta_data_filter,omitempty"`
 	TenantRerankID         *string                `json:"tenant_rerank_id,omitempty"`
 	RerankID               *string                `json:"rerank_id,omitempty"`

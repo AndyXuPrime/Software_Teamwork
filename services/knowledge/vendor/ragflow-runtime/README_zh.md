@@ -65,13 +65,9 @@
 
 ## 🔥 近期更新
 
-- 2026-06-15 支持飞书、Discord、Telegram、Line 等多种聊天渠道。
 - 2026-04-24 支持 DeepSeek v4.
-- 2026-03-24 发布 [RAGFlow 官方 Skill](https://clawhub.ai/yingfeng/ragflow-skill) — 提供官方 Skill 以通过 OpenClaw 访问 RAGFlow 数据集。
 - 2025-11-19 支持 Gemini 3 Pro。
-- 2025-11-12 支持从 Confluence、S3、Notion、Discord、Google Drive 进行数据同步。
 - 2025-10-23 支持 MinerU 和 Docling 作为文档解析方法。
-- 2025-10-15 支持可编排的数据管道。
 - 2025-08-08 支持 OpenAI 最新的 GPT-5 系列模型。
 - 2025-08-01 支持 MCP。
 - 2025-03-19 PDF 和 DOCX 中的图支持用多模态大模型去解析得到描述。

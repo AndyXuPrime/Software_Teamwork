@@ -26,8 +26,6 @@ import (
 type APIKeyResponse struct {
 	TenantID   string  `json:"tenant_id"`
 	Token      string  `json:"token"`
-	DialogID   *string `json:"dialog_id,omitempty"`
-	Source     *string `json:"source,omitempty"`
 	Beta       *string `json:"beta,omitempty"`
 	CreateTime *int64  `json:"create_time,omitempty"`
 	UpdateTime *int64  `json:"update_time,omitempty"`
@@ -60,8 +58,6 @@ func (s *SystemService) ListAPIKeys(tenantID string) ([]*APIKeyResponse, error) 
 		responses[i] = &APIKeyResponse{
 			TenantID:   key.TenantID,
 			Token:      key.Token,
-			DialogID:   key.DialogID,
-			Source:     key.Source,
 			Beta:       beta,
 			CreateTime: key.CreateTime,
 			UpdateTime: key.UpdateTime,
@@ -99,8 +95,6 @@ func (s *SystemService) CreateAPIKey(tenantID string, req *CreateAPIKeyRequest) 
 	return &APIKeyResponse{
 		TenantID:   APIKeyData.TenantID,
 		Token:      APIKeyData.Token,
-		DialogID:   APIKeyData.DialogID,
-		Source:     APIKeyData.Source,
 		Beta:       APIKeyData.Beta,
 		CreateTime: APIKeyData.CreateTime,
 		UpdateTime: APIKeyData.UpdateTime,

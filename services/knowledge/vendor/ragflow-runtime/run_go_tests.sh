@@ -2,8 +2,6 @@
 set -euo pipefail
 
 PACKAGES=(
-    "./internal/admin/..."
-    "./internal/cli/..."
     "./internal/common/..."
     "./internal/dao/..."
     "./internal/engine/..."

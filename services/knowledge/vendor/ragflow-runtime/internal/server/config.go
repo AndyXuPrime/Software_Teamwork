@@ -37,33 +37,24 @@ const DefaultConnectTimeout = 5 * time.Second
 
 // Config application configuration
 type Config struct {
-	Server           ServerConfig           `mapstructure:"server"`
-	Authentication   AuthenticationConfig   `mapstructure:"authentication"`
-	Database         DatabaseConfig         `mapstructure:"database"`
-	Redis            RedisConfig            `mapstructure:"redis"`
-	Nats             NatsConfig             `mapstructure:"nats"`
-	Log              LogConfig              `mapstructure:"log"`
-	DocEngine        DocEngineConfig        `mapstructure:"doc_engine"`
-	StorageEngine    StorageConfig          `mapstructure:"storage_engine"`
-	RegisterEnabled  int                    `mapstructure:"register_enabled"`
-	OAuth            map[string]OAuthConfig `mapstructure:"oauth"`
-	SMTP             common.SMTPConfig      `mapstructure:"smtp"`
-	Admin            AdminConfig            `mapstructure:"admin"`
-	UserDefaultLLM   UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
-	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`
-	Language         string                 `mapstructure:"language"`
-	TaskExecutor     TaskExecutorConfig     `mapstructure:"task_executor"`
+	Server           ServerConfig         `mapstructure:"server"`
+	Database         DatabaseConfig       `mapstructure:"database"`
+	Redis            RedisConfig          `mapstructure:"redis"`
+	Nats             NatsConfig           `mapstructure:"nats"`
+	Log              LogConfig            `mapstructure:"log"`
+	DocEngine        DocEngineConfig      `mapstructure:"doc_engine"`
+	StorageEngine    StorageConfig        `mapstructure:"storage_engine"`
+	Admin            AdminConfig          `mapstructure:"admin"`
+	UserDefaultLLM   UserDefaultLLMConfig `mapstructure:"user_default_llm"`
+	DefaultSuperUser DefaultSuperUser     `mapstructure:"default_super_user"`
+	Language         string               `mapstructure:"language"`
+	TaskExecutor     TaskExecutorConfig   `mapstructure:"task_executor"`
 }
 
 // AdminConfig admin server configuration
 type AdminConfig struct {
 	Host string `mapstructure:"host"`
 	Port int    `mapstructure:"http_port"`
-}
-
-type AuthenticationConfig struct {
-	DisablePasswordLogin bool `mapstructure:"disable_password_login"`
-	RegisterEnabled      bool `mapstructure:"register_enabled"`
 }
 
 type DefaultSuperUser struct {
@@ -100,26 +91,6 @@ type ModelConfig struct {
 	Factory string `mapstructure:"factory"`
 }
 
-// OAuthConfig OAuth configuration for a channel.
-// Mirrors api/apps/auth/__init__.py's OAUTH_CONFIG entries: a Type that
-// selects the auth client flavor (oauth2 / oidc / github), plus the
-// transport URLs and client credentials. For OIDC the URLs are derived
-// from Issuer via the .well-known/openid-configuration document, so they
-// may be left blank.
-type OAuthConfig struct {
-	DisplayName      string `mapstructure:"display_name"`
-	Icon             string `mapstructure:"icon"`
-	Type             string `mapstructure:"type"`
-	ClientID         string `mapstructure:"client_id"`
-	ClientSecret     string `mapstructure:"client_secret"`
-	AuthorizationURL string `mapstructure:"authorization_url"`
-	TokenURL         string `mapstructure:"token_url"`
-	UserinfoURL      string `mapstructure:"userinfo_url"`
-	RedirectURI      string `mapstructure:"redirect_uri"`
-	Scope            string `mapstructure:"scope"`
-	Issuer           string `mapstructure:"issuer"`
-}
-
 // ServerConfig server configuration
 type ServerConfig struct {
 	Mode      string  `mapstructure:"mode"` // debug, release
@@ -141,9 +112,8 @@ type DatabaseConfig struct {
 // LogConfig logging configuration.
 //
 // Path, MaxSize, MaxBackups, MaxAge, and Compress configure the rotated
-// log file. The cmd/* entry points hardcode per-service defaults
-// (e.g. "server_main.log" for the API server, "admin_server.log" for
-// the admin server, "ingestion_server.log" for the ingestion worker),
+// log file. Runtime entry points hardcode per-service defaults
+// (for example "ingestion_server.log" for the ingestion worker),
 // so a typical deployment gets a rotated file without any YAML
 // configuration. When Path is empty (the default) the binary's
 // hardcoded default filename is used — it does NOT disable file
@@ -442,26 +412,6 @@ func FromEnvironments() error {
 		globalConfig.Server.SecretKey = &envVal
 	}
 
-	// Load REGISTER_ENABLED from environment variable (default: true)
-	if envVal := os.Getenv("REGISTER_ENABLED"); envVal != "" {
-		str := strings.ToLower(envVal)
-		if str == "true" || str == "1" || str == "yes" {
-			globalConfig.Authentication.RegisterEnabled = true
-		} else {
-			globalConfig.Authentication.RegisterEnabled = false
-		}
-	}
-
-	// Load DISABLE_PASSWORD_LOGIN from environment variable (default: false)
-	if envVal := os.Getenv("DISABLE_PASSWORD_LOGIN"); envVal != "" {
-		str := strings.ToLower(envVal)
-		if str == "true" || str == "1" || str == "yes" {
-			globalConfig.Authentication.DisablePasswordLogin = true
-		} else {
-			globalConfig.Authentication.DisablePasswordLogin = false
-		}
-	}
-
 	// Doc engine
 	docEngine := strings.ToLower(os.Getenv("DOC_ENGINE"))
 	switch docEngine {
@@ -623,24 +573,6 @@ func FromConfigFile(configPath string) error {
 		globalConfig.Admin.Port = 9383
 	} else {
 		globalConfig.Admin.Port += 2
-	}
-
-	// authentication section
-	if globalConfig != nil {
-		// Try to map from mysql section
-		globalConfig.Authentication.DisablePasswordLogin = false
-		globalConfig.Authentication.RegisterEnabled = true
-		if v.IsSet("authentication") {
-			authenticationConfig := v.Sub("authentication")
-			if authenticationConfig != nil {
-				if authenticationConfig.IsSet("disable_password_login") {
-					globalConfig.Authentication.DisablePasswordLogin = authenticationConfig.GetBool("disable_password_login")
-				}
-				if authenticationConfig.IsSet("enable_register") {
-					globalConfig.Authentication.RegisterEnabled = authenticationConfig.GetBool("enable_register")
-				}
-			}
-		}
 	}
 
 	// If we loaded service_conf.yaml, map mysql fields to DatabaseConfig

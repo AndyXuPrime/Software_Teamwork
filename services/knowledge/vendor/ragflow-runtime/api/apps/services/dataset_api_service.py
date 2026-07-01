@@ -26,7 +26,6 @@ from api.db.services.document_service import DocumentService, queue_raptor_o_gra
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.connector_service import Connector2KbService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from common.constants import FileSource, StatusEnum
@@ -207,7 +206,6 @@ def get_dataset(dataset_id: str, tenant_id: str):
 
     response_data = remap_dictionary_keys(kb.to_dict())
     response_data["size"] = DocumentService.get_total_size_by_kb_id(dataset_id)
-    response_data["connectors"] = list(Connector2KbService.list_connectors(dataset_id))
     return True, response_data
 
 
@@ -279,12 +277,6 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     # Merge ext fields with req
     req.update(ext_fields)
 
-    # Extract connectors from request
-    connectors = []
-    if "connectors" in req:
-        connectors = req["connectors"]
-        del req["connectors"]
-
     if req.get("parser_config"):
         # Flatten parent_child config into children_delimiter for the execution layer
         pc = req["parser_config"].get("parent_child", {})
@@ -346,13 +338,7 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     if not ok:
         return False, "Dataset updated failed"
 
-    # Link connectors to the dataset
-    errors = Connector2KbService.link_connectors(kb.id, [conn for conn in connectors], tenant_id)
-    if errors:
-        logging.error("Link KB errors: %s", errors)
-
     response_data = remap_dictionary_keys(k.to_dict())
-    response_data["connectors"] = connectors
     return True, response_data
 
 
@@ -936,7 +922,6 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
     from api.db.services.doc_metadata_service import DocMetadataService
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.search_service import SearchService
     from api.db.services.user_service import UserTenantService
     from common.constants import LLMType
     from common.metadata_utils import apply_meta_data_filter
@@ -973,44 +958,11 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         return False, "`doc_ids` should be a list"
     local_doc_ids = list(doc_ids) if doc_ids else []
 
-    meta_data_filter = {}
-    search_id = req.get("search_id", "")
-    search_config = {}
+    meta_data_filter = req.get("meta_data_filter") or {}
     chat_mdl = None
-    if search_id:
-        search_detail = SearchService.get_detail(search_id)
-        if not search_detail:
-            logging.warning("search config not found: search_id=%s", search_id)
-            return False, "Invalid search_id"
-        search_config = search_detail.get("search_config", {})
-        meta_data_filter = search_config.get("meta_data_filter", {})
-        similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
-        vector_similarity_weight = float(search_config.get("vector_similarity_weight", vector_similarity_weight))
-        top = max(1, min(int(search_config.get("top_k", top)), 2048))
-        use_kg = search_config.get("use_kg", use_kg)
-        langs = search_config.get("cross_languages", langs)
-        logging.debug(
-            "Dataset search loaded Search config: search_id=%s dataset_id=%s "
-            "vector_similarity_weight=%s full_text_weight=%s similarity_threshold=%s top_k=%s",
-            search_id,
-            dataset_id,
-            vector_similarity_weight,
-            1 - vector_similarity_weight,
-            similarity_threshold,
-            top,
-        )
-        if meta_data_filter.get("method") in ["auto", "semi_auto"]:
-            chat_id = search_config.get("chat_id", "")
-            if chat_id:
-                chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, search_config["chat_id"])
-            else:
-                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-            chat_mdl = LLMBundle(tenant_id, chat_model_config)
-    else:
-        meta_data_filter = req.get("meta_data_filter") or {}
-        if meta_data_filter.get("method") in ["auto", "semi_auto"]:
-            chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-            chat_mdl = LLMBundle(tenant_id, chat_model_config)
+    if meta_data_filter.get("method") in ["auto", "semi_auto"]:
+        chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+        chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
     if meta_data_filter:
         local_doc_ids = await apply_meta_data_filter(
@@ -1042,12 +994,12 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     rerank_mdl = None
-    rerank_id = search_config.get("rerank_id") or req.get("rerank_id")
+    rerank_id = req.get("rerank_id")
     if rerank_id:
         rerank_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.RERANK.value, rerank_id)
         rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
-    if search_config.get("keyword", req.get("keyword", False)):
+    if req.get("keyword", False):
         default_chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
         chat_mdl = LLMBundle(kb.tenant_id, default_chat_model_config)
         _question += await keyword_extraction(chat_mdl, _question)
@@ -1066,7 +1018,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         top=top,
         rerank_mdl=rerank_mdl,
         rank_feature=labels,
-        trace_id=search_id,
+        trace_id=None,
     )
 
     if use_kg:
@@ -1298,7 +1250,6 @@ async def search_datasets(tenant_id: str, req: dict):
     from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, split_model_name
     from api.db.services.doc_metadata_service import DocMetadataService
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.search_service import SearchService
     from api.db.services.user_service import UserTenantService
     from common.constants import LLMType
     from common.metadata_utils import apply_meta_data_filter
@@ -1342,44 +1293,11 @@ async def search_datasets(tenant_id: str, req: dict):
         return False, "`doc_ids` should be a list"
     local_doc_ids = list(doc_ids) if doc_ids else []
 
-    meta_data_filter = {}
-    search_id = req.get("search_id", "")
-    search_config = {}
+    meta_data_filter = req.get("meta_data_filter") or {}
     chat_mdl = None
-    if search_id:
-        search_detail = SearchService.get_detail(search_id)
-        if not search_detail:
-            logging.warning("search config not found: search_id=%s", search_id)
-            return False, "Invalid search_id"
-        search_config = search_detail.get("search_config", {})
-        meta_data_filter = search_config.get("meta_data_filter", {})
-        similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
-        vector_similarity_weight = float(search_config.get("vector_similarity_weight", vector_similarity_weight))
-        top = max(1, min(int(search_config.get("top_k", top)), 2048))
-        use_kg = search_config.get("use_kg", use_kg)
-        langs = search_config.get("cross_languages", langs)
-        logging.debug(
-            "Dataset search loaded Search config: search_id=%s dataset_ids=%s "
-            "vector_similarity_weight=%s full_text_weight=%s similarity_threshold=%s top_k=%s",
-            search_id,
-            kb_ids,
-            vector_similarity_weight,
-            1 - vector_similarity_weight,
-            similarity_threshold,
-            top,
-        )
-        if meta_data_filter.get("method") in ["auto", "semi_auto"]:
-            chat_id = search_config.get("chat_id", "")
-            if chat_id:
-                chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, search_config["chat_id"])
-            else:
-                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-            chat_mdl = LLMBundle(tenant_id, chat_model_config)
-    else:
-        meta_data_filter = req.get("meta_data_filter") or {}
-        if meta_data_filter.get("method") in ["auto", "semi_auto"]:
-            chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-            chat_mdl = LLMBundle(tenant_id, chat_model_config)
+    if meta_data_filter.get("method") in ["auto", "semi_auto"]:
+        chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+        chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
     if meta_data_filter:
         logging.debug("Metadata filter applied: %s, question length: %d, chat_mdl=%s",
@@ -1414,12 +1332,12 @@ async def search_datasets(tenant_id: str, req: dict):
     embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     rerank_mdl = None
-    rerank_id = search_config.get("rerank_id") or req.get("rerank_id")
+    rerank_id = req.get("rerank_id")
     if rerank_id:
         rerank_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.RERANK.value, rerank_id)
         rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
-    if search_config.get("keyword", req.get("keyword", False)):
+    if req.get("keyword", False):
         default_chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
         chat_mdl = LLMBundle(kb.tenant_id, default_chat_model_config)
         _question += await keyword_extraction(chat_mdl, _question)
@@ -1438,7 +1356,7 @@ async def search_datasets(tenant_id: str, req: dict):
         top=top,
         rerank_mdl=rerank_mdl,
         rank_feature=labels,
-        trace_id=search_id,
+        trace_id=None,
     )
 
     if use_kg:

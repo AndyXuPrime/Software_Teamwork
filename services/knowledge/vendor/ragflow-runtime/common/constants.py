@@ -14,14 +14,11 @@
 #  limitations under the License.
 #
 
-import os
 from enum import Enum, IntEnum
 from enum import StrEnum
 
 SERVICE_CONF = "service_conf.yaml"
 RAG_FLOW_SERVICE_NAME = "ragflow"
-SANDBOX_ARTIFACT_BUCKET = os.environ.get("SANDBOX_ARTIFACT_BUCKET", "sandbox-artifacts")
-SANDBOX_ARTIFACT_EXPIRE_DAYS = int(os.environ.get("SANDBOX_ARTIFACT_EXPIRE_DAYS", "7"))
 
 
 class CustomEnum(Enum):
@@ -99,11 +96,6 @@ class TaskStatus(StrEnum):
 VALID_TASK_STATUS = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL, TaskStatus.SCHEDULE}
 
 
-class ConnectorTaskType(StrEnum):
-    SYNC = "sync"
-    PRUNE = "prune"
-
-
 class ParserType(StrEnum):
     PRESENTATION = "presentation"
     LAWS = "laws"
@@ -125,41 +117,6 @@ class ParserType(StrEnum):
 class FileSource(StrEnum):
     LOCAL = ""
     KNOWLEDGEBASE = "knowledgebase"
-    RSS = "rss"
-    S3 = "s3"
-    NOTION = "notion"
-    REST_API = "rest_api"
-    DISCORD = "discord"
-    CONFLUENCE = "confluence"
-    GMAIL = "gmail"
-    GOOGLE_DRIVE = "google_drive"
-    JIRA = "jira"
-    SHAREPOINT = "sharepoint"
-    SLACK = "slack"
-    TEAMS = "teams"
-    WEBDAV = "webdav"
-    MOODLE = "moodle"
-    DROPBOX = "dropbox"
-    BOX = "box"
-    R2 = "r2"
-    OCI_STORAGE = "oci_storage"
-    GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
-    AIRTABLE = "airtable"
-    ASANA = "asana"
-    GITHUB = "github"
-    GITLAB = "gitlab"
-    IMAP = "imap"
-    BITBUCKET = "bitbucket"
-    ZENDESK = "zendesk"
-    SEAFILE = "seafile"
-    MYSQL = "mysql"
-    POSTGRESQL = "postgresql"
-    BIGQUERY = "bigquery"
-    DINGTALK_AI_TABLE = "dingtalk_ai_table"
-    ONEDRIVE = "onedrive"
-    OUTLOOK = "outlook"
-    SALESFORCE = "salesforce"
-    AZURE_BLOB = "azure_blob"
 
 
 class PipelineTaskType(StrEnum):
@@ -168,7 +125,6 @@ class PipelineTaskType(StrEnum):
     RAPTOR = "RAPTOR"
     GRAPH_RAG = "GraphRAG"
     MINDMAP = "Mindmap"
-    MEMORY = "Memory"
 
 
 VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP}
@@ -192,29 +148,10 @@ class Storage(Enum):
     GCS = 7
 
 
-class MemoryType(Enum):
-    RAW = 0b0001  # 1 << 0 = 1 (0b00000001)
-    SEMANTIC = 0b0010  # 1 << 1 = 2 (0b00000010)
-    EPISODIC = 0b0100  # 1 << 2 = 4 (0b00000100)
-    PROCEDURAL = 0b1000  # 1 << 3 = 8 (0b00001000)
-
-
-class MemoryStorageType(StrEnum):
-    TABLE = "table"
-    GRAPH = "graph"
-
-
-class ForgettingPolicy(StrEnum):
-    FIFO = "FIFO"
-
-
 # environment
 # ENV_STRONG_TEST_COUNT = "STRONG_TEST_COUNT"
 # ENV_RAGFLOW_SECRET_KEY = "RAGFLOW_SECRET_KEY"
-# ENV_REGISTER_ENABLED = "REGISTER_ENABLED"
 # ENV_DOC_ENGINE = "DOC_ENGINE"
-# ENV_SANDBOX_ENABLED = "SANDBOX_ENABLED"
-# ENV_SANDBOX_HOST = "SANDBOX_HOST"
 # ENV_MAX_CONTENT_LENGTH = "MAX_CONTENT_LENGTH"
 # ENV_COMPONENT_EXEC_TIMEOUT = "COMPONENT_EXEC_TIMEOUT"
 # ENV_TRINO_USE_TLS = "TRINO_USE_TLS"

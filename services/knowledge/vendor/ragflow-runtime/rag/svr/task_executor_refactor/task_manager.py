@@ -25,7 +25,6 @@ from typing import Any, Optional
 
 from rag.svr.task_executor_refactor.comparator import ContextComparator
 from rag.svr.task_executor_refactor.task_context import TaskCallbacks, TaskDict, TaskLimiters
-from rag.svr.task_executor_refactor.dataflow_service import BillingHook
 from rag.svr.task_executor_refactor.recording_context import (
     BaseRecordingContext,
     RecordingContext,
@@ -64,7 +63,7 @@ class TaskManager:
         kg_limiter: Any,
         set_progress: Any,
         has_canceled: Any,
-        billing_hook: Optional[BillingHook] = None,
+        billing_hook: Optional[Any] = None,
     ) -> None:
         """Run a document processing task in production mode.
 
@@ -77,7 +76,7 @@ class TaskManager:
             kg_limiter: Rate limiter for knowledge graph operations.
             set_progress: Progress callback function.
             has_canceled: Function to check if task is canceled.
-            billing_hook: Optional billing hook for pipeline success/error callbacks.
+            billing_hook: Kept for call-site compatibility with upstream Dataflow mode.
         """
         with recording_context_manager(_NULL_RECORDING_CONTEXT):
             # Use NullRecordingContext in production to avoid memory allocation

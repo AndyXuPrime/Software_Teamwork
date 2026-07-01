@@ -19,7 +19,6 @@ import json
 import logging
 import re
 from copy import deepcopy
-from typing import Tuple
 from jinja2.sandbox import SandboxedEnvironment
 import json_repair
 
@@ -29,8 +28,6 @@ from rag.prompts.template import load_prompt
 from common.constants import TAG_FLD
 from common.token_utils import encoder, num_tokens_from_string
 
-STOP_TOKEN = "<|STOP|>"
-COMPLETE_TASK = "complete_task"
 INPUT_UTILIZATION = 0.5
 
 
@@ -169,19 +166,6 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
     return knowledges
 
 
-def memory_prompt(message_list, max_tokens):
-    used_token_count = 0
-    content_list = []
-    for message in message_list:
-        current_content_tokens = num_tokens_from_string(message["content"])
-        if used_token_count + current_content_tokens > max_tokens * 0.97:
-            logging.warning(f"Not all the retrieval into prompt: {len(content_list)}/{len(message_list)}")
-            break
-        content_list.append(message["content"])
-        used_token_count += current_content_tokens
-    return content_list
-
-
 CITATION_PROMPT_TEMPLATE = load_prompt("citation_prompt")
 CITATION_PLUS_TEMPLATE = load_prompt("citation_plus")
 CONTENT_TAGGING_PROMPT_TEMPLATE = load_prompt("content_tagging_prompt")
@@ -195,14 +179,7 @@ VISION_LLM_FIGURE_DESCRIBE_PROMPT = load_prompt("vision_llm_figure_describe_prom
 VISION_LLM_FIGURE_DESCRIBE_PROMPT_WITH_CONTEXT = load_prompt("vision_llm_figure_describe_prompt_with_context")
 STRUCTURED_OUTPUT_PROMPT = load_prompt("structured_output_prompt")
 
-ANALYZE_TASK_SYSTEM = load_prompt("analyze_task_system")
-ANALYZE_TASK_USER = load_prompt("analyze_task_user")
-NEXT_STEP = load_prompt("next_step")
-REFLECT = load_prompt("reflect")
-SUMMARY4MEMORY = load_prompt("summary4memory")
-RANK_MEMORY = load_prompt("rank_memory")
 META_FILTER = load_prompt("meta_filter")
-ASK_SUMMARY = load_prompt("ask_summary")
 
 PROMPT_JINJA_ENV = SandboxedEnvironment(
     autoescape=False, trim_blocks=True, lstrip_blocks=True
@@ -370,107 +347,6 @@ def vision_llm_figure_describe_prompt_with_context(context_above: str, context_b
     return template.render(context_above=context_above, context_below=context_below)
 
 
-def tool_schema(tools_description: list[dict], complete_task=False):
-    if not tools_description:
-        return ""
-    desc = {}
-    if complete_task:
-        desc[COMPLETE_TASK] = {
-            "type": "function",
-            "function": {
-                "name": COMPLETE_TASK,
-                "description": "When you have the final answer and are ready to complete the task, call this function with your answer",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "answer": {"type": "string", "description": "The final answer to the user's question"}},
-                    "required": ["answer"]
-                }
-            }
-        }
-    for idx, tool in enumerate(tools_description):
-        name = tool["function"]["name"]
-        desc[name] = tool
-
-    return "\n\n".join([f"## {i + 1}. {fnm}\n{json.dumps(des, ensure_ascii=False, indent=4)}" for i, (fnm, des) in
-                        enumerate(desc.items())])
-
-
-def form_history(history, limit=-6):
-    context = ""
-    for h in history[limit:]:
-        if h["role"] == "system":
-            continue
-        role = "USER"
-        if h["role"].upper() != role:
-            role = "AGENT"
-        context += f"\n{role}: {h['content'][:2048] + ('...' if len(h['content']) > 2048 else '')}"
-    return context
-
-
-async def analyze_task_async(chat_mdl, prompt, task_name, tools_description: list[dict],
-                             user_defined_prompts: dict = {}):
-    tools_desc = tool_schema(tools_description)
-    context = ""
-
-    if user_defined_prompts.get("task_analysis"):
-        template = PROMPT_JINJA_ENV.from_string(user_defined_prompts["task_analysis"])
-    else:
-        template = PROMPT_JINJA_ENV.from_string(ANALYZE_TASK_SYSTEM + "\n\n" + ANALYZE_TASK_USER)
-    context = template.render(task=task_name, context=context, agent_prompt=prompt, tools_desc=tools_desc)
-    kwd = await chat_mdl.async_chat(context, [{"role": "user", "content": "Please analyze it."}])
-    if isinstance(kwd, tuple):
-        kwd = kwd[0]
-    kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
-    if kwd.find("**ERROR**") >= 0:
-        return ""
-    return kwd
-
-
-async def next_step_async(chat_mdl, history: list, tools_description: list[dict], task_desc,
-                          user_defined_prompts: dict = {}):
-    if not tools_description:
-        return "", 0
-    desc = tool_schema(tools_description)
-    template = PROMPT_JINJA_ENV.from_string(user_defined_prompts.get("plan_generation", NEXT_STEP))
-    user_prompt = "\nWhat's the next tool to call? If ready OR IMPOSSIBLE TO BE READY, then call `complete_task`."
-    hist = deepcopy(history)
-    if hist[-1]["role"] == "user":
-        hist[-1]["content"] += user_prompt
-    else:
-        hist.append({"role": "user", "content": user_prompt})
-    json_str = await chat_mdl.async_chat(
-        template.render(task_analysis=task_desc, desc=desc, today=datetime.datetime.now().strftime("%Y-%m-%d")),
-        hist[1:],
-        stop=["<|stop|>"],
-    )
-    tk_cnt = num_tokens_from_string(json_str)
-    json_str = re.sub(r"^.*</think>", "", json_str, flags=re.DOTALL)
-    return json_str, tk_cnt
-
-
-async def reflect_async(chat_mdl, history: list[dict], tool_call_res: list[Tuple], user_defined_prompts: dict = {}):
-    tool_calls = [{"name": p[0], "result": p[1]} for p in tool_call_res]
-    goal = history[1]["content"]
-    template = PROMPT_JINJA_ENV.from_string(user_defined_prompts.get("reflection", REFLECT))
-    user_prompt = template.render(goal=goal, tool_calls=tool_calls)
-    hist = deepcopy(history)
-    if hist[-1]["role"] == "user":
-        hist[-1]["content"] += user_prompt
-    else:
-        hist.append({"role": "user", "content": user_prompt})
-    _, msg = message_fit_in(hist, chat_mdl.max_length)
-    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
-    ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-    return """
-**Observation**
-{}
-
-**Reflection**
-{}
-    """.format(json.dumps(tool_calls, ensure_ascii=False, indent=2), ans)
-
-
 def form_message(system_prompt, user_prompt):
     return [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
 
@@ -478,28 +354,6 @@ def form_message(system_prompt, user_prompt):
 def structured_output_prompt(schema=None) -> str:
     template = PROMPT_JINJA_ENV.from_string(STRUCTURED_OUTPUT_PROMPT)
     return template.render(schema=schema)
-
-
-async def tool_call_summary(chat_mdl, name: str, params: dict, result: str, user_defined_prompts: dict = {}) -> str:
-    template = PROMPT_JINJA_ENV.from_string(SUMMARY4MEMORY)
-    system_prompt = template.render(name=name,
-                                    params=json.dumps(params, ensure_ascii=False, indent=2),
-                                    result=result)
-    user_prompt = "→ Summary: "
-    _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
-    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
-    return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-
-
-async def rank_memories_async(chat_mdl, goal: str, sub_goal: str, tool_call_summaries: list[str],
-                              user_defined_prompts: dict = {}):
-    template = PROMPT_JINJA_ENV.from_string(RANK_MEMORY)
-    system_prompt = template.render(goal=goal, sub_goal=sub_goal,
-                                    results=[{"i": i, "content": s} for i, s in enumerate(tool_call_summaries)])
-    user_prompt = " → rank: "
-    _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
-    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:], stop="<|stop|>")
-    return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
 
 
 async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: dict = None) -> dict:

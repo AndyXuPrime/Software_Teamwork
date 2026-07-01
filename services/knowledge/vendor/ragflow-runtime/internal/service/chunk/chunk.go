@@ -77,17 +77,6 @@ type chunkImageMergeLock struct {
 	refs int
 }
 
-func searchConfigMap(value interface{}) (map[string]interface{}, bool) {
-	switch typed := value.(type) {
-	case entity.JSONMap:
-		return map[string]interface{}(typed), true
-	case map[string]interface{}:
-		return typed, true
-	default:
-		return nil, false
-	}
-}
-
 // ChunkService chunk service
 type ChunkService struct {
 	docEngine      engine.DocEngine
@@ -97,7 +86,6 @@ type ChunkService struct {
 	userTenantDAO  *dao.UserTenantDAO
 	documentDAO    *dao.DocumentDAO
 	taskDAO        *dao.TaskDAO
-	searchService  *service.SearchService
 
 	accessibleFunc                func(string, string) bool
 	getKnowledgebaseByIDFunc      func(string) (*entity.Knowledgebase, error)
@@ -125,7 +113,6 @@ func NewChunkService() *ChunkService {
 		userTenantDAO:  dao.NewUserTenantDAO(),
 		documentDAO:    dao.NewDocumentDAO(),
 		taskDAO:        dao.NewTaskDAO(),
-		searchService:  service.NewSearchService(),
 	}
 }
 
@@ -154,7 +141,6 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 		"    docIDs=%v\n"+
 		"    useKG=%v, topK=%v\n"+
 		"    crossLanguages=%v\n"+
-		"    searchID=%v\n"+
 		"    filter=%v\n"+
 		"    tenantRerankID=%v\n"+
 		"    rerankID=%v\n"+
@@ -162,7 +148,7 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 		"    similarityThreshold=%v, vectorSimilarityWeight=%v",
 		req.Datasets, req.Question,
 		common.PtrString(req.Page), common.PtrString(req.Size), req.DocIDs,
-		common.PtrString(req.UseKG), common.PtrString(req.TopK), req.CrossLanguages, common.PtrString(req.SearchID),
+		common.PtrString(req.UseKG), common.PtrString(req.TopK), req.CrossLanguages,
 		req.Filter,
 		common.PtrString(req.TenantRerankID), common.PtrString(req.RerankID),
 		common.PtrString(req.Keyword),
@@ -220,61 +206,27 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 	}
 
 	// Determine meta_data_filter
-	var chatID string
 	var chatModelForFilter *models.ChatModel
 	filter := req.Filter
-
-	if req.SearchID != nil && *req.SearchID != "" {
-		// If search_id is set, get meta_data_filter and chat_id from search_config
-		searchDetail, err := s.searchService.GetDetail(*req.SearchID)
-		if err != nil {
-			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", *req.SearchID), zap.Error(err))
-		} else if searchConfig, ok := searchConfigMap(searchDetail["search_config"]); ok && searchConfig != nil {
-			if searchMetaFilter, ok := searchConfigMap(searchConfig["meta_data_filter"]); ok {
-				filter = searchMetaFilter
-			}
-			chatID, _ = searchConfig["chat_id"].(string)
-		} else {
-			common.Warn("No search_config found in search detail", zap.String("searchID", *req.SearchID))
-		}
-	}
 
 	// If meta_data_filter method is auto/semi_auto, get chat model
 	if filter != nil {
 		method, _ := filter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
 			modelProviderSvc := service.NewModelProviderService()
-			if chatID != "" {
-				// Use chat_id from search_config (it's actually the model name)
-				driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, chatID)
+			tenantSvc := service.NewTenantService()
+			modelName, err := tenantSvc.GetDefaultModelName(tenantIDs[0], entity.ModelTypeChat)
+			if err != nil || modelName == "" {
+				common.Warn("Failed to get tenant default chat model name for meta_data_filter", zap.Error(err))
+			} else {
+				driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, modelName)
 				if getErr != nil {
-					common.Warn("Failed to get chat model from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(getErr))
+					common.Warn("Failed to get chat model for meta_data_filter", zap.Error(getErr))
 				} else {
 					chatModelForFilter = models.NewChatModel(driver, &mdlName, apiConfig)
-					common.Info("Fetched chat model (from search_config) for metadata filter",
-						zap.String("chatID", chatID),
-						zap.String("tenantID", tenantIDs[0]))
-				}
-
-			}
-
-			// If no chatID from search_config, or chatModel not found, use tenant default
-			if chatModelForFilter == nil {
-				tenantSvc := service.NewTenantService()
-				modelName, err := tenantSvc.GetDefaultModelName(tenantIDs[0], entity.ModelTypeChat)
-				if err != nil || modelName == "" {
-					common.Warn("Failed to get tenant default chat model name for meta_data_filter", zap.Error(err))
-				} else {
-					driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, modelName)
-					if getErr != nil {
-						common.Warn("Failed to get chat model for meta_data_filter", zap.Error(getErr))
-					} else {
-						chatModelForFilter = models.NewChatModel(driver, &mdlName, apiConfig)
-						common.Info("Fetched chat model (tenant default) for metadata filter",
-							zap.String("tenantID", tenantIDs[0]),
-							zap.String("modelName", modelName))
-					}
-
+					common.Info("Fetched chat model (tenant default) for metadata filter",
+						zap.String("tenantID", tenantIDs[0]),
+						zap.String("modelName", modelName))
 				}
 			}
 		}

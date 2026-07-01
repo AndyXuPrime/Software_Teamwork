@@ -83,7 +83,6 @@ const (
 	PipelineTaskTypeRAPTOR   PipelineTaskType = "RAPTOR"
 	PipelineTaskTypeGraphRAG PipelineTaskType = "GraphRAG"
 	PipelineTaskTypeMindmap  PipelineTaskType = "Mindmap"
-	PipelineTaskTypeMemory   PipelineTaskType = "Memory"
 )
 
 // FileSource represents the source of a file
@@ -202,8 +201,6 @@ type KnowledgebaseDetail struct {
 	ChunkNum             int64    `json:"chunk_num"`
 	ParserID             string   `json:"parser_id"`
 	PipelineID           *string  `json:"pipeline_id,omitempty"`
-	PipelineName         *string  `json:"pipeline_name,omitempty"`
-	PipelineAvatar       *string  `json:"pipeline_avatar,omitempty"`
 	ParserConfig         JSONMap  `json:"parser_config"`
 	Pagerank             int64    `json:"pagerank"`
 	GraphragTaskID       *string  `json:"graphrag_task_id,omitempty"`

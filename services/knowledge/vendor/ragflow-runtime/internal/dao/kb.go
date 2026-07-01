@@ -226,8 +226,8 @@ func (dao *KnowledgebaseDAO) GetAllByTenantIDs(tenantIDs []string, userID string
 	return kbs, err
 }
 
-// GetDetail retrieves detailed knowledge base information with joined pipeline data
-// This matches the Python get_detail method
+// GetDetail retrieves detailed knowledge base information.
+// This matches the Python get_detail method after trimming agent canvas data.
 func (dao *KnowledgebaseDAO) GetDetail(kbID string) (*entity.KnowledgebaseDetail, error) {
 	var detail entity.KnowledgebaseDetail
 
@@ -236,13 +236,11 @@ func (dao *KnowledgebaseDAO) GetDetail(kbID string) (*entity.KnowledgebaseDetail
 			knowledgebase.language, knowledgebase.description, knowledgebase.permission,
 			knowledgebase.doc_num, knowledgebase.token_num, knowledgebase.chunk_num,
 			knowledgebase.parser_id, knowledgebase.pipeline_id,
-			user_canvas.title as pipeline_name, user_canvas.avatar as pipeline_avatar,
 			knowledgebase.parser_config, knowledgebase.pagerank,
 			knowledgebase.graphrag_task_id, knowledgebase.graphrag_task_finish_at,
 			knowledgebase.raptor_task_id, knowledgebase.raptor_task_finish_at,
 			knowledgebase.mindmap_task_id, knowledgebase.mindmap_task_finish_at,
 			knowledgebase.create_time, knowledgebase.update_time`).
-		Joins("LEFT JOIN user_canvas ON knowledgebase.pipeline_id = user_canvas.id").
 		Where("knowledgebase.id = ? AND knowledgebase.status = ?", kbID, string(entity.StatusValid)).
 		Scan(&detail).Error
 

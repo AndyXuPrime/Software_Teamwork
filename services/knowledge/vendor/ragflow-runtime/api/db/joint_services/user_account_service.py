@@ -18,23 +18,15 @@ import uuid
 
 from api.utils.api_utils import group_by
 from api.db import FileType, UserTenantRole
-from api.db.services.api_service import APITokenService, API4ConversationService
-from api.db.services.canvas_service import UserCanvasService
-from api.db.services.conversation_service import ConversationService
-from api.db.services.dialog_service import DialogService
+from api.db.services.api_service import APITokenService
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.file_service import FileService
 from api.db.services.mcp_server_service import MCPServerService
-from api.db.services.search_service import SearchService
 from api.db.services.task_service import TaskService
-from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
-from api.db.services.memory_service import MemoryService
-from memory.services.messages import MessageService
 from rag.nlp import search
 from common.constants import ActiveEnum
 from common import settings
@@ -191,23 +183,15 @@ def delete_user_data(user_id: str) -> dict:
                 done_msg += f"- Deleted {r} chunk records.\n"
                 kb_delete_res = KnowledgebaseService.delete_by_ids(kb_ids)
                 done_msg += f"- Deleted {kb_delete_res} dataset records.\n"
-                # step1.1.4 delete agents
-                agent_delete_res = delete_user_agents(usr.id)
-                done_msg += f"- Deleted {agent_delete_res['agents_deleted_count']} agent, {agent_delete_res['version_deleted_count']} versions records.\n"
-                # step1.1.5 delete dialogs
-                dialog_delete_res = delete_user_dialogs(usr.id)
-                done_msg += f"- Deleted {dialog_delete_res['dialogs_deleted_count']} dialogs, {dialog_delete_res['conversations_deleted_count']} conversations, {dialog_delete_res['api_token_deleted_count']} api tokens, {dialog_delete_res['api4conversation_deleted_count']} api4conversations.\n"
-                # step1.1.6 delete mcp server
+                # step1.1.4 delete API tokens
+                api_token_deleted_count = APITokenService.delete_by_tenant_id(usr.id)
+                done_msg += f"- Deleted {api_token_deleted_count} api tokens.\n"
+                # step1.1.5 delete mcp server
                 mcp_delete_res = MCPServerService.delete_by_tenant_id(usr.id)
                 done_msg += f"- Deleted {mcp_delete_res} MCP server.\n"
-                # step1.1.7 delete search
-                search_delete_res = SearchService.delete_by_tenant_id(usr.id)
-                done_msg += f"- Deleted {search_delete_res} search records.\n"
-            # step1.2 delete tenant_langfuse
+            # step1.2 delete tenant llm
             # llm_delete_res = TenantLLMService.delete_by_tenant_id(tenant_id)
             # done_msg += f"- Deleted {llm_delete_res} tenant-LLM records.\n"
-            langfuse_delete_res = TenantLangfuseService.delete_ty_tenant_id(tenant_id)
-            done_msg += f"- Deleted {langfuse_delete_res} langfuse records.\n"
             try:
                 metadata_index_name = DocMetadataService._get_doc_meta_index_name(tenant_id)
                 settings.docStoreConn.delete_idx(metadata_index_name, "")
@@ -215,16 +199,7 @@ def delete_user_data(user_id: str) -> dict:
             except Exception as e:
                 logging.warning(f"Failed to delete metadata table for tenant {tenant_id}: {e}")
                 done_msg += "- Warning: Failed to delete metadata table (continuing).\n"
-            # step1.3 delete memory and messages
-            user_memory = MemoryService.get_by_tenant_id(tenant_id)
-            if user_memory:
-                for memory in user_memory:
-                    if MessageService.has_index(tenant_id, memory.id):
-                        MessageService.delete_index(tenant_id, memory.id)
-                done_msg += " Deleted memory index."
-                memory_delete_res = MemoryService.delete_by_ids([m.id for m in user_memory])
-                done_msg += f"Deleted {memory_delete_res} memory datasets."
-            # step1.4 delete own tenant
+            # step1.3 delete own tenant
             tenant_delete_res = TenantService.delete_by_id(tenant_id)
             done_msg += f"- Deleted {tenant_delete_res} tenant.\n"
         # step2 delete user-tenant relation
@@ -303,53 +278,3 @@ def delete_user_data(user_id: str) -> dict:
     except Exception as e:
         logging.exception(e)
         return {"success": False, "message": "An internal error occurred during user deletion. Some operations may have completed.","details": done_msg}
-
-
-def delete_user_agents(user_id: str) -> dict:
-    """
-    use user_id to delete
-    :return: {
-        "agents_deleted_count": 1,
-        "version_deleted_count": 2
-    }
-    """
-    agents_deleted_count, agents_version_deleted_count = 0, 0
-    user_agents = UserCanvasService.get_all_agents_by_tenant_ids([user_id], user_id)
-    if user_agents:
-        agents_version = UserCanvasVersionService.get_all_canvas_version_by_canvas_ids([a['id'] for a in user_agents])
-        agents_version_deleted_count = UserCanvasVersionService.delete_by_ids([v['id'] for v in agents_version])
-        agents_deleted_count = UserCanvasService.delete_by_ids([a['id'] for a in user_agents])
-    return {
-        "agents_deleted_count": agents_deleted_count,
-        "version_deleted_count": agents_version_deleted_count
-    }
-
-
-def delete_user_dialogs(user_id: str) -> dict:
-    """
-    use user_id to delete
-    :return: {
-        "dialogs_deleted_count": 1,
-        "conversations_deleted_count": 1,
-        "api_token_deleted_count": 2,
-        "api4conversation_deleted_count": 2
-    }
-    """
-    dialog_deleted_count, conversations_deleted_count, api_token_deleted_count, api4conversation_deleted_count = 0, 0, 0, 0
-    user_dialogs = DialogService.get_all_dialogs_by_tenant_id(user_id)
-    if user_dialogs:
-        # delete conversation
-        conversations = ConversationService.get_all_conversation_by_dialog_ids([ud['id'] for ud in user_dialogs])
-        conversations_deleted_count = ConversationService.delete_by_ids([c['id'] for c in conversations])
-        # delete api token
-        api_token_deleted_count = APITokenService.delete_by_tenant_id(user_id)
-        # delete api for conversation
-        api4conversation_deleted_count = API4ConversationService.delete_by_dialog_ids([ud['id'] for ud in user_dialogs])
-        # delete dialog at last
-        dialog_deleted_count = DialogService.delete_by_ids([ud['id'] for ud in user_dialogs])
-    return {
-        "dialogs_deleted_count": dialog_deleted_count,
-        "conversations_deleted_count": conversations_deleted_count,
-        "api_token_deleted_count": api_token_deleted_count,
-        "api4conversation_deleted_count": api4conversation_deleted_count
-    }

@@ -134,8 +134,8 @@ def test_dataset_update_name_and_case_insensitive_contract(rest_client, clear_da
 
 
 @pytest.mark.p2
-def test_dataset_update_language_connectors_avatar_and_description_contract(rest_client, clear_datasets, tmp_path):
-    create_res = rest_client.post("/datasets", json={"name": "dataset_update_lang_connectors"})
+def test_dataset_update_language_avatar_and_description_contract(rest_client, clear_datasets, tmp_path):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_lang_avatar"})
     assert create_res.status_code == 200
     create_payload = create_res.json()
     assert create_payload["code"] == 0, create_payload
@@ -148,11 +148,10 @@ def test_dataset_update_language_connectors_avatar_and_description_contract(rest
     update_res = rest_client.put(
         f"/datasets/{dataset_id}",
         json={
-            "name": "dataset_update_lang_connectors",
+            "name": "dataset_update_lang_avatar",
             "description": "",
             "chunk_method": "naive",
             "language": "English",
-            "connectors": [],
             "avatar": avatar_value,
         },
     )
@@ -160,7 +159,6 @@ def test_dataset_update_language_connectors_avatar_and_description_contract(rest
     update_payload = update_res.json()
     assert update_payload["code"] == 0, update_payload
     assert update_payload["data"]["language"] == "English", update_payload
-    assert update_payload["data"]["connectors"] == [], update_payload
     assert update_payload["data"]["avatar"] == avatar_value, update_payload
 
     description_res = rest_client.put(

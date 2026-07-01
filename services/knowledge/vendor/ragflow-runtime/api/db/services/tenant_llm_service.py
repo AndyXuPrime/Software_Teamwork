@@ -17,12 +17,10 @@ import os
 import json
 import logging
 from peewee import IntegrityError
-from langfuse import Langfuse
 from common import settings
 from common.constants import MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS, LLMType
 from api.db.db_models import DB, LLMFactories, TenantLLM
 from api.db.services.common_service import CommonService
-from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.user_service import TenantService
 
 
@@ -505,8 +503,6 @@ class TenantLLMService(CommonService):
 
 class LLM4Tenant:
     def __init__(self, tenant_id: str, model_config: dict, lang="Chinese", **kwargs):
-        self.trace_context = kwargs.pop("trace_context", None) or {}
-        self.langfuse_session_id = kwargs.pop("langfuse_session_id", None)
         self.tenant_id = tenant_id
         self.llm_name = model_config["llm_name"]
         self.model_config = model_config
@@ -517,40 +513,13 @@ class LLM4Tenant:
         self.is_tools = model_config.get("is_tools", False)
         self.verbose_tool_use = kwargs.get("verbose_tool_use")
 
-        langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=tenant_id)
-        self.langfuse = None
-        if langfuse_keys:
-            langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
-            try:
-                if langfuse.auth_check():
-                    self.langfuse = langfuse
-                    if not self.trace_context:
-                        trace_id = self.langfuse.create_trace_id()
-                        self.trace_context = {"trace_id": trace_id}
-            except Exception:
-                # Skip langfuse tracing if connection fails
-                pass
-
     def close(self):
         """Release resources held by this LLM4Tenant instance.
 
         This method should be called when the instance is no longer needed
         to properly release resources such as:
-        - Langfuse tracing client (flush and shutdown)
         - Underlying model instance resources (HTTP sessions, etc.)
         """
-        # Flush and shutdown Langfuse client if it was initialized
-        if self.langfuse:
-            try:
-                self.langfuse.flush()
-                if hasattr(self.langfuse, 'shutdown'):
-                    self.langfuse.shutdown()
-            except Exception:
-                # Ignore errors during cleanup
-                pass
-            finally:
-                self.langfuse = None
-
         # Release underlying model instance if it has a close method
         if self.mdl and hasattr(self.mdl, 'close') and callable(getattr(self.mdl, 'close')):
             try:

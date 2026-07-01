@@ -27,7 +27,7 @@ import pytest
 from rag.svr.task_executor_refactor.task_handler import TaskHandler
 from rag.svr.task_executor_refactor.task_context import TaskContext, TaskLimiters, TaskCallbacks
 from rag.svr.task_executor_refactor.recording_context import BaseRecordingContext, RecordingContext
-from rag.svr.task_executor_refactor.constants import CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
+from rag.svr.task_executor_refactor.constants import GRAPH_RAPTOR_FAKE_DOC_ID
 
 # Import shared helpers from conftest
 from test.unit_test.rag.svr.task_executor_refactor.conftest import (
@@ -540,40 +540,6 @@ class TestEmbeddingModelBindingFailureIntegration:
                 await handler.handle()
 
             ctx.progress_callback.assert_called()
-
-
-class TestDataflowPipelineIntegration:
-    """P2: Integration tests for the dataflow pipeline."""
-
-    @pytest.mark.asyncio
-    async def test_dataflow_pipeline_calls_dataflow_service(self):
-        """Verify that dataflow pipeline calls DataflowService.run_dataflow()."""
-        task_dict = make_task_dict(doc_id=CANVAS_DEBUG_DOC_ID, task_type="dataflow")
-        ctx = create_task_context(task_dict)
-        mock_embedding = create_mock_embedding_model(vector_size=128)
-
-        with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
-             patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
-             patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
-             patch("rag.svr.task_executor_refactor.task_handler.search.index_name", return_value="test_idx"), \
-             patch("rag.svr.task_executor_refactor.task_handler.settings") as mock_settings, \
-             patch("rag.svr.task_executor_refactor.task_handler.DataflowService") as mock_dataflow_service:
-
-            mock_get_config.return_value = MagicMock()
-            mock_get_default.return_value = MagicMock()
-            mock_bundle.return_value = mock_embedding
-            mock_settings.docStoreConn = MagicMock()
-            mock_settings.docStoreConn.create_idx = MagicMock()
-
-            mock_instance = MagicMock()
-            mock_instance.run_dataflow = AsyncMock(return_value=None)
-            mock_dataflow_service.return_value = mock_instance
-
-            handler = TaskHandler(ctx=ctx)
-            await handler.handle()
-
-            mock_dataflow_service.assert_called_once()
-            mock_instance.run_dataflow.assert_called_once()
 
 
 class TestTocAsyncFlowIntegration:

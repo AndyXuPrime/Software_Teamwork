@@ -35,7 +35,6 @@ type KnowledgebaseService struct {
 	userTenantDAO *dao.UserTenantDAO
 	userDAO       *dao.UserDAO
 	tenantDAO     *dao.TenantDAO
-	connectorDAO  *dao.ConnectorDAO
 	docEngine     engine.DocEngine
 }
 
@@ -46,7 +45,6 @@ func NewKnowledgebaseService() *KnowledgebaseService {
 		userTenantDAO: dao.NewUserTenantDAO(),
 		userDAO:       dao.NewUserDAO(),
 		tenantDAO:     dao.NewTenantDAO(),
-		connectorDAO:  dao.NewConnectorDAO(),
 		docEngine:     engine.Get(),
 	}
 }
@@ -62,7 +60,6 @@ type UpdateKBRequest struct {
 	Avatar       *string                `json:"avatar,omitempty"`
 	Pagerank     *int64                 `json:"pagerank,omitempty"`
 	ParserConfig map[string]interface{} `json:"parser_config,omitempty"`
-	Connectors   []string               `json:"connectors,omitempty"`
 }
 
 // UpdateMetadataSettingRequest represents the request for updating metadata settings
@@ -159,7 +156,6 @@ func (s *KnowledgebaseService) UpdateKB(req *UpdateKBRequest, userID string) (ma
 	}
 
 	result := updatedKB.ToMap()
-	result["connectors"] = req.Connectors
 
 	return result, common.CodeSuccess, nil
 }
@@ -213,9 +209,6 @@ func (s *KnowledgebaseService) GetDetail(kbID, userID string) (*entity.Knowledge
 	if err != nil {
 		return nil, common.CodeDataError, errors.New("can't find this dataset")
 	}
-
-	// Set connectors (empty for now)
-	detail.Connectors = []string{}
 
 	return detail, common.CodeSuccess, nil
 }
@@ -315,11 +308,6 @@ func (s *KnowledgebaseService) GetUserByID(id string) (*entity.User, error) {
 // GetTenantIDsByUserID gets tenant IDs for a user
 func (s *KnowledgebaseService) GetTenantIDsByUserID(userID string) ([]string, error) {
 	return s.userTenantDAO.GetTenantIDsByUserID(userID)
-}
-
-// GetConnectorsByTenantID gets connectors for a tenant
-func (s *KnowledgebaseService) GetConnectorsByTenantID(tenantID string) ([]*dao.ConnectorListItem, error) {
-	return s.connectorDAO.ListByTenantID(tenantID)
 }
 
 // GetKBList retrieves knowledge bases with ID and name filtering
