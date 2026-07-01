@@ -446,26 +446,34 @@ func hasUpdateField(input UpdateModelProfileInput) bool {
 }
 
 func (s *Service) readinessCheckForPurpose(ctx context.Context, name string, profiles []ModelProfile, purpose Purpose) ReadinessCheck {
+	best := ReadinessCheck{Name: name, Status: "missing"}
 	for _, profile := range profiles {
 		if profile.Purpose != purpose || !profile.Enabled || profile.DeletedAt != nil {
 			continue
 		}
 		if !profile.APIKeyConfigured {
-			return ReadinessCheck{Name: name, Status: "missing", Message: "model profile credential is not configured"}
+			if best.Status == "missing" && best.Message == "" {
+				best.Message = "model profile credential is not configured"
+			}
+			continue
 		}
 		credential, err := s.repo.GetActiveCredential(ctx, profile.ID)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
-				return ReadinessCheck{Name: name, Status: "missing", Message: "model profile credential is not configured"}
+				if best.Status == "missing" && best.Message == "" {
+					best.Message = "model profile credential is not configured"
+				}
+				continue
 			}
 			return ReadinessCheck{Name: name, Status: "failed", Message: "model profile credential query failed"}
 		}
 		if isLocalPlaceholderCredential(credential) {
-			return ReadinessCheck{Name: name, Status: "placeholder", Message: "local placeholder credential is configured; replace it before real provider smoke"}
+			best = ReadinessCheck{Name: name, Status: "placeholder", Message: "local placeholder credential is configured; replace it before real provider smoke"}
+			continue
 		}
 		return ReadinessCheck{Name: name, Status: "ok"}
 	}
-	return ReadinessCheck{Name: name, Status: "missing"}
+	return best
 }
 
 func isLocalPlaceholderCredential(credential ProviderCredential) bool {

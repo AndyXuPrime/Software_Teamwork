@@ -223,6 +223,21 @@ func TestCheckReadyReportsSeedPlaceholderCredential(t *testing.T) {
 	}
 }
 
+func TestCheckReadyUsesAnyConfiguredProfileForPurpose(t *testing.T) {
+	repo := newMemoryRepository()
+	svc := New(repo, mustEncryptor(t), 60000)
+	seedReadyProfile(repo, "placeholder-chat", PurposeChat, "01db0178d97656cc4638023b711d331d4c59cf16a35126e175d9b39bc9c2eb20", "-key")
+	seedReadyProfile(repo, "real-chat", PurposeChat, "fingerprint-chat", "chat")
+
+	ready, err := svc.CheckReady(context.Background())
+	if err != nil {
+		t.Fatalf("CheckReady() error = %v", err)
+	}
+	if got := readinessStatus(ready, "chat_profile"); got != "ok" {
+		t.Fatalf("chat_profile status = %q, want ok when any chat profile has non-placeholder credential: %#v", got, ready.Checks)
+	}
+}
+
 func TestCheckReadyReportsMissingCredential(t *testing.T) {
 	repo := newMemoryRepository()
 	svc := New(repo, mustEncryptor(t), 60000)
