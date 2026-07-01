@@ -20,6 +20,7 @@ x-implementation-baseline:
 tags:
   - name: Sessions
   - name: Messages
+  - name: Attachments
   - name: Citations
   - name: Reasoning
   - name: AgentRuns
@@ -128,6 +129,83 @@ paths:
               schema:
                 type: string
                 description: SSE stream. Events include message.created, agent.iteration.started, tool.started, tool.completed, tool.failed, reasoning.step, answer.delta, citation.delta, answer.completed, error.
+        default: { $ref: '#/components/responses/Error' }
+  /qa-sessions/{sessionId}/attachments:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [Attachments]
+      summary: List QA session attachments
+      description: >-
+        Lists temporary attachments owned by the current user's session. QA
+        owns attachment metadata and parse status and calls file internally for
+        raw bytes; responses never expose file_ref, object keys, buckets, or
+        internal URLs. Non-owner sessions return not_found.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/SessionAttachmentStatus' }
+      responses:
+        '200':
+          description: Session attachment list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionAttachmentPage' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Attachments]
+      summary: Upload a QA session attachment
+      description: >-
+        Uploads a temporary attachment. QA stores metadata and parse status,
+        calls file internally for raw bytes, and delegates parsing to parser.
+        The attachment starts in uploaded status and is purged by TTL.
+        Single file limit: 20 MB. Per-session limit: 10 attachments and
+        100 MB total. Accepted part Content-Type values: application/pdf,
+        image/png, image/jpeg, text/plain,
+        application/vnd.openxmlformats-officedocument.wordprocessingml.document.
+        Clients must set the part Content-Type header explicitly.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/UploadSessionAttachmentRequest' }
+            encoding:
+              file:
+                contentType: application/pdf, image/png, image/jpeg, text/plain, application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      responses:
+        '201':
+          description: Created session attachment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionAttachment' }
+        default: { $ref: '#/components/responses/Error' }
+  /qa-sessions/{sessionId}/attachments/{attachmentId}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/AttachmentId'
+    get:
+      tags: [Attachments]
+      summary: Get QA session attachment
+      description: >-
+        Returns a single attachment's public metadata and parse status. Deleted
+        or purged attachments and non-owner sessions return not_found.
+      responses:
+        '200':
+          description: Session attachment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionAttachment' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Attachments]
+      summary: Delete QA session attachment
+      description: >-
+        Deletes an attachment and coordinates cleanup of temporary parse chunks
+        and the underlying file reference.
+      responses:
+        '204': { description: Deleted }
         default: { $ref: '#/components/responses/Error' }
   /qa-sessions/{sessionId}/events:
     get:
@@ -422,6 +500,11 @@ components:
       in: path
       required: true
       schema: { type: string }
+    AttachmentId:
+      name: attachmentId
+      in: path
+      required: true
+      schema: { type: string }
     ResponseRunId:
       name: responseRunId
       in: path
@@ -494,6 +577,13 @@ components:
         content: { type: string }
         intent: { $ref: '#/components/schemas/Intent' }
         status: { type: string, enum: [queued, streaming, completed, stopped, failed, cancelled] }
+        attachmentIds:
+          type: array
+          items: { type: string }
+          description: >-
+            IDs of session attachments linked at message creation. Retained as
+            historical reference after TTL purge; purged attachments return 404
+            and are no longer retrievable.
         createdAt: { type: string, format: date-time }
     MessagePage:
       allOf:
@@ -503,6 +593,51 @@ components:
             items:
               type: array
               items: { $ref: '#/components/schemas/Message' }
+    SessionAttachmentStatus:
+      type: string
+      description: >-
+        uploaded after raw object is stored, parsing while parser runs, ready
+        when parsed content is available, failed on parse failure, purged as the
+        terminal state after TTL cleanup.
+      enum: [uploaded, parsing, ready, failed, purged]
+    SessionAttachment:
+      type: object
+      required: [id, sessionId, filename, contentType, sizeBytes, status, createdAt]
+      properties:
+        id: { type: string }
+        sessionId: { type: string }
+        filename: { type: string }
+        contentType: { type: string }
+        sizeBytes: { type: integer, minimum: 0, maximum: 20971520, description: "File size in bytes. Always present after upload is accepted." }
+        status: { $ref: '#/components/schemas/SessionAttachmentStatus' }
+        errorCode: { type: string, nullable: true }
+        errorMessage:
+          type: string
+          nullable: true
+          description: Sanitized parse failure summary; never includes object keys, buckets, or internal paths.
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time, nullable: true }
+    UploadSessionAttachmentRequest:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+          maxLength: 20971520
+          description: >-
+            Attachment binary. Maximum size: 20 MB (20 971 520 bytes). The
+            multipart part Content-Type must be one of: application/pdf,
+            image/png, image/jpeg, text/plain,
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document.
+    SessionAttachmentPage:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/SessionAttachment' }
     Intent:
       type: string
       description: data_analysis is reserved for future use and returns unsupported_intent in MVP.
@@ -518,6 +653,12 @@ components:
           type: array
           items: { type: string }
         retrieval: { $ref: '#/components/schemas/RetrievalOptions' }
+        attachmentIds:
+          type: array
+          items: { type: string }
+          description: >-
+            Optional session attachment IDs to associate with this message.
+            Each must belong to the same session and be in ready status.
     RetrievalOptions:
       type: object
       properties:

@@ -49,6 +49,8 @@ tags:
   description: QA-owned chat sessions.
 - name: qa-messages
   description: QA-owned messages, answer generation, SSE streams, and event replay.
+- name: qa-session-attachments
+  description: QA-owned per-session temporary attachments, their parse status, and message association.
 - name: qa-agent-runs
   description: QA-owned response runs and sanitized tool-call summaries.
 - name: qa-citations
@@ -1858,6 +1860,159 @@ paths:
           $ref: '#/components/responses/Error'
         '502':
           $ref: '#/components/responses/Error'
+  /api/v1/qa-sessions/{sessionId}/attachments:
+    parameters:
+    - $ref: '#/components/parameters/SessionId'
+    get:
+      tags:
+      - qa-session-attachments
+      summary: List QA session attachments
+      operationId: listQASessionAttachments
+      x-owner-service: qa
+      description: |
+        Lists attachments owned by the current user's QA session. QA owns
+        attachment metadata and parse status and may call file service
+        internally for the raw object; the response never exposes `file_ref`,
+        MinIO object keys, buckets, or internal URLs. Sessions not owned by the
+        current user return 404 rather than 403 so attachment existence for
+        other users is not disclosed.
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - name: pageSize
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/SessionAttachmentStatus'
+      responses:
+        '200':
+          description: QA session attachments.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionAttachmentListResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      tags:
+      - qa-session-attachments
+      summary: Upload a QA session attachment
+      operationId: uploadQASessionAttachment
+      x-owner-service: qa
+      description: |
+        Uploads a temporary attachment to a QA session owned by the current
+        user. QA stores attachment metadata and parse status and calls file
+        service internally to persist the raw bytes; parsing is delegated to
+        parser internally. The attachment begins in `uploaded` status and is
+        purged by TTL cleanup. Sessions not owned by the current user return
+        404 so other users' sessions are not disclosed.
+
+        **File limits (authoritative, enforced by Gateway before forwarding):**
+        - Single file maximum: 20 MB (20 971 520 bytes). Larger payloads are
+          rejected with 413 before any storage or parser call is made.
+        - Per-session attachment count: maximum 10 active (non-purged)
+          attachments. Exceeding this limit returns 409.
+        - Per-session total size quota: 100 MB across all active attachments.
+          Exceeding this limit returns 409.
+
+        **Accepted MIME types** (declared in `Content-Type` of the `file`
+        part): `application/pdf`, `image/png`, `image/jpeg`, `text/plain`,
+        `application/vnd.openxmlformats-officedocument.wordprocessingml.document`.
+        Other types are rejected with 415. Clients should set the part
+        `Content-Type` header explicitly; Gateway rejects requests where the
+        part content type does not match the allowlist.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadSessionAttachmentRequest'
+            encoding:
+              file:
+                contentType: application/pdf, image/png, image/jpeg, text/plain, application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      responses:
+        '201':
+          description: QA session attachment accepted for processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionAttachmentResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+  /api/v1/qa-sessions/{sessionId}/attachments/{attachmentId}:
+    parameters:
+    - $ref: '#/components/parameters/SessionId'
+    - $ref: '#/components/parameters/AttachmentId'
+    get:
+      tags:
+      - qa-session-attachments
+      summary: Get QA session attachment
+      operationId: getQASessionAttachment
+      x-owner-service: qa
+      description: |
+        Returns a single attachment owned by the current user's QA session.
+        The response exposes only public attachment metadata and parse status;
+        it never includes `file_ref`, MinIO object keys, buckets, or internal
+        URLs. Attachments in a session not owned by the current user, and
+        deleted or purged attachments, return 404 so their existence is not
+        disclosed.
+      responses:
+        '200':
+          description: QA session attachment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionAttachmentResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    delete:
+      tags:
+      - qa-session-attachments
+      summary: Delete QA session attachment
+      operationId: deleteQASessionAttachment
+      x-owner-service: qa
+      description: |
+        Deletes an attachment owned by the current user's QA session. QA
+        coordinates cleanup of temporary parse chunks and the underlying file
+        reference through its attachment lifecycle. Attachments in a session
+        not owned by the current user, and already deleted or purged
+        attachments, return 404.
+      responses:
+        '204':
+          description: QA session attachment deleted.
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
   /api/v1/qa-sessions/{sessionId}/events:
     parameters:
     - $ref: '#/components/parameters/SessionId'
@@ -2349,6 +2504,12 @@ components:
         type: string
     SessionId:
       name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+    AttachmentId:
+      name: attachmentId
       in: path
       required: true
       schema:
@@ -4621,6 +4782,16 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/QACitation'
+        attachmentIds:
+          type: array
+          items:
+            type: string
+          description: |
+            IDs of session attachments linked to this message at creation time.
+            IDs are retained in message history even after TTL purge. Once an
+            attachment is purged, GET /attachments/{attachmentId} returns 404;
+            the ID is a historical reference only — clients must not assume the
+            attachment remains retrievable.
         createdAt:
           type: string
           format: date-time
@@ -4692,6 +4863,14 @@ components:
           description: Backward-compatible alias for `retrieval`; new clients should use `retrieval`.
         agent:
           $ref: '#/components/schemas/QAAgentOptions'
+        attachmentIds:
+          type: array
+          items:
+            type: string
+          description: |
+            Optional QA session attachment IDs to associate with this message.
+            Each ID must belong to the same session and must be in `ready`
+            status; attachments still parsing, failed, or purged are rejected.
     QARetrievalOptions:
       type: object
       properties:
@@ -4736,6 +4915,105 @@ components:
           type: integer
           minimum: 1
           maximum: 10
+    SessionAttachmentStatus:
+      type: string
+      description: |
+        Lifecycle status of a QA session attachment. `uploaded` after the raw
+        object is stored, `parsing` while parser runs, `ready` when parsed
+        content is available for retrieval and message association, `failed`
+        when parsing fails, and `purged` as the terminal state after TTL
+        cleanup removes temporary content.
+      enum:
+      - uploaded
+      - parsing
+      - ready
+      - failed
+      - purged
+    SessionAttachmentSummary:
+      type: object
+      required:
+      - id
+      - sessionId
+      - filename
+      - contentType
+      - sizeBytes
+      - status
+      - createdAt
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+          description: QA session that owns this attachment.
+        filename:
+          type: string
+          description: Original client-supplied file name.
+        contentType:
+          type: string
+          description: Declared MIME type of the uploaded file.
+        sizeBytes:
+          type: integer
+          minimum: 0
+          maximum: 20971520
+          description: File size in bytes. Always present after upload is accepted.
+        status:
+          $ref: '#/components/schemas/SessionAttachmentStatus'
+        errorCode:
+          type: string
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+          description: Sanitized parse failure summary. Must not include object keys, buckets, internal paths, MinIO errors, or stack traces.
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: TTL expiry after which the attachment and its temporary chunks are purged.
+    UploadSessionAttachmentRequest:
+      type: object
+      required:
+      - file
+      properties:
+        file:
+          type: string
+          format: binary
+          maxLength: 20971520
+          description: |
+            Attachment binary. Maximum size: 20 MB (20 971 520 bytes); larger
+            payloads are rejected with 413. The `Content-Type` of this multipart
+            part must be one of: `application/pdf`, `image/png`, `image/jpeg`,
+            `text/plain`,
+            `application/vnd.openxmlformats-officedocument.wordprocessingml.document`.
+            Other content types are rejected with 415.
+    SessionAttachmentResponse:
+      type: object
+      required:
+      - data
+      - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/SessionAttachmentSummary'
+        requestId:
+          type: string
+    SessionAttachmentListResponse:
+      type: object
+      required:
+      - data
+      - page
+      - requestId
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionAttachmentSummary'
+        page:
+          $ref: '#/components/schemas/PageInfo'
+        requestId:
+          type: string
     QAAnswerResponse:
       type: object
       required:
