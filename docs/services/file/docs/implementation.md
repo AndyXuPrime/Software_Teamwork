@@ -57,7 +57,7 @@
 
 | 缺口 | 文档来源 | 影响范围 | 建议任务 |
 | --- | --- | --- | --- |
-| 跨服务 owner smoke 仍默认不跑 | `docs/services/file/README.md`、`docs/tests/0701/file-module-test-report.md` | integration | 由 #125/#289 等跨服务任务继续覆盖 owner service 到 File 的真实链路。 |
+| 跨服务 owner smoke 仍默认不跑 | `docs/services/file/README.md`、`docs/testing/reports/2026-07-01/file-module-test-report.md` | integration | 由 #125/#289 等跨服务任务继续覆盖 owner service 到 File 的真实链路。 |
 
 ## 5. 文档与实现出入
 

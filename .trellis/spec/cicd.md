@@ -82,6 +82,9 @@ custom fields.
   owner-service, contract, data-model, migration, security, product, architecture,
   or cross-module issues must become separate owner-group issues and be linked
   from the testing task.
+- Every `T-*` issue must require a completed test report based on
+  `docs/testing/templates/test-report-template.md`, archived under
+  `docs/testing/reports/YYYY-MM-DD/`, and linked from the testing issue or PR.
 - Missing `预期工时（小时数）` defaults to numeric `0`; missing
   `实际工时（小时数）` defaults to numeric `0`.
 - Hour fields must be non-negative hour numbers without units. Floating-point
