@@ -535,3 +535,11 @@ first, most likely Parser-backed document parsing before retrieval replacement.
   than upstream Chat UI residue. Feature remains opt-in via
   `CHUNK_FEEDBACK_ENABLED=true`.
 - Confirmed by user before restoration: yes
+
+### 2026-07-01: add chunk feedback REST endpoint
+
+- Added: `api/apps/restful_apis/chunk_feedback_api.py` (`POST /api/v1/chunk-feedback`)
+- Added: `test/testcases/restful_api/test_chunk_feedback_routes_unit.py`
+- Updated: `docs/references/http_api_reference.md`, `README_zh.md`
+- Contract: `{ "thumbup": bool, "reference": { "chunks": [...] } }` using chunks from
+  retrieval/search responses; requires `CHUNK_FEEDBACK_ENABLED=true` for weight updates.

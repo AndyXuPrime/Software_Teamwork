@@ -8,7 +8,7 @@
 
 - **文档解析**：`deepdoc/`、`rag/app/`
 - **RAG / 检索**：`rag/`（含 GraphRAG、RAPTOR、mindmap 索引）
-- **检索反馈加权**：`api/db/services/chunk_feedback_service.py`（默认关闭，设 `CHUNK_FEEDBACK_ENABLED=true` 启用；根据引用 chunk 的点赞/点踩调整 `pagerank_fea`）
+- **检索反馈加权**：`api/db/services/chunk_feedback_service.py` + `POST /api/v1/chunk-feedback`（默认关闭，设 `CHUNK_FEEDBACK_ENABLED=true` 启用）
 - **MCP / 工具化**：`mcp/`
 - **容器化参考**：`docker/`、`Dockerfile*`、`build.sh`
 - **对应测试**：`test/unit_test/deepdoc/`、`test/unit_test/rag/`、`test/unit_test/mcp/` 及相关 REST 集成测试
