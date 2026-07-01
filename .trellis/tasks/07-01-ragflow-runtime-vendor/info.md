@@ -432,3 +432,22 @@ first, most likely Parser-backed document parsing before retrieval replacement.
   connector behavior before this repository defines Knowledge/File/Auth/job
   contracts.
 - Confirmed by user before cleanup: yes
+
+### 2026-07-01: clean local artifacts and stale vendor ignore rules
+
+- Removed from the working tree:
+  - Python `__pycache__/` and `*.pyc` files generated during local syntax
+    checks under `services/knowledge/vendor/ragflow-runtime/`.
+- Updated:
+  - `services/knowledge/vendor/ragflow-runtime/.gitignore`
+- Reason: local Python bytecode caches are not source, tests, MCP behavior, or
+  containerization material. The vendored `.gitignore` still described removed
+  upstream Web, SDK, frontend, OceanBase, SeekDB, and Docusaurus-era paths, so
+  it was reduced to rules that still match the retained parser/RAG/MCP/container
+  reference surface and local build/runtime artifacts.
+- Kept:
+  - parser/RAG/MCP/containerization source and tests
+  - model/dependency cache ignores used by retained Docker references
+  - Python virtualenv, coverage, log, C++ build, Go build, and local agent state
+    ignores
+- Confirmed by user before cleanup: yes
