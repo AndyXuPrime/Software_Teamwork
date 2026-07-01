@@ -200,7 +200,8 @@ COPY mcp mcp
 COPY common common
 COPY bin bin
 
-COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
+# Project overlay: PostgreSQL + compose-friendly env substitution (see conf/service_conf.yaml.template).
+COPY conf/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint.sh ./
 RUN chmod +x ./entrypoint*.sh
 

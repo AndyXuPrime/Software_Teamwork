@@ -2,8 +2,8 @@
 
 Knowledge exposes Gateway `/internal/v1/*` contract routes via the **contract
 adapter** (`cmd/adapter`). KB metadata, documents, chunks, queries, and upload
-flow through the vendored RAGFlow runtime at `VENDOR_RUNTIME_URL` (deepdoc +
-Elasticsearch/Infinity + MinIO).
+flow through the RAGFlow runtime at `VENDOR_RUNTIME_URL` (`services/knowledge-runtime/`;
+deepdoc + Elasticsearch + MinIO).
 
 Parser-config admin routes (`/internal/v1/parser-configs`) optionally use legacy
 goose PostgreSQL tables when `DATABASE_URL` is set.
@@ -102,21 +102,16 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 ```
 ## Development
 
-Set `GOFLAGS=-mod=mod` when building or testing: `vendor/ragflow-runtime` is upstream
-source, not Go module vendoring.
-
 ```bash
-GOFLAGS=-mod=mod go test ./internal/adapter/... ./internal/adapterconfig/... ./internal/service/...
-GOFLAGS=-mod=mod go build ./cmd/adapter
+go test ./internal/adapter/... ./internal/adapterconfig/... ./internal/service/...
+go build ./cmd/adapter
 ```
 
 The Knowledge service runs the contract adapter (`cmd/adapter`) which proxies
-Gateway `/internal/v1/*` routes to the vendored RAGFlow runtime at
-`VENDOR_RUNTIME_URL`. Document upload, deepdoc parsing, embedding, and retrieval
-use vendor MinIO + Elasticsearch/Infinity — not `services/parser`, Qdrant, or
-the legacy Go ingestion worker.
+Gateway `/internal/v1/*` routes to the RAGFlow runtime at
+`VENDOR_RUNTIME_URL` (`services/knowledge-runtime/`). Document upload, deepdoc parsing, embedding, and retrieval
+use runtime MinIO + Elasticsearch — not legacy parser, Qdrant, or
+the removed Go ingestion worker.
 
 Contract tests under `internal/adapter` use a fake vendor HTTP server. Live vendor
 tests require `-tags=integration` and `KNOWLEDGE_VENDOR_INTEGRATION_URL`.
-
-## Development

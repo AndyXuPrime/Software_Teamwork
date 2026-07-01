@@ -13,8 +13,6 @@ ENV GOPROXY=${GOPROXY} \
 RUN if [ -n "$ALPINE_MIRROR" ]; then \
         sed -i "s|https://dl-cdn.alpinelinux.org/alpine|$ALPINE_MIRROR|g" /etc/apk/repositories; \
     fi
-# vendor/ragflow-runtime is upstream source, not Go module vendoring.
-ENV GOFLAGS=-mod=mod
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
