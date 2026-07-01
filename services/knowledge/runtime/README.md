@@ -20,39 +20,34 @@ different table namespace from vendor tables (`knowledgebase`, `user`, `document
 
 | Process | Port | Role |
 | --- | --- | --- |
-| `knowledge-adapter` | `:8083` | Gateway-facing contract adapter (this repo) |
+| `knowledge-adapter` | `:8083` | Gateway-facing contract adapter (sole Knowledge binary) |
 | RAGFlow Python API | `:9380` | deepdoc / rag / dataset APIs (vendor) |
 | RAGFlow task executor | n/a | ingestion workers (vendor) |
 
 ## Local compose profiles
 
-- Default stack keeps the legacy Knowledge Go server (`KNOWLEDGE_RUNTIME_MODE=legacy`).
-- `knowledge-v2` profile switches the Knowledge container to adapter mode and
-  starts Elasticsearch for the vendor doc engine.
+- Default stack runs the Knowledge contract adapter (vendor proxy).
+- `knowledge-v2` profile adds Elasticsearch and the `software-teamwork-knowledge`
+  MinIO bucket init for the vendor doc engine.
 
 ```bash
 cd deploy
-KNOWLEDGE_RUNTIME_MODE=adapter VENDOR_RUNTIME_URL=http://host.docker.internal:9380 \
-  docker compose --profile knowledge-v2 up -d elasticsearch knowledge-minio-init
+VENDOR_RUNTIME_URL=http://host.docker.internal:9380 \
+  docker compose --profile knowledge-v2 up -d elasticsearch knowledge-minio-init knowledge
 ```
 
-Default compose keeps the legacy Knowledge server. Adapter mode is opt-in via
-`KNOWLEDGE_RUNTIME_MODE=adapter` once the vendor runtime is reachable at
-`VENDOR_RUNTIME_URL`. In adapter mode the Knowledge container does **not** call
-`services/parser`; document chunking and embedding run in the vendor task executor
-(deepdoc). The compose `parser` service and `depends_on: parser` remain for
-legacy mode only.
+The vendor Python API and task executor must be running separately until a vendor
+container is added to compose. Adapter upload/parse/retrieve do not call
+`services/parser`, File Service, Qdrant, or Redis.
 
 ## Environment
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `KNOWLEDGE_RUNTIME_MODE` | `legacy` | `adapter` runs `cmd/adapter` |
 | `VENDOR_RUNTIME_URL` | `http://127.0.0.1:9380` | Vendor HTTP base URL |
 | `KNOWLEDGE_AUTO_START_INGESTION` | `true` | After upload, call vendor `/documents/parse` (deepdoc pipeline) |
-| `DATABASE_URL` | optional | Legacy goose PostgreSQL (`postgres://...`); adapter parser-config routes and Go `DatabaseConfig` |
-| `DOC_ENGINE` | `elasticsearch` | Vendor doc engine selector |
-| `DB_TYPE` | `mysql` (legacy vendor default) / `postgres` (Knowledge replacement) | Metadata backend selector |
+| `DATABASE_URL` | optional | Legacy goose PostgreSQL for adapter parser-config admin routes |
+| `DOC_ENGINE` | `elasticsearch` | Vendor doc engine selector (Elasticsearch or Infinity) |
 
 ## Ingestion (Phase 4)
 
@@ -69,6 +64,10 @@ Contract tests (`internal/adapter/contract_test.go`) use a fake vendor HTTP serv
 Live vendor tests use `-tags=integration` with `KNOWLEDGE_VENDOR_INTEGRATION_URL` and
 `KNOWLEDGE_INTEGRATION_USER_ID`.
 
-## Next phases
+## Phase 5 (complete)
 
-1. Phase 5 — Remove legacy Go implementation
+Legacy Go Knowledge server (`cmd/server`), ingestion worker, Qdrant client, Parser
+HTTP client, and File Service upload path removed. Knowledge container runs adapter
+only. Default compose no longer starts `services/parser` (available under `legacy`
+profile only). Object storage and retrieval are vendor-only (MinIO + ES/Infinity).
+Identity flows through Gateway/Auth (`X-User-Id`); vendor auth surfaces remain disabled.

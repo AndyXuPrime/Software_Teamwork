@@ -672,3 +672,18 @@ first, most likely Parser-backed document parsing before retrieval replacement.
   - `internal/adapter/integration_test.go` — `-tags=integration` live vendor (env-gated)
 - Docs: runtime README, compose comment, api-contracts adapter ingestion section
 - Next: Phase 5 remove legacy Go implementation
+
+### 2026-07-01: knowledge vendor replacement phase 5 legacy cleanup
+
+Product decisions:
+- MinIO direct via vendor (`software-teamwork-knowledge`); no File Service upload path
+- Retrieval: vendor ES/Infinity only; Qdrant removed
+- Auth: Gateway/Auth `X-User-Id`; no vendor lazy-create
+- `services/parser` retired (compose `legacy` profile only)
+
+Changes:
+- Removed `cmd/server`, `internal/http`, `internal/config`, `internal/worker`, `internal/platform/*`
+- Slimmed `internal/service` to parser-config admin + shared types
+- Dockerfile/entrypoint: adapter-only binary
+- Compose: Knowledge no longer depends on parser/redis/file; parser under `legacy` profile
+- Parser CI workflow → `workflow_dispatch` only; added `services/parser/DEPRECATED.md`

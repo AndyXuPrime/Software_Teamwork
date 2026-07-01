@@ -1057,6 +1057,12 @@ knowledge-queries -> /api/v1/datasets/search
   `POST /api/v1/datasets/{id}/documents/parse` when
   `KNOWLEDGE_AUTO_START_INGESTION` is true (default). Adapter mode does not call
   `services/parser` or `PARSER_SERVICE_BASE_URL`.
+- Object storage for uploaded documents uses vendor MinIO configuration
+  (`software-teamwork-knowledge` bucket); Knowledge adapter does not call File
+  Service for upload in vendor mode.
+- Vector retrieval uses vendor Elasticsearch or Infinity only; Qdrant is not used.
+- Gateway/Auth service owns identity; adapter forwards `X-User-Id` as vendor tenant
+  context. Vendor login/JWT/API-token surfaces remain disabled.
 - Vendor document `run` maps to Gateway status: `RUNNING` → `parsing`, `DONE` →
   `ready`, `FAIL`/`CANCEL` → `parse_failed`.
 - `GET /documents/{documentId}/content` streams bytes without JSON envelope.
