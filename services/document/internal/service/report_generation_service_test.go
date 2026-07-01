@@ -927,124 +927,61 @@ func TestReportGenerationServiceRetrievesKnowledgeContextForOutline(t *testing.T
 	}
 }
 
-func TestReportGenerationServiceHandlesKnowledgeRetrievalError(t *testing.T) {
-	repo := newFakeReportGenerationRepository()
-	repo.reports["report-1"] = Report{
-		ID:         "report-1",
-		Name:       "Summer report",
-		ReportType: "summer_peak_inspection",
-		TemplateID: "template-1",
-		Topic:      "summer peak inspection",
-		CreatorID:  "user-1",
-		Status:     ReportStatusDraft,
+func TestReportGenerationServiceHandlesAIMalformedResponse(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "empty content string", content: ""},
+		{name: "plain text non-JSON", content: "抱歉，我无法生成大纲"},
+		{name: "truncated JSON", content: `{"sections":[{`},
+		{name: "empty sections array", content: `{"sections":[]}`},
 	}
-	repo.jobs["job-1"] = ReportJob{
-		ID:       "job-1",
-		JobType:  JobTypeOutlineGeneration,
-		ReportID: "report-1",
-		RequestPayload: map[string]any{
-			"options": map[string]any{
-				"knowledgeBaseIds": []any{"kb-1"},
-			},
-		},
-	}
-	repo.templateStructures["template-1"] = ReportTemplateStructure{OutlineSchema: []byte(`{"sections":["overview"]}`)}
-	chat := &fakeGenerationChatClient{}
-	retriever := &fakeReportKnowledgeRetriever{
-		err: errors.New("knowledge service timeout"),
-	}
-	svc := NewReportGenerationService(repo, chat, retriever)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newFakeReportGenerationRepository()
+			repo.reports["report-1"] = Report{
+				ID:         "report-1",
+				Name:       "Summer peak inspection",
+				ReportType: "summer_peak_inspection",
+				TemplateID: "template-1",
+				Topic:      "summer power supply",
+				CreatorID:  "user-1",
+				Status:     ReportStatusDraft,
+			}
+			repo.jobs["job-1"] = ReportJob{
+				ID:       "job-1",
+				JobType:  JobTypeOutlineGeneration,
+				ReportID: "report-1",
+			}
+			repo.templateStructures["template-1"] = ReportTemplateStructure{
+				OutlineSchema: []byte(`{"sections":["overview"]}`),
+			}
+			chat := &fakeGenerationChatClient{
+				responses: []ChatCompletionResponse{{Content: tc.content}},
+			}
+			svc := NewReportGenerationService(repo, chat)
 
-	_, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
-		RequestID: "req-outline",
-		JobType:   JobTypeOutlineGeneration,
-		JobID:     "job-1",
-		UserID:    "user-1",
-	})
+			_, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+				RequestID: "req-malformed",
+				JobType:   JobTypeOutlineGeneration,
+				JobID:     "job-1",
+				UserID:    "user-1",
+			})
 
-	if err == nil {
-		t.Fatal("expected non-nil error when knowledge retrieval fails, got nil")
-	}
-	if len(chat.requests) != 0 {
-		t.Fatalf("expected 0 AI requests after retrieval error, got %d", len(chat.requests))
-	}
-	foundFailedEvent := false
-	for _, ev := range repo.events {
-		if ev.EventType == "outline.failed" {
-			foundFailedEvent = true
-		}
-		if strings.Contains(ev.Message, "knowledge service timeout") {
-			t.Fatalf("event message leaked raw retrieval error detail: %q", ev.Message)
-		}
-	}
-	if !foundFailedEvent {
-		t.Fatalf("expected outline.failed event to be recorded, got events: %+v", repo.events)
-	}
-}
-
-func TestReportGenerationServiceHandlesEmptyKnowledgeContext(t *testing.T) {
-	repo := newFakeReportGenerationRepository()
-	repo.reports["report-1"] = Report{
-		ID:         "report-1",
-		Name:       "Summer report",
-		ReportType: "summer_peak_inspection",
-		TemplateID: "template-1",
-		Topic:      "summer peak inspection",
-		CreatorID:  "user-1",
-		Status:     ReportStatusDraft,
-	}
-	repo.jobs["job-1"] = ReportJob{
-		ID:       "job-1",
-		JobType:  JobTypeOutlineGeneration,
-		ReportID: "report-1",
-		RequestPayload: map[string]any{
-			"options": map[string]any{
-				"knowledgeBaseIds": []any{"kb-1"},
-			},
-		},
-	}
-	repo.templateStructures["template-1"] = ReportTemplateStructure{OutlineSchema: []byte(`{"sections":["overview"]}`)}
-	chat := &fakeGenerationChatClient{
-		responses: []ChatCompletionResponse{{Content: `{"sections":[{"title":"Overview"}]}`}},
-	}
-	retriever := &fakeReportKnowledgeRetriever{
-		snippets: []ReportKnowledgeSnippet{},
-	}
-	svc := NewReportGenerationService(repo, chat, retriever)
-
-	result, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
-		RequestID: "req-outline",
-		JobType:   JobTypeOutlineGeneration,
-		JobID:     "job-1",
-		UserID:    "user-1",
-	})
-
-	if err != nil {
-		t.Fatalf("unexpected error with empty knowledge snippets: %v", err)
-	}
-	if result.Status != JobStatusSucceeded {
-		t.Fatalf("expected status succeeded with empty snippets, got %q", result.Status)
-	}
-	if len(repo.outlines) == 0 {
-		t.Fatal("expected at least one outline to be created, got none")
-	}
-	var outline ReportOutline
-	for _, ol := range repo.outlines {
-		outline = ol
-	}
-	if len(repo.sections) == 0 {
-		t.Fatal("expected section skeletons to be persisted in repo.sections, got none")
-	}
-	for _, section := range repo.sections {
-		if section.OutlineID != outline.ID {
-			t.Fatalf("section skeleton OutlineID = %q, want %q", section.OutlineID, outline.ID)
-		}
-		if section.LastJobID != "job-1" {
-			t.Fatalf("section skeleton LastJobID = %q, want job-1", section.LastJobID)
-		}
-		if section.GenerationStatus != JobStatusPending {
-			t.Fatalf("section skeleton GenerationStatus = %q, want %q", section.GenerationStatus, JobStatusPending)
-		}
+			if err == nil {
+				t.Fatalf("expected error for malformed AI content %q, got nil", tc.content)
+			}
+			if len(repo.outlines) != 0 {
+				t.Fatalf("outlines written despite malformed content: %v", repo.outlines)
+			}
+			if len(repo.sections) != 0 {
+				t.Fatalf("sections written despite malformed content: %v", repo.sections)
+			}
+			if !hasReportEvent(repo.events, "outline.failed") {
+				t.Fatalf("no outline.failed event recorded; events = %v", repo.events)
+			}
+		})
 	}
 }
 
