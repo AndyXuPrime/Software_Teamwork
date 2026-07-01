@@ -42,7 +42,7 @@
 | 查询用户和权限 | `services/auth/internal/http/server.go`、`internal/repository/postgres.go` | Auth OpenAPI | repository/http tests | 支持 user summary 和 permissions。 |
 | 查询/撤销会话 | `services/auth/internal/service/auth.go` | Auth OpenAPI | `TestRevokedTokenNoLongerReturnsActiveSession` | 只保存 token hash。 |
 | 密码哈希 | `services/auth/internal/service/crypto.go` | `technology-decisions.md` | `TestPasswordHashUsesArgon2idV1PHC` | argon2id PHC 参数固定。 |
-| PostgreSQL schema | `services/auth/migrations/0001_create_auth_core_tables.sql`、`0002_seed_auth_roles_permissions.sql` | Auth 数据模型 | goose apply 需手工 | seed roles/permissions 存在。 |
+| PostgreSQL schema | `services/auth/migrations/0001_create_auth_core_tables.sql`、`0002_seed_auth_roles_permissions.sql`、`0003_seed_qa_settings_permissions.sql` | Auth 数据模型 | goose apply 需手工 | seed roles/permissions 存在。 |
 | 服务间 token | `services/auth/internal/http/server.go` | Auth README | handler tests | 配置后校验 `X-Service-Token`。 |
 
 ## 4. 未实现
@@ -74,7 +74,7 @@
 | --- | --- | --- |
 | 启动命令 | `cd services/auth && AUTH_HTTP_ADDR=:8001 go run ./cmd/server` | 业务可用需配置 DB、token secret、service token。 |
 | 环境变量 | `AUTH_DATABASE_URL`、`AUTH_INTERNAL_SERVICE_TOKEN`、`AUTH_TOKEN_HASH_SECRET`、session TTL、default role、timeouts | 需要部署 secret 注入说明。 |
-| PostgreSQL / migration | `migrations/0001` + `0002`，`sqlc.yaml`，runtime repository | 本地 PostgreSQL smoke 已验证 goose apply 到 version 2。 |
+| PostgreSQL / migration | `migrations/0001` 到 `0003`，`sqlc.yaml`，runtime repository | 本地 PostgreSQL smoke 已验证 goose apply 到 version 3。 |
 | Redis / queue | Auth 不使用 Redis；Gateway 使用 Redis session cache | 无。 |
 | Object storage / vector store / AI provider | 不涉及 | 无。 |
 
@@ -83,7 +83,7 @@
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
 | 单元测试 | `cd services/auth && go test ./...` | pass（既有记录，2026-06-30；本轮文档审计未重跑） | 无。 |
-| 集成测试 | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up` | pass（2026-06-30，本地 Docker PostgreSQL 16，迁移到 version 2） | 未跑 gateway 端到端 smoke。 |
+| 集成测试 | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up` | pass（2026-07-01，本地 Docker PostgreSQL 16，迁移到 version 3） | 未跑 gateway 端到端 smoke。 |
 | 契约测试 | HTTP handler tests + Gateway auth proxy tests | partial | 未从 OpenAPI 自动生成校验。 |
 | 手工 smoke | 注册、登录、`/users/me` through gateway | not run | 需要 gateway + Redis + auth。 |
 

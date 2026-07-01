@@ -68,6 +68,21 @@ class LocalSeedContractTests(unittest.TestCase):
         self.assertIssueContains(issues, "33333333-3333-4333-8333-333333333301")
         self.assertIssueContains(issues, "migrate-qa")
 
+    def test_verifier_reports_missing_auth_qa_settings_permissions(self) -> None:
+        verifier = load_verifier()
+
+        issues = verifier.validate_auth_migrations(
+            """
+            INSERT INTO auth_permissions (code) VALUES ('qa:use');
+            INSERT INTO role_permissions (id) VALUES ('rperm_admin_qa_use');
+            """
+        )
+
+        self.assertIssueContains(issues, "qa:settings:read")
+        self.assertIssueContains(issues, "qa:settings:write")
+        self.assertIssueContains(issues, "rperm_admin_qa_settings_read")
+        self.assertIssueContains(issues, "rperm_super_qa_settings_write")
+
     def assertIssueContains(self, issues: list[str], expected: str) -> None:
         self.assertTrue(
             any(expected in issue for issue in issues),

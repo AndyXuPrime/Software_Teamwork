@@ -252,7 +252,7 @@ Seeded local resources:
 | Area | Deterministic resource |
 | --- | --- |
 | Auth | user `usr_local_admin`, username `admin`, password `LocalDemoAdmin#12345`, role `admin` |
-| Auth permissions | `admin:model-profile:write` and `admin:parser-config:write`; `system:admin` is not required for this local admin |
+| Auth permissions | `admin:model-profile:write`, `admin:parser-config:write`, `qa:settings:read`, and `qa:settings:write`; `system:admin` is not required for this local admin |
 | Knowledge | knowledge base `kb_local_demo`, document `doc_local_demo_seed`, chunk `chunk_local_demo_seed_001` |
 | Document | material `22222222-2222-4222-8222-222222222201`, report `22222222-2222-4222-8222-222222222301`, outline `22222222-2222-4222-8222-222222222401` |
 | QA | conversation `33333333-3333-4333-8333-333333333301`, user message `33333333-3333-4333-8333-333333333401`, assistant message `33333333-3333-4333-8333-333333333402` |
@@ -279,7 +279,8 @@ Invoke-RestMethod -Uri http://localhost:8080/api/v1/admin/parser-configs -Header
 ```
 
 The response should include role `admin` and admin runtime config permissions
-such as `admin:model-profile:write` or `admin:parser-config:write`. The
+such as `admin:model-profile:write`, `admin:parser-config:write`, or
+`qa:settings:read`. The
 `GET /api/v1/admin/parser-configs` call proves the seeded admin token passes a
 Gateway admin route preflight; use `/api/v1/admin/model-profiles` when the
 optional AI profile is running.
