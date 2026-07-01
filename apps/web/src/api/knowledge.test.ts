@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ApiError } from './client'
-import { apiClient } from './client'
+import { apiClient, ApiError } from './client'
 import {
   getDocumentContent,
   listChunks,
@@ -65,6 +64,8 @@ describe('knowledge gateway API', () => {
   })
 
   it('uploads documents as multipart form data without forcing JSON content type', async () => {
+    const file = new File(['hello'], 'Manual.PDF', { type: 'application/pdf' })
+    const appendSpy = vi.spyOn(FormData.prototype, 'append')
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse(
         {
@@ -73,7 +74,7 @@ describe('knowledge gateway API', () => {
             createdAt: '2026-07-01T00:00:00Z',
             id: 'doc-1',
             knowledgeBaseId: 'kb-1',
-            name: 'guide.txt',
+            name: 'Manual.PDF',
             status: 'uploaded',
           },
           requestId: 'req-upload',
@@ -83,12 +84,11 @@ describe('knowledge gateway API', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(
-      uploadDocument('kb-1', new File(['hello'], 'guide.txt', { type: 'text/plain' }), [
-        '安全',
-        '规程',
-      ]),
-    ).resolves.toMatchObject({ id: 'doc-1', status: 'uploaded' })
+    await expect(uploadDocument('kb-1', file, ['规程', '安全'])).resolves.toMatchObject({
+      id: 'doc-1',
+      name: 'Manual.PDF',
+      status: 'uploaded',
+    })
 
     const request = fetchMock.mock.calls[0]?.[0]
     expect(request).toBeInstanceOf(Request)
@@ -97,10 +97,39 @@ describe('knowledge gateway API', () => {
     expect(request.url).toBe('http://gateway.test/api/v1/knowledge-bases/kb-1/documents')
     expect(request.headers.get('Accept')).toBe('application/json')
     expect(request.headers.get('Content-Type')).toContain('multipart/form-data')
-    const body = await request.text()
-    expect(body).toContain('name="file"')
-    expect(body).toContain('name="tags"\r\n\r\n安全')
-    expect(body).toContain('name="tags"\r\n\r\n规程')
+    expect(request.headers.get('Content-Type')).not.toContain('application/json')
+    expect(appendSpy).toHaveBeenNthCalledWith(1, 'file', file)
+    expect(appendSpy).toHaveBeenNthCalledWith(2, 'tags', '规程')
+    expect(appendSpy).toHaveBeenNthCalledWith(3, 'tags', '安全')
+  })
+
+  it('preserves Gateway error details when document upload fails', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: 'payload_too_large',
+            message: 'File exceeds gateway upload limit',
+            requestId: 'req-413',
+          },
+        },
+        { status: 413, statusText: 'Payload Too Large' },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await uploadDocument('kb-1', new File(['hello'], 'Manual.PDF', { type: 'application/pdf' }))
+      throw new Error('expected uploadDocument to reject')
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError)
+      expect(error).toMatchObject({
+        code: 'payload_too_large',
+        message: 'File exceeds gateway upload limit',
+        requestId: 'req-413',
+        status: 413,
+      } satisfies Partial<ApiError>)
+    }
   })
 
   it('reads chunks and original content from active Gateway document routes', async () => {
