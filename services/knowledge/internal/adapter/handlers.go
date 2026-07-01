@@ -180,6 +180,15 @@ func (s *Server) handleUploadDocument(w http.ResponseWriter, r *http.Request) {
 		writeAppError(w, r, mapVendorError(err))
 		return
 	}
+	kbID := r.PathValue("knowledgeBaseId")
+	docID := stringField(uploaded, "id")
+	if s.cfg.AutoStartIngestion && docID != "" {
+		if err := s.vendor.StartDocumentParse(r.Context(), reqCtx.UserID, kbID, []string{docID}); err != nil {
+			writeAppError(w, r, mapVendorError(err))
+			return
+		}
+		uploaded["run"] = "RUNNING"
+	}
 	writeJSON(w, http.StatusCreated, documentFromVendor(uploaded), reqCtx.RequestID)
 }
 

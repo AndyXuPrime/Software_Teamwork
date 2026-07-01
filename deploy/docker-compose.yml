@@ -328,6 +328,10 @@ services:
       timeout: 3s
       retries: 30
 
+  # Legacy mode (default) ingests via services/parser. Adapter mode
+  # (KNOWLEDGE_RUNTIME_MODE=adapter) routes upload/parse through the vendor runtime
+  # deepdoc pipeline and does not call PARSER_SERVICE_BASE_URL; parser remains in
+  # compose for legacy Knowledge only.
   knowledge:
     build:
       context: ../services/knowledge

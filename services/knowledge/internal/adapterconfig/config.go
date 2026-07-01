@@ -3,6 +3,7 @@ package adapterconfig
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,12 +17,13 @@ const (
 )
 
 type Config struct {
-	HTTPAddr         string
-	ServiceVersion   string
-	Environment      string
-	VendorRuntimeURL string
-	DatabaseURL      string
-	ShutdownTimeout  time.Duration
+	HTTPAddr            string
+	ServiceVersion      string
+	Environment         string
+	VendorRuntimeURL    string
+	DatabaseURL         string
+	AutoStartIngestion  bool
+	ShutdownTimeout     time.Duration
 }
 
 func Load() (Config, error) {
@@ -33,6 +35,7 @@ func Load() (Config, error) {
 	}
 	cfg.VendorRuntimeURL = trimTrailingSlash(stringValue("VENDOR_RUNTIME_URL", DefaultVendorRuntimeURL))
 	cfg.DatabaseURL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	cfg.AutoStartIngestion = boolValue("KNOWLEDGE_AUTO_START_INGESTION", true)
 
 	if raw := os.Getenv("KNOWLEDGE_SHUTDOWN_TIMEOUT"); raw != "" {
 		value, err := time.ParseDuration(raw)
@@ -58,4 +61,16 @@ func stringValue(key, fallback string) string {
 
 func trimTrailingSlash(value string) string {
 	return strings.TrimRight(strings.TrimSpace(value), "/")
+}
+
+func boolValue(key string, fallback bool) bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return fallback
+	}
+	return value
 }

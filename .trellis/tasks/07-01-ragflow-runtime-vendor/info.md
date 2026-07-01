@@ -660,3 +660,15 @@ first, most likely Parser-backed document parsing before retrieval replacement.
 - `cmd/adapter` connects PostgreSQL and injects `service.Service` for parser-config CRUD only
 - Without `DATABASE_URL`, parser-config routes return `502 dependency_error`
 - Vendor-facing KB/document/query routes unchanged (still proxied through vendorclient)
+
+### 2026-07-01: knowledge vendor replacement phase 4 deepdoc ingestion
+
+- Added `vendorclient.StartDocumentParse` → vendor `POST /api/v1/datasets/{id}/documents/parse`
+- Upload handler auto-starts ingestion when `KNOWLEDGE_AUTO_START_INGESTION=true` (default)
+- Document response maps vendor `run=RUNNING` → Gateway status `parsing`
+- Adapter mode does not call `services/parser`; deepdoc runs in vendor task executor
+- Tests:
+  - `internal/adapter/contract_test.go` — fake vendor e2e upload+parse
+  - `internal/adapter/integration_test.go` — `-tags=integration` live vendor (env-gated)
+- Docs: runtime README, compose comment, api-contracts adapter ingestion section
+- Next: Phase 5 remove legacy Go implementation
