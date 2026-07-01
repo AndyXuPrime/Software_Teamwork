@@ -2,15 +2,69 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
 type RetrievalSettings struct {
-	TopK            int     `json:"topK"`
-	ScoreThreshold  float64 `json:"scoreThreshold"`
-	EnableRerank    bool    `json:"enableRerank"`
-	RerankThreshold float64 `json:"rerankThreshold"`
-	RerankTopN      int     `json:"rerankTopN"`
+	TopK                int     `json:"topK"`
+	ScoreThreshold      float64 `json:"scoreThreshold"`
+	SimilarityThreshold float64 `json:"similarityThreshold,omitempty"`
+	EnableRerank        bool    `json:"enableRerank"`
+	UseRerank           bool    `json:"useRerank,omitempty"`
+	RerankThreshold     float64 `json:"rerankThreshold"`
+	RerankTopN          int     `json:"rerankTopN"`
+	scoreThresholdSet   bool
+	similaritySet       bool
+	enableRerankSet     bool
+	useRerankSet        bool
+	rerankThresholdSet  bool
+}
+
+type retrievalSettingsJSON struct {
+	TopK                int      `json:"topK"`
+	ScoreThreshold      *float64 `json:"scoreThreshold"`
+	SimilarityThreshold *float64 `json:"similarityThreshold,omitempty"`
+	EnableRerank        *bool    `json:"enableRerank"`
+	UseRerank           *bool    `json:"useRerank,omitempty"`
+	RerankThreshold     *float64 `json:"rerankThreshold"`
+	RerankTopN          int      `json:"rerankTopN"`
+	TagFilters          struct{} `json:"tagFilters,omitempty"`
+}
+
+func (s *RetrievalSettings) UnmarshalJSON(data []byte) error {
+	var raw retrievalSettingsJSON
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	s.TopK = raw.TopK
+	if raw.ScoreThreshold != nil {
+		s.ScoreThreshold = *raw.ScoreThreshold
+	}
+	if raw.SimilarityThreshold != nil {
+		s.SimilarityThreshold = *raw.SimilarityThreshold
+	}
+	s.EnableRerank = raw.EnableRerank != nil && *raw.EnableRerank
+	s.UseRerank = raw.UseRerank != nil && *raw.UseRerank
+	if raw.RerankThreshold != nil {
+		s.RerankThreshold = *raw.RerankThreshold
+	}
+	s.RerankTopN = raw.RerankTopN
+	s.scoreThresholdSet = raw.ScoreThreshold != nil
+	s.similaritySet = raw.SimilarityThreshold != nil
+	s.enableRerankSet = raw.EnableRerank != nil
+	s.useRerankSet = raw.UseRerank != nil
+	s.rerankThresholdSet = raw.RerankThreshold != nil
+	return nil
+}
+
+func (s RetrievalSettings) HasScoreThreshold() bool {
+	return s.scoreThresholdSet || s.similaritySet || s.ScoreThreshold > 0
+}
+
+func (s RetrievalSettings) WithScoreThresholdConfigured() RetrievalSettings {
+	s.scoreThresholdSet = true
+	return s
 }
 
 type StoredLLMConfig struct {

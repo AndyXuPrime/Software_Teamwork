@@ -2136,7 +2136,10 @@ paths:
               $ref: '#/components/schemas/CreateQARetrievalTestRunRequest'
       responses:
         '201':
-          description: QA retrieval test run created.
+          description: >
+            QA retrieval test run created. Knowledge dependency failures are
+            saved and returned as `status: failed` runs with a sanitized
+            `errorMessage`.
           content:
             application/json:
               schema:
@@ -5306,8 +5309,22 @@ components:
           type: string
     CreateQARetrievalTestRunRequest:
       type: object
-      required:
-      - question
+      allOf:
+      - anyOf:
+        - type: object
+          required:
+          - question
+          properties:
+            question:
+              type: string
+        - type: object
+          required:
+          - query
+          properties:
+            query:
+              type: string
+              deprecated: true
+              description: Backward-compatible alias for `question`.
       properties:
         question:
           type: string
@@ -5384,6 +5401,17 @@ components:
           - running
           - completed
           - failed
+        resultCount:
+          type: integer
+          minimum: 0
+          description: Number of sanitized retrieval result snapshots saved for this test run.
+        latencyMs:
+          type: integer
+          minimum: 0
+          description: End-to-end latency of the retrieval test call.
+        errorMessage:
+          type: string
+          description: Sanitized failure summary only.
         results:
           type: array
           items:
