@@ -571,3 +571,36 @@ Adapter mode parser-config CRUD delegates to legacy goose PostgreSQL via optiona
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: Phase 4 deepdoc ingestion
+
+**Date**: 2026-07-01
+**Task**: Phase 4 deepdoc ingestion
+**Branch**: `L1nggTeam/feat/ragflow-runtime-vendor`
+
+### Summary
+
+Wired adapter upload to vendor documents/parse (KNOWLEDGE_AUTO_START_INGESTION), added contract and integration tests, updated runtime docs and api-contracts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `11507f5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
