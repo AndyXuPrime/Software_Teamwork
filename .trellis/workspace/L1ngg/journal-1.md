@@ -604,3 +604,36 @@ Wired adapter upload to vendor documents/parse (KNOWLEDGE_AUTO_START_INGESTION),
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: Knowledge MCP Server (Phases A–C)
+
+**Date**: 2026-07-01
+**Task**: Knowledge MCP Server (Phases A–C)
+**Branch**: `L1nggTeam/feat/ragflow-runtime-vendor`
+
+### Summary
+
+Added Streamable HTTP MCP server on services/knowledge with 14 tools: search_knowledge, answer_from_knowledge (AI Gateway), and KB/document CRUD via in-process adapter bridge. Spec captured in mcp-agent-runtime.md. Phase D (QA client E2E) deferred.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f85b84a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
