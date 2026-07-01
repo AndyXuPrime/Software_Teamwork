@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"encoding/json"
 	"math"
 	"reflect"
 	"strings"
@@ -63,6 +64,46 @@ func TestAgentConfigFromCreateInputUsesDefaultToolNamesWhenUnset(t *testing.T) {
 
 	if !reflect.DeepEqual(config.EnabledToolNames, service.DefaultAgentConfig().EnabledToolNames) {
 		t.Fatalf("enabledToolNames=%#v, want defaults", config.EnabledToolNames)
+	}
+}
+
+func TestRetrievalConfigFromCreateInputPreservesExplicitZeroScoreThreshold(t *testing.T) {
+	var input service.CreateQAConfigVersionInput
+	if err := json.Unmarshal([]byte(`{"retrieval":{"topK":5,"scoreThreshold":0}}`), &input); err != nil {
+		t.Fatal(err)
+	}
+
+	config := retrievalConfigFromCreateInput(input)
+
+	if config.ScoreThreshold != 0 {
+		t.Fatalf("scoreThreshold=%v, want explicit zero", config.ScoreThreshold)
+	}
+	if config.TopK != 5 {
+		t.Fatalf("topK=%d, want 5", config.TopK)
+	}
+}
+
+func TestRetrievalConfigFromCreateInputFallsBackToDefaultThresholdWhenUnset(t *testing.T) {
+	var input service.CreateQAConfigVersionInput
+	if err := json.Unmarshal([]byte(`{"retrieval":{"topK":5}}`), &input); err != nil {
+		t.Fatal(err)
+	}
+
+	config := retrievalConfigFromCreateInput(input)
+
+	if config.ScoreThreshold != .7 {
+		t.Fatalf("scoreThreshold=%v, want default .7", config.ScoreThreshold)
+	}
+}
+
+func TestRetrievalConfigFromCreateInputUsesLegacySimilarityThreshold(t *testing.T) {
+	config := retrievalConfigFromCreateInput(service.CreateQAConfigVersionInput{
+		TopK:                6,
+		SimilarityThreshold: .35,
+	})
+
+	if config.TopK != 6 || config.ScoreThreshold != .35 {
+		t.Fatalf("retrieval=%+v, want legacy topK and threshold", config)
 	}
 }
 

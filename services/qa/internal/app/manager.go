@@ -127,6 +127,9 @@ func (a *knowledgeRetrieverAdapter) Retrieve(ctx context.Context, userID string,
 			RerankTopN:      input.Retrieval.RerankTopN,
 		},
 	}
+	if input.Retrieval.ScoreThresholdConfigured {
+		serviceInput.Retrieval = serviceInput.Retrieval.WithScoreThresholdConfigured()
+	}
 	serviceResults, err := a.retriever.Retrieve(ctx, userID, serviceInput)
 	if err != nil {
 		return nil, err

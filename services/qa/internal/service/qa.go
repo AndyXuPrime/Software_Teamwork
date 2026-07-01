@@ -828,17 +828,19 @@ func validateAskRetrieval(retrieval RetrievalOptions) error {
 
 func retrievalSettingsForAsk(defaults RetrievalSettings, override RetrievalOptions) contextutil.RetrievalSettings {
 	settings := contextutil.RetrievalSettings{
-		TopK:            defaults.TopK,
-		ScoreThreshold:  defaults.ScoreThreshold,
-		EnableRerank:    defaults.EnableRerank,
-		RerankThreshold: defaults.RerankThreshold,
-		RerankTopN:      defaults.RerankTopN,
+		TopK:                     defaults.TopK,
+		ScoreThreshold:           defaults.ScoreThreshold,
+		ScoreThresholdConfigured: defaults.HasScoreThreshold(),
+		EnableRerank:             defaults.EnableRerank,
+		RerankThreshold:          defaults.RerankThreshold,
+		RerankTopN:               defaults.RerankTopN,
 	}
 	if override.topKSet || override.TopK != 0 {
 		settings.TopK = override.TopK
 	}
 	if override.scoreSet || override.ScoreThreshold != 0 {
 		settings.ScoreThreshold = override.ScoreThreshold
+		settings.ScoreThresholdConfigured = true
 	}
 	if override.rerankSet || override.RerankThreshold != 0 {
 		settings.RerankThreshold = override.RerankThreshold

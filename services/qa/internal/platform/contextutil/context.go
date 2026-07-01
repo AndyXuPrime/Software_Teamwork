@@ -28,11 +28,12 @@ type atomicCitationNo struct {
 }
 
 type RetrievalSettings struct {
-	TopK            int     `json:"topK"`
-	ScoreThreshold  float64 `json:"scoreThreshold"`
-	EnableRerank    bool    `json:"enableRerank"`
-	RerankThreshold float64 `json:"rerankThreshold"`
-	RerankTopN      int     `json:"rerankTopN"`
+	TopK                     int     `json:"topK"`
+	ScoreThreshold           float64 `json:"scoreThreshold"`
+	ScoreThresholdConfigured bool    `json:"-"`
+	EnableRerank             bool    `json:"enableRerank"`
+	RerankThreshold          float64 `json:"rerankThreshold"`
+	RerankTopN               int     `json:"rerankTopN"`
 }
 
 func newAtomicCitationNo(initial int) *atomicCitationNo {

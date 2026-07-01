@@ -25,11 +25,12 @@ type RetrievalTestInput struct {
 }
 
 type RetrievalSettings struct {
-	TopK            int
-	ScoreThreshold  float64
-	EnableRerank    bool
-	RerankThreshold float64
-	RerankTopN      int
+	TopK                     int
+	ScoreThreshold           float64
+	ScoreThresholdConfigured bool
+	EnableRerank             bool
+	RerankThreshold          float64
+	RerankTopN               int
 }
 
 type RetrievalTestResult struct {
@@ -231,6 +232,7 @@ func (c *KnowledgeToolClient) searchKnowledge(ctx context.Context, arguments jso
 			RerankTopN:      defaultSettings.RerankTopN,
 		},
 	}
+	scoreThresholdConfigured := defaultSettings.ScoreThresholdConfigured
 
 	if input.TopK != nil && *input.TopK > 0 {
 		topK := *input.TopK
@@ -240,19 +242,21 @@ func (c *KnowledgeToolClient) searchKnowledge(ctx context.Context, arguments jso
 		retrievalInput.Retrieval.TopK = topK
 	}
 	if input.ScoreThreshold != nil {
-		threshold := *input.ScoreThreshold
-		if threshold < 0 {
-			threshold = 0
-		} else if threshold > 1 {
-			threshold = 1
+		threshold := clampScoreThreshold(*input.ScoreThreshold)
+		if scoreThresholdConfigured && threshold > retrievalInput.Retrieval.ScoreThreshold {
+			threshold = retrievalInput.Retrieval.ScoreThreshold
 		}
 		retrievalInput.Retrieval.ScoreThreshold = threshold
+		scoreThresholdConfigured = true
 	}
 	if input.EnableRerank != nil {
 		retrievalInput.Retrieval.EnableRerank = *input.EnableRerank
 	}
 
 	// Call knowledge service
+	if scoreThresholdConfigured {
+		retrievalInput.Retrieval.ScoreThresholdConfigured = true
+	}
 	results, err := c.retrievalClient.Retrieve(toolCtx, userID, retrievalInput)
 	if err != nil {
 		return toolFailure("retrieval_failed", "knowledge retrieval service failed"), nil
@@ -268,6 +272,16 @@ func (c *KnowledgeToolClient) searchKnowledge(ctx context.Context, arguments jso
 
 	// No byte-level truncation - structure-level limits ensure valid JSON
 	return agent.ToolResult{Content: summary}, nil
+}
+
+func clampScoreThreshold(threshold float64) float64 {
+	if threshold < 0 {
+		return 0
+	}
+	if threshold > 1 {
+		return 1
+	}
+	return threshold
 }
 
 func (c *KnowledgeToolClient) getCitationSource(ctx context.Context, arguments json.RawMessage) (agent.ToolResult, error) {

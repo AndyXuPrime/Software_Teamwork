@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/service/tools"
@@ -435,6 +436,8 @@ type ResourceService struct {
 	bootstrap      RuntimeLLMConfig
 	canceller      ActiveRunCanceller
 	now            func() time.Time
+	reloadMu       sync.RWMutex
+	reloader       RuntimeReloader
 }
 
 func NewResourceService(repository ResourceRepository, retriever KnowledgeRetriever, tester LLMConnectionTester, bootstrap RuntimeLLMConfig, canceller ActiveRunCanceller) (*ResourceService, error) {
@@ -444,6 +447,26 @@ func NewResourceService(repository ResourceRepository, retriever KnowledgeRetrie
 	sourceChecker, _ := retriever.(CitationSourceChecker)
 	statsProvider, _ := retriever.(KnowledgeStatsProvider)
 	return &ResourceService{repository: repository, retriever: retriever, sourceChecker: sourceChecker, knowledgeStats: statsProvider, llmTester: tester, bootstrap: bootstrap, canceller: canceller, now: time.Now}, nil
+}
+
+func (s *ResourceService) SetReloader(reloader RuntimeReloader) {
+	s.reloadMu.Lock()
+	defer s.reloadMu.Unlock()
+	s.reloader = reloader
+}
+
+func (s *ResourceService) reloadRuntime(ctx context.Context) error {
+	s.reloadMu.RLock()
+	reloader := s.reloader
+	s.reloadMu.RUnlock()
+	if reloader == nil {
+		return nil
+	}
+	return reloader.Reload(ctx)
+}
+
+func shouldActivateConfig(activate *bool) bool {
+	return activate == nil || *activate
 }
 
 func (s *ResourceService) GetResponseRun(ctx context.Context, userID, id string) (ResponseRun, error) {
@@ -606,7 +629,16 @@ func (s *ResourceService) CreateQAConfigVersion(ctx context.Context, userID stri
 	if len(fields) > 0 {
 		return QAConfigVersion{}, ValidationError(fields)
 	}
-	return s.repository.CreateQAConfigVersionResource(ctx, userID, input)
+	version, err := s.repository.CreateQAConfigVersionResource(ctx, userID, input)
+	if err != nil {
+		return QAConfigVersion{}, err
+	}
+	if shouldActivateConfig(input.Activate) {
+		if err := s.reloadRuntime(ctx); err != nil {
+			return QAConfigVersion{}, NewError(CodeDependency, "runtime reload failed", err)
+		}
+	}
+	return version, nil
 }
 func (s *ResourceService) GetActiveLLMConfigVersion(ctx context.Context) (LLMConfigVersion, error) {
 	return s.repository.GetActiveLLMConfigVersion(ctx)
@@ -615,7 +647,16 @@ func (s *ResourceService) CreateLLMConfigVersion(ctx context.Context, userID str
 	if fields := validateLLMProfile(input.Provider, input.ProfileID, input.ModelName, input.TimeoutSeconds, input.Temperature, input.MaxTokens); len(fields) > 0 {
 		return LLMConfigVersion{}, ValidationError(fields)
 	}
-	return s.repository.CreateLLMConfigVersionResource(ctx, userID, input)
+	version, err := s.repository.CreateLLMConfigVersionResource(ctx, userID, input)
+	if err != nil {
+		return LLMConfigVersion{}, err
+	}
+	if shouldActivateConfig(input.Activate) {
+		if err := s.reloadRuntime(ctx); err != nil {
+			return LLMConfigVersion{}, NewError(CodeDependency, "runtime reload failed", err)
+		}
+	}
+	return version, nil
 }
 func (s *ResourceService) TestLLMConnection(ctx context.Context, userID string, input LLMProfileTestInput) (LLMProfileTestResult, error) {
 	if fields := validateLLMProfile(input.Provider, input.ProfileID, input.ModelName, input.TimeoutSeconds, 0, 0); len(fields) > 0 {

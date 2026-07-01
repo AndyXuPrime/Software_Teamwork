@@ -2,6 +2,7 @@ package knowledgeclient
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -35,6 +36,42 @@ func TestRetrievePropagatesTrustedContextAndMapsResults(t *testing.T) {
 	}
 	if len(results) != 1 || results[0].DocumentID != "doc-1" {
 		t.Fatalf("results=%+v", results)
+	}
+}
+
+func TestRetrieveSendsConfiguredZeroScoreThreshold(t *testing.T) {
+	var payload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"results":[]},"requestId":"req-threshold-test"}`))
+	}))
+	defer server.Close()
+	client, err := New(server.URL, "service-token", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.Retrieve(context.Background(), "user-1", service.RetrievalTestInput{
+		Question:         "query",
+		KnowledgeBaseIDs: []string{"kb-1"},
+		Retrieval: service.RetrievalSettings{
+			TopK:           5,
+			ScoreThreshold: 0,
+		}.WithScoreThresholdConfigured(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scoreThreshold, ok := payload["scoreThreshold"]
+	if !ok {
+		t.Fatalf("request payload=%+v, want scoreThreshold field", payload)
+	}
+	if scoreThreshold != float64(0) {
+		t.Fatalf("scoreThreshold=%v, want 0", scoreThreshold)
 	}
 }
 
