@@ -220,33 +220,38 @@ func (r *Postgres) SearchSessionAttachmentChunks(ctx context.Context, userID, se
 	}
 	return out, rows.Err()
 }
-func (r *Postgres) CleanupExpiredAttachments(ctx context.Context, now time.Time, limit int) ([]service.SessionAttachment, error) {
-	rows, err := r.pool.Query(ctx, `UPDATE session_attachments SET status='purged', deleted_at=$1, updated_at=$1 WHERE id IN (SELECT id FROM session_attachments WHERE deleted_at IS NULL AND expires_at <= $1 ORDER BY expires_at LIMIT $2) RETURNING id::text, conversation_id::text, external_user_id, file_ref, filename, content_type, size_bytes, status, COALESCE(error_summary,''), page_count, chunk_count, expires_at, deleted_at, created_at, updated_at`, now, limit)
+func (r *Postgres) ListExpiredAttachments(ctx context.Context, now time.Time, limit int) ([]service.SessionAttachment, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text, conversation_id::text, external_user_id, file_ref, filename, content_type, size_bytes, status, COALESCE(error_summary,''), page_count, chunk_count, expires_at, deleted_at, created_at, updated_at FROM session_attachments WHERE deleted_at IS NULL AND expires_at <= $1 ORDER BY expires_at LIMIT $2`, now, limit)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	var out []service.SessionAttachment
-	ids := make([]string, 0)
 	for rows.Next() {
 		a, err := scanAttachment(rows)
 		if err != nil {
-			rows.Close()
 			return nil, err
 		}
 		out = append(out, a)
-		ids = append(ids, a.ID)
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, err
+	return out, rows.Err()
+}
+
+func (r *Postgres) PurgeAttachments(ctx context.Context, ids []string, now time.Time) error {
+	if len(ids) == 0 {
+		return nil
 	}
-	rows.Close()
-	if len(ids) > 0 {
-		if _, err := r.pool.Exec(ctx, `DELETE FROM session_attachment_chunks WHERE attachment_id::text = ANY($1)`, ids); err != nil {
-			return nil, fmt.Errorf("delete expired attachment chunks: %w", err)
-		}
+	tag, err := r.pool.Exec(ctx, `UPDATE session_attachments SET status='purged', deleted_at=$1, updated_at=$1 WHERE id::text = ANY($2) AND deleted_at IS NULL`, now, ids)
+	if err != nil {
+		return fmt.Errorf("purge expired attachments: %w", err)
 	}
-	return out, nil
+	if tag.RowsAffected() == 0 {
+		return service.NewError(service.CodeNotFound, "attachments not found for purge", nil)
+	}
+	if _, err := r.pool.Exec(ctx, `DELETE FROM session_attachment_chunks WHERE attachment_id::text = ANY($1)`, ids); err != nil {
+		return fmt.Errorf("delete purged attachment chunks: %w", err)
+	}
+	return nil
 }
 
 func scanAttachment(row attachmentScanner) (service.SessionAttachment, error) {

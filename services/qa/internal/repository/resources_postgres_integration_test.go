@@ -31,7 +31,7 @@ func TestDocumentedResourceRoundTrip(t *testing.T) {
 	if _, err = repo.CreateConversation(ctx, conversation); err != nil {
 		t.Fatal(err)
 	}
-	run, err := repo.AppendMessages(ctx, "integration-user", conversationID, service.ResponseRunStart{RequestID: "req-integration", MaxIterations: 5}, service.Message{ID: userMessageID, ConversationID: conversationID, Role: "user", Content: "question", Status: "completed", CreatedAt: now}, service.Message{ID: assistantMessageID, ConversationID: conversationID, Role: "assistant", Status: "streaming", CreatedAt: now})
+	run, err := repo.AppendMessages(ctx, "integration-user", conversationID, service.ResponseRunStart{RequestID: "req-integration", MaxIterations: 5}, nil, service.Message{ID: userMessageID, ConversationID: conversationID, Role: "user", Content: "question", Status: "completed", CreatedAt: now}, service.Message{ID: assistantMessageID, ConversationID: conversationID, Role: "assistant", Status: "streaming", CreatedAt: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,6 +187,7 @@ func TestOwnerAuthorizationBoundaries(t *testing.T) {
 	}
 	run, err := repo.AppendMessages(ctx, ownerID, conversationID,
 		service.ResponseRunStart{RequestID: "req-authorization", MaxIterations: 5},
+			nil,
 		service.Message{ID: userMessageID, ConversationID: conversationID, Role: "user", Content: "private question", Status: "completed", CreatedAt: now},
 		service.Message{ID: assistantMessageID, ConversationID: conversationID, Role: "assistant", Content: "private answer", Status: "streaming", CreatedAt: now},
 	)
@@ -281,6 +282,7 @@ func TestFinalizeResponseRunClearsStaleCitationsWhenFinalSetIsEmpty(t *testing.T
 	}
 	run, err := repo.AppendMessages(ctx, userID, conversationID,
 		service.ResponseRunStart{RequestID: "req-citation-cleanup", MaxIterations: 3},
+			nil,
 		service.Message{ID: userMessageID, ConversationID: conversationID, Role: "user", Content: "question", Status: "completed", CreatedAt: now},
 		service.Message{ID: assistantMessageID, ConversationID: conversationID, Role: "assistant", Status: "streaming", CreatedAt: now},
 	)
@@ -344,6 +346,7 @@ func TestAttachmentCitationRoundTrip(t *testing.T) {
 	}
 	run, err := repo.AppendMessages(ctx, userID, conversationID,
 		service.ResponseRunStart{RequestID: "req-attachment-citation", MaxIterations: 3},
+			nil,
 		service.Message{ID: userMessageID, ConversationID: conversationID, Role: "user", Content: "question", Status: "completed", CreatedAt: now},
 		service.Message{ID: assistantMessageID, ConversationID: conversationID, Role: "assistant", Status: "streaming", CreatedAt: now},
 	)

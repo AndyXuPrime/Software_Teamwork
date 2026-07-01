@@ -248,7 +248,7 @@ type Repository interface {
 	UpdateConversation(context.Context, string, Conversation) (Conversation, error)
 	DeleteConversation(context.Context, string, string) error
 	ListMessages(context.Context, string, string, MessageListOptions) (Page[Message], error)
-	AppendMessages(context.Context, string, string, ResponseRunStart, ...Message) (ResponseRun, error)
+	AppendMessages(context.Context, string, string, ResponseRunStart, []string, ...Message) (ResponseRun, error)
 	UpdateMessage(context.Context, string, Message) error
 	FinalizeResponseRun(context.Context, string, ResponseRunFinalization) (ResponseRun, error)
 	SaveReasoningSteps(context.Context, string, string, []ReasoningStep) error
@@ -256,7 +256,6 @@ type Repository interface {
 	SaveCitations(context.Context, string, string, []Citation) error
 	SaveModelInvocation(context.Context, string, ModelInvocation) (string, error)
 	ValidateReadyAttachments(context.Context, string, string, []string) ([]SessionAttachment, error)
-	BindMessageAttachments(context.Context, string, string, string, []string, time.Time) error
 	GetResponseRun(context.Context, string, string) (ResponseRun, error)
 }
 
@@ -434,14 +433,9 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 		QAConfigVersionID:  runtime.QAConfigVersionID,
 		LLMConfigVersionID: runtime.LLMConfigVersionID,
 		MaxIterations:      runtime.MaxIterations,
-	}, userMessage, assistantMessage)
+	}, attachmentIDs, userMessage, assistantMessage)
 	if err != nil {
 		return AskResult{}, err
-	}
-	if len(attachmentIDs) > 0 {
-		if err := s.repository.BindMessageAttachments(ctx, userID, conversationID, userMessage.ID, attachmentIDs, now); err != nil {
-			return AskResult{}, err
-		}
 	}
 	baseCtx := WithUserID(ctx, userID)
 	baseCtx = contextutil.WithKnowledgeBaseIDs(baseCtx, input.KnowledgeBaseIDs)

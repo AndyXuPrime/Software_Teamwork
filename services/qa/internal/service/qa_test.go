@@ -61,7 +61,7 @@ func (r *fakeRepository) ListMessages(_ context.Context, _ string, _ string, opt
 	r.messageOptions = options
 	return Page[Message]{Items: append([]Message(nil), r.messages...), Page: options.Page, PageSize: options.PageSize, Total: len(r.messages)}, nil
 }
-func (r *fakeRepository) AppendMessages(_ context.Context, _, sessionID string, start ResponseRunStart, values ...Message) (ResponseRun, error) {
+func (r *fakeRepository) AppendMessages(_ context.Context, _, sessionID string, start ResponseRunStart, _ []string, values ...Message) (ResponseRun, error) {
 	r.messages = append(r.messages, values...)
 	maxIterations := start.MaxIterations
 	if maxIterations == 0 {
@@ -133,9 +133,6 @@ func (r *fakeRepository) SaveCitations(_ context.Context, _, _ string, citations
 }
 func (r *fakeRepository) ValidateReadyAttachments(context.Context, string, string, []string) ([]SessionAttachment, error) {
 	return nil, nil
-}
-func (r *fakeRepository) BindMessageAttachments(context.Context, string, string, string, []string, time.Time) error {
-	return nil
 }
 
 type fakeAgentRunner struct {

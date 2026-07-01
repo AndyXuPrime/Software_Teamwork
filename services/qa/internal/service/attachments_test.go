@@ -131,20 +131,32 @@ func (s *attachmentRepoStub) SearchSessionAttachmentChunks(_ context.Context, _,
 	return out, nil
 }
 
-func (s *attachmentRepoStub) CleanupExpiredAttachments(_ context.Context, now time.Time, limit int) ([]SessionAttachment, error) {
+func (s *attachmentRepoStub) ListExpiredAttachments(_ context.Context, now time.Time, limit int) ([]SessionAttachment, error) {
 	out := make([]SessionAttachment, 0, limit)
 	for _, item := range s.attachments {
 		if item.DeletedAt != nil || item.ExpiresAt.After(now) {
 			continue
 		}
-		deletedAt := now
-		item.DeletedAt = &deletedAt
 		out = append(out, item)
 		if limit > 0 && len(out) >= limit {
 			break
 		}
 	}
 	return out, nil
+}
+
+func (s *attachmentRepoStub) PurgeAttachments(_ context.Context, ids []string, now time.Time) error {
+	for _, id := range ids {
+		for i, item := range s.attachments {
+			if item.ID == id && item.DeletedAt == nil {
+				item.DeletedAt = &now
+				item.Status = AttachmentStatusPurged
+				s.attachments[i] = item
+				break
+			}
+		}
+	}
+	return nil
 }
 
 func (s *attachmentRepoStub) setStatus(sessionID, attachmentID, status, summary string, now time.Time) error {

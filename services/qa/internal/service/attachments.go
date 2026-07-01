@@ -114,7 +114,8 @@ type AttachmentRepository interface {
 	ValidateReadyAttachments(context.Context, string, string, []string) ([]SessionAttachment, error)
 	BindMessageAttachments(context.Context, string, string, string, []string, time.Time) error
 	SearchSessionAttachmentChunks(context.Context, string, string, []string, string, int) ([]SessionAttachmentChunk, error)
-	CleanupExpiredAttachments(context.Context, time.Time, int) ([]SessionAttachment, error)
+	ListExpiredAttachments(context.Context, time.Time, int) ([]SessionAttachment, error)
+	PurgeAttachments(context.Context, []string, time.Time) error
 }
 
 type AttachmentService struct {
@@ -228,16 +229,15 @@ func (s *AttachmentService) Delete(ctx context.Context, userID, sessionID, attac
 	if err != nil {
 		return err
 	}
-	now := s.now().UTC()
-	if err := s.repository.SoftDeleteAttachment(ctx, userID, sessionID, attachmentID, now); err != nil {
-		return err
-	}
+	// Delete file first — if this fails the DB record stays intact for retry.
 	if att.FileRef != "" {
 		if delErr := s.fileClient.Delete(context.WithoutCancel(ctx), att.FileRef); delErr != nil {
-			return fmt.Errorf("delete file %s after attachment soft-delete: %w", att.FileRef, delErr)
+			return fmt.Errorf("delete file %s: %w", att.FileRef, delErr)
 		}
 	}
-	return nil
+	// Tombstone DB record only after successful file deletion.
+	now := s.now().UTC()
+	return s.repository.SoftDeleteAttachment(ctx, userID, sessionID, attachmentID, now)
 }
 func (s *AttachmentService) Process(ctx context.Context, userID, sessionID, attachmentID string) error {
 	att, err := s.repository.GetAttachment(ctx, userID, sessionID, attachmentID)
@@ -284,21 +284,30 @@ func (s *AttachmentService) CleanupExpired(ctx context.Context, limit int) ([]Se
 	if limit <= 0 {
 		limit = 100
 	}
-	expired, err := s.repository.CleanupExpiredAttachments(ctx, s.now().UTC(), limit)
+	expired, err := s.repository.ListExpiredAttachments(ctx, s.now().UTC(), limit)
 	if err != nil {
 		return nil, err
 	}
 	var errs []error
+	succeeded := make([]string, 0, len(expired))
 	for _, att := range expired {
 		if att.FileRef == "" {
+			succeeded = append(succeeded, att.ID)
 			continue
 		}
 		if delErr := s.fileClient.Delete(context.WithoutCancel(ctx), att.FileRef); delErr != nil {
 			errs = append(errs, fmt.Errorf("delete file %s for attachment %s: %w", att.FileRef, att.ID, delErr))
+			continue
+		}
+		succeeded = append(succeeded, att.ID)
+	}
+	if len(succeeded) > 0 {
+		if purgeErr := s.repository.PurgeAttachments(ctx, succeeded, s.now().UTC()); purgeErr != nil {
+			errs = append(errs, fmt.Errorf("tombstone %d expired attachments: %w", len(succeeded), purgeErr))
 		}
 	}
 	if len(errs) > 0 {
-		return expired, fmt.Errorf("cleanup file deletion failures (%d/%d): %w", len(errs), len(expired), errors.Join(errs...))
+		return expired, fmt.Errorf("cleanup failures (%d/%d): %w", len(errs), len(expired), errors.Join(errs...))
 	}
 	return expired, nil
 }

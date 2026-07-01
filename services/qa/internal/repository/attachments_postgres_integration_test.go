@@ -85,18 +85,23 @@ func TestAttachmentCreateQuotaFilterAndPurgeIntegration(t *testing.T) {
 		t.Fatalf("ready page=%+v err=%v", ready, err)
 	}
 
-	purged, err := repo.CleanupExpiredAttachments(ctx, now, 1000)
+	expired, err := repo.ListExpiredAttachments(ctx, now, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var found bool
-	for _, attachment := range purged {
-		if attachment.SessionID == conversationID && attachment.Status == service.AttachmentStatusPurged {
+	var expiredID string
+	for _, attachment := range expired {
+		if attachment.SessionID == conversationID {
 			found = true
+			expiredID = attachment.ID
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("purged=%+v, want purged attachment for session %s", purged, conversationID)
+		t.Fatalf("expired=%+v, want expired attachment for session %s", expired, conversationID)
+	}
+	if err := repo.PurgeAttachments(ctx, []string{expiredID}, now); err != nil {
+		t.Fatal(err)
 	}
 }

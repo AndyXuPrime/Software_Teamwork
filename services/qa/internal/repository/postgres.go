@@ -172,7 +172,7 @@ func (r *Postgres) ListMessages(ctx context.Context, userID, conversationID stri
 	return service.Page[service.Message]{Items: items, Page: options.Page, PageSize: options.PageSize, Total: int(total)}, nil
 }
 
-func (r *Postgres) AppendMessages(ctx context.Context, userID, conversationID string, start service.ResponseRunStart, messages ...service.Message) (service.ResponseRun, error) {
+func (r *Postgres) AppendMessages(ctx context.Context, userID, conversationID string, start service.ResponseRunStart, attachmentIDs []string, messages ...service.Message) (service.ResponseRun, error) {
 	if len(messages) == 0 {
 		return service.ResponseRun{}, nil
 	}
@@ -192,6 +192,7 @@ func (r *Postgres) AppendMessages(ctx context.Context, userID, conversationID st
 		return service.ResponseRun{}, fmt.Errorf("get message sequence: %w", err)
 	}
 	var userMessageID, assistantMessageID, intent string
+	var userCreatedAt time.Time
 	for _, message := range messages {
 		sequence++
 		if err := q.InsertMessage(ctx, sqlc.InsertMessageParams{
@@ -207,6 +208,7 @@ func (r *Postgres) AppendMessages(ctx context.Context, userID, conversationID st
 		}
 		if message.Role == "user" {
 			userMessageID = message.ID
+			userCreatedAt = message.CreatedAt
 		}
 		if message.Role == "assistant" {
 			assistantMessageID, intent = message.ID, message.Intent
@@ -250,6 +252,13 @@ func (r *Postgres) AppendMessages(ctx context.Context, userID, conversationID st
 			Payload: payload, CreatedAt: inserted.StartedAt,
 		}); err != nil {
 			return service.ResponseRun{}, fmt.Errorf("insert initial stream event: %w", err)
+		}
+	}
+	if len(attachmentIDs) > 0 && userMessageID != "" {
+		for _, id := range attachmentIDs {
+			if _, err := tx.Exec(ctx, `INSERT INTO message_attachments (message_id, attachment_id, created_at) VALUES ($1::uuid,$2::uuid,$3) ON CONFLICT DO NOTHING`, userMessageID, id, userCreatedAt); err != nil {
+				return service.ResponseRun{}, fmt.Errorf("bind message attachment in append: %w", err)
+			}
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
