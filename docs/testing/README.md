@@ -7,7 +7,10 @@
 | 路径 | 用途 |
 | --- | --- |
 | `docs/testing/strategy.md` | 仓库当前测试策略、CI 覆盖和本地验证矩阵。 |
+| `docs/testing/test-matrix.md` | 测试组总测试矩阵、issue 证据追踪和阶段性汇总口径。 |
 | `docs/testing/templates/test-report-template.md` | 测试报告标准模板。每次测试任务都应以此为基础生成报告。 |
+| `docs/testing/templates/test-evidence-record-template.md` | 测试 issue 或 PR 中使用的快速证据块模板。 |
+| `docs/testing/templates/final-acceptance-summary-template.md` | 周报或最终验收汇总模板。 |
 | `docs/testing/reports/YYYY-MM-DD/` | 按测试执行日期归档的测试报告。 |
 
 旧的 `docs/tests/` 目录已迁移到 `docs/testing/reports/`。后续不要再向 `docs/tests/` 新增报告。
@@ -21,6 +24,7 @@
 - 如果同一天同一模块有多轮测试，可以在文件名追加范围或轮次，例如 `knowledge-rerank-regression-test-report.md`。
 - 报告中的测试结论必须区分：测试通过、测试失败且已修复、测试失败已转 issue、因环境缺失未运行。
 - 未运行的测试不能写成通过，必须记录缺失环境、跳过条件、残余风险和后续归属。
+- 测试组总进度和证据位置统一维护在 `docs/testing/test-matrix.md`。矩阵状态落后时以 GitHub Issue / Project 为准，并在 PR 前补齐报告路径、未运行原因和残余风险。
 
 ## 缺陷处理规则
 
@@ -40,4 +44,5 @@
 3. 实际运行测试，保留命令、环境、结果和失败证据。
 4. 复制 `docs/testing/templates/test-report-template.md` 生成当日测试报告。
 5. 将报告放入 `docs/testing/reports/YYYY-MM-DD/`。
-6. 在测试 issue 和 PR 中链接报告路径，并说明未运行项、失败项、已修复项和已转 issue。
+6. 在测试 issue 和 PR 中链接报告路径，并可复制 `docs/testing/templates/test-evidence-record-template.md` 填写快速证据块。
+7. 更新 `docs/testing/test-matrix.md` 中对应 issue 的状态、证据位置、未运行项和残余风险。
