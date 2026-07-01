@@ -148,9 +148,9 @@ func assertSeedReportOutlineRead(t *testing.T, ctx context.Context, client *http
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 65536))
-	// Accept 200 or 404 (seed report may not have outlines in all environments)
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 200 or 404 for outlines, got %d: %s", resp.StatusCode, string(body))
+	// Seed data includes outlines for this report
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for outlines, got %d: %s", resp.StatusCode, string(body))
 	}
 }
 

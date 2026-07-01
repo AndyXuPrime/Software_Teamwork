@@ -130,6 +130,12 @@ func assertQAKnowledgeRAGResponse(t *testing.T, ctx context.Context, client *htt
 		t.Fatal("created qa session has empty id")
 	}
 
+	// Use a client without body timeout for SSE streaming.
+	sseClient := &http.Client{
+		Timeout:       0,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse },
+	}
+
 	// Send a message to the newly created session — accept SSE stream
 	msgBody, _ := json.Marshal(map[string]any{
 		"message": "根据规程，锅炉巡检时油温正常范围是多少？",
@@ -140,7 +146,7 @@ func assertQAKnowledgeRAGResponse(t *testing.T, ctx context.Context, client *htt
 	sendReq.Header.Set("Content-Type", "application/json")
 	sendReq.Header.Set("Accept", "text/event-stream")
 	sendReq.Header.Set("X-Request-Id", requestID+"_ask")
-	r, err := client.Do(sendReq)
+	r, err := sseClient.Do(sendReq)
 	if err != nil {
 		t.Fatalf("send qa message: %v", err)
 	}
@@ -162,6 +168,9 @@ func assertQAKnowledgeRAGResponse(t *testing.T, ctx context.Context, client *htt
 			eventType := strings.TrimPrefix(line, "event: ")
 			seen[eventType] = true
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("SSE stream scanner error: %v", err)
 	}
 	required := []string{"message.created", "answer.completed"}
 	for _, event := range required {
