@@ -285,6 +285,7 @@ services:
       PARSER_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
       PARSER_BACKEND: ${PARSER_BACKEND:-ppstructurev3}
       PARSER_LOAD_BACKEND_ON_STARTUP: ${PARSER_LOAD_BACKEND_ON_STARTUP:-false}
+      PARSER_MAX_DOCUMENT_BYTES: ${PARSER_MAX_DOCUMENT_BYTES:-20971520}
     ports:
       - "${PARSER_HTTP_PORT:-8087}:8087"
     healthcheck:
