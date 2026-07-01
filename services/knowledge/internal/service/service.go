@@ -205,6 +205,14 @@ func (s *Service) CreateKnowledgeBase(ctx context.Context, reqCtx RequestContext
 	return kb, nil
 }
 
+func (s *Service) GetGlobalStats(ctx context.Context) (GlobalStats, error) {
+	stats, err := s.repo.GetGlobalStats(ctx)
+	if err != nil {
+		return GlobalStats{}, repositoryError(err)
+	}
+	return stats, nil
+}
+
 func (s *Service) ListKnowledgeBases(ctx context.Context, reqCtx RequestContext, input ListKnowledgeBasesInput) (KnowledgeBaseList, error) {
 	scope, err := readScope(reqCtx)
 	if err != nil {

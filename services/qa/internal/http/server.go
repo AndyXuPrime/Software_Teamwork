@@ -44,7 +44,7 @@ type ResourceService interface {
 	TestLLMConnection(context.Context, string, service.LLMProfileTestInput) (service.LLMProfileTestResult, error)
 	CreateRetrievalTestRun(context.Context, string, service.RetrievalTestInput) (service.RetrievalTestRun, error)
 	GetRetrievalTestRun(context.Context, string, string) (service.RetrievalTestRun, error)
-	GetMetricsOverview(context.Context, int) (service.MetricsOverview, error)
+	GetMetricsOverview(context.Context, string, int) (service.MetricsOverview, error)
 	GetMetricsTrend(context.Context, int) (service.MetricsTrend, error)
 	GetTopQueries(context.Context, int, int) ([]service.TopQuery, error)
 	GetIntentDistribution(context.Context, int) ([]service.IntentDistribution, error)

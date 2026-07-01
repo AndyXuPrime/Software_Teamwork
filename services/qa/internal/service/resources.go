@@ -361,6 +361,8 @@ type MetricsOverview struct {
 	ConversationCount  int   `json:"conversationCount"`
 	AvgLatencyMS       int64 `json:"avgLatencyMs"`
 	ActiveUsersToday   int   `json:"activeUsersToday"`
+	KnowledgeBaseCount int   `json:"knowledgeBaseCount"`
+	DocumentCount      int   `json:"documentCount"`
 }
 
 type MetricsTrendPoint struct {
@@ -400,7 +402,7 @@ type ResourceRepository interface {
 	SaveLLMConnectionTest(context.Context, string, LLMProfileTestResult) (LLMProfileTestResult, error)
 	SaveRetrievalTestRun(context.Context, string, RetrievalTestInput, []RetrievalTestResult, time.Duration, error) (RetrievalTestRun, error)
 	GetRetrievalTestRun(context.Context, string, string) (RetrievalTestRun, error)
-	GetMetricsOverview(context.Context, int) (MetricsOverview, error)
+	GetMetricsOverview(context.Context, string, int) (MetricsOverview, error)
 	GetMetricsTrend(context.Context, int) (MetricsTrend, error)
 	GetTopQueries(context.Context, int, int) ([]TopQuery, error)
 	GetIntentDistribution(context.Context, int) ([]IntentDistribution, error)
@@ -414,12 +416,17 @@ type CitationSourceChecker interface {
 	CheckCitationSources(context.Context, string, []string) (map[string]bool, error)
 }
 
+type KnowledgeStatsProvider interface {
+	GetStats(context.Context, string) (kbCount int, docCount int, err error)
+}
+
 type ActiveRunCanceller interface{ CancelActiveRun(string) }
 
 type ResourceService struct {
-	repository    ResourceRepository
-	retriever     KnowledgeRetriever
-	sourceChecker CitationSourceChecker
+	repository     ResourceRepository
+	retriever      KnowledgeRetriever
+	sourceChecker  CitationSourceChecker
+	knowledgeStats KnowledgeStatsProvider
 	llmTester     LLMConnectionTester
 	bootstrap     RuntimeLLMConfig
 	canceller     ActiveRunCanceller
@@ -431,7 +438,8 @@ func NewResourceService(repository ResourceRepository, retriever KnowledgeRetrie
 		return nil, errors.New("resource repository, retriever, LLM tester and run canceller are required")
 	}
 	sourceChecker, _ := retriever.(CitationSourceChecker)
-	return &ResourceService{repository: repository, retriever: retriever, sourceChecker: sourceChecker, llmTester: tester, bootstrap: bootstrap, canceller: canceller, now: time.Now}, nil
+	statsProvider, _ := retriever.(KnowledgeStatsProvider)
+	return &ResourceService{repository: repository, retriever: retriever, sourceChecker: sourceChecker, knowledgeStats: statsProvider, llmTester: tester, bootstrap: bootstrap, canceller: canceller, now: time.Now}, nil
 }
 
 func (s *ResourceService) GetResponseRun(ctx context.Context, userID, id string) (ResponseRun, error) {
@@ -733,8 +741,22 @@ func validateRetrievalSettings(value RetrievalSettings) error {
 func (s *ResourceService) GetRetrievalTestRun(ctx context.Context, userID, id string) (RetrievalTestRun, error) {
 	return s.repository.GetRetrievalTestRun(ctx, userID, id)
 }
-func (s *ResourceService) GetMetricsOverview(ctx context.Context, days int) (MetricsOverview, error) {
-	return s.repository.GetMetricsOverview(ctx, days)
+func (s *ResourceService) GetMetricsOverview(ctx context.Context, userID string, days int) (MetricsOverview, error) {
+	overview, err := s.repository.GetMetricsOverview(ctx, userID, days)
+	if err != nil {
+		return MetricsOverview{}, err
+	}
+	// Enrich with knowledge service counts when available.
+	// Calls are best-effort: a failure leaves the count at zero
+	// rather than rejecting the entire overview response.
+	if s.knowledgeStats != nil {
+		kbCount, docCount, statsErr := s.knowledgeStats.GetStats(ctx, userID)
+		if statsErr == nil {
+			overview.KnowledgeBaseCount = kbCount
+			overview.DocumentCount = docCount
+		}
+	}
+	return overview, nil
 }
 func (s *ResourceService) GetMetricsTrend(ctx context.Context, days int) (MetricsTrend, error) {
 	return s.repository.GetMetricsTrend(ctx, days)

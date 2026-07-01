@@ -195,6 +195,11 @@ type ProcessingJob struct {
 	UpdatedAt            time.Time
 }
 
+type GlobalStats struct {
+	KnowledgeBaseCount int64 `json:"knowledgeBaseCount"`
+	DocumentCount      int64 `json:"documentCount"`
+}
+
 type KnowledgeBaseList struct {
 	Items []KnowledgeBase
 	Page  Page
@@ -422,6 +427,7 @@ type DeleteCleanupRequeueResult struct {
 
 type Repository interface {
 	CreateKnowledgeBase(ctx context.Context, input CreateKnowledgeBaseRecord) (KnowledgeBase, error)
+GetGlobalStats(ctx context.Context) (GlobalStats, error)
 	ListKnowledgeBases(ctx context.Context, scope AccessScope, page PageInput) (KnowledgeBaseList, error)
 	GetKnowledgeBase(ctx context.Context, id string, scope AccessScope) (KnowledgeBase, error)
 	UpdateKnowledgeBase(ctx context.Context, input UpdateKnowledgeBaseRecord, scope AccessScope) (KnowledgeBase, error)

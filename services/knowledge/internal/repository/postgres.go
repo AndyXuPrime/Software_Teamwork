@@ -220,6 +220,18 @@ func (r *PostgresRepository) CreateKnowledgeBase(ctx context.Context, input serv
 	return knowledgeBaseFromCreateRow(row), nil
 }
 
+func (r *PostgresRepository) GetGlobalStats(ctx context.Context) (service.GlobalStats, error) {
+	kbCount, err := r.queries.CountKnowledgeBasesGlobal(ctx)
+	if err != nil {
+		return service.GlobalStats{}, wrapPostgresError("count knowledge bases global", err)
+	}
+	docCount, err := r.queries.CountDocumentsGlobal(ctx)
+	if err != nil {
+		return service.GlobalStats{}, wrapPostgresError("count documents global", err)
+	}
+	return service.GlobalStats{KnowledgeBaseCount: kbCount, DocumentCount: docCount}, nil
+}
+
 func (r *PostgresRepository) ListKnowledgeBases(ctx context.Context, scope service.AccessScope, page service.PageInput) (service.KnowledgeBaseList, error) {
 	limit, offset, err := limitOffset(page)
 	if err != nil {
@@ -646,7 +658,7 @@ func (r *PostgresRepository) CreateDocumentWithJob(ctx context.Context, input se
 	if err := tx.Commit(ctx); err != nil {
 		return service.KnowledgeDocument{}, service.ProcessingJob{}, wrapPostgresError("commit document upload transaction", err)
 	}
-	return documentFromCreateRow(docRow), processingJobFromRow(jobRow), nil
+	return documentFromCreateRow(docRow), processingJobFromCreateRow(jobRow), nil
 }
 
 func (r *PostgresRepository) MarkDocumentJobFailed(ctx context.Context, documentID string, jobID string, expectedAttempts *int32, code string, message string, failedAt time.Time) error {
@@ -1176,6 +1188,29 @@ func documentFromCreateRow(row sqlc.CreateDocumentRow) service.KnowledgeDocument
 }
 
 func processingJobFromRow(row sqlc.ProcessingJob) service.ProcessingJob {
+	return service.ProcessingJob{
+		ID:                   row.ID,
+		KnowledgeBaseID:      row.KnowledgeBaseID,
+		DocumentID:           textPtr(row.DocumentID),
+		JobType:              row.JobType,
+		Status:               row.Status,
+		CurrentStage:         textPtr(row.CurrentStage),
+		ProgressPercent:      row.ProgressPercent,
+		Message:              textPtr(row.Message),
+		ErrorCode:            textPtr(row.ErrorCode),
+		ErrorMessage:         textPtr(row.ErrorMessage),
+		Attempts:             row.Attempts,
+		MaxAttempts:          row.MaxAttempts,
+		ParserConfigID:       textPtr(row.ParserConfigID),
+		ParserConfigSnapshot: cloneJSON(row.ParserConfigSnapshot, "{}"),
+		StartedAt:            timePtr(row.StartedAt),
+		FinishedAt:           timePtr(row.FinishedAt),
+		CreatedAt:            row.CreatedAt.Time,
+		UpdatedAt:            row.UpdatedAt.Time,
+	}
+}
+
+func processingJobFromCreateRow(row sqlc.CreateProcessingJobRow) service.ProcessingJob {
 	return service.ProcessingJob{
 		ID:                   row.ID,
 		KnowledgeBaseID:      row.KnowledgeBaseID,

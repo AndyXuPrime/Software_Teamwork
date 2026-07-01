@@ -76,3 +76,52 @@ func TestCheckCitationSourcesPropagatesContextAndMapsVisibility(t *testing.T) {
 		t.Fatalf("paths were not checked: %+v", seen)
 	}
 }
+
+func TestGetStatsPropagatesServiceHeadersAndMapsCounts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/v1/knowledge-statistics" {
+			t.Errorf("path=%q", r.URL.Path)
+		}
+		for name, want := range map[string]string{"X-Service-Token": "service-token", "X-Caller-Service": "qa"} {
+			if got := r.Header.Get(name); got != want {
+				t.Errorf("%s=%q want %q", name, got, want)
+			}
+		}
+		if got := r.Header.Get("X-User-Id"); got != "" {
+			t.Errorf("X-User-Id=%q want empty service-level request", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"knowledgeBaseCount":7,"documentCount":42},"requestId":"req-stats"}`))
+	}))
+	defer server.Close()
+	client, err := New(server.URL, "service-token", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kbCount, docCount, err := client.GetStats(context.Background(), "user-ignored")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kbCount != 7 || docCount != 42 {
+		t.Fatalf("counts=(%d,%d) want (7,42)", kbCount, docCount)
+	}
+}
+
+func TestGetStatsReturnsErrorOnNonOK(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"error":{"code":"dependency_error"}}`))
+	}))
+	defer server.Close()
+	client, err := New(server.URL, "service-token", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kbCount, docCount, err := client.GetStats(context.Background(), "user-ignored")
+	if err == nil {
+		t.Fatal("expected non-OK stats response to return error")
+	}
+	if kbCount != 0 || docCount != 0 {
+		t.Fatalf("counts=(%d,%d) want zero counts on error", kbCount, docCount)
+	}
+}

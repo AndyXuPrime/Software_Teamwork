@@ -127,7 +127,7 @@ func (f fakeResourceServiceWithCreate) CreateRetrievalTestRun(ctx context.Contex
 func (fakeResourceService) GetRetrievalTestRun(context.Context, string, string) (service.RetrievalTestRun, error) {
 	return service.RetrievalTestRun{}, nil
 }
-func (fakeResourceService) GetMetricsOverview(context.Context, int) (service.MetricsOverview, error) {
+func (fakeResourceService) GetMetricsOverview(context.Context, string, int) (service.MetricsOverview, error) {
 	return service.MetricsOverview{}, nil
 }
 func (fakeResourceService) GetMetricsTrend(context.Context, int) (service.MetricsTrend, error) {
@@ -664,4 +664,119 @@ func newTestServerWithResources(t *testing.T, qa fakeQAService, resources Resour
 		t.Fatal(err)
 	}
 	return server
+}
+
+func newTestServerSettingsOpen(t *testing.T, qa fakeQAService, resources ResourceService) *Server {
+	t.Helper()
+	if qa.create == nil {
+		qa.create = func(context.Context, string, string) (service.Conversation, error) {
+			return service.Conversation{}, nil
+		}
+	}
+	if qa.ask == nil {
+		qa.ask = func(context.Context, string, string, service.AskInput, service.ProgressObserver) (service.AskResult, error) {
+			return service.AskResult{}, nil
+		}
+	}
+	server, err := NewServer(qa, fakeSettingsService{}, resources, Config{MaxRequestBytes: 4096, ServiceToken: "test-service-token", SettingsOpen: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return server
+}
+
+func TestMetricsEndpointRequiresSettingsPermission(t *testing.T) {
+	server := newTestServer(t, fakeQAService{})
+	for _, tc := range []struct {
+		method, path string
+	}{
+		{http.MethodGet, "/internal/v1/qa-metrics/overview"},
+		{http.MethodGet, "/internal/v1/qa-metrics/trend"},
+		{http.MethodGet, "/internal/v1/qa-metrics/top-queries"},
+		{http.MethodGet, "/internal/v1/qa-metrics/intent-distribution"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(tc.method, tc.path, nil)
+			request.Header.Set("X-User-Id", "user-1")
+			request.Header.Set("X-Service-Token", "test-service-token")
+			server.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusForbidden {
+				t.Fatalf("%s %s: expected 403, got %d", tc.method, tc.path, recorder.Code)
+			}
+		})
+	}
+}
+
+func TestMetricsOverviewReturnsSuccessWithPermission(t *testing.T) {
+	resources := fakeResourceService{}
+	server := newTestServerSettingsOpen(t, fakeQAService{}, resources)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-metrics/overview", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var body struct {
+		Data      service.MetricsOverview `json:"data"`
+		RequestID string                  `json:"requestId"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.RequestID == "" {
+		t.Fatal("expected requestId in response")
+	}
+}
+
+func TestMetricsDaysValidation(t *testing.T) {
+	server := newTestServerSettingsOpen(t, fakeQAService{}, fakeResourceService{})
+	for _, tc := range []string{
+		"/internal/v1/qa-metrics/overview?days=0",
+		"/internal/v1/qa-metrics/overview?days=400",
+		"/internal/v1/qa-metrics/trend?days=-1",
+	} {
+		t.Run(tc, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, tc, nil)
+			request.Header.Set("X-User-Id", "user-1")
+			request.Header.Set("X-Service-Token", "test-service-token")
+			server.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("%s: expected 400, got %d", tc, recorder.Code)
+			}
+		})
+	}
+}
+
+func TestTopQueriesLimitValidation(t *testing.T) {
+	server := newTestServerSettingsOpen(t, fakeQAService{}, fakeResourceService{})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-metrics/top-queries?limit=200", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestMetricsTrendDoesNotLeakQueryContent(t *testing.T) {
+	server := newTestServerSettingsOpen(t, fakeQAService{}, fakeResourceService{})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-metrics/trend?days=7", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", recorder.Code)
+	}
+	body := recorder.Body.String()
+	for _, forbidden := range []string{"secret", "token", "prompt", "apiKey", "objectKey"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("metrics response leaked %q", forbidden)
+		}
+	}
 }

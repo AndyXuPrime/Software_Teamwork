@@ -73,6 +73,12 @@ FROM knowledge_bases kb
 WHERE kb.deleted_at IS NULL
   AND (sqlc.arg(can_read_all)::boolean OR kb.created_by = sqlc.arg(user_id));
 
+-- name: CountKnowledgeBasesGlobal :one
+SELECT COUNT(*)::bigint FROM knowledge_bases WHERE deleted_at IS NULL;
+
+-- name: CountDocumentsGlobal :one
+SELECT COUNT(*)::bigint FROM knowledge_documents WHERE deleted_at IS NULL;
+
 -- name: GetKnowledgeBase :one
 SELECT
   kb.id,

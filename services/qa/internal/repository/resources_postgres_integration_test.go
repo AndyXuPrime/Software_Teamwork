@@ -152,7 +152,7 @@ func TestDocumentedResourceRoundTrip(t *testing.T) {
 	if loadedResult.Score != retrievalScore || loadedResult.VectorScore != nil || loadedResult.RerankScore == nil || *loadedResult.RerankScore != retrievalScore || loadedResult.SectionPath != "1 / 2" {
 		t.Fatalf("retrieval result lost display fields: %+v", loadedResult)
 	}
-	if _, err = repo.GetMetricsOverview(ctx, 1); err != nil {
+	if _, err = repo.GetMetricsOverview(ctx, "integration-user", 1); err != nil {
 		t.Fatal(err)
 	}
 }
