@@ -190,6 +190,8 @@ services:
         condition: service_completed_successfully
       migrate-document:
         condition: service_completed_successfully
+      migrate-qa:
+        condition: service_completed_successfully
     restart: "no"
 
   seed-local-ai:

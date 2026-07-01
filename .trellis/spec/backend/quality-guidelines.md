@@ -303,6 +303,13 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - PostgreSQL seed scripts may create local/demo data only after service-owned
   migrations have applied; production seed or secret material does not belong in
   `deploy/seeds`.
+- When a local seed SQL script connects to a service database with `\connect`,
+  the matching Compose seed service must depend on that service's migration job
+  with `condition: service_completed_successfully`. Do not rely on implicit
+  migration ordering or on another seed entrypoint to have prepared the schema.
+- Local/demo seed changes should have a deterministic contract checker that
+  validates required resource IDs, idempotency markers, documentation coverage,
+  Compose migration dependencies, and forbidden secret/private-content patterns.
 - File Service runs with PostgreSQL metadata in the root local Compose baseline,
   so it must receive `FILE_INTERNAL_SERVICE_TOKEN` or `INTERNAL_SERVICE_TOKEN`.
   Callers that may reach File Service without passing through gateway, such as
@@ -329,6 +336,7 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | Gateway readiness fails | Check Redis and auth first, then search logs by `X-Request-Id`. |
 | Auth/document/ai-gateway readiness fails | Inspect PostgreSQL container, migration job, and service logs. |
 | Seed data insert fails | Keep scripts idempotent with `ON CONFLICT` and verify migrations ran first. |
+| Seed SQL connects to a service database but `seed-local` does not depend on that service migration | Add the missing `depends_on` migration edge or split the seed into a separate entrypoint that waits for the correct migration. |
 | Optional AI Gateway is not running | Core startup may proceed, but QA/model routes should document dependency failure risk. |
 
 ### 5. Good/Base/Bad Cases
@@ -346,6 +354,11 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 ### 6. Tests Required
 
 - Run Compose config parsing for default and optional profiles.
+- Run the local seed contract checker and its unit tests when seed SQL, seed
+  docs, or seed Compose dependencies change.
+- When Docker is available, run an isolated Compose seed validation that applies
+  migrations, reruns the seed entrypoint for idempotency, and exercises targeted
+  cleanup/reset. If skipped, record the exact Docker or image blocker.
 - Search Docker and docs for duplicate image tags such as `redis:7` vs
   `redis:7-alpine`, `alpine:3.21` vs `alpine:3.22`, and MinIO server/client
   tags before declaring version cleanup complete.
