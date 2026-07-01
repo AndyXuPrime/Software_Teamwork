@@ -2,6 +2,7 @@ package repository
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/service"
@@ -32,5 +33,21 @@ func TestApplyQAConfigVersionCompatibilityFieldsMirrorsAgentConfig(t *testing.T)
 	config.Agent.EnabledToolNames[0] = "mutated"
 	if config.EnabledToolNames[0] != "search_knowledge" {
 		t.Fatalf("enabledToolNames aliases agent slice: %#v", config.EnabledToolNames)
+	}
+}
+
+func TestMessageCitationLegacySelectDoesNotRequireSnapshotMigrationColumns(t *testing.T) {
+	for _, column := range []string{
+		"ci.response_run_id",
+		"ci.content_preview",
+		"ci.is_source_available",
+		"ci.source_unavailable_reason",
+	} {
+		if strings.Contains(messageCitationLegacySelect, column) {
+			t.Fatalf("legacy message citation query should not require migration 0006 column %q: %s", column, messageCitationLegacySelect)
+		}
+	}
+	if strings.Contains(messageCitationLegacySelect, "FALSE AS is_source_available") {
+		t.Fatalf("legacy message citation query should not hard-code source availability to false: %s", messageCitationLegacySelect)
 	}
 }

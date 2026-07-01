@@ -186,7 +186,7 @@ func TestOwnerAuthorizationBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = repo.pool.Exec(ctx, `INSERT INTO citations(id,message_id,citation_no,doc_name) VALUES($1,$2,1,$3)`, citationID, assistantMessageID, "private source"); err != nil {
+	if _, err = repo.pool.Exec(ctx, `INSERT INTO citations(id,message_id,response_run_id,citation_no,doc_name,quote_text,content_preview,is_source_available,source_unavailable_reason,metadata) VALUES($1,$2,$3,1,$4,$5,$6,false,$7,$8::jsonb)`, citationID, assistantMessageID, run.ID, "private source", "saved quote", "saved quote", "source_deleted_or_forbidden", `{"pageLabel":"5","objectKey":"secret"}`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -213,6 +213,22 @@ func TestOwnerAuthorizationBoundaries(t *testing.T) {
 	lookup, err := repo.LookupCitations(ctx, otherUserID, []string{citationID})
 	if err != nil || len(lookup) != 0 {
 		t.Fatalf("cross-user citation lookup=%+v err=%v", lookup, err)
+	}
+	ownerCitation, err := repo.GetCitation(ctx, ownerID, citationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ownerCitation.IsSourceAvailable || ownerCitation.Source == nil || ownerCitation.Source.Available || ownerCitation.Source.Reason != "source_deleted_or_forbidden" {
+		t.Fatalf("unexpected unavailable citation source: %+v", ownerCitation)
+	}
+	if ownerCitation.ContentPreview != "saved quote" || ownerCitation.Content != "saved quote" {
+		t.Fatalf("saved citation snapshot not preserved: %+v", ownerCitation)
+	}
+	if ownerCitation.Metadata["pageLabel"] != "5" {
+		t.Fatalf("safe citation metadata missing: %#v", ownerCitation.Metadata)
+	}
+	if _, ok := ownerCitation.Metadata["objectKey"]; ok {
+		t.Fatalf("citation leaked object key metadata: %#v", ownerCitation.Metadata)
 	}
 
 	if _, err = repo.CancelResponseRun(ctx, ownerID, run.ID); err != nil {

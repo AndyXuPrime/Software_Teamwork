@@ -16,6 +16,7 @@ import (
 )
 
 type Client struct {
+	baseURL      string
 	endpoint     string
 	serviceToken string
 	http         *http.Client
@@ -32,7 +33,8 @@ func New(baseURL, serviceToken string, timeout time.Duration) (*Client, error) {
 	if timeout <= 0 {
 		return nil, errors.New("knowledge request timeout must be positive")
 	}
-	return &Client{endpoint: strings.TrimRight(parsed.String(), "/") + "/internal/v1/knowledge-queries", serviceToken: serviceToken, http: &http.Client{Timeout: timeout}}, nil
+	normalizedBaseURL := strings.TrimRight(parsed.String(), "/")
+	return &Client{baseURL: normalizedBaseURL, endpoint: normalizedBaseURL + "/internal/v1/knowledge-queries", serviceToken: serviceToken, http: &http.Client{Timeout: timeout}}, nil
 }
 
 func (c *Client) Retrieve(ctx context.Context, userID string, input service.RetrievalTestInput) ([]service.RetrievalTestResult, error) {
@@ -60,12 +62,7 @@ func (c *Client) Retrieve(ctx context.Context, userID string, input service.Retr
 		return nil, fmt.Errorf("create knowledge query: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Service-Token", c.serviceToken)
-	req.Header.Set("X-Caller-Service", "qa")
-	req.Header.Set("X-User-Id", userID)
-	if requestID := service.RequestIDFromContext(ctx); requestID != "" {
-		req.Header.Set("X-Request-Id", requestID)
-	}
+	c.setTrustedHeaders(ctx, req, userID)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("call knowledge service: %w", err)
@@ -128,6 +125,58 @@ func (c *Client) Retrieve(ctx context.Context, userID string, input service.Retr
 		results = append(results, service.RetrievalTestResult{RankNo: i + 1, KnowledgeBaseID: item.KnowledgeBaseID, DocumentID: item.DocumentID, DocID: item.DocumentID, ChunkID: item.ChunkID, DocumentName: item.DocumentName, DocName: item.DocumentName, SectionPath: item.SectionPath, Score: item.Score, VectorScore: vectorScore, RerankScore: rerankScore, ContentPreview: item.ContentPreview, Text: item.ContentPreview, Metadata: metadata})
 	}
 	return results, nil
+}
+
+func (c *Client) CheckCitationSources(ctx context.Context, userID string, documentIDs []string) (map[string]bool, error) {
+	availability := make(map[string]bool, len(documentIDs))
+	for _, rawID := range documentIDs {
+		documentID := strings.TrimSpace(rawID)
+		if documentID == "" {
+			continue
+		}
+		if _, exists := availability[documentID]; exists {
+			continue
+		}
+		availability[documentID] = false
+		endpoint := c.baseURL + "/internal/v1/documents/" + url.PathEscape(documentID)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return availability, fmt.Errorf("create document visibility check: %w", err)
+		}
+		c.setTrustedHeaders(ctx, req, userID)
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return availability, fmt.Errorf("call knowledge document visibility: %w", err)
+		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		_ = resp.Body.Close()
+		switch {
+		case resp.StatusCode >= 200 && resp.StatusCode < 300:
+			availability[documentID] = true
+		case resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound:
+			availability[documentID] = false
+		case resp.StatusCode >= 400 && resp.StatusCode < 500:
+			return availability, fmt.Errorf("knowledge document visibility returned HTTP %d", resp.StatusCode)
+		default:
+			return availability, fmt.Errorf("knowledge document visibility returned HTTP %d", resp.StatusCode)
+		}
+	}
+	return availability, nil
+}
+
+func (c *Client) setTrustedHeaders(ctx context.Context, req *http.Request, userID string) {
+	req.Header.Set("X-Service-Token", c.serviceToken)
+	req.Header.Set("X-Caller-Service", "qa")
+	req.Header.Set("X-User-Id", userID)
+	if requestID := service.RequestIDFromContext(ctx); requestID != "" {
+		req.Header.Set("X-Request-Id", requestID)
+	}
+	if roles := service.UserRolesFromContext(ctx); roles != "" {
+		req.Header.Set("X-User-Roles", roles)
+	}
+	if permissions := service.UserPermissionsFromContext(ctx); permissions != "" {
+		req.Header.Set("X-User-Permissions", permissions)
+	}
 }
 
 func decodeErrorCode(body io.Reader) (string, string) {

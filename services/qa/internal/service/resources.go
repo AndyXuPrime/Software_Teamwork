@@ -30,31 +30,147 @@ type StreamEvent struct {
 }
 
 type Citation struct {
-	ID                string          `json:"id"`
-	MessageID         string          `json:"messageId"`
-	CitationNo        int             `json:"citationNo"`
-	DocumentID        string          `json:"documentId,omitempty"`
-	DocumentName      string          `json:"documentName,omitempty"`
-	KnowledgeBaseID   string          `json:"knowledgeBaseId,omitempty"`
-	ChunkID           string          `json:"chunkId,omitempty"`
-	SectionPath       string          `json:"sectionPath,omitempty"`
-	Text              string          `json:"text,omitempty"`
-	ContentPreview    string          `json:"contentPreview,omitempty"`
-	Context           string          `json:"context,omitempty"`
-	PageNumber        *int            `json:"pageNumber,omitempty"`
-	Score             *float64        `json:"score,omitempty"`
-	RerankScore       *float64        `json:"rerankScore,omitempty"`
-	ChunkType         string          `json:"chunkType,omitempty"`
-	IsSourceAvailable bool            `json:"isSourceAvailable"`
-	Metadata          map[string]any  `json:"metadata"`
-	Content           string          `json:"content,omitempty"`
-	Source            *CitationSource `json:"source,omitempty"`
+	ID                      string          `json:"id"`
+	MessageID               string          `json:"messageId"`
+	ResponseRunID           string          `json:"-"`
+	CitationNo              int             `json:"citationNo"`
+	DocumentID              string          `json:"documentId,omitempty"`
+	DocID                   string          `json:"docId,omitempty"`
+	DocumentName            string          `json:"documentName,omitempty"`
+	DocName                 string          `json:"docName,omitempty"`
+	KnowledgeBaseID         string          `json:"knowledgeBaseId,omitempty"`
+	ChunkID                 string          `json:"chunkId,omitempty"`
+	SectionPath             string          `json:"sectionPath,omitempty"`
+	Text                    string          `json:"text,omitempty"`
+	ContentPreview          string          `json:"contentPreview,omitempty"`
+	Context                 string          `json:"context,omitempty"`
+	PageNumber              *int            `json:"pageNumber,omitempty"`
+	Score                   *float64        `json:"score,omitempty"`
+	RerankScore             *float64        `json:"rerankScore,omitempty"`
+	ChunkType               string          `json:"chunkType,omitempty"`
+	IsSourceAvailable       bool            `json:"isSourceAvailable"`
+	SourceUnavailableReason string          `json:"-"`
+	Metadata                map[string]any  `json:"metadata"`
+	Content                 string          `json:"content,omitempty"`
+	Source                  *CitationSource `json:"source,omitempty"`
 }
 
 type CitationSource struct {
 	Available        bool   `json:"available"`
 	Reason           string `json:"reason,omitempty"`
 	DownloadEndpoint string `json:"downloadEndpoint,omitempty"`
+}
+
+const citationSourceUnavailableReason = "source_deleted_or_forbidden"
+
+func NormalizeCitation(item Citation) Citation {
+	item.ID = strings.TrimSpace(item.ID)
+	item.MessageID = strings.TrimSpace(item.MessageID)
+	item.ResponseRunID = strings.TrimSpace(item.ResponseRunID)
+	item.DocumentID = strings.TrimSpace(firstNonBlank(item.DocumentID, item.DocID))
+	item.DocID = item.DocumentID
+	item.DocumentName = strings.TrimSpace(firstNonBlank(item.DocumentName, item.DocName))
+	item.DocName = item.DocumentName
+	item.KnowledgeBaseID = strings.TrimSpace(item.KnowledgeBaseID)
+	item.ChunkID = strings.TrimSpace(item.ChunkID)
+	item.SectionPath = strings.TrimSpace(item.SectionPath)
+	item.Text = strings.TrimSpace(item.Text)
+	item.ContentPreview = strings.TrimSpace(firstNonBlank(item.ContentPreview, item.Text))
+	item.Context = strings.TrimSpace(item.Context)
+	item.ChunkType = strings.TrimSpace(item.ChunkType)
+	item.SourceUnavailableReason = strings.TrimSpace(item.SourceUnavailableReason)
+	item.Metadata = SanitizeCitationMetadata(item.Metadata)
+	if item.Content == "" {
+		item.Content = item.ContentPreview
+	}
+	if item.IsSourceAvailable && item.DocumentID == "" {
+		item.IsSourceAvailable = false
+	}
+	item.Source = &CitationSource{Available: item.IsSourceAvailable}
+	if item.IsSourceAvailable {
+		item.Source.DownloadEndpoint = "/api/v1/documents/" + item.DocumentID + "/content"
+	} else {
+		if item.SourceUnavailableReason == "" {
+			item.SourceUnavailableReason = citationSourceUnavailableReason
+		}
+		item.Source.Reason = item.SourceUnavailableReason
+	}
+	return item
+}
+
+func ApplyCitationSourceAvailability(item Citation, available bool) Citation {
+	documentID := strings.TrimSpace(firstNonBlank(item.DocumentID, item.DocID))
+	item.DocumentID = documentID
+	item.DocID = documentID
+	item.IsSourceAvailable = available && documentID != ""
+	if item.IsSourceAvailable {
+		item.SourceUnavailableReason = ""
+	} else if strings.TrimSpace(item.SourceUnavailableReason) == "" {
+		item.SourceUnavailableReason = citationSourceUnavailableReason
+	}
+	return NormalizeCitation(item)
+}
+
+func SanitizeCitationMetadata(metadata map[string]any) map[string]any {
+	if len(metadata) == 0 {
+		return map[string]any{}
+	}
+	cleaned := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		key = strings.TrimSpace(key)
+		if key == "" || isSensitiveCitationMetadataKey(key) {
+			continue
+		}
+		if safe, ok := sanitizeCitationMetadataValue(value); ok {
+			cleaned[key] = safe
+		}
+	}
+	if cleaned == nil {
+		return map[string]any{}
+	}
+	return cleaned
+}
+
+func sanitizeCitationMetadataValue(value any) (any, bool) {
+	switch typed := value.(type) {
+	case nil, string, bool, float64, float32, int, int64, int32, uint, uint64, uint32:
+		return typed, true
+	case map[string]any:
+		return SanitizeCitationMetadata(typed), true
+	case []any:
+		values := make([]any, 0, len(typed))
+		for _, item := range typed {
+			if safe, ok := sanitizeCitationMetadataValue(item); ok {
+				values = append(values, safe)
+			}
+		}
+		return values, true
+	default:
+		return nil, false
+	}
+}
+
+func isSensitiveCitationMetadataKey(key string) bool {
+	normalized := strings.NewReplacer("_", "", "-", "", " ", "", ".", "").Replace(strings.ToLower(key))
+	for _, marker := range []string{
+		"objectkey", "storagekey", "bucket", "internalurl", "signedurl", "presigned",
+		"url", "vector", "embedding", "fileref", "fileid", "rawpayload", "payload",
+		"prompt", "secret", "token", "apikey",
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func firstNonBlank(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 type AgentToolCall struct {
@@ -255,22 +371,29 @@ type ResourceRepository interface {
 type KnowledgeRetriever interface {
 	Retrieve(context.Context, string, RetrievalTestInput) ([]RetrievalTestResult, error)
 }
+
+type CitationSourceChecker interface {
+	CheckCitationSources(context.Context, string, []string) (map[string]bool, error)
+}
+
 type ActiveRunCanceller interface{ CancelActiveRun(string) }
 
 type ResourceService struct {
-	repository ResourceRepository
-	retriever  KnowledgeRetriever
-	llmTester  LLMConnectionTester
-	bootstrap  RuntimeLLMConfig
-	canceller  ActiveRunCanceller
-	now        func() time.Time
+	repository    ResourceRepository
+	retriever     KnowledgeRetriever
+	sourceChecker CitationSourceChecker
+	llmTester     LLMConnectionTester
+	bootstrap     RuntimeLLMConfig
+	canceller     ActiveRunCanceller
+	now           func() time.Time
 }
 
 func NewResourceService(repository ResourceRepository, retriever KnowledgeRetriever, tester LLMConnectionTester, bootstrap RuntimeLLMConfig, canceller ActiveRunCanceller) (*ResourceService, error) {
 	if repository == nil || retriever == nil || tester == nil || canceller == nil {
 		return nil, errors.New("resource repository, retriever, LLM tester and run canceller are required")
 	}
-	return &ResourceService{repository: repository, retriever: retriever, llmTester: tester, bootstrap: bootstrap, canceller: canceller, now: time.Now}, nil
+	sourceChecker, _ := retriever.(CitationSourceChecker)
+	return &ResourceService{repository: repository, retriever: retriever, sourceChecker: sourceChecker, llmTester: tester, bootstrap: bootstrap, canceller: canceller, now: time.Now}, nil
 }
 
 func (s *ResourceService) GetResponseRun(ctx context.Context, userID, id string) (ResponseRun, error) {
@@ -287,17 +410,95 @@ func (s *ResourceService) ListStreamEvents(ctx context.Context, userID, sessionI
 	return s.repository.ListStreamEvents(ctx, userID, sessionID, runID, after)
 }
 func (s *ResourceService) ListMessageCitations(ctx context.Context, userID, id string) ([]Citation, error) {
-	return s.repository.ListMessageCitations(ctx, userID, id)
+	items, err := s.repository.ListMessageCitations(ctx, userID, id)
+	if err != nil {
+		return nil, err
+	}
+	return revalidateCitationSources(ctx, userID, s.sourceChecker, items), nil
 }
 func (s *ResourceService) GetCitation(ctx context.Context, userID, id string) (Citation, error) {
-	return s.repository.GetCitation(ctx, userID, id)
+	item, err := s.repository.GetCitation(ctx, userID, id)
+	if err != nil {
+		return Citation{}, err
+	}
+	items := revalidateCitationSources(ctx, userID, s.sourceChecker, []Citation{item})
+	return items[0], nil
 }
 func (s *ResourceService) LookupCitations(ctx context.Context, userID string, ids []string) ([]Citation, error) {
 	if len(ids) == 0 || len(ids) > 100 {
 		return nil, ValidationError(map[string]string{"citationIds": "must contain between 1 and 100 items"})
 	}
-	return s.repository.LookupCitations(ctx, userID, ids)
+	items, err := s.repository.LookupCitations(ctx, userID, ids)
+	if err != nil {
+		return nil, err
+	}
+	return revalidateCitationSources(ctx, userID, s.sourceChecker, items), nil
 }
+
+func revalidateCitationSources(ctx context.Context, userID string, sourceChecker CitationSourceChecker, items []Citation) []Citation {
+	if len(items) == 0 {
+		return items
+	}
+	documentIDs := make([]string, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		documentID := strings.TrimSpace(firstNonBlank(item.DocumentID, item.DocID))
+		if documentID == "" {
+			continue
+		}
+		if _, ok := seen[documentID]; ok {
+			continue
+		}
+		seen[documentID] = struct{}{}
+		documentIDs = append(documentIDs, documentID)
+	}
+	checkedOK := false
+	availability := map[string]bool{}
+	if sourceChecker != nil && len(documentIDs) > 0 {
+		checked, err := sourceChecker.CheckCitationSources(ctx, userID, documentIDs)
+		if err == nil && checked != nil {
+			availability = checked
+			checkedOK = true
+		}
+	}
+	normalized := make([]Citation, 0, len(items))
+	for _, item := range items {
+		documentID := strings.TrimSpace(firstNonBlank(item.DocumentID, item.DocID))
+		if checkedOK && documentID != "" {
+			normalized = append(normalized, ApplyCitationSourceAvailability(item, availability[documentID]))
+		} else {
+			normalized = append(normalized, ApplyCitationSourceAvailability(item, false))
+		}
+	}
+	return normalized
+}
+
+func revalidateMessageCitations(ctx context.Context, userID string, sourceChecker CitationSourceChecker, messages []Message) {
+	if len(messages) == 0 {
+		return
+	}
+	type messageCitationIndex struct {
+		message  int
+		citation int
+	}
+	indexes := make([]messageCitationIndex, 0)
+	items := make([]Citation, 0)
+	for messageIndex := range messages {
+		for citationIndex := range messages[messageIndex].Citations {
+			indexes = append(indexes, messageCitationIndex{message: messageIndex, citation: citationIndex})
+			items = append(items, messages[messageIndex].Citations[citationIndex])
+		}
+	}
+	if len(items) == 0 {
+		return
+	}
+	normalized := revalidateCitationSources(ctx, userID, sourceChecker, items)
+	for index, item := range normalized {
+		target := indexes[index]
+		messages[target.message].Citations[target.citation] = item
+	}
+}
+
 func (s *ResourceService) ListToolCalls(ctx context.Context, userID, id string) ([]AgentToolCall, error) {
 	return s.repository.ListToolCalls(ctx, userID, id)
 }

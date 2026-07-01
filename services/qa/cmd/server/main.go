@@ -91,6 +91,7 @@ func main() {
 		logger.Error("knowledge client initialization failed", "service", "qa", "error", err)
 		os.Exit(1)
 	}
+	qaService.SetCitationSourceChecker(retriever)
 	resourceService, err := service.NewResourceService(repo, retriever, tester, bootstrap.LLM, qaService)
 	if err != nil {
 		logger.Error("resource service initialization failed", "service", "qa", "error", err)

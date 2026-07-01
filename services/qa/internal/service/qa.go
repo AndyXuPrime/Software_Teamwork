@@ -137,7 +137,7 @@ type AskResult struct {
 	UserMessage      Message         `json:"userMessage"`
 	AssistantMessage Message         `json:"assistantMessage"`
 	ResponseRun      ResponseRun     `json:"responseRun"`
-	Citations        []any           `json:"citations"`
+	Citations        []Citation      `json:"citations"`
 	ReasoningSteps   []ReasoningStep `json:"reasoningSteps"`
 }
 
@@ -184,6 +184,7 @@ type ResponseRunFinalization struct {
 	AssistantMessage  Message
 	ReasoningSteps    []ReasoningStep
 	StreamEvents      []StreamEvent
+	Citations         []Citation
 	Status            string
 	TerminationReason string
 	CurrentIteration  int
@@ -230,11 +231,12 @@ type RuntimeProvider interface {
 }
 
 type QAService struct {
-	repository Repository
-	runtime    RuntimeProvider
-	now        func() time.Time
-	activeMu   sync.Mutex
-	activeRuns map[string]context.CancelFunc
+	repository    Repository
+	runtime       RuntimeProvider
+	sourceChecker CitationSourceChecker
+	now           func() time.Time
+	activeMu      sync.Mutex
+	activeRuns    map[string]context.CancelFunc
 }
 
 func NewQAService(repository Repository, runtime RuntimeProvider) (*QAService, error) {
@@ -242,6 +244,10 @@ func NewQAService(repository Repository, runtime RuntimeProvider) (*QAService, e
 		return nil, errors.New("repository and runtime provider are required")
 	}
 	return &QAService{repository: repository, runtime: runtime, now: time.Now, activeRuns: map[string]context.CancelFunc{}}, nil
+}
+
+func (s *QAService) SetCitationSourceChecker(checker CitationSourceChecker) {
+	s.sourceChecker = checker
 }
 
 func (s *QAService) CreateConversation(ctx context.Context, userID, title string) (Conversation, error) {
@@ -313,7 +319,14 @@ func (s *QAService) ListMessages(ctx context.Context, userID, conversationID str
 	if err != nil {
 		return Page[Message]{}, err
 	}
-	return s.repository.ListMessages(ctx, userID, conversationID, normalized)
+	page, err := s.repository.ListMessages(ctx, userID, conversationID, normalized)
+	if err != nil {
+		return Page[Message]{}, err
+	}
+	if normalized.IncludeCitations {
+		revalidateMessageCitations(ctx, userID, s.sourceChecker, page.Items)
+	}
+	return page, nil
 }
 
 func (s *QAService) Ask(ctx context.Context, userID, conversationID string, input AskInput, observe ProgressObserver) (AskResult, error) {
@@ -481,21 +494,27 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 					return AskResult{}, NewError(CodeDependency, "answer state persistence failed", fmt.Errorf("save replay records after finalization conflict: %w", saveErr))
 				}
 				run = finalized
-				return AskResult{UserMessage: userMessage, AssistantMessage: assistantMessage, ResponseRun: run, Citations: []any{}, ReasoningSteps: steps}, NewError(errorCode, publicMessage, runErr)
+				return AskResult{UserMessage: userMessage, AssistantMessage: assistantMessage, ResponseRun: run, Citations: []Citation{}, ReasoningSteps: steps}, NewError(errorCode, publicMessage, runErr)
 			}
 			return AskResult{}, NewError(CodeDependency, "answer state persistence failed", fmt.Errorf("finalize failed response run after agent error: %w", finalizeErr))
 		}
 		run = finalized
-		return AskResult{UserMessage: userMessage, AssistantMessage: assistantMessage, ResponseRun: run, Citations: []any{}, ReasoningSteps: steps}, NewError(errorCode, publicMessage, runErr)
+		return AskResult{UserMessage: userMessage, AssistantMessage: assistantMessage, ResponseRun: run, Citations: []Citation{}, ReasoningSteps: steps}, NewError(errorCode, publicMessage, runErr)
 	}
 	assistantMessage.Content = result.Final.Content
 	assistantMessage.Status = "completed"
+	citations := citationsFromAgentMessages(assistantMessage.ID, run.ID, result.Messages)
+	citations = revalidateCitationSources(ctx, userID, s.sourceChecker, citations)
+	assistantMessage.Citations = citations
 	emit("answer.delta", map[string]any{"messageId": assistantMessage.ID, "text": assistantMessage.Content, "index": 0})
+	for _, citation := range citations {
+		emit("citation.delta", map[string]any{"citation": citation})
+	}
 	emit("answer.completed", map[string]any{"responseRunId": run.ID, "messageId": assistantMessage.ID})
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	run, err = s.repository.FinalizeResponseRun(cleanupCtx, userID, ResponseRunFinalization{
-		RunID: run.ID, AssistantMessage: assistantMessage, ReasoningSteps: steps, StreamEvents: events,
+		RunID: run.ID, AssistantMessage: assistantMessage, ReasoningSteps: steps, StreamEvents: events, Citations: citations,
 		Status: "completed", TerminationReason: "completed", CurrentIteration: result.Iterations,
 		PromptTokens: usage.PromptTokens, CompletionTokens: usage.CompletionTokens,
 		ReasoningTokens: usage.ReasoningTokens, TotalTokens: usage.TotalTokens,
@@ -504,7 +523,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	if err != nil {
 		return AskResult{}, fmt.Errorf("finalize response run: %w", err)
 	}
-	return AskResult{UserMessage: userMessage, AssistantMessage: assistantMessage, ResponseRun: run, Citations: []any{}, ReasoningSteps: steps}, nil
+	return AskResult{UserMessage: userMessage, AssistantMessage: assistantMessage, ResponseRun: run, Citations: citations, ReasoningSteps: steps}, nil
 }
 
 func (s *QAService) saveReplayRecords(ctx context.Context, userID, runID, assistantMessageID string, steps []ReasoningStep, events []StreamEvent) error {
@@ -685,6 +704,10 @@ func emitProgress(observer ProgressObserver, event ProgressEvent) {
 }
 
 func newID(prefix string) string {
+	return newUUID()
+}
+
+func newUUID() string {
 	data := make([]byte, 16)
 	if _, err := rand.Read(data); err != nil {
 		return fmt.Sprintf("00000000-0000-4000-8000-%012x", time.Now().UnixNano()&0xffffffffffff)
