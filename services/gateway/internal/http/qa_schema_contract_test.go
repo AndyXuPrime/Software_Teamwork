@@ -47,7 +47,7 @@ func TestQAActiveOpenAPIContractsHaveSchemasAndAuth(t *testing.T) {
 
 		parameters := operationParameters(t, document, operation)
 		assertPathParametersHaveSchemas(t, operation, parameters)
-		if responseUsesPagedEnvelope(t, document, operation) {
+		if qaOperationRequiresPagination(operation.OperationID) {
 			assertQueryParameterSchema(t, operation, parameters, "page", "integer")
 			assertQueryParameterSchema(t, operation, parameters, "pageSize", "integer")
 		}
@@ -326,7 +326,7 @@ func assertQASuccessResponseSchemas(t *testing.T, document map[string]any, opera
 		content := requiredNestedMap(t, resolvedResponse, "content")
 		jsonMediaType := requiredNestedMap(t, content, "application/json")
 		schema := resolveSchemaValue(t, document, jsonMediaType["schema"])
-		assertSuccessEnvelopeSchema(t, document, operation, status, schema)
+		assertSuccessEnvelopeSchema(t, document, operation, status, schema, qaOperationRequiresPagination(operation.OperationID))
 
 		if operation.OperationID == "createQAMessage" {
 			sseMediaType := requiredNestedMap(t, content, "text/event-stream")
@@ -340,7 +340,7 @@ func assertQASuccessResponseSchemas(t *testing.T, document map[string]any, opera
 	}
 }
 
-func assertSuccessEnvelopeSchema(t *testing.T, document map[string]any, operation openAPIOperation, status string, schema map[string]any) {
+func assertSuccessEnvelopeSchema(t *testing.T, document map[string]any, operation openAPIOperation, status string, schema map[string]any, requirePagedEnvelope bool) {
 	t.Helper()
 	required := stringsFromAnySlice(schema["required"])
 	for _, field := range []string{"data", "requestId"} {
@@ -354,6 +354,9 @@ func assertSuccessEnvelopeSchema(t *testing.T, document map[string]any, operatio
 	}
 	if mapValue(properties["requestId"]) == nil {
 		t.Fatalf("%s %s %s schema missing requestId property", operation.Method, operation.Path, status)
+	}
+	if requirePagedEnvelope && !containsString(required, "page") {
+		t.Fatalf("%s %s %s schema must require page envelope; required=%v", operation.Method, operation.Path, status, required)
 	}
 	if containsString(required, "page") {
 		pageSchema := resolveSchemaValue(t, document, properties["page"])
@@ -396,23 +399,6 @@ func assertQAErrorResponseSchemas(t *testing.T, document map[string]any, operati
 	}
 }
 
-func responseUsesPagedEnvelope(t *testing.T, document map[string]any, operation openAPIOperation) bool {
-	t.Helper()
-	for status, rawResponse := range successResponses(t, operation) {
-		if status == "204" {
-			continue
-		}
-		response := resolveOpenAPIMapValue(t, document, rawResponse)
-		content := requiredNestedMap(t, response, "content")
-		mediaType := requiredNestedMap(t, content, "application/json")
-		schema := resolveSchemaValue(t, document, mediaType["schema"])
-		if containsString(stringsFromAnySlice(schema["required"]), "page") {
-			return true
-		}
-	}
-	return false
-}
-
 func successResponses(t *testing.T, operation openAPIOperation) map[string]any {
 	t.Helper()
 	result := map[string]any{}
@@ -422,6 +408,15 @@ func successResponses(t *testing.T, operation openAPIOperation) map[string]any {
 		}
 	}
 	return result
+}
+
+func qaOperationRequiresPagination(operationID string) bool {
+	switch operationID {
+	case "listQASessions", "listQAMessages":
+		return true
+	default:
+		return false
+	}
 }
 
 func responseMap(t *testing.T, operation openAPIOperation) map[string]any {
