@@ -97,10 +97,12 @@
 
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
-| 单元测试 | `cd services/document && go test ./... -count=1` | pass（本次执行） | env-gated repository DB tests 仍需 `DOCUMENT_TEST_DATABASE_URL`。 |
+| 单元测试 | `cd services/document && go test ./... -count=1` | pass（C-020 验证，全部 package PASS，0 FAIL） | env-gated repository DB tests 仍需 `DOCUMENT_TEST_DATABASE_URL`。 |
 | 构建 | `cd services/document && go build ./cmd/server` | pass（本次执行） | 无。 |
 | 契约/配置解析 | OpenAPI YAML parse、`docker compose --env-file .env.example config --quiet`、`git diff --check` | pass（本次执行） | 仍需 gateway route matrix 在 CI 中复核。 |
-| 集成测试 | `DOCUMENT_TEST_DATABASE_URL=... go test ./internal/repository` | not run | 需要 PostgreSQL。 |
+| Gateway 公共接口契约 | `go test ./internal/http/... -run TestGatewayPublicOpenAPIContainsDocumentOwnerRoutes` | pass（C-020 新增，43 条 document 路由均存在且 `x-owner-service: document`，26 个 response schema 含 `data`/`requestId` 字段） | 未认证/越权请求需真实 Gateway 运行时验证；当前仅做 OpenAPI 静态检查。 |
+| AI 非法 JSON 容错 | `go test ./internal/service/... -run TestReportGenerationServiceHandlesAIMalformedResponse` | pass（C-018 新增，4 个场景 PASS：空字符串、纯文本、截断 JSON、空 sections 数组） | 无。 |
+| 集成测试 | `DOCUMENT_TEST_DATABASE_URL=... go test ./internal/repository/... -count=1` | skip（本次无 PostgreSQL 环境，env-gated tests 正常跳过） | 需要 PostgreSQL；CI 提供 `DOCUMENT_TEST_DATABASE_URL` 时自动运行。 |
 | 跨服务 smoke | AI Gateway / Knowledge / File Service / Redis through worker | not run | 需要 gateway/auth/file/document/ai-gateway/knowledge 联调环境。 |
 
 ## 9. 建议任务
@@ -117,6 +119,7 @@
 
 | 日期 | 检查人/工具 | 代码基准 | 结论 |
 | --- | --- | --- | --- |
+| 2026-07-01 | Tsuki-CARAT C-018/C-020 | `develop` working tree | C-018：新增 `TestReportGenerationServiceHandlesAIMalformedResponse`，覆盖 4 个 AI 非法 JSON 场景（空字符串、纯文本、截断 JSON、空 sections 数组），全部 PASS，`outline.failed` 事件正确写入，无 outline/section 写入。C-020：新增 `TestGatewayPublicOpenAPIContainsDocumentOwnerRoutes`，静态验证 Gateway `public.openapi.yaml` 中 43 条 document 路由均存在 `x-owner-service: document` 注解、26 个 response schema 含 `data`/`requestId` 字段，全部 69 子测试 PASS；集成测试因无 PostgreSQL 环境正常 skip（env-gated，预期行为）；跨服务 smoke 仍需真实联调环境。 |
 | 2026-07-01 | Tina-jwt C-011 | `develop@c5c1a52` | 富 DOCX worker 工具链选型已固定（`pandoc/core:3.10`）；调用边界、smoke 验证和 fallback 策略写入 `rich-docx-worker.md`；technology-decisions.md、generation-workflow.md 和 README.md 同步更新；Dockerfile 接入和运行时调用是后续任务。 |
 | 2026-06-30 | Codex C-005 implementation | working tree | Document 已补 `summer_peak_inspection` 基础 AI 大纲/正文生成编排、AI Gateway chat client、可选 Knowledge 检索 client、生成任务 payload 持久化和 OpenAPI/状态文档同步；Document MCP tools、更多报告类型和 Pandoc/LibreOffice 富 DOCX 仍是缺口。 |
 | 2026-06-30 | Codex full-day audit | `develop@92d3afc` | 复核今日 PR/issue：Document 已包含 report jobs/attempts/events、基础 DOCX report file creation、settings/statistics/logs、`pgx/v5@v5.9.2` 和安全依赖更新；#101 真实大纲/正文生成、#307 富 DOCX worker toolchain、Document MCP tools 和跨服务 content smoke 当时仍待补齐。 |
