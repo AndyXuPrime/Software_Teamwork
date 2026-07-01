@@ -4,7 +4,7 @@ This document is the human-readable audit list for gateway active API paths. The
 
 ## Audit Result
 
-- Active operations: `97`.
+- Active operations: `101`.
 - Every `/api/v1/**` active operation has `operationId`, `tags`, `x-owner-service`, security, at least one `2XX` response, and at least one `4XX` response.
 - `/healthz` and `/readyz` are operational routes owned by `gateway`; they intentionally do not use bearer auth.
 - No stable active path uses action-style segments such as `/login`, `/logout`, `/search`, `/generate`, `/export`, `/retry`, or `/revoke`.
@@ -24,7 +24,7 @@ This document is the human-readable audit list for gateway active API paths. The
 | `knowledge` | 18 | Knowledge bases, knowledge documents, chunks, retrieval, and parser runtime config. |
 | `ai-gateway` | 5 | Model profile runtime configuration exposed through gateway admin paths. |
 | `document` | 43 | Report templates, materials, records, outlines, sections, jobs, files, settings, statistics, and logs. |
-| `qa` | 25 | QA sessions, messages, runs, citations, configuration, retrieval tests, and QA metrics. |
+| `qa` | 29 | QA sessions, messages, attachments, runs, citations, configuration, retrieval tests, and QA metrics. |
 
 ## Missing Contracts
 
@@ -118,6 +118,10 @@ Current missing scope is limited to management overview and cross-service metric
 | `DELETE` | `/api/v1/qa-sessions/{sessionId}` | `qa` | `qa-sessions` | `deleteQASession` | `bearerAuth` |
 | `GET` | `/api/v1/qa-sessions/{sessionId}/messages` | `qa` | `qa-messages` | `listQAMessages` | `bearerAuth` |
 | `POST` | `/api/v1/qa-sessions/{sessionId}/messages` | `qa` | `qa-messages` | `createQAMessage` | `bearerAuth` |
+| `GET` | `/api/v1/qa-sessions/{sessionId}/attachments` | `qa` | `qa-session-attachments` | `listQASessionAttachments` | `bearerAuth` |
+| `POST` | `/api/v1/qa-sessions/{sessionId}/attachments` | `qa` | `qa-session-attachments` | `uploadQASessionAttachment` | `bearerAuth` |
+| `GET` | `/api/v1/qa-sessions/{sessionId}/attachments/{attachmentId}` | `qa` | `qa-session-attachments` | `getQASessionAttachment` | `bearerAuth` |
+| `DELETE` | `/api/v1/qa-sessions/{sessionId}/attachments/{attachmentId}` | `qa` | `qa-session-attachments` | `deleteQASessionAttachment` | `bearerAuth` |
 | `GET` | `/api/v1/qa-sessions/{sessionId}/events` | `qa` | `qa-messages` | `listQAStreamEvents` | `bearerAuth` |
 | `GET` | `/api/v1/response-runs/{responseRunId}` | `qa` | `qa-agent-runs` | `getQAResponseRun` | `bearerAuth` |
 | `PATCH` | `/api/v1/response-runs/{responseRunId}` | `qa` | `qa-agent-runs` | `updateQAResponseRun` | `bearerAuth` |
