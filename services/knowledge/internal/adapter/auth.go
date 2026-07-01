@@ -47,20 +47,6 @@ func mutationScope(reqCtx service.RequestContext) (service.AccessScope, error) {
 	return scope, nil
 }
 
-func parserConfigScope(reqCtx service.RequestContext) (service.AccessScope, error) {
-	scope, err := readScope(reqCtx)
-	if err != nil {
-		return service.AccessScope{}, err
-	}
-	if hasAdminRole(reqCtx.Roles) ||
-		hasPermission(reqCtx.Permissions, service.PermissionSystemAdmin) ||
-		hasPermission(reqCtx.Permissions, service.PermissionKnowledgeAdmin) ||
-		hasPermission(reqCtx.Permissions, service.PermissionAdminParserConfig) {
-		return scope, nil
-	}
-	return service.AccessScope{}, service.ForbiddenError("parser config admin permission is required")
-}
-
 func hasAdminRole(roles []string) bool {
 	for _, role := range roles {
 		switch strings.ToLower(strings.TrimSpace(role)) {

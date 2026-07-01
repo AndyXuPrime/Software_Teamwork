@@ -16,11 +16,20 @@ type Server struct {
 	cfg            adapterconfig.Config
 	logger         *slog.Logger
 	vendor         *vendorclient.Client
+	parserConfigs  *service.Service
 	maxUploadBytes int64
 	mux            *http.ServeMux
 }
 
-func NewServer(cfg adapterconfig.Config, logger *slog.Logger) *Server {
+type Option func(*Server)
+
+func WithParserConfigService(svc *service.Service) Option {
+	return func(s *Server) {
+		s.parserConfigs = svc
+	}
+}
+
+func NewServer(cfg adapterconfig.Config, logger *slog.Logger, opts ...Option) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -30,6 +39,11 @@ func NewServer(cfg adapterconfig.Config, logger *slog.Logger) *Server {
 		vendor:         vendorclient.New(cfg.VendorRuntimeURL, 60*time.Second),
 		maxUploadBytes: defaultMaxUploadBytes,
 		mux:            http.NewServeMux(),
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(s)
+		}
 	}
 	s.routes()
 	return s
@@ -87,11 +101,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /internal/v1/documents/{documentId}/content", s.handleGetDocumentContent)
 	s.mux.HandleFunc("POST /internal/v1/knowledge-queries", s.handleCreateKnowledgeQuery)
 
-	s.mux.HandleFunc("GET /internal/v1/parser-configs", s.handleParserConfigNotImplemented)
-	s.mux.HandleFunc("POST /internal/v1/parser-configs", s.handleParserConfigNotImplemented)
-	s.mux.HandleFunc("GET /internal/v1/parser-configs/{parserConfigId}", s.handleParserConfigNotImplemented)
-	s.mux.HandleFunc("PATCH /internal/v1/parser-configs/{parserConfigId}", s.handleParserConfigNotImplemented)
-	s.mux.HandleFunc("DELETE /internal/v1/parser-configs/{parserConfigId}", s.handleParserConfigNotImplemented)
+	s.mux.HandleFunc("GET /internal/v1/parser-configs", s.handleListParserConfigs)
+	s.mux.HandleFunc("POST /internal/v1/parser-configs", s.handleCreateParserConfig)
+	s.mux.HandleFunc("GET /internal/v1/parser-configs/{parserConfigId}", s.handleGetParserConfig)
+	s.mux.HandleFunc("PATCH /internal/v1/parser-configs/{parserConfigId}", s.handleUpdateParserConfig)
+	s.mux.HandleFunc("DELETE /internal/v1/parser-configs/{parserConfigId}", s.handleDeleteParserConfig)
 
 	s.mux.HandleFunc("/", s.handleNotFound)
 }

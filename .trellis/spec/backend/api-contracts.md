@@ -1048,8 +1048,8 @@ knowledge-queries -> /api/v1/datasets/search
 - Adapter forwards tenant identity with `X-Tenant-Id` and `X-User-Id` set to
   Gateway `X-User-Id`; RBAC checks stay in adapter using
   `knowledge:read` / `knowledge:write` and admin permissions.
-- Parser-config routes may return `501 not_implemented` in adapter mode until
-  bridged to legacy goose tables or a vendor equivalent.
+- Parser-config routes delegate to legacy goose PostgreSQL tables when
+  `DATABASE_URL` is configured; without it they return `502 dependency_error`.
 - Document `PATCH` with `tags` maps to vendor dataset-document metadata updates;
   other fields remain validation errors until explicitly supported.
 - `GET /documents/{documentId}/content` streams bytes without JSON envelope.
@@ -1062,7 +1062,7 @@ knowledge-queries -> /api/v1/datasets/search
 | Read without `knowledge:read` or write permission | `403 forbidden` |
 | Mutations without `knowledge:write` | `403 forbidden` |
 | Parser-config admin without admin permissions | `403 forbidden` |
-| Parser-config in adapter mode (Phase 3) | `501 not_implemented` |
+| Parser-config without `DATABASE_URL` in adapter mode | `502 dependency_error` |
 | Vendor runtime unreachable | `502 dependency_error` |
 
 ## Scenario: Missing Downstream API Contracts
