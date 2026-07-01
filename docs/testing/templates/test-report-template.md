@@ -1,6 +1,7 @@
 # 测试报告模板
 
 > 使用方式：复制本模板到 `docs/testing/reports/YYYY-MM-DD/<scope>-test-report.md`，再删除本提示行并填写所有适用章节。
+> 纯单元测试、组件测试或静态检查任务可以只在 issue/PR 中保留轻量执行记录；涉及集成、E2E、安全、权限、文件/Parser 边界、migration、环境验收、人工验收、回归或缺陷复现时使用本模板。
 
 ## 0. 基本信息
 

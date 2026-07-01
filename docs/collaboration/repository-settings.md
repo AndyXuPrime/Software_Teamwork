@@ -89,8 +89,9 @@ check 名称补入 `contexts`。
 两个模板标题都采用 `[A/B/C/F/S/T-001] 中文任务标题` 或 `[T-001] 中文测试任务标题`
 格式，正文包含任务信息、工时字段、依赖字段和 `Project sync` 字段，以便 Task Issue Sync
 识别和同步 Project 字段。Test Task Issue 模板额外包含测试执行与缺陷处理规则，要求测试
-主责人实际运行测试、记录结果，按 `docs/testing/templates/test-report-template.md` 生成
-测试报告并归档到 `docs/testing/reports/YYYY-MM-DD/`，并把大问题转给对应 owner 小组。
+主责人实际运行测试并记录结果；纯单元/组件自动化可在 issue/PR 中保留轻量执行记录，复杂
+测试按 `docs/testing/templates/test-report-template.md` 生成报告并归档到
+`docs/testing/reports/YYYY-MM-DD/`，并把大问题转给对应 owner 小组。
 
 Project `Software Teamwork` 的 `Group` 单选字段需要包含 `L1nggTeam`、`JerryTeam`、
 `PrimeTeam`、`Frontend`、`Special` 和 `Test`。`Test` 用于测试文档、测试代码、测试报告

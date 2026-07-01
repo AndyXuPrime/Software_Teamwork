@@ -1,6 +1,6 @@
 # 测试证据记录模板
 
-> 使用方式：复制本模板到测试 issue 评论或 PR body 的验证部分。完整报告仍必须使用 `docs/testing/templates/test-report-template.md` 并归档到 `docs/testing/reports/YYYY-MM-DD/`。
+> 使用方式：复制本模板到测试 issue 评论或 PR body 的验证部分。复杂测试如需完整报告，使用 `docs/testing/templates/test-report-template.md` 并归档到 `docs/testing/reports/YYYY-MM-DD/`。
 
 ## 测试范围
 
@@ -32,7 +32,7 @@
 
 ## 证据清单
 
-- 测试报告：`docs/testing/reports/YYYY-MM-DD/<scope>-test-report.md`
+- 测试报告（如适用）：`docs/testing/reports/YYYY-MM-DD/<scope>-test-report.md`
 - PR：
 - 截图 / trace：
 - 日志：

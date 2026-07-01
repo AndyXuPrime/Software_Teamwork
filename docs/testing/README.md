@@ -17,13 +17,15 @@
 
 ## 测试报告规则
 
-- 每个 `T-*` 测试任务必须产出一份完整测试报告；只提交测试代码、测试清单或口头结论不算完成。
-- 测试报告必须基于 `docs/testing/templates/test-report-template.md`，并保留“执行命令与结果”“缺陷处理”“证据清单”“最终结论”等关键章节。
+- 每个 `T-*` 测试任务都必须留下可复核证据；只提交测试代码、测试清单或口头结论不算完成。
+- 纯单元测试、组件测试和静态检查默认并入自动化；可以在 issue/PR 中保留轻量执行记录，不强制生成完整测试报告。
+- 集成测试、E2E、权限/安全边界、文件/Parser 边界、migration、环境验收、人工验收、回归测试或缺陷复现必须生成完整测试报告。
+- 完整测试报告必须基于 `docs/testing/templates/test-report-template.md`，并保留“执行命令与结果”“缺陷处理”“证据清单”“最终结论”等关键章节。
 - 报告按实际执行日期放入 `docs/testing/reports/YYYY-MM-DD/`。例如：`docs/testing/reports/2026-07-01/auth-gateway-test-report.md`。
 - 文件名使用小写英文、数字和连字符，建议格式为 `<module-or-flow>-test-report.md`。
 - 如果同一天同一模块有多轮测试，可以在文件名追加范围或轮次，例如 `knowledge-rerank-regression-test-report.md`。
 - 报告中的测试结论必须区分：测试通过、测试失败且已修复、测试失败已转 issue、因环境缺失未运行。
-- 未运行的测试不能写成通过，必须记录缺失环境、跳过条件、残余风险和后续归属。
+- 未运行的测试不能写成通过，必须在轻量记录或完整报告中记录缺失环境、跳过条件、残余风险和后续归属。
 - 测试组总进度和证据位置统一维护在 `docs/testing/test-matrix.md`。矩阵状态落后时以 GitHub Issue / Project 为准，并在 PR 前补齐报告路径、未运行原因和残余风险。
 
 ## 缺陷处理规则
@@ -42,7 +44,7 @@
 1. 在测试 issue 中确认范围、依据和预期交付物。
 2. 按 `docs/testing/strategy.md` 选择需要运行的命令和人工验证项。
 3. 实际运行测试，保留命令、环境、结果和失败证据。
-4. 复制 `docs/testing/templates/test-report-template.md` 生成当日测试报告。
-5. 将报告放入 `docs/testing/reports/YYYY-MM-DD/`。
-6. 在测试 issue 和 PR 中链接报告路径，并可复制 `docs/testing/templates/test-evidence-record-template.md` 填写快速证据块。
+4. 如果是纯单元/组件自动化或静态检查，在 issue/PR 中留下轻量执行记录。
+5. 如果是复杂测试，复制 `docs/testing/templates/test-report-template.md` 生成当日测试报告，并放入 `docs/testing/reports/YYYY-MM-DD/`。
+6. 在测试 issue 和 PR 中链接报告路径或轻量记录；轻量记录可以复制 `docs/testing/templates/test-evidence-record-template.md` 填写。
 7. 更新 `docs/testing/test-matrix.md` 中对应 issue 的状态、证据位置、未运行项和残余风险。

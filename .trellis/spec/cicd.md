@@ -82,7 +82,11 @@ custom fields.
   owner-service, contract, data-model, migration, security, product, architecture,
   or cross-module issues must become separate owner-group issues and be linked
   from the testing task.
-- Every `T-*` issue must require a completed test report based on
+- Every `T-*` issue must require reviewable test evidence. Pure unit,
+  component, and static-check automation may use lightweight issue/PR execution
+  records; integration, E2E, permission/security boundary, file/parser boundary,
+  migration, environment acceptance, manual acceptance, regression, and defect
+  reproduction tasks must require a completed report based on
   `docs/testing/templates/test-report-template.md`, archived under
   `docs/testing/reports/YYYY-MM-DD/`, and linked from the testing issue or PR.
 - Missing or zero `预期工时（小时数）` is allowed only while the managed issue
