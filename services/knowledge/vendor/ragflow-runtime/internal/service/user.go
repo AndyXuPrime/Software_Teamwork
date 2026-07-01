@@ -19,13 +19,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
-	"ragflow/internal/server"
-	"ragflow/internal/utility"
-	"strings"
 )
 
 // UserService user service
@@ -40,105 +38,16 @@ func NewUserService() *UserService {
 	}
 }
 
-// GetUserByToken gets user by authorization header
-// The token parameter is the authorization header value, which needs to be decrypted
-// using itsdangerous URLSafeTimedSerializer to get the actual access_token
-func (s *UserService) GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error) {
-	secretKey, err := server.GetSecretKey(redis.Get())
+// GetUserByTenantID resolves the runtime user row for a gateway-injected tenant id.
+func (s *UserService) GetUserByTenantID(tenantID string) (*entity.User, common.ErrorCode, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("tenant id is empty")
+	}
+
+	user, err := s.userDAO.GetByTenantID(tenantID)
 	if err != nil {
 		return nil, common.CodeUnauthorized, err
-	}
-
-	accessToken, err := utility.ExtractAccessToken(authorization, secretKey)
-	if err != nil {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization token: %w", err)
-	}
-
-	if len(accessToken) < 32 {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token format")
-	}
-
-	user, err := s.userDAO.GetByAccessToken(accessToken)
-	if err != nil {
-		return nil, common.CodeUnauthorized, err
-	}
-
-	return user, common.CodeSuccess, nil
-}
-
-// GetUserByAPIToken gets user by access key from Authorization header
-// This is used for API token authentication
-// The authorization parameter should be in format: "Bearer <token>" or just "<token>"
-func (s *UserService) GetUserByAPIToken(authorization string) (*entity.User, common.ErrorCode, error) {
-	if authorization == "" {
-		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
-	}
-
-	parts := strings.Split(authorization, " ")
-	var token string
-	if len(parts) == 2 {
-		token = parts[1]
-	} else if len(parts) == 1 {
-		token = parts[0]
-	} else {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
-	}
-
-	apiTokenDAO := dao.NewAPITokenDAO()
-	userToken, err := apiTokenDAO.GetUserByAPIToken(token)
-	if err != nil {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token")
-	}
-
-	user, err := s.userDAO.GetByTenantID(userToken.TenantID)
-	if err != nil {
-		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for this access token")
-	}
-
-	if user.AccessToken == nil || *user.AccessToken == "" {
-		return nil, common.CodeUnauthorized, fmt.Errorf("user has empty access_token in database")
-	}
-
-	return user, common.CodeSuccess, nil
-}
-
-// GetUserByBetaAPIToken gets user by beta access key from Authorization
-// header. This mirrors Python's AUTH_BETA flow used by beta-token endpoints.
-func (s *UserService) GetUserByBetaAPIToken(authorization string) (*entity.User, common.ErrorCode, error) {
-	authorization = strings.TrimSpace(authorization)
-	if authorization == "" {
-		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
-	}
-
-	parts := strings.Fields(authorization)
-	var token string
-	if len(parts) == 2 {
-		token = parts[1]
-	} else if len(parts) == 1 {
-		if strings.EqualFold(parts[0], "Bearer") {
-			return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
-		}
-		token = parts[0]
-	} else {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
-	}
-	if token == "" {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
-	}
-
-	apiTokenDAO := dao.NewAPITokenDAO()
-	userToken, err := apiTokenDAO.GetByBeta(token)
-	if err != nil {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid beta access token")
-	}
-
-	user, err := s.userDAO.GetByTenantID(userToken.TenantID)
-	if err != nil {
-		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for this beta access token")
-	}
-
-	if user.AccessToken == nil || *user.AccessToken == "" {
-		return nil, common.CodeUnauthorized, fmt.Errorf("user has empty access_token in database")
 	}
 
 	return user, common.CodeSuccess, nil
@@ -158,7 +67,6 @@ func NewUserTenantService() *UserTenantService {
 }
 
 // UserTenantRelation represents a user-tenant relationship response
-// This structure matches the Python implementation's return format
 type UserTenantRelation struct {
 	ID       string `json:"id"`
 	UserID   string `json:"user_id"`

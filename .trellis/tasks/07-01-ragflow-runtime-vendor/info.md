@@ -574,7 +574,30 @@ first, most likely Parser-backed document parsing before retrieval replacement.
   - `go build ./internal/router/... ./internal/handler/... ./internal/service/...`
 - Confirmed by user before cleanup: yes (E+F full; G: kb legacy + deploy_local_llm + smoke only)
 
-### 2026-07-01: retain file manager and model chat proxy surfaces
+### 2026-07-01: remove vendor JWT/API-token auth layer (batch I)
+
+- Removed:
+  - Go `internal/handler/api_token.go`, `internal/service/api_token.go`,
+    `internal/dao/api_token.go` and related beta tests
+  - Go `/system/tokens` routes and Python `system_api` token management endpoints
+  - JWT / API token / beta token resolution from `internal/handler/auth.go`
+  - `GetUserByToken` / `GetUserByAPIToken` / `GetUserByBetaAPIToken` from user service
+- Updated:
+  - Go and Python auth middleware trust upstream Gateway headers
+    `X-Tenant-Id` (fallback `X-User-Id`) and resolve tenant via `GetUserByTenantID`
+  - `README_zh.md` auth boundary description
+  - REST integration helpers: `RestClient` sends `X-Tenant-Id`; `RAGFLOW_TENANT_ID` env
+  - `test_system.py`, `test_retrieval.py` gateway auth contract tests
+- Restored:
+  - `jsonError` helper in `internal/handler/error.go` (accidentally removed with
+    legacy `kb.go` in batch G)
+- Kept:
+  - `api_token` DB table model and `APITokenService` (schema only; no HTTP surface)
+  - Go `entity.APIToken` in auto-migrate for existing deployments
+  - superuser forbidden guard in Go gateway auth
+- Reason: this repository's Gateway owns identity; the vendored runtime should not
+  expose upstream product auth (login, JWT issuance, API token self-service).
+- Confirmed by user before cleanup: yes
 
 - Kept intentionally (not in future trim scope unless product boundary changes):
   - `/files` (Go + Python `file_api.py`): upstream personal file-cabinet product flow

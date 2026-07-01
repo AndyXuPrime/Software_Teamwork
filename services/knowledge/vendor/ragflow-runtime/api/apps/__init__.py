@@ -20,10 +20,9 @@ import time
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from quart import Blueprint, Quart, request, g, current_app, jsonify
-from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from quart_cors import cors
 from common.constants import StatusEnum, RetCode
-from api.db.db_models import close_connection, APIToken
+from api.db.db_models import close_connection
 from api.db.services import UserService
 from api.utils.json_encode import CustomJSONEncoder
 
@@ -31,7 +30,7 @@ from quart_auth import Unauthorized as QuartAuthUnauthorized
 from werkzeug.exceptions import Unauthorized as WerkzeugUnauthorized
 from quart_schema import QuartSchema
 from common import settings
-from api.utils.api_utils import server_error_response, get_json_result
+from api.utils.api_utils import server_error_response, get_json_result, build_error_result
 from api.constants import API_VERSION
 from common.exceptions import ModelException
 
@@ -40,6 +39,8 @@ settings.init_settings()
 __all__ = ["app"]
 
 UNAUTHORIZED_MESSAGE = "<Unauthorized '401: Unauthorized'>"
+GATEWAY_TENANT_HEADER = "X-Tenant-Id"
+GATEWAY_USER_HEADER = "X-User-Id"
 
 
 def _unauthorized_message(error):
@@ -86,10 +87,12 @@ from werkzeug.local import LocalProxy
 T = TypeVar("T")
 P = ParamSpec("P")
 
+AUTH_GATEWAY = "GATEWAY"
+# Kept for route decorators that still declare legacy auth type tuples.
 AUTH_JWT = "JWT"
 AUTH_API = "API"
 AUTH_BETA = "BETA"
-DEFAULT_AUTH_TYPES = (AUTH_JWT, AUTH_API)
+DEFAULT_AUTH_TYPES = (AUTH_GATEWAY,)
 
 
 def _normalize_auth_types(auth_types=None):
@@ -102,88 +105,38 @@ def _normalize_auth_types(auth_types=None):
     return {str(auth_types).upper()}
 
 
+def _gateway_tenant_id():
+    tenant_id = request.headers.get(GATEWAY_TENANT_HEADER) or request.headers.get(GATEWAY_USER_HEADER)
+    if tenant_id is None:
+        return None
+    tenant_id = tenant_id.strip()
+    return tenant_id or None
+
+
 def _load_user(auth_types=None):
     explicit_auth_types = auth_types is not None
     auth_types = _normalize_auth_types(auth_types)
     if getattr(g, "user", None) and (not explicit_auth_types or getattr(g, "auth_type", None) in auth_types):
         return g.user
-    
-    authorization = request.headers.get("Authorization")
-    if not authorization:
-        return None
 
-    # Extract auth_token based on whether Authorization starts with "bearer" (case-insensitive)
-    if authorization[:7].lower() == "bearer ":
-        parts = authorization.split(maxsplit=1)
-        if len(parts) < 2:
-            logging.warning("Authorization header has invalid bearer format")
-            return None
-        auth_token = parts[1]
-    else:
-        auth_token = authorization
+    tenant_id = _gateway_tenant_id()
+    if not tenant_id:
+        return None
 
     g.user = None
     g.auth_type = None
     g.auth_error_message = None
 
-    # Try Beta token
-    if AUTH_BETA in auth_types:
-        try:
-            objs = APIToken.query(beta=auth_token)
-            if objs:
-                user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
-                if user:
-                    g.auth_type = AUTH_BETA
-                    g.user = user[0]
-                    return user[0]
-            g.auth_error_message = 'Authentication error: API key is invalid! '
-        except Exception as e_beta:
-            logging.warning(f"load_user from beta token got exception {e_beta}")
-            g.auth_error_message = 'Authentication error: API key is invalid!'
-
-    # Try JWT decoding
-    if AUTH_JWT in auth_types:
-        try:
-            jwt = Serializer(secret_key=settings.get_secret_key())
-            access_token = str(jwt.loads(auth_token))
-
-            if not access_token or not access_token.strip():
-                logging.warning("Authentication attempt with empty access token")
-                return None
-
-            if len(access_token.strip()) < 32:
-                logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
-                return None
-
-            user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
-            if user:
-                if not user[0].access_token or not user[0].access_token.strip():
-                    logging.warning(f"User {user[0].email} has empty access_token in database")
-                    return None
-                g.auth_type = AUTH_JWT
-                g.user = user[0]
-                return user[0]
-        except Exception as e_jwt:
-            logging.warning(f"load_user from jwt got exception {e_jwt}")
-
-    # JWT decode failed, try as api_token
-    if AUTH_API in auth_types:
-        try:
-            objs = APIToken.query(token=auth_token)
-            if objs:
-                user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
-                if user:
-                    if not user[0].access_token or not user[0].access_token.strip():
-                        logging.warning(f"User {user[0].email} has empty access_token in database")
-                        return None
-                    g.auth_type = AUTH_API
-                    g.user = user[0]
-                    return user[0]
-                logging.warning(f"load_user: No user found for tenant_id={objs[0].tenant_id} from APIToken")
-            else:
-                logging.warning(f"load_user: No APIToken found for token={auth_token[:10]}...")
-        except Exception as e_api_token:
-            logging.warning(f"load_user from api token got exception {e_api_token}")
+    try:
+        user = UserService.query(id=tenant_id, status=StatusEnum.VALID.value)
+        if user:
+            g.auth_type = AUTH_GATEWAY
+            g.user = user[0]
+            return user[0]
+        g.auth_error_message = f"Tenant not found for {GATEWAY_TENANT_HEADER}"
+    except Exception as exc:
+        logging.warning("load_user from gateway tenant header failed: %s", exc)
+        g.auth_error_message = "Tenant not found"
 
     return None
 
@@ -192,24 +145,7 @@ current_user = LocalProxy(_load_user)
 
 
 def login_required(func: Callable[P, Awaitable[T]] = None, auth_types=None) -> Callable[P, Awaitable[T]]:
-    """A decorator to restrict route access to authenticated users.
-
-    This should be used to wrap a route handler (or view function) to
-    enforce that only authenticated requests can access it. Note that
-    it is important that this decorator be wrapped by the route
-    decorator and not vice, versa, as below.
-
-    .. code-block:: python
-
-        @app.route('/')
-        @login_required
-        async def index():
-            ...
-
-    If the request is not authenticated a
-    `quart.exceptions.Unauthorized` exception will be raised.
-
-    """
+    """Require a gateway-injected tenant header before executing a route."""
 
     def decorator(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
         @wraps(func)
@@ -223,13 +159,9 @@ def login_required(func: Callable[P, Awaitable[T]] = None, auth_types=None) -> C
                     (time.perf_counter() - t_start) * 1000,
                     request.path,
                 )
-            if not user:  # or not session.get("_user_id"):
-                if _normalize_auth_types(auth_types) == {AUTH_BETA}:
-                    return get_json_result(
-                        code=RetCode.DATA_ERROR,
-                        message=getattr(g, "auth_error_message", None) or "Authorization is not valid!",
-                    )
-                raise QuartAuthUnauthorized()
+            if not user:
+                message = getattr(g, "auth_error_message", None) or f"Missing {GATEWAY_TENANT_HEADER}"
+                return build_error_result(code=RetCode.UNAUTHORIZED, message=message)
             return await current_app.ensure_async(func)(*args, **kwargs)
 
         return wrapper

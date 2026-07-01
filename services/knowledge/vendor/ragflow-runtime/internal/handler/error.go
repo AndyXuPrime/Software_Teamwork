@@ -25,6 +25,15 @@ import (
 	"go.uber.org/zap"
 )
 
+// jsonError writes the standard error envelope with HTTP 200 for Python API parity.
+func jsonError(c *gin.Context, code common.ErrorCode, message string) {
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"data":    nil,
+		"message": message,
+	})
+}
+
 // jsonInternalError logs the original error while returning a generic message
 // to avoid exposing internal implementation details in API responses.
 func jsonInternalError(c *gin.Context, err error) {

@@ -19,8 +19,7 @@ import pytest
 
 HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
 VERSION = "v1"
-RAGFLOW_API_TOKEN = os.getenv("RAGFLOW_API_TOKEN") or os.getenv("API_TOKEN")
-RAGFLOW_AUTHORIZATION = os.getenv("RAGFLOW_AUTHORIZATION") or os.getenv("AUTHORIZATION")
+RAGFLOW_TENANT_ID = os.getenv("RAGFLOW_TENANT_ID") or os.getenv("TENANT_ID")
 ZHIPU_AI_API_KEY = os.getenv("ZHIPU_AI_API_KEY")
 if ZHIPU_AI_API_KEY is None:
     pytest.exit("Error: Environment variable ZHIPU_AI_API_KEY must be set")
@@ -29,8 +28,9 @@ SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
 if SILICONFLOW_API_KEY is None:
     pytest.exit("Error: Environment variable SILICONFLOW_API_KEY must be set")
 
-INVALID_API_TOKEN = "invalid_key_123"
-INVALID_ID_32 = "0" * 32
+INVALID_TENANT_ID = "0" * 32
+INVALID_API_TOKEN = INVALID_TENANT_ID
+INVALID_ID_32 = INVALID_TENANT_ID
 DATASET_NAME_LIMIT = 128
 DOCUMENT_NAME_LIMIT = 255
 

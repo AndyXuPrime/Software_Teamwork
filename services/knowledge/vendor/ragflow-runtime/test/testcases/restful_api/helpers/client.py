@@ -34,8 +34,8 @@ class RestClient:
         merged: dict[str, str] = {"Content-Type": "application/json"}
         if headers:
             merged.update(headers)
-        if self.token and "Authorization" not in merged:
-            merged["Authorization"] = f"Bearer {self.token}"
+        if self.token and "X-Tenant-Id" not in merged:
+            merged["X-Tenant-Id"] = self.token
         return merged
 
     def request(

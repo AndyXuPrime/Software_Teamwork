@@ -294,12 +294,6 @@ func mergeParserConfig(base, override map[string]interface{}) map[string]interfa
 	return result
 }
 
-// GetUserByToken gets user by authorization token
-func (s *KnowledgebaseService) GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error) {
-	userService := NewUserService()
-	return userService.GetUserByToken(authorization)
-}
-
 // GetUserByID gets user by ID
 func (s *KnowledgebaseService) GetUserByID(id string) (*entity.User, error) {
 	return s.userDAO.GetByAccessToken(id)

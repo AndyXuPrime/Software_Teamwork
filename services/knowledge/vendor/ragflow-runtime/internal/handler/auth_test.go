@@ -27,32 +27,23 @@ import (
 	"ragflow/internal/common"
 )
 
-// TestBetaAuthMiddleware_MissingHeader pins the no-header branch —
-// the middleware must short-circuit with 401/CodeUnauthorized and
-// must not call into UserService. The other branches (regular JWT
-// and beta token) require a live DB to resolve, so they are covered
-// by the cross-cutting TestBotRoutes_RequireAuth criterion in
-// bot_test.go.
-func TestBetaAuthMiddleware_MissingHeader(t *testing.T) {
+func TestAuthMiddleware_MissingTenantHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ah := &AuthHandler{userService: nil}
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 
-	mw := ah.BetaAuthMiddleware()
+	mw := ah.AuthMiddleware()
 	mw(c)
 
 	if !c.IsAborted() {
-		t.Fatalf("context not aborted, want aborted (no Authorization header)")
+		t.Fatalf("context not aborted, want aborted (no X-Tenant-Id header)")
 	}
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
-	// jsonError writes 200 with a CodeUnauthorized body. Confirm the
-	// body shape matches the wire contract used by the rest of the
-	// bot handlers by decoding the JSON envelope and asserting the
-	// code field rather than just checking for a non-empty body.
+
 	var resp struct {
 		Code common.ErrorCode `json:"code"`
 	}

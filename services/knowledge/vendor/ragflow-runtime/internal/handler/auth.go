@@ -18,6 +18,8 @@ package handler
 
 import (
 	"net/http"
+	"strings"
+
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
@@ -25,19 +27,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AuthHandler auth handler
+const (
+	gatewayTenantHeader = "X-Tenant-Id"
+	gatewayUserHeader   = "X-User-Id"
+)
+
+// AuthHandler resolves tenant context injected by an upstream gateway.
 type AuthHandler struct {
-	userService userTokenResolver
+	userService tenantUserResolver
 }
 
-// userTokenResolver is the subset of UserService the auth
-// middleware actually depends on. We keep it as a small interface
-// so the test suite can swap in a stub without spinning up the
-// full UserService (which requires a live Redis + JWT secret).
-type userTokenResolver interface {
-	GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error)
-	GetUserByAPIToken(token string) (*entity.User, common.ErrorCode, error)
-	GetUserByBetaAPIToken(token string) (*entity.User, common.ErrorCode, error)
+type tenantUserResolver interface {
+	GetUserByTenantID(tenantID string) (*entity.User, common.ErrorCode, error)
 }
 
 // NewAuthHandler create auth handler
@@ -47,99 +48,58 @@ func NewAuthHandler() *AuthHandler {
 	}
 }
 
-// BetaAuthMiddleware resolves a user token, API token, or `beta` API token
-// from the Authorization header and sets the user on the gin.Context.
-//
-// A beta token can also be a regular user JWT or API token. Order of
-// precedence:
-//
-//  1. JWT (regular session) → existing UserService.GetUserByToken
-//  2. API token              → GetUserByAPIToken
-//  3. Beta API token         → GetUserByBetaAPIToken
-//  4. Fall through           → 401
-//
-// IMPORTANT: the regular-user branch is NOT gated on a "Bearer "
-// prefix. UserService.GetUserByToken accepts the raw Authorization
-// header value and ExtractAccessToken handles Bearer stripping
-// internally. The existing AuthMiddleware() above also passes the
-// raw header to GetUserByToken without pre-filtering, so a non-Bearer
-// regular user token must keep working here too.
-func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		auth := c.GetHeader("Authorization")
-		if auth == "" {
-			jsonError(c, common.CodeUnauthorized, "Authorization required")
-			c.Abort()
-			return
-		}
-		// Try regular user session first (handles JWT, Bearer, or
-		// raw access_token — same dispatch as AuthMiddleware()).
-		if u, code, err := h.userService.GetUserByToken(auth); err == nil && code == common.CodeSuccess {
-			c.Set("user", u)
-			c.Next()
-			return
-		}
-		// Then try a regular API token (non-beta public bot flow).
-		if u, code, err := h.userService.GetUserByAPIToken(auth); err == nil && code == common.CodeSuccess {
-			c.Set("user", u)
-			c.Set("auth_via_api_token", true)
-			c.Next()
-			return
-		}
-		// Fall back to beta API token.
-		if u, code, err := h.userService.GetUserByBetaAPIToken(auth); err == nil && code == common.CodeSuccess {
-			c.Set("user", u)
-			c.Next()
-			return
-		}
-		jsonError(c, common.CodeUnauthorized, "Invalid auth credentials")
-		c.Abort()
+func gatewayTenantID(c *gin.Context) string {
+	if tenantID := strings.TrimSpace(c.GetHeader(gatewayTenantHeader)); tenantID != "" {
+		return tenantID
 	}
+	return strings.TrimSpace(c.GetHeader(gatewayUserHeader))
 }
 
-// AuthMiddleware JWT auth middleware.
+func (h *AuthHandler) resolveGatewayUser(c *gin.Context) (*entity.User, bool) {
+	tenantID := gatewayTenantID(c)
+	if tenantID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    common.CodeUnauthorized,
+			"message": "Missing X-Tenant-Id header",
+		})
+		return nil, false
+	}
+
+	user, code, err := h.userService.GetUserByTenantID(tenantID)
+	if err != nil || code != common.CodeSuccess || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    common.CodeUnauthorized,
+			"message": "Tenant not found",
+		})
+		return nil, false
+	}
+
+	if user.IsSuperuser != nil && *user.IsSuperuser {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    common.CodeForbidden,
+			"message": "Super user shouldn't access the URL",
+		})
+		return nil, false
+	}
+
+	c.Set("user", user)
+	c.Set("user_id", user.ID)
+	c.Set("email", user.Email)
+	return user, true
+}
+
+// BetaAuthMiddleware uses the same gateway tenant header contract as AuthMiddleware.
+func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
+	return h.AuthMiddleware()
+}
+
+// AuthMiddleware trusts tenant identity from the upstream gateway.
 func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := c.GetHeader("Authorization")
-		if token == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"code":    401,
-				"message": "Missing Authorization header",
-			})
+		if _, ok := h.resolveGatewayUser(c); !ok {
 			c.Abort()
 			return
 		}
-
-		authViaAPIToken := false
-
-		// Get user by access token
-		user, code, err := h.userService.GetUserByToken(token)
-		if err != nil {
-			user, code, err = h.userService.GetUserByAPIToken(token)
-			if err != nil {
-				c.JSON(http.StatusUnauthorized, gin.H{
-					"code":    code,
-					"message": "Invalid access token",
-				})
-				c.Abort()
-				return
-			}
-			authViaAPIToken = true
-		}
-
-		if user.IsSuperuser != nil && *user.IsSuperuser {
-			c.JSON(http.StatusForbidden, gin.H{
-				"code":    common.CodeForbidden,
-				"message": "Super user shouldn't access the URL",
-			})
-			c.Abort()
-			return
-		}
-
-		c.Set("user", user)
-		c.Set("user_id", user.ID)
-		c.Set("email", user.Email)
-		c.Set("auth_via_api_token", authViaAPIToken)
 		c.Next()
 	}
 }

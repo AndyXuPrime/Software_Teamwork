@@ -151,16 +151,16 @@ def _retrieval_lacks_chunks(rest_client, dataset_id, question, chunk_ids):
 
 @pytest.mark.p2
 def test_retrieval_requires_auth_contract():
-    for scenario_name, token, expected_code, expected_message in (
-        ("missing token", None, 401, "<Unauthorized '401: Unauthorized'>"),
-        ("invalid token", INVALID_API_TOKEN, 401, "<Unauthorized '401: Unauthorized'>"),
+    for scenario_name, token, expected_message in (
+        ("missing tenant", None, "X-Tenant-Id"),
+        ("invalid tenant", INVALID_API_TOKEN, "Tenant"),
     ):
         client = RestClient(token=token)
         res = client.post("/retrieval", json={"question": "chunk", "dataset_ids": ["x"]})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == expected_code, (scenario_name, payload)
-        assert payload["message"] == expected_message, (scenario_name, payload)
+        assert payload["code"] == 401, (scenario_name, payload)
+        assert expected_message in payload["message"], (scenario_name, payload)
 
 
 @pytest.mark.p2

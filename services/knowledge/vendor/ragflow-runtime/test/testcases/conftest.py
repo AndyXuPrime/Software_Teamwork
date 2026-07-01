@@ -80,7 +80,7 @@ _install_rag_llm_stubs()
 
 import pytest
 import requests
-from configs import HOST_ADDRESS, RAGFLOW_API_TOKEN, RAGFLOW_AUTHORIZATION, ZHIPU_AI_API_KEY, SILICONFLOW_API_KEY
+from configs import HOST_ADDRESS, RAGFLOW_TENANT_ID, ZHIPU_AI_API_KEY, SILICONFLOW_API_KEY
 
 MARKER_EXPRESSIONS = {
     "p1": "p1",
@@ -115,33 +115,20 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 @pytest.fixture(scope="session")
-def auth():
-    if RAGFLOW_AUTHORIZATION:
-        return RAGFLOW_AUTHORIZATION
-    if RAGFLOW_API_TOKEN:
-        return f"Bearer {RAGFLOW_API_TOKEN}"
-    pytest.exit("Set RAGFLOW_API_TOKEN or RAGFLOW_AUTHORIZATION to run RAGFlow HTTP integration tests.")
+def token():
+    if not RAGFLOW_TENANT_ID:
+        pytest.exit("Set RAGFLOW_TENANT_ID (or TENANT_ID) to run RAGFlow HTTP integration tests.")
+    return RAGFLOW_TENANT_ID
 
 
 @pytest.fixture(scope="session")
-def token(auth):
-    if RAGFLOW_API_TOKEN:
-        return RAGFLOW_API_TOKEN
-
-    url = HOST_ADDRESS + "/api/v1/system/tokens"
-    auth = {"Authorization": auth}
-    response = requests.post(url=url, headers=auth)
-    res = response.json()
-    if res.get("code") != 0:
-        error_msg = f"access: {url}, POST method, error code: {res.get('code')}, message: {res.get('message')}"
-        raise Exception(error_msg)
-    return res["data"].get("token")
+def auth(token):
+    return token
 
 
-def get_added_models(auth, factory_name):
+def get_added_models(tenant_id, factory_name):
     url = HOST_ADDRESS + "/api/v1/models"
-    authorization = {"Authorization": auth}
-    response = requests.get(url=url, headers=authorization)
+    response = requests.get(url=url, headers={"X-Tenant-Id": tenant_id})
     res = response.json()
     if res.get("code") != 0:
         raise Exception(res.get("message"))

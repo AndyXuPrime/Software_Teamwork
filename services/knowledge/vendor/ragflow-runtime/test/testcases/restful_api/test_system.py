@@ -34,16 +34,19 @@ def test_system_version(rest_client):
 
 
 @pytest.mark.p2
-def test_system_status_requires_auth(rest_client_noauth):
+def test_system_status_requires_tenant_header(rest_client_noauth):
     res = rest_client_noauth.get("/system/status")
     assert res.status_code == 401
     payload = res.json()
     assert payload["code"] == 401, payload
-    assert "Unauthorized" in payload["message"], payload
+    assert "X-Tenant-Id" in payload["message"], payload
 
 
 @pytest.mark.p2
-def test_system_status_contract(rest_client):
+def test_system_log_config_routes_auth_and_validation(rest_client, rest_client_noauth):
+    unauth = rest_client_noauth.get("/system/config/log")
+    assert unauth.status_code == 401
+    assert unauth.json()["code"] == 401
     res = rest_client.get("/system/status")
     assert res.status_code == 200
     payload = res.json()
@@ -62,43 +65,7 @@ def test_system_healthz_contract(rest_client_noauth):
 
 
 @pytest.mark.p2
-def test_system_tokens_auth_and_crud(rest_client, rest_client_noauth):
-    unauth_list = rest_client_noauth.get("/system/tokens")
-    assert unauth_list.status_code == 401
-    unauth_list_payload = unauth_list.json()
-    assert unauth_list_payload["code"] == 401, unauth_list_payload
-
-    create_res = rest_client.post("/system/tokens")
-    assert create_res.status_code == 200
-    create_payload = create_res.json()
-    assert create_payload["code"] == 0, create_payload
-    token = create_payload["data"]["token"]
-
-    list_res = rest_client.get("/system/tokens")
-    assert list_res.status_code == 200
-    list_payload = list_res.json()
-    assert list_payload["code"] == 0, list_payload
-    assert isinstance(list_payload["data"], list), list_payload
-    assert any(item.get("token") == token for item in list_payload["data"]), list_payload
-
-    delete_res = rest_client.delete(f"/system/tokens/{token}")
-    assert delete_res.status_code == 200
-    delete_payload = delete_res.json()
-    assert delete_payload["code"] == 0, delete_payload
-    assert delete_payload["data"] is True, delete_payload
-
-    delete_missing = rest_client.delete("/system/tokens/missing_token")
-    assert delete_missing.status_code == 200
-    delete_missing_payload = delete_missing.json()
-    assert delete_missing_payload["code"] == 0, delete_missing_payload
-    assert delete_missing_payload["data"] is True, delete_missing_payload
-
-
-@pytest.mark.p2
-def test_system_log_config_routes_auth_and_validation(rest_client, rest_client_noauth):
-    unauth = rest_client_noauth.get("/system/config/log")
-    assert unauth.status_code == 401
-    assert unauth.json()["code"] == 401
+def test_system_status_contract(rest_client):
 
     levels = rest_client.get("/system/config/log")
     assert levels.status_code == 200

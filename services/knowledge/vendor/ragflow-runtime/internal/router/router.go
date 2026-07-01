@@ -272,24 +272,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 					config.GET("/log", r.systemHandler.GetLogLevel)
 					config.PUT("/log", r.systemHandler.SetLogLevel)
 				}
-
-				//log := system.Group("/log")
-				//{
-				//	// /api/v1/system/log GET
-				//	log.GET("", r.systemHandler.GetLogLevel)
-				//	// /api/v1/system/log PUT
-				//	log.PUT("", r.systemHandler.SetLogLevel)
-				//}
-
-				tokens := system.Group("/tokens")
-				{
-					// list tokens /api/v1/system/tokens GET
-					tokens.GET("", r.systemHandler.ListAPIKeys)
-					// create token /api/v1/system/tokens POST
-					tokens.POST("", r.systemHandler.CreateKey)
-					// delete token /api/v1/system/tokens/:key DELETE
-					tokens.DELETE("/:key", r.systemHandler.DeleteKey)
-				}
 			}
 		}
 

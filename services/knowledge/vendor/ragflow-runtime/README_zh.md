@@ -15,7 +15,7 @@
 
 ## 已裁剪的产品面
 
-上游完整产品中的 Web UI、Agent、Admin、Chat、Dify 集成、用户注册/登录/租户协作、OceanBase 运维端点等已移除或不再暴露。运行时仍保留 API token / JWT 鉴权中间层，用于保护 dataset / document / retrieval / MCP 等核心 API。
+上游完整产品中的 Web UI、Agent、Admin、Chat、Dify 集成、用户注册/登录/租户协作、API token 自助管理等已移除或不再暴露。运行时信任上游 Gateway 注入的 `X-Tenant-Id`（或 `X-User-Id`）解析 tenant 上下文，用于保护 dataset / document / retrieval / MCP 等核心 API。
 
 ## 主要目录
 
