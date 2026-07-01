@@ -26,8 +26,6 @@ import (
 	"os/signal"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/ingestion"
-	"ragflow/internal/server/local"
-	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -49,15 +47,12 @@ func printIngestionServerHelp() {
 	fmt.Fprintf(os.Stderr, "Options:\n")
 	fmt.Fprintf(os.Stderr, "  -f string\t\tPath to config file (default: auto-detect)\n")
 	fmt.Fprintf(os.Stderr, "  --name string\t\tIngestion server name (default: \"default_ingestion\")\n")
-	fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host (overrides config file)\n")
-	fmt.Fprintf(os.Stderr, "  --admin-port int\tAdmin server port (overrides config file)\n")
 	fmt.Fprintf(os.Stderr, "  --version  \tPrint version information and exit\n")
 	fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
 	fmt.Fprintf(os.Stderr, "  -h, --help\t\tShow this help message and exit\n")
 	fmt.Fprintf(os.Stderr, "\nExamples:\n")
 	fmt.Fprintf(os.Stderr, "  %s                          # Start with default config\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "  %s -f /path/to/config.yaml   # Start with custom config file\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  %s --admin-host 10.0.0.1 --admin-port 9383\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "  %s --version  \t\t# Show version and exit\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "  %s --debug    \t\t# Start with debug logging\n", os.Args[0])
 }
@@ -66,13 +61,9 @@ func main() {
 	// Parse command line flags
 	var configPath string
 	var name string
-	var adminHost string
-	var adminPort int
 
 	flag.StringVar(&configPath, "f", "", "Path to config file (overrides auto-detect)")
 	flag.StringVar(&name, "name", "default_ingestion", "Ingestion server name")
-	flag.StringVar(&adminHost, "admin-host", "", "Admin server host (overrides config file)")
-	flag.IntVar(&adminPort, "admin-port", 0, "Admin server port (overrides config file)")
 	var debugFlag bool
 	flag.BoolVar(&debugFlag, "debug", false, "Enable debug-level logging")
 	var versionFlag bool
@@ -100,18 +91,6 @@ func main() {
 	}
 
 	config := server.GetConfig()
-
-	// Override admin server host with command line argument if provided
-	if adminHost != "" {
-		config.Admin.Host = adminHost
-		common.Info("Admin host overridden by command line argument", zap.String("admin_host", adminHost))
-	}
-
-	// Override admin server port with command line argument if provided
-	if adminPort > 0 {
-		config.Admin.Port = adminPort
-		common.Info("Admin port overridden by command line argument", zap.Int("admin_port", adminPort))
-	}
 
 	// Reinitialize logger with configured level if different
 	level := config.Log.Level
@@ -185,7 +164,7 @@ func main() {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	ingestor := ingestion.NewIngestor(name, 2, []string{"pdf", "docx", "txt"})
+	ingestor := ingestion.NewIngestor(name, 2)
 
 	go func() {
 		err := ingestor.Start()
@@ -210,43 +189,13 @@ func main() {
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", utility.GetRAGFlowVersion()))
 
-	// Get local IP address for heartbeat reporting
-	localIP, err := utility.GetLocalIP()
-	if err != nil {
-		common.Fatal("fail to get local ip address")
-	}
-
-	// Initialize and start heartbeat reporter to admin server
-	service.AdminServiceClient = service.NewAdminClient(
-		common.Logger,
-		common.ServerTypeIngestion,
-		fmt.Sprintf("ingestor-%s", ingestor.ID()),
-		localIP,
-		-1,
-	)
-	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
-		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
-	} else {
-		// Start heartbeat reporter with 30 seconds interval
-		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
-				local.SetAdminStatus(0, "")
-			} else {
-				local.SetAdminStatus(1, err.Error())
-				//logger.Warn(fmt.Sprintf(err.Error()))
-			}
-		})
-		heartbeatReporter.Start()
-		defer heartbeatReporter.Stop()
-	}
-
-	// Wait for either an OS signal or a shutdown command from the admin
+	// Wait for either an OS signal or a shutdown request from the ingestor.
 	select {
 	case sig := <-quit:
 		common.Info("Received signal", zap.String("signal", sig.String()))
 		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", name))
 	case <-ingestor.ShutdownCh:
-		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", name))
+		common.Info(fmt.Sprintf("Received shutdown request, stopping ingestor %s ...", name))
 	}
 
 	// Create context with timeout for graceful shutdown

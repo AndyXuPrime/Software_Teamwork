@@ -22,7 +22,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/server"
-	"ragflow/internal/server/local"
 	"ragflow/internal/utility"
 	"strconv"
 
@@ -193,16 +192,6 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 			"code":    common.CodeBadRequest,
 			"message": err.Error(),
 			"data":    false,
-		})
-		return
-	}
-
-	if !local.IsAdminAvailable() {
-		license := local.GetAdminStatus()
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeAuthenticationError,
-			"message": license.Reason,
-			"data":    "No",
 		})
 		return
 	}

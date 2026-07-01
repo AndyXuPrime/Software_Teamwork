@@ -17,11 +17,9 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -99,8 +97,7 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 	}
 }
 
-// AuthMiddleware JWT auth middleware
-// Validates that the user is authenticated and is a superuser (admin)
+// AuthMiddleware JWT auth middleware.
 func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader("Authorization")
@@ -134,19 +131,6 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			c.JSON(http.StatusForbidden, gin.H{
 				"code":    common.CodeForbidden,
 				"message": "Super user shouldn't access the URL",
-			})
-			c.Abort()
-			return
-		}
-
-		if !local.IsAdminAvailable() {
-			license := local.GetAdminStatus()
-			errMsg := fmt.Sprintf("server license %s", license.Reason)
-			common.Warn(errMsg)
-			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"code":    common.CodeUnauthorized,
-				"message": errMsg,
-				"data":    "No",
 			})
 			c.Abort()
 			return

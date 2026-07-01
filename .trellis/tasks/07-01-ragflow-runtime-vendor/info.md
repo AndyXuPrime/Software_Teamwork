@@ -475,3 +475,30 @@ first, most likely Parser-backed document parsing before retrieval replacement.
   startup behavior, but should not keep upstream Web/Admin superuser bootstrap
   semantics after Web/Admin product surfaces were trimmed.
 - Confirmed by user before cleanup: yes
+
+### 2026-07-01: remove Go Admin server and license-gate residue
+
+- Removed:
+  - `services/knowledge/vendor/ragflow-runtime/internal/service/admin_client.go`
+  - `services/knowledge/vendor/ragflow-runtime/internal/server/local/admin_status.go`
+  - Go-side Admin heartbeat client initialization from `cmd/ingestor.go`
+  - commented-out Admin gRPC control, heartbeat, reconnect, and task-assignment
+    code from `internal/ingestion/ingestion_service.go`
+  - `AdminConfig`, `DefaultSuperUser`, `GetAdminConfig()`, and
+    `DEFAULT_SUPERUSER_*` parsing from `internal/server/config.go`
+  - Admin availability / license-gate checks from retained auth and user login
+    handlers
+  - Admin/default-superuser environment display from system settings
+  - Admin server YAML blocks, Admin command examples, and Admin-only Docker
+    port variables from retained configuration references
+- Kept:
+  - ordinary user, tenant, auth-token, and API-token data structures
+  - retained dataset/document/MCP API permission context
+  - parser, ingestion, RAG/retrieval, MCP, and container startup surfaces
+  - task executor heartbeat inspection, which is runtime observability rather
+    than upstream Admin server heartbeat
+- Reason: this Knowledge/RAG runtime should not expose or depend on upstream
+  Admin server, commercial license status, heartbeat reporting, or default
+  superuser bootstrap semantics. The retained runtime still needs normal user
+  and tenant context for dataset/document/API-token permission behavior.
+- Confirmed by user before cleanup: yes

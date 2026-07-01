@@ -19,7 +19,6 @@ package server
 import (
 	"fmt"
 	"net"
-	"net/mail"
 	"net/url"
 	"os"
 	"strconv"
@@ -37,30 +36,16 @@ const DefaultConnectTimeout = 5 * time.Second
 
 // Config application configuration
 type Config struct {
-	Server           ServerConfig         `mapstructure:"server"`
-	Database         DatabaseConfig       `mapstructure:"database"`
-	Redis            RedisConfig          `mapstructure:"redis"`
-	Nats             NatsConfig           `mapstructure:"nats"`
-	Log              LogConfig            `mapstructure:"log"`
-	DocEngine        DocEngineConfig      `mapstructure:"doc_engine"`
-	StorageEngine    StorageConfig        `mapstructure:"storage_engine"`
-	Admin            AdminConfig          `mapstructure:"admin"`
-	UserDefaultLLM   UserDefaultLLMConfig `mapstructure:"user_default_llm"`
-	DefaultSuperUser DefaultSuperUser     `mapstructure:"default_super_user"`
-	Language         string               `mapstructure:"language"`
-	TaskExecutor     TaskExecutorConfig   `mapstructure:"task_executor"`
-}
-
-// AdminConfig admin server configuration
-type AdminConfig struct {
-	Host string `mapstructure:"host"`
-	Port int    `mapstructure:"http_port"`
-}
-
-type DefaultSuperUser struct {
-	Email    string `mapstructure:"email"`
-	Password string `mapstructure:"password"`
-	Nickname string `mapstructure:"nickname"`
+	Server         ServerConfig         `mapstructure:"server"`
+	Database       DatabaseConfig       `mapstructure:"database"`
+	Redis          RedisConfig          `mapstructure:"redis"`
+	Nats           NatsConfig           `mapstructure:"nats"`
+	Log            LogConfig            `mapstructure:"log"`
+	DocEngine      DocEngineConfig      `mapstructure:"doc_engine"`
+	StorageEngine  StorageConfig        `mapstructure:"storage_engine"`
+	UserDefaultLLM UserDefaultLLMConfig `mapstructure:"user_default_llm"`
+	Language       string               `mapstructure:"language"`
+	TaskExecutor   TaskExecutorConfig   `mapstructure:"task_executor"`
 }
 
 type TaskExecutorConfig struct {
@@ -431,29 +416,6 @@ func FromEnvironments() error {
 		return fmt.Errorf("invalid doc engine: %s", docEngine)
 	}
 
-	// Default super user email
-	globalConfig.DefaultSuperUser.Email = "admin@ragflow.io"
-	superUserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
-	if superUserEmail != "" {
-		_, err := mail.ParseAddress(superUserEmail)
-		if err != nil {
-			return fmt.Errorf("invalid super user email: %s", superUserEmail)
-		}
-		globalConfig.DefaultSuperUser.Email = superUserEmail
-	}
-
-	globalConfig.DefaultSuperUser.Password = "admin"
-	superUserPassword := os.Getenv("DEFAULT_SUPERUSER_PASSWORD")
-	if superUserPassword != "" {
-		globalConfig.DefaultSuperUser.Password = superUserPassword
-	}
-
-	globalConfig.DefaultSuperUser.Nickname = "admin"
-	superUserNickname := os.Getenv("DEFAULT_SUPERUSER_NICKNAME")
-	if superUserNickname != "" {
-		globalConfig.DefaultSuperUser.Nickname = superUserNickname
-	}
-
 	// Meta database
 	databaseType := strings.ToLower(os.Getenv("DB_TYPE"))
 	switch databaseType {
@@ -563,16 +525,6 @@ func FromConfigFile(configPath string) error {
 	// Note: This will only unmarshal fields that match the Config struct
 	if err := v.Unmarshal(&globalConfig); err != nil {
 		return fmt.Errorf("unmarshal config error: %w", err)
-	}
-
-	// Set default values for admin configuration if not configured
-	if globalConfig.Admin.Host == "" {
-		globalConfig.Admin.Host = "127.0.0.1"
-	}
-	if globalConfig.Admin.Port == 0 {
-		globalConfig.Admin.Port = 9383
-	} else {
-		globalConfig.Admin.Port += 2
 	}
 
 	// If we loaded service_conf.yaml, map mysql fields to DatabaseConfig
@@ -806,14 +758,6 @@ func FromConfigFile(configPath string) error {
 // Get get global configuration
 func GetConfig() *Config {
 	return globalConfig
-}
-
-// GetAdminConfig gets the admin server configuration
-func GetAdminConfig() *AdminConfig {
-	if globalConfig == nil {
-		return nil
-	}
-	return &globalConfig.Admin
 }
 
 // SetLogger sets the logger instance

@@ -446,16 +446,6 @@ func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 		"value": docEngine,
 	})
 
-	// DEFAULT_SUPERUSER_EMAIL
-	defaultSuperuserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
-	if defaultSuperuserEmail == "" {
-		defaultSuperuserEmail = "admin@ragflow.io"
-	}
-	result = append(result, map[string]interface{}{
-		"env":   "DEFAULT_SUPERUSER_EMAIL",
-		"value": defaultSuperuserEmail,
-	})
-
 	// DB_TYPE
 	dbType := os.Getenv("DB_TYPE")
 	if dbType == "" {
