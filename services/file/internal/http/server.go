@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -37,7 +36,7 @@ type Config struct {
 }
 
 type Server struct {
-	documents        *service.Service
+	files            *service.Service
 	maxUploadBytes   int64
 	logger           *slog.Logger
 	serviceToken     string
@@ -48,7 +47,7 @@ type Server struct {
 	mux              *http.ServeMux
 }
 
-func NewServer(documents *service.Service, cfg Config) *Server {
+func NewServer(files *service.Service, cfg Config) *Server {
 	if cfg.MaxUploadBytes <= 0 {
 		cfg.MaxUploadBytes = defaultMaxUploadBytes
 	}
@@ -65,7 +64,7 @@ func NewServer(documents *service.Service, cfg Config) *Server {
 		cfg.ReadinessTimeout = defaultReadinessTimeout
 	}
 	s := &Server{
-		documents:        documents,
+		files:            files,
 		maxUploadBytes:   cfg.MaxUploadBytes,
 		logger:           cfg.Logger,
 		serviceToken:     strings.TrimSpace(cfg.ServiceToken),
@@ -86,11 +85,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /internal/v1/files/{fileId}", s.handleGetFile)
 	s.mux.HandleFunc("DELETE /internal/v1/files/{fileId}", s.handleDeleteFile)
 	s.mux.HandleFunc("GET /internal/v1/files/{fileId}/content", s.handleGetFileContent)
-	s.mux.HandleFunc("POST /internal/v1/knowledge-bases/{knowledgeBaseId}/documents", s.handleUploadDocument)
-	s.mux.HandleFunc("GET /internal/v1/documents/{documentId}", s.handleGetDocument)
-	s.mux.HandleFunc("PATCH /internal/v1/documents/{documentId}", s.handleUpdateDocument)
-	s.mux.HandleFunc("DELETE /internal/v1/documents/{documentId}", s.handleDeleteDocument)
-	s.mux.HandleFunc("GET /internal/v1/documents/{documentId}/content", s.handleGetDocumentContent)
 	s.mux.HandleFunc("/", s.handleNotFound)
 }
 
@@ -179,7 +173,7 @@ func (s *Server) handleCreateFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	created, err := s.documents.CreateFile(r.Context(), reqCtx, service.CreateFileInput{
+	created, err := s.files.CreateFile(r.Context(), reqCtx, service.CreateFileInput{
 		FileName:       header.Filename,
 		ContentType:    header.Header.Get("Content-Type"),
 		SizeBytes:      header.Size,
@@ -198,7 +192,7 @@ func (s *Server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	file, err := s.documents.GetFile(r.Context(), reqCtx, r.PathValue("fileId"))
+	file, err := s.files.GetFile(r.Context(), reqCtx, r.PathValue("fileId"))
 	if err != nil {
 		writeAppError(w, r, err)
 		return
@@ -211,7 +205,7 @@ func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.documents.DeleteFile(r.Context(), reqCtx, r.PathValue("fileId")); err != nil {
+	if err := s.files.DeleteFile(r.Context(), reqCtx, r.PathValue("fileId")); err != nil {
 		writeAppError(w, r, err)
 		return
 	}
@@ -223,117 +217,13 @@ func (s *Server) handleGetFileContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	content, err := s.documents.GetFileContent(r.Context(), reqCtx, r.PathValue("fileId"))
+	content, err := s.files.GetFileContent(r.Context(), reqCtx, r.PathValue("fileId"))
 	if err != nil {
 		writeAppError(w, r, err)
 		return
 	}
 	defer content.Body.Close()
 	writeContent(w, content.ContentType, content.File.Filename, content.SizeBytes, content.Body)
-}
-
-func (s *Server) handleUploadDocument(w http.ResponseWriter, r *http.Request) {
-	reqCtx, ok := s.gatewayContext(w, r)
-	if !ok {
-		return
-	}
-
-	file, header, _, ok := s.parseMultipartFile(w, r)
-	if !ok {
-		return
-	}
-	defer file.Close()
-
-	var tags []string
-	if r.MultipartForm != nil {
-		tags = append(tags, r.MultipartForm.Value["tags"]...)
-	}
-
-	doc, err := s.documents.UploadDocument(r.Context(), reqCtx, service.UploadDocumentInput{
-		KnowledgeBaseID: r.PathValue("knowledgeBaseId"),
-		FileName:        header.Filename,
-		ContentType:     header.Header.Get("Content-Type"),
-		SizeBytes:       header.Size,
-		Tags:            tags,
-		Content:         file,
-	})
-	if err != nil {
-		writeAppError(w, r, err)
-		return
-	}
-
-	writeJSON(w, http.StatusCreated, documentSummaryFromDomain(doc), requestIDFromContext(r.Context()))
-}
-
-func (s *Server) handleGetDocument(w http.ResponseWriter, r *http.Request) {
-	reqCtx, ok := s.gatewayContext(w, r)
-	if !ok {
-		return
-	}
-	doc, err := s.documents.GetDocument(r.Context(), reqCtx, r.PathValue("documentId"))
-	if err != nil {
-		writeAppError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, documentSummaryFromDomain(doc), requestIDFromContext(r.Context()))
-}
-
-func (s *Server) handleUpdateDocument(w http.ResponseWriter, r *http.Request) {
-	reqCtx, ok := s.gatewayContext(w, r)
-	if !ok {
-		return
-	}
-	defer r.Body.Close()
-
-	var payload struct {
-		Tags []string `json:"tags"`
-	}
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&payload); err != nil {
-		writeAppError(w, r, service.ValidationError("request validation failed", map[string]string{"body": "must be a valid JSON object"}))
-		return
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		writeAppError(w, r, service.ValidationError("request validation failed", map[string]string{"body": "must contain only one JSON object"}))
-		return
-	}
-
-	doc, err := s.documents.UpdateDocument(r.Context(), reqCtx, service.UpdateDocumentInput{
-		DocumentID: r.PathValue("documentId"),
-		Tags:       payload.Tags,
-	})
-	if err != nil {
-		writeAppError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, documentSummaryFromDomain(doc), requestIDFromContext(r.Context()))
-}
-
-func (s *Server) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
-	reqCtx, ok := s.gatewayContext(w, r)
-	if !ok {
-		return
-	}
-	if err := s.documents.DeleteDocument(r.Context(), reqCtx, r.PathValue("documentId")); err != nil {
-		writeAppError(w, r, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) handleGetDocumentContent(w http.ResponseWriter, r *http.Request) {
-	reqCtx, ok := s.gatewayContext(w, r)
-	if !ok {
-		return
-	}
-	content, err := s.documents.GetDocumentContent(r.Context(), reqCtx, r.PathValue("documentId"))
-	if err != nil {
-		writeAppError(w, r, err)
-		return
-	}
-	defer content.Body.Close()
-	writeContent(w, content.ContentType, content.Document.Name, content.SizeBytes, content.Body)
 }
 
 func (s *Server) parseMultipartFile(w http.ResponseWriter, r *http.Request) (multipart.File, *multipart.FileHeader, string, bool) {
@@ -362,15 +252,6 @@ func (s *Server) parseMultipartFile(w http.ResponseWriter, r *http.Request) (mul
 
 func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
 	writeAppError(w, r, service.NotFoundError("route not found"))
-}
-
-func (s *Server) gatewayContext(w http.ResponseWriter, r *http.Request) (service.RequestContext, bool) {
-	reqCtx := requestContextFromHeaders(r)
-	if strings.TrimSpace(reqCtx.UserID) == "" {
-		writeAppError(w, r, service.UnauthorizedError())
-		return service.RequestContext{}, false
-	}
-	return reqCtx, true
 }
 
 func (s *Server) internalContext(w http.ResponseWriter, r *http.Request) (service.RequestContext, bool) {

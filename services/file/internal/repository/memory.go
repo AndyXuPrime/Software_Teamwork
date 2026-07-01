@@ -9,78 +9,14 @@ import (
 )
 
 type MemoryRepository struct {
-	mu        sync.RWMutex
-	documents map[string]service.Document
-	files     map[string]service.FileObject
+	mu    sync.RWMutex
+	files map[string]service.FileObject
 }
 
 func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{
-		documents: map[string]service.Document{},
-		files:     map[string]service.FileObject{},
+		files: map[string]service.FileObject{},
 	}
-}
-
-func (r *MemoryRepository) Create(ctx context.Context, doc service.Document) (service.Document, error) {
-	if err := ctx.Err(); err != nil {
-		return service.Document{}, err
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if _, exists := r.documents[doc.ID]; exists {
-		return service.Document{}, service.ErrConflict
-	}
-	stored := cloneDocument(doc)
-	r.documents[stored.ID] = stored
-	return cloneDocument(stored), nil
-}
-
-func (r *MemoryRepository) FindByID(ctx context.Context, id string) (service.Document, error) {
-	if err := ctx.Err(); err != nil {
-		return service.Document{}, err
-	}
-
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	doc, exists := r.documents[id]
-	if !exists || doc.DeletedAt != nil {
-		return service.Document{}, service.ErrNotFound
-	}
-	return cloneDocument(doc), nil
-}
-
-func (r *MemoryRepository) ReplaceTags(ctx context.Context, id string, tags []string) (service.Document, error) {
-	if err := ctx.Err(); err != nil {
-		return service.Document{}, err
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	doc, exists := r.documents[id]
-	if !exists || doc.DeletedAt != nil {
-		return service.Document{}, service.ErrNotFound
-	}
-	doc.Tags = append([]string(nil), tags...)
-	r.documents[id] = doc
-	return cloneDocument(doc), nil
-}
-
-func (r *MemoryRepository) MarkDeleted(ctx context.Context, id string, deletedAt time.Time) (service.Document, error) {
-	if err := ctx.Err(); err != nil {
-		return service.Document{}, err
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	doc, exists := r.documents[id]
-	if !exists || doc.DeletedAt != nil {
-		return service.Document{}, service.ErrNotFound
-	}
-	deleted := deletedAt.UTC()
-	doc.DeletedAt = &deleted
-	r.documents[id] = doc
-	return cloneDocument(doc), nil
 }
 
 func (r *MemoryRepository) CreateFile(ctx context.Context, file service.FileObject) (service.FileObject, error) {
@@ -120,14 +56,42 @@ func (r *MemoryRepository) MarkFileDeleteRequested(ctx context.Context, id strin
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	file, exists := r.files[id]
-	if !exists || file.DeletedAt != nil {
+	if !exists {
 		return service.FileObject{}, service.ErrNotFound
 	}
+	if file.Status == service.FileStatusPurged {
+		return cloneFileObject(file), nil
+	}
 	deleted := deletedAt.UTC()
-	file.DeletedAt = &deleted
-	file.DeleteRequestedAt = &deleted
+	if file.DeletedAt == nil {
+		file.DeletedAt = &deleted
+	}
+	if file.DeleteRequestedAt == nil {
+		file.DeleteRequestedAt = &deleted
+	}
 	file.UpdatedAt = deleted
 	file.Status = service.FileStatusDeleteRequested
+	r.files[id] = file
+	return cloneFileObject(file), nil
+}
+
+func (r *MemoryRepository) MarkFilePurging(ctx context.Context, id string, purgingAt time.Time) (service.FileObject, error) {
+	if err := ctx.Err(); err != nil {
+		return service.FileObject{}, err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	file, exists := r.files[id]
+	if !exists {
+		return service.FileObject{}, service.ErrNotFound
+	}
+	if file.Status == service.FileStatusPurged {
+		return cloneFileObject(file), nil
+	}
+	purging := purgingAt.UTC()
+	file.UpdatedAt = purging
+	file.Status = service.FileStatusPurging
 	r.files[id] = file
 	return cloneFileObject(file), nil
 }
@@ -171,19 +135,6 @@ func (r *MemoryRepository) MarkFilePurgeFailed(ctx context.Context, id string, c
 	file.LastErrorMessage = message
 	r.files[id] = file
 	return cloneFileObject(file), nil
-}
-
-func cloneDocument(doc service.Document) service.Document {
-	doc.Tags = append([]string(nil), doc.Tags...)
-	if doc.ErrorMessage != nil {
-		message := *doc.ErrorMessage
-		doc.ErrorMessage = &message
-	}
-	if doc.DeletedAt != nil {
-		deletedAt := *doc.DeletedAt
-		doc.DeletedAt = &deletedAt
-	}
-	return doc
 }
 
 func cloneFileObject(file service.FileObject) service.FileObject {
