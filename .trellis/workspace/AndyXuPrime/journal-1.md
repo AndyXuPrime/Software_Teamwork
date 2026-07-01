@@ -987,3 +987,36 @@ Reviewed PR #350 after latest develop update. Verified the submitted PR branch i
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: S-042 AI Gateway real provider readiness
+
+**Date**: 2026-07-01
+**Task**: S-042 AI Gateway real provider readiness
+**Branch**: `Special/test/real-provider-api-key-smoke`
+
+### Summary
+
+Implemented AI Gateway readiness distinction for missing, placeholder, and configured credentials; updated HMAC seed fingerprints, docs, OpenAPI, and env-gated smoke guidance for issue #378.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8ec4388` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

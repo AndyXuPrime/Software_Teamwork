@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 27
+- **Total Sessions**: 28
 - **Last Active**: 2026-07-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~989 | Active |
+| `journal-1.md` | ~1022 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-07-01 | S-042 AI Gateway real provider readiness | `8ec4388` | `Special/test/real-provider-api-key-smoke` |
 | 27 | 2026-07-01 | Review PR 350 against latest develop | - | `PrimeTeam/chore/pr-350-review-journal` |
 | 26 | 2026-07-01 | Fix knowledge PR review archive context | `afe8241`, `79090f7` | `Frontend/feat/knowledge-real-api` |
 | 25 | 2026-06-30 | F-016 malformed stream closure | `2ebcc07` | `Frontend/feat/qa-capability-aligned-chat` |
