@@ -122,7 +122,7 @@ GET /api/v1/report-files/{reportFileId}/content
 4. 通过 File Service 保存底层 bytes，并在 Document 回写 `ReportFile(fileRef, fileSize, status=succeeded)` 和报告导出元数据。
 5. `GET /report-files/{reportFileId}/content` 只在文件 `succeeded` 且 File Service 可返回内容时流式读取文件。
 
-后续富 DOCX 实现还需要读取当前大纲、样式配置和模板能力，并固定 Pandoc/LibreOffice worker 镜像或 CLI 版本。不要把基础 DOCX 导出解读为已有富 DOCX 排版能力。
+后续富 DOCX 实现还需要读取当前大纲、样式配置和模板能力，并在 Dockerfile 接入已由 C-011 固定的 `pandoc/core:3.10` worker（工具链选型、调用边界、smoke 验证和 fallback 策略见 `docs/services/document/docs/rich-docx-worker.md`）。不要把基础 DOCX 导出解读为已有富 DOCX 排版能力。
 
 ## 下游服务边界
 

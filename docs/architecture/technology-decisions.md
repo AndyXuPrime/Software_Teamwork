@@ -113,7 +113,7 @@
 | Parser CI | GitHub Actions + uv | `uv@0.11.6`；runner `ubuntu-latest` | 已固定 | `.github/workflows/parser-service.yml` 运行 `uv sync --frozen --group dev`、Ruff、pytest 和 compileall。 |
 | Docker 镜像与构建源策略 | 默认官方校验源，可显式覆盖镜像源；中国大陆推荐显式 registry rewrite | Go 默认 `GOPROXY=https://proxy.golang.org,direct`、`GOSUMDB=sum.golang.org`；中国 overlay 使用 `deploy/.env.china.example`，优先级为 `registry rewrite > daemon mirror > proxy`；Compose 基础镜像可用 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`QDRANT_IMAGE`、`MINIO_IMAGE`、`MINIO_MC_IMAGE` 覆盖；`scripts/check_docker_policy.py` 做 CI 策略守门，`scripts/check_docker_environment.py` 做本机网络诊断 | 已固定 | 构建优先级是能跑、构建快、镜像小、内存少、存储少；不得为提速默认关闭 Go checksum verification，不得把 Compose 镜像改成 `latest`。 |
 | 观测 | `slog` + Prometheus metrics；关键链路 OpenTelemetry tracing | `github.com/prometheus/client_golang@v1.23.2`；`go.opentelemetry.io/otel@v1.44.0`；`go.opentelemetry.io/otel/sdk@v1.44.0`；`go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.44.0`；`go.opentelemetry.io/otel/exporters/prometheus@v0.66.0` | 已选型，待固定 | 第一阶段先保证结构化日志和低基数字段指标；首次落地 metrics/tracing 时必须写入对应服务 `go.mod` 并同步本文状态。 |
-| DOCX 生成 | Document worker 当前使用内置 Go `SimpleDOCXGenerator`；Pandoc/LibreOffice 作为后续富 DOCX 工具链 | 内置 Go 生成器：标准库；Pandoc 候选基线 `3.10`；LibreOffice 待 worker image 落地固定 tag + digest | 部分已固定 | 当前不依赖外部 CLI；引入 Pandoc/LibreOffice 前必须固定 worker 镜像或 CLI 版本和摘要。 |
+| DOCX 生成 | Document worker 当前使用内置 Go `SimpleDOCXGenerator`；Pandoc 作为富 DOCX 主工具链（C-011 已固定）；LibreOffice 暂不引入，保留后续候选 | 内置 Go 生成器：标准库；Pandoc：`pandoc/core:3.10`（镜像 tag 已固定，digest 在 Dockerfile 接入时固定）；LibreOffice：暂不引入 | 已固定（C-011） | 当前生产路径为内置 Go `SimpleDOCXGenerator`；富 DOCX worker 工具链已由 C-011 固定，见 `docs/services/document/docs/rich-docx-worker.md`；Dockerfile 接入时必须写入 digest；LibreOffice 暂不引入，不能依赖运行环境自带 `soffice`。 |
 | MCP 集成 | 官方 MCP Go SDK；暂不拆独立 sidecar | `github.com/modelcontextprotocol/go-sdk@v1.1.0` | 已固定 | QA 负责工具白名单、权限、参数校验、超时和脱敏记录；SDK 升级或 sidecar 化另开兼容性任务。 |
 | 本地部署 | Docker Compose | Compose 文件格式无 top-level version | 部分已落地 | 根 `deploy/docker-compose.yml` 已提供本地/演示联调基线；服务本地 Compose 可继续用于单服务调试。 |
 
@@ -178,8 +178,8 @@
 | OpenTelemetry Prometheus exporter | `go.opentelemetry.io/otel/exporters/prometheus@v0.66.0` | 目标技术基线，尚未写入 `go.mod` | 用于 OTel metrics 与 Prometheus scrape 兼容；若服务只使用 Prometheus client，可暂不引入。 |
 | MCP Go SDK | `github.com/modelcontextprotocol/go-sdk@v1.1.0` | `services/qa/go.mod` | QA 当前直接作为 MCP Host/Client；暂不切换到独立 MCP sidecar。 |
 | Document 内置 DOCX 生成器 | Go 标准库 `archive/zip` + XML | `services/document/internal/service/docx_generator.go` | 当前只覆盖基础 DOCX 包装和文本/表格扁平化导出，不等同于 Pandoc/LibreOffice 富文档转换。 |
-| Pandoc CLI | `3.10` 候选基线 | Pandoc 官方 release | 后续引入 rich DOCX worker 时再写入 Dockerfile/Compose/部署镜像，并固定下载包 checksum 或镜像 digest。 |
-| LibreOffice headless | 待固定 | 尚无 worker image/runtime adapter | 仅作为后续 rich DOCX 兼容转换候选；落地时必须固定镜像 tag + digest，不能依赖运行环境自带 `soffice`。 |
+| Pandoc CLI | `pandoc/core:3.10`（镜像 tag 已固定，C-011） | Docker Hub `pandoc/core` | C-011 选定为富 DOCX 主工具链；worker 调用边界、smoke 验证和 fallback 策略见 `docs/services/document/docs/rich-docx-worker.md`；Dockerfile 接入时须写入镜像 digest。 |
+| LibreOffice headless | 暂不引入（C-011 决策） | N/A | Pandoc 满足首期富 DOCX 需求；LibreOffice 保留为后续候选，引入时须固定镜像 tag + digest，不能依赖运行环境自带 `soffice`。 |
 | QA service image | 本地构建 | `services/qa/docker-compose.yml` | QA 本地 Compose 串联 auth/gateway/QA 数据库。 |
 | Document service image | 本地构建 | `services/document/docker-compose.yml` | Document 本地 Compose 串联 PostgreSQL、migration 和服务。 |
 
@@ -231,7 +231,7 @@ public/internal 命名落位。
 | 队列 | Redis Streams 手写 | `asynq` | PostgreSQL queue | `asynq` | `asynq v0.26.0` 已固定 |
 | 前端 API client | 手写 fetch 类型 | `openapi-typescript` + wrapper | Orval | `openapi-typescript` + wrapper | `openapi-typescript@7.13.0` 已固定；wrapper 已有 |
 | 认证 token | Opaque token | JWT access + refresh | HttpOnly cookie session | Opaque Bearer token | 协议契约 |
-| DOCX 生成 | Go DOCX 库 | Pandoc/LibreOffice | 独立模板服务 | 当前阶段：Document worker + 内置 Go `SimpleDOCXGenerator`；富文档阶段：Document worker + Pandoc/LibreOffice worker image | 内置生成器已固定为标准库实现；Pandoc 候选 `3.10`，LibreOffice 镜像待落地固定 |
+| DOCX 生成 | Go DOCX 库 | Pandoc/LibreOffice | 独立模板服务 | 当前阶段：Document worker + 内置 Go `SimpleDOCXGenerator`；富文档阶段：Document worker + `pandoc/core:3.10` worker image | 内置生成器已固定为标准库实现；Pandoc 镜像 tag 已固定为 `pandoc/core:3.10`（C-011）；LibreOffice 暂不引入，保留候选；详见 `docs/services/document/docs/rich-docx-worker.md` |
 
 ## 后端落地约定
 
@@ -333,4 +333,4 @@ services/<service>/
 - 前端接入 `openapi-typescript`，生成 gateway 类型，并固定生成器版本。
 - 前端测试接入 Vitest、React Testing Library 和 Playwright，并固定版本。
 - 本地 Compose 已固定 Qdrant、MinIO、MinIO mc 等依赖镜像 tag；后续升级或生产部署必须继续使用明确 tag，不能以 `latest` 作为基线。
-- 为 Prometheus metrics、OpenTelemetry tracing、Document 富 DOCX worker 工具链和 MCP SDK/sidecar 固定版本；Document 工具链需记录镜像或 CLI 包版本、checksum 和部署策略。
+- 为 Prometheus metrics、OpenTelemetry tracing 和 MCP SDK/sidecar 固定版本；Document 富 DOCX worker 工具链已由 C-011 固定（`pandoc/core:3.10`，见 `docs/services/document/docs/rich-docx-worker.md`）；Dockerfile 接入时须补写 digest 并同步本文。
