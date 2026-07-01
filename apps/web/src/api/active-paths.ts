@@ -51,6 +51,8 @@ export const ACTIVE_GATEWAY_PATHS = [
   '/api/v1/qa-sessions/{sessionId}',
   '/api/v1/qa-sessions/{sessionId}/messages',
   '/api/v1/qa-sessions/{sessionId}/events',
+  '/api/v1/qa-sessions/{sessionId}/attachments',
+  '/api/v1/qa-sessions/{sessionId}/attachments/{attachmentId}',
   '/api/v1/response-runs/{responseRunId}',
   '/api/v1/response-runs/{responseRunId}/tool-calls',
   '/api/v1/messages/{messageId}/citations',
