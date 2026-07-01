@@ -25,7 +25,7 @@ type openAPIOperation struct {
 func TestQAActiveOpenAPIContractsHaveSchemasAndAuth(t *testing.T) {
 	document := readOpenAPIDocument(t, gatewayOpenAPIPath(t))
 	operations := ownerOpenAPIOperations(t, document, "qa")
-	if got, want := len(operations), 25; got != want {
+	if got, want := len(operations), 29; got != want {
 		t.Fatalf("qa active operations = %d, want %d", got, want)
 	}
 
