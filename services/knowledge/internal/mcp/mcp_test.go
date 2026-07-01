@@ -371,6 +371,71 @@ func TestSearchKnowledgeRequiresKnowledgeBaseIDs(t *testing.T) {
 	}
 }
 
+func TestSearchKnowledgeWithDocumentIDs(t *testing.T) {
+	state := newFakeVendorState()
+	vendor := startFakeVendor(t, state)
+	defer vendor.Close()
+
+	adapterServer := adapter.NewServer(adapterconfig.Config{
+		ServiceVersion:   "test",
+		VendorRuntimeURL: vendor.URL,
+	}, nil)
+	session := connectInMemory(t, adapterServer, kmcp.CallerContext{
+		UserID:      "usr_test",
+		RequestID:   "req_search_docids",
+		Permissions: service.PermissionKnowledgeRead,
+	}, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
+		Name: "search_knowledge",
+		Arguments: map[string]any{
+			"query":            "maintenance checklist",
+			"knowledgeBaseIds": []any{"kb_test"},
+			"documentIds":      []any{"doc_test"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected tool error: %+v", result)
+	}
+}
+
+func TestCreateKnowledgeBaseRequiresWritePermission(t *testing.T) {
+	state := newFakeVendorState()
+	vendor := startFakeVendor(t, state)
+	defer vendor.Close()
+
+	adapterServer := adapter.NewServer(adapterconfig.Config{
+		ServiceVersion:   "test",
+		VendorRuntimeURL: vendor.URL,
+	}, nil)
+	session := connectInMemory(t, adapterServer, kmcp.CallerContext{
+		UserID:      "usr_test",
+		Permissions: service.PermissionKnowledgeRead,
+	}, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
+		Name: "create_knowledge_base",
+		Arguments: map[string]any{
+			"name": "Should Fail",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !result.IsError {
+		t.Fatalf("expected tool error, got %+v", result)
+	}
+}
+
 func TestCreateAndListKnowledgeBases(t *testing.T) {
 	state := newFakeVendorState()
 	vendor := startFakeVendor(t, state)
