@@ -581,8 +581,13 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	finalCitations := citations
 	if len(finalCitations) == 0 {
 		finalCitations = citationsFromAgentMessages(assistantMessage.ID, run.ID, result.Messages)
+		finalCitations = revalidateCitationSources(ctx, userID, s.sourceChecker, finalCitations)
+		for _, citation := range finalCitations {
+			emit("citation.delta", map[string]any{"citation": citation})
+		}
+	} else {
+		finalCitations = revalidateCitationSources(ctx, userID, s.sourceChecker, finalCitations)
 	}
-	finalCitations = revalidateCitationSources(ctx, userID, s.sourceChecker, finalCitations)
 	assistantMessage.Citations = finalCitations
 	emit("answer.delta", map[string]any{"messageId": assistantMessage.ID, "text": assistantMessage.Content, "index": 0})
 	emit("answer.completed", map[string]any{
