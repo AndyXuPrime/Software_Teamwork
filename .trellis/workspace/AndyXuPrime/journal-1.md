@@ -1034,7 +1034,15 @@ Rebased PR #404 branch onto latest upstream/develop d5e2e94, resolved docs/testi
 
 ### Main Changes
 
-(Add details)
+- Rebased PR #404 onto `upstream/develop@d5e2e94`.
+- Preserved both latest develop QA fake-test guidance and AI Gateway real-provider smoke guidance while resolving `docs/testing/strategy.md`.
+- Fixed AI Gateway readiness scanning so a placeholder or missing profile does not mask another non-placeholder configured profile for the same purpose.
+
+### Encoding Incident Note
+
+- While updating PR #404, passing a Chinese multiline PR body through PowerShell pipe/arguments into `gh pr edit --body` / `--body-file -` wrote literal `?` characters to the remote PR body.
+- Avoid this failure mode: for Chinese or other non-ASCII PR bodies on Windows/PowerShell, write a UTF-8 JSON payload with `System.Text.UTF8Encoding($false)` and call `gh api -X PATCH ... --input <utf8-json-file>`.
+- Always read the remote PR body back after editing and verify required Chinese sections such as `修改内容`, `关联 Issue`, `验证`, and `已知风险` are not corrupted.
 
 ### Git Commits
 
