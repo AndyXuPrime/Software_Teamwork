@@ -183,7 +183,7 @@ jobs:
             const projectStatus = projectStatusByIssueStatus[issueStatus] || 'Todo';
 
             const labelsToAdd = new Set();
-            if (['L1nggTeam', 'JerryTeam', 'PrimeTeam'].includes(group)) {
+            if (['L1nggTeam', 'JerryTeam', 'PrimeTeam', 'Test'].includes(group)) {
               labelsToAdd.add(group);
             }
             const moduleLabel = moduleLabelByModule[moduleName];

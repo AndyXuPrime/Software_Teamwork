@@ -10,6 +10,7 @@ workflow 只能拦截 PR 行为；分支保护和 label 仍需要维护者在 Gi
 L1nggTeam
 PrimeTeam
 JerryTeam
+Test
 frontend
 backend
 documentation
@@ -71,8 +72,8 @@ check 名称补入 `contexts`。
   清理旧 relationship 时，只删除本次正文编辑确实从当前字段移除、对端也是受管
   任务 issue、且两端任务字段都不再声明的关系；`并行任务` 只保留在正文中，不创建
   blocking relationship。
-- 根据主责小组和模块自动补可用 label；当前 `L1nggTeam`、`JerryTeam`、`PrimeTeam`
-  会作为小组 label，`Frontend`、`Special` 和 `Test` 只同步为 Project `Group`，通常通过
+- 根据主责小组和模块自动补可用 label；当前 `L1nggTeam`、`JerryTeam`、`PrimeTeam` 和 `Test`
+  会作为小组 label，`Frontend` 和 `Special` 只同步为 Project `Group`，通常通过
   `frontend`、`ci`、`deployment`、`service:<name>` 等模块 label 标记。仓库不存在的
   label 会跳过并在日志中提示。
 - 同步成功后把正文中的 `Project sync` 改为 `synced`；同步失败则改为
