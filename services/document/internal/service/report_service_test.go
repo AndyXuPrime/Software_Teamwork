@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -9,11 +10,15 @@ import (
 // fakeReportRepository is an in-memory ReportRepository used to unit test
 // ReportService business rules without standing up PostgreSQL.
 type fakeReportRepository struct {
-	reports        map[string]Report
-	outlines       map[string]ReportOutline
-	sections       map[string]ReportSection
-	sectionVersion map[string][]ReportSectionVersion
-	operationLogs  []OperationLog
+	reports               map[string]Report
+	outlines              map[string]ReportOutline
+	sections              map[string]ReportSection
+	sectionVersion        map[string][]ReportSectionVersion
+	operationLogs         []OperationLog
+	updateSectionErr      error
+	beforeTx              func(*fakeReportRepository)
+	reportForUpdateCalls  int
+	sectionForUpdateCalls int
 }
 
 func newFakeReportRepository() *fakeReportRepository {
@@ -36,6 +41,11 @@ func (f *fakeReportRepository) GetReportByID(_ context.Context, id string) (Repo
 		return Report{}, NewError(CodeNotFound, "report not found", nil)
 	}
 	return report, nil
+}
+
+func (f *fakeReportRepository) GetReportByIDForUpdate(ctx context.Context, id string) (Report, error) {
+	f.reportForUpdateCalls++
+	return f.GetReportByID(ctx, id)
 }
 
 func (f *fakeReportRepository) ListReports(_ context.Context, filter ReportListFilter) ([]Report, int, error) {
@@ -130,7 +140,15 @@ func (f *fakeReportRepository) GetReportSectionByID(_ context.Context, id string
 	return section, nil
 }
 
+func (f *fakeReportRepository) GetReportSectionByIDForUpdate(ctx context.Context, id string) (ReportSection, error) {
+	f.sectionForUpdateCalls++
+	return f.GetReportSectionByID(ctx, id)
+}
+
 func (f *fakeReportRepository) UpdateReportSection(_ context.Context, value ReportSection) (ReportSection, error) {
+	if f.updateSectionErr != nil {
+		return ReportSection{}, f.updateSectionErr
+	}
 	if _, ok := f.sections[value.ID]; !ok {
 		return ReportSection{}, NewError(CodeNotFound, "report section not found", nil)
 	}
@@ -139,7 +157,17 @@ func (f *fakeReportRepository) UpdateReportSection(_ context.Context, value Repo
 }
 
 func (f *fakeReportRepository) WithinTx(ctx context.Context, fn func(ReportRepository) error) error {
-	return fn(f)
+	if f.beforeTx != nil {
+		beforeTx := f.beforeTx
+		f.beforeTx = nil
+		beforeTx(f)
+	}
+	snapshot := f.snapshot()
+	if err := fn(f); err != nil {
+		f.restore(snapshot)
+		return err
+	}
+	return nil
 }
 
 func (f *fakeReportRepository) CreateReportSectionVersion(_ context.Context, value ReportSectionVersion) (ReportSectionVersion, error) {
@@ -154,6 +182,36 @@ func (f *fakeReportRepository) ListReportSectionVersions(_ context.Context, sect
 func (f *fakeReportRepository) CreateOperationLog(_ context.Context, log OperationLog) (OperationLog, error) {
 	f.operationLogs = append(f.operationLogs, log)
 	return log, nil
+}
+
+func (f *fakeReportRepository) snapshot() fakeReportRepository {
+	snapshot := *f
+	snapshot.reports = make(map[string]Report, len(f.reports))
+	for id, report := range f.reports {
+		snapshot.reports[id] = report
+	}
+	snapshot.outlines = make(map[string]ReportOutline, len(f.outlines))
+	for id, outline := range f.outlines {
+		snapshot.outlines[id] = outline
+	}
+	snapshot.sections = make(map[string]ReportSection, len(f.sections))
+	for id, section := range f.sections {
+		snapshot.sections[id] = section
+	}
+	snapshot.sectionVersion = make(map[string][]ReportSectionVersion, len(f.sectionVersion))
+	for id, versions := range f.sectionVersion {
+		snapshot.sectionVersion[id] = append([]ReportSectionVersion(nil), versions...)
+	}
+	snapshot.operationLogs = append([]OperationLog(nil), f.operationLogs...)
+	return snapshot
+}
+
+func (f *fakeReportRepository) restore(snapshot fakeReportRepository) {
+	reportForUpdateCalls := f.reportForUpdateCalls
+	sectionForUpdateCalls := f.sectionForUpdateCalls
+	*f = snapshot
+	f.reportForUpdateCalls = reportForUpdateCalls
+	f.sectionForUpdateCalls = sectionForUpdateCalls
 }
 
 func newTestService() (*ReportService, *fakeReportRepository) {
@@ -637,6 +695,92 @@ func TestSaveSectionsPersistsExplicitSortOrder(t *testing.T) {
 	}
 }
 
+func TestSaveSectionsRechecksRunningStatusInsideTransaction(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	section, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{
+		Title:   "Intro",
+		Content: "original body",
+	})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+	repo.beforeTx = func(f *fakeReportRepository) {
+		current := f.sections[section.ID]
+		current.GenerationStatus = JobStatusRunning
+		current.LastJobID = "job-1"
+		f.sections[section.ID] = current
+	}
+
+	newContent := "should not apply"
+	_, err = svc.SaveSections(context.Background(), actor, report.ID, SaveSectionsInput{
+		Sections: []SaveSectionInput{{
+			ID:      section.ID,
+			Content: &newContent,
+		}},
+	})
+	if code := errorCode(t, err); code != CodeConflict {
+		t.Fatalf("error code = %q, want %q", code, CodeConflict)
+	}
+	if repo.sectionForUpdateCalls != 1 {
+		t.Fatalf("transactional section lock calls = %d, want 1", repo.sectionForUpdateCalls)
+	}
+	current := repo.sections[section.ID]
+	if current.GenerationStatus != JobStatusRunning || current.LastJobID != "job-1" {
+		t.Fatalf("running generation state was overwritten: %+v", current)
+	}
+	if current.Content != section.Content || current.Version != section.Version {
+		t.Fatalf("section was modified despite transaction conflict: %+v", current)
+	}
+	if len(repo.sectionVersion[section.ID]) != 0 {
+		t.Fatalf("manual section versions were created despite transaction conflict: %+v", repo.sectionVersion[section.ID])
+	}
+}
+
+func TestSaveSectionsRechecksDeletedReportInsideTransaction(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	section, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{
+		Title:   "Intro",
+		Content: "original body",
+	})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+	repo.beforeTx = func(f *fakeReportRepository) {
+		current := f.reports[report.ID]
+		deletedAt := svc.now()
+		current.Status = ReportStatusDeleted
+		current.DeletedAt = &deletedAt
+		f.reports[report.ID] = current
+	}
+
+	newContent := "should not apply"
+	_, err = svc.SaveSections(context.Background(), actor, report.ID, SaveSectionsInput{
+		Sections: []SaveSectionInput{{
+			ID:      section.ID,
+			Content: &newContent,
+		}},
+	})
+	if code := errorCode(t, err); code != CodeConflict {
+		t.Fatalf("error code = %q, want %q", code, CodeConflict)
+	}
+	if repo.reportForUpdateCalls != 1 {
+		t.Fatalf("transactional report lock calls = %d, want 1", repo.reportForUpdateCalls)
+	}
+	current := repo.sections[section.ID]
+	if current.Content != section.Content || current.Version != section.Version {
+		t.Fatalf("section was modified after report deletion: %+v", current)
+	}
+	if len(repo.sectionVersion[section.ID]) != 0 {
+		t.Fatalf("manual section versions were created after report deletion: %+v", repo.sectionVersion[section.ID])
+	}
+}
+
 func TestCreateSectionPersistsExplicitSortOrder(t *testing.T) {
 	svc, _ := newTestService()
 	report := mustCreateReport(t, svc, "owner-1")
@@ -692,7 +836,274 @@ func TestUpdateSectionConflictsWhileGenerationRunning(t *testing.T) {
 	}
 }
 
-func TestCreateSectionVersionDoesNotRequireRegeneration(t *testing.T) {
+func TestUpdateSectionRechecksRunningStatusInsideTransaction(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	section, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{
+		Title:   "Intro",
+		Content: "original body",
+	})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+	repo.beforeTx = func(f *fakeReportRepository) {
+		current := f.sections[section.ID]
+		current.GenerationStatus = JobStatusRunning
+		current.LastJobID = "job-1"
+		f.sections[section.ID] = current
+	}
+
+	newContent := "should not apply"
+	_, err = svc.UpdateSection(context.Background(), actor, report.ID, section.ID, UpdateSectionInput{Content: &newContent})
+	if code := errorCode(t, err); code != CodeConflict {
+		t.Fatalf("error code = %q, want %q", code, CodeConflict)
+	}
+	if repo.sectionForUpdateCalls != 1 {
+		t.Fatalf("transactional section lock calls = %d, want 1", repo.sectionForUpdateCalls)
+	}
+	current := repo.sections[section.ID]
+	if current.GenerationStatus != JobStatusRunning || current.LastJobID != "job-1" {
+		t.Fatalf("running generation state was overwritten: %+v", current)
+	}
+	if current.Content != section.Content || current.Version != section.Version {
+		t.Fatalf("section was modified despite transaction conflict: %+v", current)
+	}
+	if len(repo.sectionVersion[section.ID]) != 0 {
+		t.Fatalf("manual section versions were created despite transaction conflict: %+v", repo.sectionVersion[section.ID])
+	}
+}
+
+func TestUpdateSectionRechecksDeletedReportInsideTransaction(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	section, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{
+		Title:   "Intro",
+		Content: "original body",
+	})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+	repo.beforeTx = func(f *fakeReportRepository) {
+		current := f.reports[report.ID]
+		deletedAt := svc.now()
+		current.Status = ReportStatusDeleted
+		current.DeletedAt = &deletedAt
+		f.reports[report.ID] = current
+	}
+
+	newContent := "should not apply"
+	_, err = svc.UpdateSection(context.Background(), actor, report.ID, section.ID, UpdateSectionInput{Content: &newContent})
+	if code := errorCode(t, err); code != CodeConflict {
+		t.Fatalf("error code = %q, want %q", code, CodeConflict)
+	}
+	if repo.reportForUpdateCalls != 1 {
+		t.Fatalf("transactional report lock calls = %d, want 1", repo.reportForUpdateCalls)
+	}
+	current := repo.sections[section.ID]
+	if current.Content != section.Content || current.Version != section.Version {
+		t.Fatalf("section was modified after report deletion: %+v", current)
+	}
+	if len(repo.sectionVersion[section.ID]) != 0 {
+		t.Fatalf("manual section versions were created after report deletion: %+v", repo.sectionVersion[section.ID])
+	}
+}
+
+func TestCreateSectionVersionSwitchesCurrentSectionInTransaction(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	section, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{Title: "Intro", Content: "v1"})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+
+	content := "AI v2"
+	tables := []map[string]any{{"name": "generated"}}
+	version, err := svc.CreateSectionVersion(context.Background(), actor, report.ID, section.ID, CreateSectionVersionInput{
+		Source:  ContentSourceAI,
+		Content: &content,
+		Tables:  &tables,
+	})
+	if err != nil {
+		t.Fatalf("CreateSectionVersion() error = %v", err)
+	}
+	if version.Version != 2 || version.Content != content || version.Source != ContentSourceAI {
+		t.Fatalf("unexpected created version: %+v", version)
+	}
+
+	current := repo.sections[section.ID]
+	if current.Version != version.Version || current.Content != content {
+		t.Fatalf("current section was not switched to created version: %+v", current)
+	}
+	if current.ContentSource != ContentSourceAI || current.ManualEdited || current.GenerationStatus != JobStatusSucceeded {
+		t.Fatalf("current section source/manual/status not updated for AI version: %+v", current)
+	}
+	if current.GeneratedAt == nil {
+		t.Fatalf("expected generatedAt to be set for AI version: %+v", current)
+	}
+	if len(repo.sectionVersion[section.ID]) != 1 {
+		t.Fatalf("section version count = %d, want 1", len(repo.sectionVersion[section.ID]))
+	}
+}
+
+func TestCreateSectionVersionConflictsWhileGenerationRunning(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	section, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{Title: "Intro", Content: "v1"})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+	section.GenerationStatus = JobStatusRunning
+	repo.sections[section.ID] = section
+
+	content := "should not apply"
+	_, err = svc.CreateSectionVersion(context.Background(), actor, report.ID, section.ID, CreateSectionVersionInput{
+		Source:  ContentSourceAI,
+		Content: &content,
+	})
+	if code := errorCode(t, err); code != CodeConflict {
+		t.Fatalf("error code = %q, want %q", code, CodeConflict)
+	}
+	if len(repo.sectionVersion[section.ID]) != 0 {
+		t.Fatalf("section versions were created despite conflict: %+v", repo.sectionVersion[section.ID])
+	}
+}
+
+func TestCreateSectionVersionRejectsDeletedReport(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	section, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{Title: "Intro", Content: "v1"})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+	if err := svc.SoftDeleteReport(context.Background(), actor, report.ID); err != nil {
+		t.Fatalf("SoftDeleteReport() error = %v", err)
+	}
+
+	content := "should not apply"
+	_, err = svc.CreateSectionVersion(context.Background(), actor, report.ID, section.ID, CreateSectionVersionInput{
+		Source:  ContentSourceAI,
+		Content: &content,
+	})
+	if code := errorCode(t, err); code != CodeConflict {
+		t.Fatalf("error code = %q, want %q", code, CodeConflict)
+	}
+	if len(repo.sectionVersion[section.ID]) != 0 {
+		t.Fatalf("section versions were created for deleted report: %+v", repo.sectionVersion[section.ID])
+	}
+	if got := repo.sections[section.ID]; got.Content != section.Content || got.Version != section.Version {
+		t.Fatalf("section was modified for deleted report: %+v", got)
+	}
+}
+
+func TestCreateSectionVersionRechecksDeletedReportInsideTransaction(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	section, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{Title: "Intro", Content: "v1"})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+	repo.beforeTx = func(f *fakeReportRepository) {
+		current := f.reports[report.ID]
+		deletedAt := svc.now()
+		current.Status = ReportStatusDeleted
+		current.DeletedAt = &deletedAt
+		f.reports[report.ID] = current
+	}
+
+	content := "should not apply"
+	_, err = svc.CreateSectionVersion(context.Background(), actor, report.ID, section.ID, CreateSectionVersionInput{
+		Source:  ContentSourceAI,
+		Content: &content,
+	})
+	if code := errorCode(t, err); code != CodeConflict {
+		t.Fatalf("error code = %q, want %q", code, CodeConflict)
+	}
+	if len(repo.sectionVersion[section.ID]) != 0 {
+		t.Fatalf("section versions were created after report deletion: %+v", repo.sectionVersion[section.ID])
+	}
+	if got := repo.sections[section.ID]; got.Content != section.Content || got.Version != section.Version {
+		t.Fatalf("section was modified after report deletion: %+v", got)
+	}
+	if repo.reportForUpdateCalls != 1 {
+		t.Fatalf("transactional report lock calls = %d, want 1", repo.reportForUpdateCalls)
+	}
+}
+
+func TestCreateSectionVersionRechecksRunningStatusInsideTransaction(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	section, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{Title: "Intro", Content: "v1"})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+	repo.beforeTx = func(repo *fakeReportRepository) {
+		current := repo.sections[section.ID]
+		current.GenerationStatus = JobStatusRunning
+		repo.sections[section.ID] = current
+	}
+
+	content := "should not apply"
+	_, err = svc.CreateSectionVersion(context.Background(), actor, report.ID, section.ID, CreateSectionVersionInput{
+		Source:  ContentSourceAI,
+		Content: &content,
+	})
+	if code := errorCode(t, err); code != CodeConflict {
+		t.Fatalf("error code = %q, want %q", code, CodeConflict)
+	}
+	current := repo.sections[section.ID]
+	if current.GenerationStatus != JobStatusRunning {
+		t.Fatalf("generation status = %q, want %q", current.GenerationStatus, JobStatusRunning)
+	}
+	if current.Content != section.Content || current.Version != section.Version {
+		t.Fatalf("section was modified despite transaction conflict: %+v", current)
+	}
+	if len(repo.sectionVersion[section.ID]) != 0 {
+		t.Fatalf("section versions were created despite transaction conflict: %+v", repo.sectionVersion[section.ID])
+	}
+}
+
+func TestCreateSectionVersionRollsBackWhenCurrentSectionUpdateFails(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	section, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{Title: "Intro", Content: "v1"})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+	repo.updateSectionErr = errors.New("update current section failed")
+
+	content := "AI v2"
+	_, err = svc.CreateSectionVersion(context.Background(), actor, report.ID, section.ID, CreateSectionVersionInput{
+		Source:  ContentSourceAI,
+		Content: &content,
+	})
+	if code := errorCode(t, err); code != CodeDependency {
+		t.Fatalf("error code = %q, want %q", code, CodeDependency)
+	}
+	if len(repo.sectionVersion[section.ID]) != 0 {
+		t.Fatalf("created version was not rolled back: %+v", repo.sectionVersion[section.ID])
+	}
+	if got := repo.sections[section.ID]; got.Content != section.Content || got.Version != section.Version {
+		t.Fatalf("section was modified despite rollback: %+v", got)
+	}
+}
+
+func TestCreateAndListSectionVersionsKeepsManualAndAIHistory(t *testing.T) {
 	svc, _ := newTestService()
 	report := mustCreateReport(t, svc, "owner-1")
 	actor := RequestContext{UserID: "owner-1"}
@@ -702,19 +1113,88 @@ func TestCreateSectionVersionDoesNotRequireRegeneration(t *testing.T) {
 		t.Fatalf("CreateSection() error = %v", err)
 	}
 
-	version, err := svc.CreateSectionVersion(context.Background(), actor, report.ID, section.ID, CreateSectionVersionInput{Source: ContentSourceManual})
-	if err != nil {
-		t.Fatalf("CreateSectionVersion() error = %v", err)
+	manualContent := "manual v2"
+	if _, err := svc.CreateSectionVersion(context.Background(), actor, report.ID, section.ID, CreateSectionVersionInput{
+		Source:  ContentSourceManual,
+		Content: &manualContent,
+	}); err != nil {
+		t.Fatalf("manual CreateSectionVersion() error = %v", err)
 	}
-	if version.Version != 1 || version.Content != "v1" {
-		t.Fatalf("unexpected first version: %+v", version)
+	aiContent := "AI v3"
+	if _, err := svc.CreateSectionVersion(context.Background(), actor, report.ID, section.ID, CreateSectionVersionInput{
+		Source:  ContentSourceAI,
+		Content: &aiContent,
+	}); err != nil {
+		t.Fatalf("AI CreateSectionVersion() error = %v", err)
 	}
 
-	second, err := svc.CreateSectionVersion(context.Background(), actor, report.ID, section.ID, CreateSectionVersionInput{Source: ContentSourceManual})
+	versions, err := svc.ListSectionVersions(context.Background(), actor, report.ID, section.ID)
 	if err != nil {
-		t.Fatalf("CreateSectionVersion() error = %v", err)
+		t.Fatalf("ListSectionVersions() error = %v", err)
 	}
-	if second.Version != 2 {
-		t.Fatalf("expected version 2, got %d", second.Version)
+	if len(versions) != 2 {
+		t.Fatalf("version count = %d, want 2: %+v", len(versions), versions)
+	}
+	seen := map[ContentSource]string{}
+	for _, version := range versions {
+		seen[version.Source] = version.Content
+	}
+	if seen[ContentSourceManual] != manualContent || seen[ContentSourceAI] != aiContent {
+		t.Fatalf("historical versions missing manual/AI content: %+v", versions)
+	}
+}
+
+func TestUpdateSectionCreatesManualVersionSnapshot(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	section, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{Title: "Intro", Content: "v1"})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+
+	content := "manual v2"
+	updated, err := svc.UpdateSection(context.Background(), actor, report.ID, section.ID, UpdateSectionInput{Content: &content})
+	if err != nil {
+		t.Fatalf("UpdateSection() error = %v", err)
+	}
+
+	versions := repo.sectionVersion[section.ID]
+	if len(versions) != 1 {
+		t.Fatalf("manual version count = %d, want 1", len(versions))
+	}
+	if versions[0].Version != updated.Version || versions[0].Content != content || versions[0].Source != ContentSourceManual {
+		t.Fatalf("unexpected manual snapshot: %+v", versions[0])
+	}
+}
+
+func TestSaveSectionsCreatesManualVersionSnapshotForContentChanges(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	section, err := svc.CreateSection(context.Background(), actor, report.ID, CreateSectionInput{Title: "Intro", Content: "v1"})
+	if err != nil {
+		t.Fatalf("CreateSection() error = %v", err)
+	}
+
+	content := "manual v2"
+	sections, err := svc.SaveSections(context.Background(), actor, report.ID, SaveSectionsInput{
+		Sections: []SaveSectionInput{{ID: section.ID, Content: &content}},
+	})
+	if err != nil {
+		t.Fatalf("SaveSections() error = %v", err)
+	}
+	if len(sections) != 1 {
+		t.Fatalf("SaveSections() len = %d, want 1", len(sections))
+	}
+
+	versions := repo.sectionVersion[section.ID]
+	if len(versions) != 1 {
+		t.Fatalf("manual version count = %d, want 1", len(versions))
+	}
+	if versions[0].Version != sections[0].Version || versions[0].Content != content || versions[0].Source != ContentSourceManual {
+		t.Fatalf("unexpected manual snapshot: %+v", versions[0])
 	}
 }

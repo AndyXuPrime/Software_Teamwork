@@ -18,6 +18,7 @@ type fakeReportService struct {
 	reports             map[string]service.Report
 	createdSectionInput service.CreateSectionInput
 	savedSections       []service.SaveSectionInput
+	createdVersionInput service.CreateSectionVersionInput
 }
 
 func newFakeReportService() *fakeReportService {
@@ -159,8 +160,28 @@ func (f *fakeReportService) UpdateSection(context.Context, service.RequestContex
 func (f *fakeReportService) ListSectionVersions(context.Context, service.RequestContext, string, string) ([]service.ReportSectionVersion, error) {
 	return nil, nil
 }
-func (f *fakeReportService) CreateSectionVersion(context.Context, service.RequestContext, string, string, service.CreateSectionVersionInput) (service.ReportSectionVersion, error) {
-	return service.ReportSectionVersion{}, nil
+func (f *fakeReportService) CreateSectionVersion(_ context.Context, _ service.RequestContext, reportID, sectionID string, input service.CreateSectionVersionInput) (service.ReportSectionVersion, error) {
+	f.createdVersionInput = input
+	now := time.Date(2026, 6, 29, 0, 0, 0, 0, time.UTC)
+	content := ""
+	if input.Content != nil {
+		content = *input.Content
+	}
+	tables := []map[string]any(nil)
+	if input.Tables != nil {
+		tables = *input.Tables
+	}
+	return service.ReportSectionVersion{
+		ID:           "section-version-1",
+		ReportID:     reportID,
+		SectionID:    sectionID,
+		Version:      2,
+		Source:       input.Source,
+		Content:      content,
+		Tables:       tables,
+		Requirements: input.Requirements,
+		CreatedAt:    now,
+	}, nil
 }
 
 func valueOrEmpty(value *string) string {
@@ -303,6 +324,58 @@ func TestPostSectionsCreateParsesSortOrder(t *testing.T) {
 	}
 	if fake.createdSectionInput.SortOrder == nil || *fake.createdSectionInput.SortOrder != 5 {
 		t.Fatalf("CreateSection sortOrder = %v, want 5", fake.createdSectionInput.SortOrder)
+	}
+}
+
+func TestPostSectionVersionParsesVersionBody(t *testing.T) {
+	fake := newFakeReportService()
+	server := NewServer(Config{ReportService: fake})
+
+	req := httptest.NewRequest(http.MethodPost, "/reports/report-1/sections/section-1/versions", strings.NewReader(`{
+		"source": "ai",
+		"requirements": "refresh risk section",
+		"content": "generated body",
+		"tables": [{"name": "risk table"}]
+	}`))
+	req.SetPathValue("reportId", "report-1")
+	req.SetPathValue("sectionId", "section-1")
+	req.Header.Set("X-User-Id", "user-1")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.createdVersionInput.Source != service.ContentSourceAI {
+		t.Fatalf("Source = %q, want ai", fake.createdVersionInput.Source)
+	}
+	if fake.createdVersionInput.Requirements != "refresh risk section" {
+		t.Fatalf("Requirements = %q", fake.createdVersionInput.Requirements)
+	}
+	if fake.createdVersionInput.Content == nil || *fake.createdVersionInput.Content != "generated body" {
+		t.Fatalf("Content = %v", fake.createdVersionInput.Content)
+	}
+	if fake.createdVersionInput.Tables == nil || len(*fake.createdVersionInput.Tables) != 1 || (*fake.createdVersionInput.Tables)[0]["name"] != "risk table" {
+		t.Fatalf("Tables = %+v", fake.createdVersionInput.Tables)
+	}
+
+	var body struct {
+		Data struct {
+			ID      string           `json:"id"`
+			Version int              `json:"version"`
+			Source  string           `json:"source"`
+			Content string           `json:"content"`
+			Tables  []map[string]any `json:"tables"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Data.ID != "section-version-1" || body.Data.Version != 2 || body.Data.Source != "ai" || body.Data.Content != "generated body" {
+		t.Fatalf("unexpected response data: %+v", body.Data)
+	}
+	if len(body.Data.Tables) != 1 || body.Data.Tables[0]["name"] != "risk table" {
+		t.Fatalf("response tables = %+v", body.Data.Tables)
 	}
 }
 

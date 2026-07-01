@@ -86,6 +86,84 @@ func decodeJSONContract(r io.Reader, dst any) error {
 	return json.NewDecoder(r).Decode(dst)
 }
 
+func openAPISchemaBlock(t *testing.T, spec string, schema string) string {
+	t.Helper()
+	lines := strings.Split(spec, "\n")
+	start := -1
+	startIndent := 0
+	for i, line := range lines {
+		if strings.TrimSpace(line) != schema+":" {
+			continue
+		}
+		start = i
+		startIndent = leadingSpaces(line)
+		break
+	}
+	if start == -1 {
+		t.Fatalf("schema %s not found in gateway OpenAPI", schema)
+	}
+
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		if leadingSpaces(lines[i]) <= startIndent {
+			end = i
+			break
+		}
+	}
+	return strings.Join(lines[start:end], "\n")
+}
+
+func openAPIOperationBlock(t *testing.T, spec string, operationID string) string {
+	t.Helper()
+	lines := strings.Split(spec, "\n")
+	operationLine := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "operationId: "+operationID {
+			operationLine = i
+			break
+		}
+	}
+	if operationLine == -1 {
+		t.Fatalf("operationId %s not found in gateway OpenAPI", operationID)
+	}
+
+	start := operationLine
+	for start > 0 {
+		if leadingSpaces(lines[start]) == 4 && strings.HasSuffix(strings.TrimSpace(lines[start]), ":") {
+			break
+		}
+		start--
+	}
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		if leadingSpaces(lines[i]) <= 4 {
+			end = i
+			break
+		}
+	}
+	return strings.Join(lines[start:end], "\n")
+}
+
+func leadingSpaces(value string) int {
+	return len(value) - len(strings.TrimLeft(value, " "))
+}
+
+func assertOpenAPISchemaHasFields(t *testing.T, spec string, schema string, fields ...string) {
+	t.Helper()
+	block := openAPISchemaBlock(t, spec, schema)
+	for _, field := range fields {
+		if !strings.Contains(block, field) {
+			t.Fatalf("%s schema missing %s in:\n%s", schema, field, block)
+		}
+	}
+}
+
 // ── schema-level route contract ───────────────────────────────────────────────
 
 // TestRouteOperationIDsExistInOpenAPISpec verifies that every operationId in
@@ -124,6 +202,33 @@ func TestRouteOperationIDsAreUnique(t *testing.T) {
 	}
 }
 
+func TestReportSectionVersionSchemasExposeEditableContent(t *testing.T) {
+	specBytes, err := os.ReadFile(gatewayOpenAPIPath(t))
+	if err != nil {
+		t.Fatalf("read gateway OpenAPI: %v", err)
+	}
+	spec := string(specBytes)
+
+	assertOpenAPISchemaHasFields(t, spec, "CreateReportSectionVersionRequest",
+		"source:",
+		"- manual",
+		"- ai",
+		"requirements:",
+		"content:",
+		"tables:",
+		"additionalProperties: true",
+	)
+	assertOpenAPISchemaHasFields(t, spec, "ReportSectionVersion",
+		"source:",
+		"- manual",
+		"- ai",
+		"content:",
+		"tables:",
+		"jobId:",
+		"createdAt:",
+	)
+}
+
 // ── SSE / binary content-type contract ───────────────────────────────────────
 
 // knownSSEOperationIDs is the exhaustive set of routes that return
@@ -131,6 +236,19 @@ func TestRouteOperationIDsAreUnique(t *testing.T) {
 // only POST /api/v1/qa-sessions/{sessionId}/messages streams SSE.
 var knownSSEOperationIDs = map[string]bool{
 	"createQAMessage": true,
+}
+
+// TestCreateReportSectionVersionDocumentsConflictResponse keeps the gateway
+// contract aligned with Document's section-generation conflict behavior.
+func TestCreateReportSectionVersionDocumentsConflictResponse(t *testing.T) {
+	specBytes, err := os.ReadFile(gatewayOpenAPIPath(t))
+	if err != nil {
+		t.Fatalf("read gateway OpenAPI: %v", err)
+	}
+	block := openAPIOperationBlock(t, string(specBytes), "createReportSectionVersion")
+	if !strings.Contains(block, "'409':") {
+		t.Fatalf("createReportSectionVersion missing 409 response in:\n%s", block)
+	}
 }
 
 // TestStreamResponseFlagMatchesSSEContract verifies that StreamResponse is set

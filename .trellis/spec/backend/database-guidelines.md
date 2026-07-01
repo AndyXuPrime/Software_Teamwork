@@ -714,6 +714,199 @@ API creates report_job -> asynq task id is stored for correlation -> worker upda
 outline generation -> parse AI response outside transaction -> transaction inserts current outline + skeletons -> rollback all on failure
 ```
 
+## Scenario: Document Section Version Current Switch
+
+### 1. Scope / Trigger
+
+- Trigger: adding or changing Document report section version creation, manual
+  section edit snapshotting, or section-regeneration overwrite behavior.
+- Applies to `services/document/internal/service/report_service.go`,
+  `services/document/internal/service/report_generation_service.go`,
+  `services/document/internal/http/reports.go`,
+  `services/document/internal/repository/reports.go`, and the matching Document
+  and Gateway OpenAPI section-version schemas.
+
+### 2. Signatures
+
+- HTTP route: `POST /reports/{reportId}/sections/{sectionId}/versions`.
+- Request fields: `source` (`manual` or `ai`), optional `requirements`,
+  optional `content`, optional `tables`.
+- Response fields: `id`, `reportId`, `sectionId`, `version`, `source`,
+  optional `content`, optional `tables`, optional `jobId`, `createdAt`.
+- Durable tables: `report_sections` and `report_section_versions`.
+
+### 3. Contracts
+
+- `report_sections.version` is the current section version reference unless a
+  future reviewed migration adds `current_version_id`.
+- Creating a section version must insert `report_section_versions` and switch
+  the current `report_sections` content/tables/version/source flags in the same
+  `ReportRepository.WithinTx` operation.
+- Deleted reports are not valid section-version write targets. A report with
+  `ReportStatusDeleted` or non-nil `DeletedAt` must return `409 conflict`
+  before inserting `report_section_versions` or updating `report_sections`;
+  re-check and lock the report row inside the write transaction before the
+  insert and current-section switch.
+- The next version number must be greater than both `ReportSection.version` and
+  every existing `ReportSectionVersion.version`.
+- Manual content or table edits through section save/update paths must create a
+  `manual` section-version snapshot in the same transaction as the current
+  section update.
+- Manual section update/save paths must lock and re-check the report row inside
+  the write transaction before mutating sections. For each existing section
+  they update, they must also re-read and lock the current section inside the
+  transaction, require same-report ownership, and reject
+  `generation_status = running` with `409 conflict` before writing content,
+  tables, version, source, manual-edit state, or manual section-version rows.
+- AI generation may call the model outside the database transaction, but the
+  final generated content update plus `report_section_versions` insert must run
+  in one short `WithinGenerationTx` operation.
+- Before calling the model for a section, the generation service must persist
+  `generation_status = running` and `last_job_id = <current job>`. If that
+  marker update fails, return `dependency_error`, record `section.failed`, keep
+  progress at the current completed count, and do not call the AI provider. A
+  failed running-marker write is infrastructure failure, not a stale response
+  skip.
+- Before persisting a successful generated section after the model call, re-read
+  and lock the target section inside `WithinGenerationTx`. The current section
+  must still have `last_job_id` equal to the executing job, `generation_status =
+  running`, and the same `version` / `manual_edited` state captured when the job
+  marked the section running. If any of those checks fail, the transaction may
+  return an internal `409 conflict`, but the generation service must treat that
+  section as skipped: preserve the current section content, tables, version,
+  source, manual edit state, `last_job_id`, and generation status; update job
+  progress and record a `section.skipped` event; do not create an AI
+  section-version row from the stale response.
+- If generated content persistence fails after the transaction rolls back,
+  failure compensation must use a narrow section status update only
+  (`generation_status`, `last_job_id`, `updated_at`). It must not write a stale
+  full `report_sections` snapshot over `content`, `tables_json`, `version`,
+  `content_source`, or `manual_edited`, and should require `last_job_id` to
+  still match the failed generation job before marking `failed`.
+- A generated-section success transaction returning `409 conflict` because the
+  section changed or the job was superseded is not a generation persistence
+  failure. The executor must continue on a non-error result path so the worker
+  does not call `markFailed`; the stale AI response must leave the current
+  section status intact.
+- Manual edit preservation defaults to true. `preserveUserEdits=false` is the
+  public option; `preserveManualEdits=false` remains a backward-compatible
+  alias. Only an explicit false value may overwrite manual edits.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required response / behavior |
+| --- | --- |
+| `source` is not `manual` or `ai` | `400 validation_error` |
+| Report is soft-deleted by status or `deleted_at` | `409 conflict`; do not create a version or mutate the current section |
+| Target section belongs to another report | `404 not_found` |
+| Target section has `generation_status = running` | `409 conflict`; do not create a version |
+| Manual update/save write transaction sees a deleted report or running section | `409 conflict`; do not mutate the current section or create a manual version |
+| Running-marker update before AI section generation fails | `dependency_error`; record `section.failed`; update progress with the current completed count; do not call the AI provider, increment completed progress, create a version, or mark the section skipped |
+| Successful AI response finds a different `last_job_id`, non-running status, changed version, or changed manual-edit state | Skip the stale section on the non-error execution path; update progress and `section.skipped`; do not create a version, overwrite current section content, or mark the section/job/report failed |
+| Version insert succeeds but current-section switch fails | Roll back inserted version and return typed dependency/not-found error |
+| AI generated content update succeeds but version insert fails | Roll back the generated content switch; mark the section failed best-effort with a narrow, current-job-matched status update that preserves concurrent edits |
+| Manual edit changes only metadata | Do not create a new section version |
+
+### 5. Good/Base/Bad Cases
+
+- Good: `CreateSectionVersion` creates version 4, updates
+  `report_sections.version=4`, and returns the same version in one transaction.
+- Base: a manual metadata-only title/numbering save updates the current section
+  without adding a history row.
+- Bad: inserting `report_section_versions` and returning success while
+  `report_sections.version` still points at the previous content.
+
+### 6. Tests Required
+
+- Service tests for conflict while generation is running.
+- Service tests for deleted-report rejection, including the case where the
+  report is deleted after the entry check but before the transactional insert.
+- Service tests for version creation plus current-section switch in one
+  transaction.
+- Rollback tests where current-section update fails after version insertion.
+- Manual edit snapshot tests for single-section update and bulk save.
+- Manual edit race tests for single-section update and bulk save must simulate
+  a report deleted after the entry check and a section becoming
+  `generation_status = running` after the entry check; both cases must return
+  `409 conflict`, preserve current section content/version/status, and create
+  no manual section-version row.
+- Generation tests for default preserve behavior, explicit
+  `preserveUserEdits=false`, and rollback when version insertion fails.
+- Generation tests must simulate `MarkReportSectionGenerationRunning` failure
+  before the model call and assert `dependency_error`, no chat request,
+  `section.failed`, unchanged section content/status, and no stale skip/success
+  event.
+- Generation success-path tests must simulate a concurrent manual edit and a
+  superseding generation job after the AI call but before the write transaction;
+  both cases must preserve the current section, preserve current generation
+  status, create no stale AI version, update progress, record
+  `section.skipped`, and return a non-error execution result so the worker does
+  not mark the job/report failed.
+- Generation rollback tests must simulate a concurrent section edit after the
+  failed transaction rolls back and assert failure compensation preserves
+  `content`, `tables`, `version`, `content_source`, and `manual_edited`.
+- HTTP tests that assert `source`, `requirements`, `content`, and `tables` are
+  passed through to the service and returned in the response DTO.
+- OpenAPI parse/schema checks that Document and Gateway section-version source
+  enums and table field names stay aligned.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+POST /sections/{id}/versions -> insert report_section_versions(version=3) -> return 201
+report_sections.version remains 2
+```
+
+#### Correct
+
+```text
+POST /sections/{id}/versions -> transaction:
+  insert report_section_versions(version=3)
+  update report_sections.content/tables/version/source
+return 201 after commit
+```
+
+#### Wrong
+
+```text
+generation tx fails -> restore old section snapshot -> UPDATE report_sections SET content=old_content, version=old_version, generation_status=failed
+```
+
+#### Correct
+
+```text
+generation tx fails -> rollback generated content/version -> UPDATE report_sections SET generation_status=failed, updated_at=now WHERE id=$section AND last_job_id=$job
+```
+
+#### Wrong
+
+```text
+AI call returns -> use pre-call section snapshot -> UPDATE report_sections SET content=generated, version=old+1 WHERE id=$section
+```
+
+#### Correct
+
+```text
+AI call returns -> transaction:
+  SELECT report_sections FOR UPDATE
+  require last_job_id=$job, generation_status=running, version/manual_edited unchanged
+  update generated content and insert report_section_versions
+```
+
+#### Wrong
+
+```text
+mark section running fails -> call AI anyway -> success write sees conflict -> count section as skipped -> job succeeds
+```
+
+#### Correct
+
+```text
+mark section running fails -> record section.failed -> return dependency_error -> worker marks job/report failed
+```
+
 ## Scenario: Document Initial Report Defaults Seed
 
 ### 1. Scope / Trigger

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 18
+- **Total Sessions**: 26
 - **Last Active**: 2026-07-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~628 | Active |
+| `journal-1.md` | ~955 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,14 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 26 | 2026-07-01 | PR 350 running marker and journal cleanup | `2a4b4a0` | `PrimeTeam/feat/report-section-versions` |
+| 25 | 2026-07-01 | PR 350 stale conflict handling | `0242872` | `PrimeTeam/feat/report-section-versions` |
+| 24 | 2026-07-01 | PR 350 section write concurrency guards | `7108a3e` | `PrimeTeam/feat/report-section-versions` |
+| 23 | 2026-07-01 | PR 350 generated section success race fix | `302428a` | `PrimeTeam/feat/report-section-versions` |
+| 22 | 2026-07-01 | PR 350 deleted-report section version review fix | `d376913` | `PrimeTeam/feat/report-section-versions` |
+| 21 | 2026-07-01 | PR 350 generation failure compensation | `e791f71` | `PrimeTeam/feat/report-section-versions` |
+| 20 | 2026-07-01 | PR 350 review fixes | `0c8cb41`, `135a4ab` | `PrimeTeam/feat/report-section-versions` |
+| 19 | 2026-07-01 | Document section versions | `c0c871d`, `a4aa9c4` | `PrimeTeam/feat/report-section-versions` |
 | 18 | 2026-07-01 | Address PR 334 generation review follow-ups | `015fbe9` | `PrimeTeam/feat/report-generation-orchestration` |
 | 17 | 2026-07-01 | PR 334 deleted report and target scope review | `9a8fb70` | `PrimeTeam/feat/report-generation-orchestration` |
 | 16 | 2026-07-01 | PR 334 review followups | `895f29b` | `PrimeTeam/feat/report-generation-orchestration` |

@@ -1911,6 +1911,10 @@ export interface components {
             /** @enum {string} */
             source: "manual" | "ai";
             requirements?: string;
+            content?: string;
+            tables?: {
+                [key: string]: unknown;
+            }[];
         };
         ReportSectionVersion: {
             id: string;
@@ -4088,6 +4092,7 @@ export interface operations {
             };
             400: components["responses"]["Error"];
             404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     listReportJobs: {

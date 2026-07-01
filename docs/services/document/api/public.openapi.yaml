@@ -988,32 +988,33 @@ components:
           items: { type: string }
     ReportSectionVersion:
       type: object
+      required: [id, reportId, sectionId, version, source, createdAt]
       properties:
         id: { type: string }
         reportId: { type: string }
         sectionId: { type: string }
+        version: { type: integer }
+        source: { type: string, enum: [manual, ai] }
         content: { type: string }
-        tableData:
-          type: object
-          nullable: true
-          additionalProperties: true
-        imageFileIds:
+        tables:
           type: array
-          items: { type: string }
-        source: { type: string, enum: [manual, job] }
+          items:
+            type: object
+            additionalProperties: true
+        jobId: { type: string }
         createdAt: { type: string, format: date-time }
     CreateSectionVersionRequest:
       type: object
+      required: [source]
       properties:
+        source: { type: string, enum: [manual, ai] }
+        requirements: { type: string }
         content: { type: string }
-        tableData:
-          type: object
-          nullable: true
-          additionalProperties: true
-        imageFileIds:
+        tables:
           type: array
-          items: { type: string }
-        source: { type: string, enum: [manual, job], default: manual }
+          items:
+            type: object
+            additionalProperties: true
     CreateReportJobRequest:
       type: object
       required: [jobType]
