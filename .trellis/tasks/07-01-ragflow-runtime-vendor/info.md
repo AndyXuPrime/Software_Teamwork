@@ -451,3 +451,27 @@ first, most likely Parser-backed document parsing before retrieval replacement.
   - Python virtualenv, coverage, log, C++ build, Go build, and local agent state
     ignores
 - Confirmed by user before cleanup: yes
+
+### 2026-07-01: remove Python Web/Admin startup residue
+
+- Updated:
+  - `services/knowledge/vendor/ragflow-runtime/api/ragflow_server.py`
+  - `services/knowledge/vendor/ragflow-runtime/api/db/init_data.py`
+  - `services/knowledge/vendor/ragflow-runtime/docker/entrypoint.sh`
+  - `services/knowledge/vendor/ragflow-runtime/docker/launch_backend_service.sh`
+- Removed:
+  - Python-side `--init-superuser` command-line option
+  - `init_superuser()` and its default admin credential initialization path
+  - stale `init_web_db` / `init_web_data` naming in the retained Python and
+    Docker startup chain
+- Renamed:
+  - `init_web_data()` to `init_runtime_data()`
+- Kept:
+  - database table initialization through `init_database_tables()`
+  - system settings initialization
+  - document count repair during runtime data initialization
+  - Docker startup for the Python server, task executor workers, and MCP server
+- Reason: the retained Knowledge runtime should keep parser/RAG/MCP/container
+  startup behavior, but should not keep upstream Web/Admin superuser bootstrap
+  semantics after Web/Admin product surfaces were trimmed.
+- Confirmed by user before cleanup: yes

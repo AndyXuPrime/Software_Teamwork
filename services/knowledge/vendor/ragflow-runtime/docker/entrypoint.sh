@@ -14,7 +14,6 @@ function usage() {
     echo "  --disable-webserver             Disables the web server (nginx + ragflow_server)."
     echo "  --disable-taskexecutor          Disables task executor workers."
     echo "  --enable-mcpserver              Enables the MCP server."
-    echo "  --init-superuser                Initializes the superuser."
     echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
     echo "  --consumer-no-end=<num>         End range for consumers (if using range-based)."
     echo "  --workers=<num>                 Number of task executors to run (if range is not used)."
@@ -25,14 +24,12 @@ function usage() {
     echo "  $0 --disable-webserver --consumer-no-beg=0 --consumer-no-end=5"
     echo "  $0 --disable-webserver --workers=2 --host-id=myhost123"
     echo "  $0 --enable-mcpserver"
-    echo "  $0 --init-superuser"
     exit 1
 }
 
 ENABLE_WEBSERVER=1 # Default to enable web server
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
 ENABLE_MCP_SERVER=0
-INIT_SUPERUSER_ARGS="" # Default to not initialize superuser
 CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
@@ -74,10 +71,6 @@ for arg in "$@"; do
       ;;
     --enable-mcpserver)
       ENABLE_MCP_SERVER=1
-      shift
-      ;;
-    --init-superuser)
-      INIT_SUPERUSER_ARGS="--init-superuser"
       shift
       ;;
     --mcp-host=*)
@@ -225,7 +218,7 @@ function ensure_docling() {
 
 function ensure_db_init() {
     echo "Initializing database tables..."
-    "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
+    "$PY" -c "from api.db.db_models import init_database_tables; init_database_tables()"
     echo "Database tables initialized."
 }
 
@@ -259,7 +252,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     while true; do
         echo "Attempt to start RAGFlow server..."
-        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
+        "$PY" api/ragflow_server.py
         echo "RAGFlow python server started."
         sleep 1;
     done &

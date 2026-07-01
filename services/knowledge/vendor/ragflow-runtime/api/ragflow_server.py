@@ -37,8 +37,8 @@ from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
 from common.file_utils import get_project_base_directory
 from common import settings
-from api.db.db_models import init_database_tables as init_web_db
-from api.db.init_data import init_web_data, init_superuser
+from api.db.db_models import init_database_tables
+from api.db.init_data import init_runtime_data
 from common.versions import get_ragflow_version
 from common.config_utils import show_configs
 from common.mcp_tool_call_conn import shutdown_all_mcp_sessions
@@ -101,8 +101,8 @@ if __name__ == '__main__':
         debugpy.listen(("0.0.0.0", RAGFLOW_DEBUGPY_LISTEN))
 
     # init db
-    init_web_db()
-    init_web_data()
+    init_database_tables()
+    init_runtime_data()
     # init runtime config
     import argparse
 
@@ -113,16 +113,11 @@ if __name__ == '__main__':
     parser.add_argument(
         "--debug", default=False, help="debug mode", action="store_true"
     )
-    parser.add_argument(
-        "--init-superuser", default=False, help="init superuser", action="store_true"
-    )
     args = parser.parse_args()
     if args.version:
         print(get_ragflow_version())
         sys.exit(0)
 
-    if args.init_superuser:
-        init_superuser()
     RuntimeConfig.DEBUG = args.debug
     if RuntimeConfig.DEBUG:
         logging.info("run on debug mode")

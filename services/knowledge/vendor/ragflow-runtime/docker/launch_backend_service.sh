@@ -139,7 +139,7 @@ run_server(){
 
 ensure_db_init() {
     echo "Initializing database tables..."
-    "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
+    "$PY" -c "from api.db.db_models import init_database_tables; init_database_tables()"
     echo "Database tables initialized."
 }
 

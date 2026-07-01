@@ -13,92 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
 import logging
 import json
 import os
 import time
-import uuid
 
-from peewee import IntegrityError
-
-from api.db import UserTenantRole
-from api.db.db_models import init_database_tables as init_web_db
-from api.db.services import UserService
+from api.db.db_models import init_database_tables
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMBundle
-from api.db.services.user_service import TenantService, UserTenantService
 from api.db.services.system_settings_service import SystemSettingsService
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
-from common.constants import LLMType
-from common import settings
-from api.common.base64 import encode_to_base64
-
-DEFAULT_SUPERUSER_NICKNAME = os.getenv("DEFAULT_SUPERUSER_NICKNAME", "admin")
-DEFAULT_SUPERUSER_EMAIL = os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
-DEFAULT_SUPERUSER_PASSWORD = os.getenv("DEFAULT_SUPERUSER_PASSWORD", "admin")
-
-def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_EMAIL, password=DEFAULT_SUPERUSER_PASSWORD, role=UserTenantRole.OWNER):
-    if UserService.query(email=email):
-        logging.info("User with email %s already exists, skipping initialization.", email)
-        return
-
-    user_info = {
-        "id": uuid.uuid1().hex,
-        "password": encode_to_base64(password),
-        "nickname": nickname,
-        "is_superuser": True,
-        "email": email,
-        "creator": "system",
-        "status": "1",
-    }
-    tenant = {
-        "id": user_info["id"],
-        "name": user_info["nickname"] + "‘s Kingdom",
-        "llm_id": settings.CHAT_MDL,
-        "embd_id": settings.EMBEDDING_MDL,
-        "asr_id": settings.ASR_MDL,
-        "parser_ids": settings.PARSERS,
-        "img2txt_id": settings.IMAGE2TEXT_MDL,
-        "rerank_id": settings.RERANK_MDL,
-    }
-    usr_tenant = {
-        "tenant_id": user_info["id"],
-        "user_id": user_info["id"],
-        "invited_by": user_info["id"],
-        "role": role
-    }
-
-    try:
-        if not UserService.save(**user_info):
-            logging.error("can't init admin.")
-            return
-    except IntegrityError:
-        logging.info("User with email %s already exists, skipping.", email)
-        return
-    TenantService.insert(**tenant)
-    UserTenantService.insert(**usr_tenant)
-    logging.info(
-        f"Super user initialized. email: {email},A default password has been set; changing the password after login is strongly recommended.")
-
-    if tenant["llm_id"]:
-        chat_model_config = get_tenant_default_model_by_type(tenant["id"], LLMType.CHAT)
-        chat_mdl = LLMBundle(tenant["id"], chat_model_config)
-        msg = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
-        if msg.find("ERROR: ") == 0:
-            logging.error("'{}' doesn't work. {}".format( tenant["llm_id"], msg))
-
-    if tenant["embd_id"]:
-        embd_model_config = get_tenant_default_model_by_type(tenant["id"], LLMType.EMBEDDING)
-        embd_mdl = LLMBundle(tenant["id"], embd_model_config)
-        v, c = embd_mdl.encode(["Hello!"])
-        if c == 0:
-            # Don't log the model identifier verbatim: CodeQL flags it
-            # as potential sensitive data in clear text. The ID itself
-            # is non-sensitive, but the pattern matches any string
-            # sourced from tenant config that could carry credentials.
-            logging.error("embedding model failed sanity-check encode")
 
 
 def update_document_number_in_init():
@@ -107,18 +30,14 @@ def update_document_number_in_init():
         KnowledgebaseService.update_document_number_in_init(kb_id=kb_id, doc_num=doc_count.get(kb_id, 0))
 
 
-
-def init_web_data():
+def init_runtime_data():
     start_time = time.time()
 
     init_table()
 
-    # init_llm_factory()
     update_document_number_in_init()
-    # if not UserService.get_all().count():
-    #    init_superuser()
 
-    logging.info("init web data success:{}".format(time.time() - start_time))
+    logging.info("init runtime data success:{}".format(time.time() - start_time))
 
 def init_table():
     # init system_settings
@@ -147,5 +66,5 @@ def init_table():
 
 
 if __name__ == '__main__':
-    init_web_db()
-    init_web_data()
+    init_database_tables()
+    init_runtime_data()
