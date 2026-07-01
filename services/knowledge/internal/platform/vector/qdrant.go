@@ -76,6 +76,12 @@ func (c *QdrantClient) Upsert(ctx context.Context, points []service.VectorPoint)
 	return c.doJSON(ctx, http.MethodPut, "/collections/"+url.PathEscape(c.collection)+"/points?wait=true", payload, nil)
 }
 
+func (c *QdrantClient) DeleteByDocument(ctx context.Context, documentID string) error {
+	return c.deleteByFilter(ctx, qdrantFilter{Must: []qdrantCondition{
+		matchValueCondition(service.VectorPayloadDocumentID, documentID),
+	}})
+}
+
 func (c *QdrantClient) DeleteByDocumentIngestionAttempt(ctx context.Context, documentID string, ingestionAttempt string) error {
 	return c.deleteByFilter(ctx, qdrantFilter{Must: []qdrantCondition{
 		matchValueCondition(service.VectorPayloadDocumentID, documentID),

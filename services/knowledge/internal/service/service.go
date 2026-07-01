@@ -510,10 +510,15 @@ func (s *Service) DeleteDocument(ctx context.Context, reqCtx RequestContext, id 
 	if id == "" {
 		return ValidationError("request validation failed", map[string]string{"documentId": "is required"})
 	}
+	doc, err := s.repo.GetDocument(ctx, id, scope)
+	if err != nil {
+		return repositoryError(err)
+	}
 	now := s.now()
+	jobID := s.newID("job")
 	if err := s.repo.SoftDeleteDocument(ctx, DeleteDocumentRecord{
 		DocumentID:  id,
-		JobID:       s.newID("job"),
+		JobID:       jobID,
 		JobType:     JobTypeDeleteCleanup,
 		JobStatus:   JobStatusQueued,
 		JobStage:    "delete_cleanup",
@@ -524,6 +529,24 @@ func (s *Service) DeleteDocument(ctx context.Context, reqCtx RequestContext, id 
 		UpdatedAt:   now,
 	}, scope); err != nil {
 		return repositoryError(err)
+	}
+	if s.queue == nil {
+		_ = s.repo.MarkDocumentJobFailed(ctx, id, jobID, nil, string(CodeDependency), "delete cleanup queue is not configured", s.now())
+		return DependencyError("delete cleanup queue is not configured", nil)
+	}
+	requestID := strings.TrimSpace(reqCtx.RequestID)
+	if requestID == "" {
+		requestID = "delete_cleanup_" + jobID
+	}
+	if err := s.queue.EnqueueDocumentDeleteCleanup(ctx, DocumentDeleteCleanupTask{
+		RequestID:       requestID,
+		JobID:           jobID,
+		DocumentID:      id,
+		KnowledgeBaseID: doc.KnowledgeBaseID,
+		UserID:          scope.UserID,
+	}); err != nil {
+		_ = s.repo.MarkDocumentJobFailed(ctx, id, jobID, nil, string(CodeDependency), "delete cleanup queue handoff failed", s.now())
+		return DependencyError("delete cleanup queue handoff failed", err)
 	}
 	return nil
 }

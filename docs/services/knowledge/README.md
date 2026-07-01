@@ -24,7 +24,11 @@ smoke，覆盖一个 fixture 文档从 File Service、Parser Service、Knowledge
 Qdrant point 写入和状态更新；同时新增 Gateway -> Knowledge owner route smoke，覆盖
 伪造 `X-User-*` 拒绝、Gateway session 创建、`GET /api/v1/knowledge-bases` 和 KB
 `createdBy` 真实 session user 断言。完整上传到检索、rerank、MCP/Gateway 总入口仍由
-后续跨服务 smoke 覆盖。
+后续跨服务 smoke 覆盖。文档删除清理 worker 已消费
+`knowledge:document:delete_cleanup`，负责在软删除后幂等清理 File 引用和
+Qdrant points；同进程 reconciler 会从 PostgreSQL 重投 retryable cleanup job
+以补偿短暂 Redis/asynq handoff 失败。Redis/asynq 只承载投递，PostgreSQL 的
+document/job 状态仍是事实来源。
 
 ## 技术基线
 
@@ -43,6 +47,7 @@ Knowledge Service 的工程选型以 [技术选型基线](../../architecture/tec
 | 文档处理状态 | 维护文档从 `uploaded` 到 `ready` 或 `failed` 的处理状态、错误摘要和统计字段。 |
 | 文档解析协调与切片 | 调用 Parser service 获取 parsed content，并在 Knowledge 内做语义切片和切片详情保存。 |
 | 向量索引 | 生成 embedding，维护 Qdrant collection、point 和检索 payload。 |
+| 删除清理 | 文档删除后消费 `delete_cleanup` job，调用 File Service 删除不透明 `file_ref`，并按 `document_id` 清理 Qdrant points。 |
 | 检索查询 | 根据 query、知识库范围、Top K、阈值和标签过滤返回召回结果。 |
 
 `knowledge` 不负责用户登录、RBAC 源数据、底层对象存储实现、OCR/PaddleOCR
@@ -146,7 +151,7 @@ seeded `document_chunks` 和 fake vector hit 替代真实 worker/Qdrant，只要
 
 ## 与 File Service 的边界
 
-知识库文档上传入口由 `knowledge` 拥有，精确 method、path 和 multipart schema 以 Gateway OpenAPI 为准。Knowledge Service 负责接收 gateway 转发的 multipart、创建知识库文档资源、保存内部 `file_ref`、维护处理状态、chunks、embedding、Qdrant 索引和检索。Knowledge 可在服务边界内调用 File Service 的 `/internal/v1/files/**` 基础接口保存和读取底层原始文件对象，并调用 Parser Service 的 `/internal/v1/parsed-documents` 将 raw bytes 转成规范化 parsed content；File Service 不保存 `knowledgeBaseId`、文档处理状态、chunks 或索引状态，Parser Service 不保存业务状态、chunks、embedding 或 Qdrant point。gateway 不能直接解析文件或操作 Qdrant。
+知识库文档上传入口由 `knowledge` 拥有，精确 method、path 和 multipart schema 以 Gateway OpenAPI 为准。Knowledge Service 负责接收 gateway 转发的 multipart、创建知识库文档资源、保存内部不透明 `file_ref`、维护处理状态、chunks、embedding、Qdrant 索引和检索。Knowledge 可在服务边界内调用 File Service 的 `/internal/v1/files/**` 基础接口保存、读取和删除底层原始文件对象，并调用 Parser Service 的 `/internal/v1/parsed-documents` 将 raw bytes 转成规范化 parsed content；File Service 独占 bucket、object key、MinIO URL、签名 URL、storage backend 和凭据，Knowledge 不读取、不推断、不暴露这些存储细节。File Service 不保存 `knowledgeBaseId`、文档处理状态、chunks 或索引状态，Parser Service 不保存业务状态、chunks、embedding 或 Qdrant point。gateway 不能直接解析文件或操作 Qdrant。
 
 ## 错误码约定
 

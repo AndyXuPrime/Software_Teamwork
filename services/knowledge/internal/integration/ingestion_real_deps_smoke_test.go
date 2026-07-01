@@ -379,8 +379,9 @@ func applyKnowledgeMigrations(t *testing.T, ctx context.Context, pool *pgxpool.P
 }
 
 type capturingIngestionQueue struct {
-	mu    sync.Mutex
-	tasks []service.DocumentIngestionTask
+	mu           sync.Mutex
+	tasks        []service.DocumentIngestionTask
+	cleanupTasks []service.DocumentDeleteCleanupTask
 }
 
 func (q *capturingIngestionQueue) EnqueueDocumentIngestion(ctx context.Context, task service.DocumentIngestionTask) error {
@@ -390,6 +391,16 @@ func (q *capturingIngestionQueue) EnqueueDocumentIngestion(ctx context.Context, 
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.tasks = append(q.tasks, task)
+	return nil
+}
+
+func (q *capturingIngestionQueue) EnqueueDocumentDeleteCleanup(ctx context.Context, task service.DocumentDeleteCleanupTask) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.cleanupTasks = append(q.cleanupTasks, task)
 	return nil
 }
 

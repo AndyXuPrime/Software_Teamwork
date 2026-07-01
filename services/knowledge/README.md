@@ -5,11 +5,14 @@ processing trace state, and future chunk/vector lifecycle coordination.
 
 This implementation includes the A-09 foundation slice, the A-10 document
 upload handoff, the A-11 ingestion worker path, A-12 knowledge-query
-retrieval, and the A-14 active-operation contract surface. Knowledge accepts
-the document upload, stores raw bytes through File Service, creates durable
-document/job state, enqueues ingestion work, then consumes the A10 task payload
-to read source bytes, parse, chunk, embed, index chunks, expose chunk/content
-reads, and run retrieval over hydrated chunks.
+retrieval, the A-14 active-operation contract surface, and the document
+delete-cleanup worker loop. Knowledge accepts the document upload, stores raw
+bytes through File Service, creates durable document/job state, enqueues
+ingestion work, then consumes the A10 task payload to read source bytes, parse,
+chunk, embed, index chunks, expose chunk/content reads, and run retrieval over
+hydrated chunks. Document deletion soft-deletes Knowledge-owned rows first,
+then consumes a cleanup task to delete the File reference and document vector
+points.
 
 ## Runtime
 
@@ -29,7 +32,7 @@ RAG MCP server work.
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes | - | PostgreSQL connection string. |
 | `FILE_SERVICE_BASE_URL` | yes | - | Internal File Service base URL for `/internal/v1/files`. |
-| `KNOWLEDGE_REDIS_ADDR` | yes | - | Redis/asynq endpoint for ingestion task handoff. |
+| `KNOWLEDGE_REDIS_ADDR` | yes | - | Redis/asynq endpoint for ingestion and delete-cleanup task handoff. |
 | `KNOWLEDGE_HTTP_ADDR` | no | `:8083` | HTTP listen address. |
 | `KNOWLEDGE_SERVICE_VERSION` | no | `dev` | Version returned by readiness checks. |
 | `KNOWLEDGE_ENV` | no | `local` | Runtime environment label. |
@@ -71,6 +74,8 @@ Internal service routes:
 - `GET /internal/v1/knowledge-bases/{knowledgeBaseId}/documents`
 - `POST /internal/v1/knowledge-bases/{knowledgeBaseId}/documents`
 - `GET /internal/v1/documents/{documentId}`
+- `PATCH /internal/v1/documents/{documentId}`
+- `DELETE /internal/v1/documents/{documentId}`
 - `GET /internal/v1/documents/{documentId}/chunks`
 - `GET /internal/v1/documents/{documentId}/content`
 - `POST /internal/v1/knowledge-queries`
@@ -126,12 +131,29 @@ Knowledge base deletion is soft-delete-first:
 - leave chunk/index cleanup for a future lifecycle job instead of hard-deleting
   chunks or vectors in this metadata route.
 
+Document deletion is also soft-delete-first:
+
+- `DELETE /internal/v1/documents/{documentId}` marks `knowledge_documents.deleted_at`
+  and creates a `processing_jobs.job_type='delete_cleanup'` row in PostgreSQL.
+- The same process registers the asynq task type
+  `knowledge:document:delete_cleanup` alongside `knowledge:document:ingest`.
+- The cleanup payload contains only `requestId`, `jobId`, `documentId`,
+  `knowledgeBaseId`, and `userId`; it never carries `file_ref`, bucket, object
+  key, URL, service token, or vector payload.
+- The worker treats empty `file_ref`, File `404`, missing Qdrant points, and
+  duplicate delivery as idempotent success. File/Qdrant/Redis failures persist a
+  sanitized job error summary and do not restore document visibility. A
+  lightweight reconciler in the Knowledge process periodically scans
+  PostgreSQL for retryable `delete_cleanup` jobs and re-enqueues them after
+  transient Redis/asynq handoff failures.
+
 ## Local Integration Notes
 
 The default local service path uses PostgreSQL, File Service, Parser Service,
 Redis/asynq, local hashing embeddings, and an in-memory vector index. This is
-enough for upload handoff, worker processing, chunk listing, original content
-reads, and seeded/fake-backed contract tests.
+enough for upload handoff, ingestion worker processing, delete-cleanup worker
+processing, chunk listing, original content reads, and seeded/fake-backed
+contract tests.
 
 Real Qdrant and AI Gateway integration is optional:
 
@@ -245,8 +267,30 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
 
 `GET /internal/v1/documents/{documentId}/content` validates the Knowledge-owned
 document first, then reads the raw bytes from File Service internally. It never
-exposes `file_ref`, object keys, File Service IDs, or storage URLs in JSON
+exposes `file_ref`, bucket names, object keys, File Service IDs, or storage URLs in JSON
 responses.
+
+Delete-cleanup troubleshooting starts from PostgreSQL, not Redis. If Redis was
+temporarily unavailable during delete, the Knowledge reconciler will re-enqueue
+retryable `queued`, dependency-failed, or stale-running jobs after Redis
+recovers:
+
+```sql
+SELECT id, document_id, status, current_stage, attempts, max_attempts,
+       error_code, error_message, updated_at
+FROM processing_jobs
+WHERE job_type = 'delete_cleanup'
+ORDER BY updated_at DESC
+LIMIT 20;
+
+SELECT d.id, d.knowledge_base_id, d.current_job_id, j.status, j.error_code,
+       j.error_message
+FROM knowledge_documents d
+JOIN processing_jobs j ON j.id = d.current_job_id
+WHERE d.deleted_at IS NOT NULL
+  AND j.job_type = 'delete_cleanup'
+  AND j.status IN ('queued', 'failed', 'running');
+```
 
 ## Migrations
 

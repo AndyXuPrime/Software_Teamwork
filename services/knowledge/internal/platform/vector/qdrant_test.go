@@ -187,6 +187,35 @@ func TestQdrantClientDeleteByDocumentIngestionAttemptUsesDocumentFilter(t *testi
 	}
 }
 
+func TestQdrantClientDeleteByDocumentUsesDocumentOnlyFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/collections/knowledge_chunks/points/delete" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		var body qdrantDeleteRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if len(body.Filter.Must) != 1 ||
+			body.Filter.Must[0].Key != service.VectorPayloadDocumentID ||
+			body.Filter.Must[0].Match.Value != "doc_1" ||
+			len(body.Filter.MustNot) != 0 {
+			t.Fatalf("filter = %+v", body.Filter)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"result":{"operation_id":1,"status":"completed"},"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewQdrantClient(QdrantConfig{BaseURL: server.URL, Collection: "knowledge_chunks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.DeleteByDocument(context.Background(), "doc_1"); err != nil {
+		t.Fatalf("DeleteByDocument() error = %v", err)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {

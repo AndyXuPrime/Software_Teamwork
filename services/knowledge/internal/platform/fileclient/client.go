@@ -149,7 +149,14 @@ func (c *Client) DeleteFile(ctx context.Context, reqCtx service.RequestContext, 
 		return nil
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return service.NewError(service.CodeDependency, "file service failed", nil)
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
+			return service.NewError(service.CodeUnauthorized, "file service rejected knowledge request", nil)
+		case http.StatusForbidden:
+			return service.NewError(service.CodeForbidden, "file service rejected knowledge request", nil)
+		default:
+			return service.NewError(service.CodeDependency, "file service failed", nil)
+		}
 	}
 	return nil
 }

@@ -37,6 +37,7 @@ type retrievalIndex struct {
 }
 
 func (*retrievalIndex) Upsert(context.Context, []service.VectorPoint) error { return nil }
+func (*retrievalIndex) DeleteByDocument(context.Context, string) error      { return nil }
 func (*retrievalIndex) DeleteByDocumentIngestionAttempt(context.Context, string, string) error {
 	return nil
 }

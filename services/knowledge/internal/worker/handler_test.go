@@ -524,8 +524,360 @@ func TestIngestionHandlerAcksDependencyFailureAfterMaxAttempts(t *testing.T) {
 	}
 }
 
+func TestDeleteCleanupHandlerDeletesFileAndVectorsThenCompletesJob(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedKnowledgeBase(t, repo)
+	handoff := seedDeleteCleanupJob(t, repo, "file_123")
+	files := &cleanupFileClient{}
+	vectors := &recordingVectorIndex{points: []service.VectorPoint{
+		{
+			ID: "point_doc_1",
+			Payload: map[string]any{
+				service.VectorPayloadDocumentID:       handoff.documentID,
+				service.VectorPayloadIngestionAttempt: "job_ingest:1",
+			},
+		},
+		{
+			ID: "point_other_doc",
+			Payload: map[string]any{
+				service.VectorPayloadDocumentID: "doc_other",
+			},
+		},
+	}}
+	svc := service.NewWithDependencies(repo, files, nil, fixedClock(), sequenceIDs(),
+		service.WithVectorIndex(embedding.NewLocalHasher("local_hashing", "local_hashing", 16), vectors),
+	)
+	handler := worker.NewDeleteCleanupHandler(svc)
+
+	if err := handler.HandleDeleteCleanupPayload(context.Background(), mustJSON(t, worker.DeleteCleanupPayload{
+		RequestID:       "req_cleanup",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	})); err != nil {
+		t.Fatalf("HandleDeleteCleanupPayload() error = %v", err)
+	}
+
+	if len(files.deleted) != 1 || files.deleted[0] != "file_123" {
+		t.Fatalf("file delete calls = %+v", files.deleted)
+	}
+	if files.lastRequest.RequestID != "req_cleanup" || files.lastRequest.UserID != "usr_123" || files.lastRequest.CallerService != "knowledge" {
+		t.Fatalf("file request context = %+v", files.lastRequest)
+	}
+	if len(vectors.deletedDocuments) != 1 || vectors.deletedDocuments[0] != handoff.documentID {
+		t.Fatalf("vector delete documents = %+v", vectors.deletedDocuments)
+	}
+	if len(vectors.points) != 1 || vectors.points[0].ID != "point_other_doc" {
+		t.Fatalf("remaining vector points = %+v", vectors.points)
+	}
+	job, err := repo.GetProcessingJob(context.Background(), handoff.jobID)
+	if err != nil {
+		t.Fatalf("GetProcessingJob() error = %v", err)
+	}
+	if job.Status != service.JobStatusSucceeded || job.ProgressPercent != 100 {
+		t.Fatalf("job = %+v", job)
+	}
+	if err := handler.HandleDeleteCleanupPayload(context.Background(), mustJSON(t, worker.DeleteCleanupPayload{
+		RequestID:       "req_cleanup",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	})); err != nil {
+		t.Fatalf("redelivered HandleDeleteCleanupPayload() error = %v", err)
+	}
+	if len(files.deleted) != 1 || len(vectors.deletedDocuments) != 1 {
+		t.Fatalf("duplicate delivery repeated cleanup: file=%+v vector=%+v", files.deleted, vectors.deletedDocuments)
+	}
+	_, err = svc.GetDocument(context.Background(), actorContext(), handoff.documentID)
+	if !errors.Is(err, service.ErrNotFound) && !hasAppCode(err, service.CodeNotFound) {
+		t.Fatalf("GetDocument() after cleanup error = %v, want not found", err)
+	}
+}
+
+func TestDeleteCleanupHandlerTreatsEmptyFileRefAsAlreadyCleaned(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedKnowledgeBase(t, repo)
+	handoff := seedDeleteCleanupJob(t, repo, "")
+	files := &cleanupFileClient{}
+	vectors := &recordingVectorIndex{}
+	svc := service.NewWithDependencies(repo, files, nil, fixedClock(), sequenceIDs(),
+		service.WithVectorIndex(embedding.NewLocalHasher("local_hashing", "local_hashing", 16), vectors),
+	)
+	handler := worker.NewDeleteCleanupHandler(svc)
+
+	if err := handler.HandleDeleteCleanupPayload(context.Background(), mustJSON(t, worker.DeleteCleanupPayload{
+		RequestID:       "req_cleanup",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	})); err != nil {
+		t.Fatalf("HandleDeleteCleanupPayload() error = %v", err)
+	}
+	if len(files.deleted) != 0 {
+		t.Fatalf("file delete calls = %+v, want none", files.deleted)
+	}
+	job, err := repo.GetProcessingJob(context.Background(), handoff.jobID)
+	if err != nil {
+		t.Fatalf("GetProcessingJob() error = %v", err)
+	}
+	if job.Status != service.JobStatusSucceeded {
+		t.Fatalf("job status = %s, want succeeded", job.Status)
+	}
+}
+
+func TestDeleteCleanupHandlerPersistsSanitizedFileFailureForRetry(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedKnowledgeBase(t, repo)
+	handoff := seedDeleteCleanupJob(t, repo, "file_123")
+	files := &cleanupFileClient{
+		err: service.NewError(service.CodeDependency, "file service failed with bucket secret-bucket object secret-key", errors.New("service token secret")),
+	}
+	vectors := &recordingVectorIndex{}
+	svc := service.NewWithDependencies(repo, files, nil, fixedClock(), sequenceIDs(),
+		service.WithVectorIndex(embedding.NewLocalHasher("local_hashing", "local_hashing", 16), vectors),
+	)
+	handler := worker.NewDeleteCleanupHandler(svc)
+
+	err := handler.HandleDeleteCleanupPayload(context.Background(), mustJSON(t, worker.DeleteCleanupPayload{
+		RequestID:       "req_cleanup",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	}))
+	requireAppError(t, err, service.CodeDependency)
+	job, getErr := repo.GetProcessingJob(context.Background(), handoff.jobID)
+	if getErr != nil {
+		t.Fatalf("GetProcessingJob() error = %v", getErr)
+	}
+	if job.Status != service.JobStatusFailed || job.ErrorMessage == nil || *job.ErrorMessage != "file cleanup failed" {
+		t.Fatalf("job = %+v", job)
+	}
+	for _, forbidden := range []string{"file_123", "secret-bucket", "secret-key", "service token"} {
+		if strings.Contains(*job.ErrorMessage, forbidden) {
+			t.Fatalf("job error leaked %q: %q", forbidden, *job.ErrorMessage)
+		}
+	}
+	if len(vectors.deletedDocuments) != 0 {
+		t.Fatalf("vector cleanup should not run after file failure: %+v", vectors.deletedDocuments)
+	}
+}
+
+func TestDeleteCleanupHandlerPersistsVectorFailureForRetry(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedKnowledgeBase(t, repo)
+	handoff := seedDeleteCleanupJob(t, repo, "file_123")
+	files := &cleanupFileClient{}
+	vectors := &recordingVectorIndex{
+		points: []service.VectorPoint{{
+			ID: "point_doc_1",
+			Payload: map[string]any{
+				service.VectorPayloadDocumentID: handoff.documentID,
+			},
+		}},
+		deleteErr: service.NewError(service.CodeDependency, "qdrant failed with raw vector payload", errors.New("secret vector payload")),
+	}
+	svc := service.NewWithDependencies(repo, files, nil, fixedClock(), sequenceIDs(),
+		service.WithVectorIndex(embedding.NewLocalHasher("local_hashing", "local_hashing", 16), vectors),
+	)
+	handler := worker.NewDeleteCleanupHandler(svc)
+
+	err := handler.HandleDeleteCleanupPayload(context.Background(), mustJSON(t, worker.DeleteCleanupPayload{
+		RequestID:       "req_cleanup",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	}))
+	requireAppError(t, err, service.CodeDependency)
+	if len(files.deleted) != 1 {
+		t.Fatalf("file delete calls = %+v, want one before vector retry", files.deleted)
+	}
+	job, getErr := repo.GetProcessingJob(context.Background(), handoff.jobID)
+	if getErr != nil {
+		t.Fatalf("GetProcessingJob() error = %v", getErr)
+	}
+	if job.Status != service.JobStatusFailed || job.ErrorMessage == nil || *job.ErrorMessage != "vector cleanup failed" {
+		t.Fatalf("job = %+v", job)
+	}
+	if strings.Contains(*job.ErrorMessage, "raw vector") || strings.Contains(*job.ErrorMessage, "secret") {
+		t.Fatalf("job error leaked sensitive detail: %q", *job.ErrorMessage)
+	}
+}
+
+func TestDeleteCleanupHandlerRetriesWhenJobIsAlreadyRunning(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedKnowledgeBase(t, repo)
+	handoff := seedRunningDeleteCleanupJob(t, repo, "file_123", fixedNow())
+	files := &cleanupFileClient{}
+	vectors := &recordingVectorIndex{}
+	svc := service.NewWithDependencies(repo, files, nil, fixedClock(), sequenceIDs(),
+		service.WithVectorIndex(embedding.NewLocalHasher("local_hashing", "local_hashing", 16), vectors),
+		service.WithIngestionRunningLease(5*time.Minute),
+	)
+	handler := worker.NewDeleteCleanupHandler(svc)
+
+	err := handler.HandleDeleteCleanupPayload(context.Background(), mustJSON(t, worker.DeleteCleanupPayload{
+		RequestID:       "req_cleanup",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	}))
+
+	requireAppError(t, err, service.CodeDependency)
+	if len(files.deleted) != 0 || len(vectors.deletedDocuments) != 0 {
+		t.Fatalf("running job should not perform cleanup: file=%+v vector=%+v", files.deleted, vectors.deletedDocuments)
+	}
+	job, getErr := repo.GetProcessingJob(context.Background(), handoff.jobID)
+	if getErr != nil {
+		t.Fatalf("GetProcessingJob() error = %v", getErr)
+	}
+	if job.Status != service.JobStatusRunning || job.Attempts != 1 {
+		t.Fatalf("job = %+v, want running attempt 1", job)
+	}
+}
+
+func TestDeleteCleanupHandlerReclaimsStaleRunningJob(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedKnowledgeBase(t, repo)
+	handoff := seedRunningDeleteCleanupJob(t, repo, "file_123", fixedNow())
+	files := &cleanupFileClient{}
+	vectors := &recordingVectorIndex{}
+	now := fixedNow().Add(time.Hour)
+	svc := service.NewWithDependencies(repo, files, nil, func() time.Time { return now }, sequenceIDs(),
+		service.WithVectorIndex(embedding.NewLocalHasher("local_hashing", "local_hashing", 16), vectors),
+		service.WithIngestionRunningLease(5*time.Minute),
+	)
+	handler := worker.NewDeleteCleanupHandler(svc)
+
+	if err := handler.HandleDeleteCleanupPayload(context.Background(), mustJSON(t, worker.DeleteCleanupPayload{
+		RequestID:       "req_cleanup",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	})); err != nil {
+		t.Fatalf("HandleDeleteCleanupPayload() error = %v", err)
+	}
+
+	if len(files.deleted) != 1 || files.deleted[0] != "file_123" {
+		t.Fatalf("file delete calls = %+v", files.deleted)
+	}
+	if len(vectors.deletedDocuments) != 1 || vectors.deletedDocuments[0] != handoff.documentID {
+		t.Fatalf("vector delete documents = %+v", vectors.deletedDocuments)
+	}
+	job, err := repo.GetProcessingJob(context.Background(), handoff.jobID)
+	if err != nil {
+		t.Fatalf("GetProcessingJob() error = %v", err)
+	}
+	if job.Status != service.JobStatusSucceeded || job.Attempts != 2 {
+		t.Fatalf("job = %+v, want succeeded attempt 2", job)
+	}
+}
+
+func TestDeleteCleanupHandlerAcksDependencyFailureAfterMaxAttempts(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedKnowledgeBase(t, repo)
+	handoff := seedDeleteCleanupJobWithMaxAttempts(t, repo, "file_123", 1)
+	files := &cleanupFileClient{
+		err: service.NewError(service.CodeDependency, "file service failed with bucket secret-bucket object secret-key", errors.New("service token secret")),
+	}
+	vectors := &recordingVectorIndex{}
+	svc := service.NewWithDependencies(repo, files, nil, fixedClock(), sequenceIDs(),
+		service.WithVectorIndex(embedding.NewLocalHasher("local_hashing", "local_hashing", 16), vectors),
+	)
+	handler := worker.NewDeleteCleanupHandler(svc)
+
+	if err := handler.HandleDeleteCleanupPayload(context.Background(), mustJSON(t, worker.DeleteCleanupPayload{
+		RequestID:       "req_cleanup",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	})); err != nil {
+		t.Fatalf("HandleDeleteCleanupPayload() error = %v, want ack once max attempts is reached", err)
+	}
+
+	job, err := repo.GetProcessingJob(context.Background(), handoff.jobID)
+	if err != nil {
+		t.Fatalf("GetProcessingJob() error = %v", err)
+	}
+	if job.Status != service.JobStatusFailed || job.Attempts != 1 || job.MaxAttempts != 1 {
+		t.Fatalf("job = %+v", job)
+	}
+	if job.ErrorCode == nil || *job.ErrorCode != string(service.CodeDependency) {
+		t.Fatalf("job error code = %v, want dependency_error", job.ErrorCode)
+	}
+	if job.ErrorMessage == nil || *job.ErrorMessage != "file cleanup failed" || strings.Contains(*job.ErrorMessage, "secret") {
+		t.Fatalf("job error message = %v", job.ErrorMessage)
+	}
+	if len(vectors.deletedDocuments) != 0 {
+		t.Fatalf("vector cleanup should not run after file failure: %+v", vectors.deletedDocuments)
+	}
+}
+
+func TestDeleteCleanupHandlerTerminalizesExhaustedStaleRunningJob(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	seedKnowledgeBase(t, repo)
+	handoff := seedRunningDeleteCleanupJob(t, repo, "file_123", fixedNow())
+	files := &cleanupFileClient{}
+	vectors := &recordingVectorIndex{}
+	exhaustedAttempts := service.DefaultIngestionMaxAttempts
+	stage := "delete_cleanup"
+	startedAt := fixedNow().Add(-time.Hour)
+	if _, err := repo.UpdateJobState(context.Background(), handoff.jobID, service.JobStateUpdate{
+		Status:          service.JobStatusRunning,
+		CurrentStage:    &stage,
+		ProgressPercent: 20,
+		Attempts:        &exhaustedAttempts,
+		StartedAt:       &startedAt,
+		UpdatedAt:       startedAt,
+	}); err != nil {
+		t.Fatalf("UpdateJobState() error = %v", err)
+	}
+	svc := service.NewWithDependencies(repo, files, nil, func() time.Time {
+		return fixedNow()
+	}, sequenceIDs(),
+		service.WithVectorIndex(embedding.NewLocalHasher("local_hashing", "local_hashing", 16), vectors),
+		service.WithIngestionRunningLease(5*time.Minute),
+	)
+	handler := worker.NewDeleteCleanupHandler(svc)
+
+	if err := handler.HandleDeleteCleanupPayload(context.Background(), mustJSON(t, worker.DeleteCleanupPayload{
+		RequestID:       "req_cleanup",
+		JobID:           handoff.jobID,
+		DocumentID:      handoff.documentID,
+		KnowledgeBaseID: handoff.knowledgeBaseID,
+		UserID:          "usr_123",
+	})); err != nil {
+		t.Fatalf("HandleDeleteCleanupPayload() error = %v, want ack once stale running job is exhausted", err)
+	}
+	if len(files.deleted) != 0 || len(vectors.deletedDocuments) != 0 {
+		t.Fatalf("exhausted stale running job should not perform cleanup: file=%+v vector=%+v", files.deleted, vectors.deletedDocuments)
+	}
+	job, err := repo.GetProcessingJob(context.Background(), handoff.jobID)
+	if err != nil {
+		t.Fatalf("GetProcessingJob() error = %v", err)
+	}
+	if job.Status != service.JobStatusFailed || job.Attempts != service.DefaultIngestionMaxAttempts {
+		t.Fatalf("job = %+v", job)
+	}
+	if job.ErrorMessage == nil || *job.ErrorMessage != "delete cleanup job reached max attempts" {
+		t.Fatalf("job error message = %v", job.ErrorMessage)
+	}
+}
+
 func TestDecodeIngestionPayloadRejectsUnknownFields(t *testing.T) {
 	_, err := worker.DecodeIngestionPayload([]byte(`{"requestId":"req","jobId":"job","documentId":"doc","knowledgeBaseId":"kb","userId":"usr","fileRef":"secret"}`))
+	requireAppError(t, err, service.CodeValidation)
+}
+
+func TestDecodeDeleteCleanupPayloadRejectsUnknownFields(t *testing.T) {
+	_, err := worker.DecodeDeleteCleanupPayload([]byte(`{"requestId":"req","jobId":"job","documentId":"doc","knowledgeBaseId":"kb","userId":"usr","fileRef":"secret"}`))
 	requireAppError(t, err, service.CodeValidation)
 }
 
@@ -649,6 +1001,60 @@ func seedRunningIngestionJob(t *testing.T, repo *repository.MemoryRepository, fi
 	return handoff
 }
 
+func seedDeleteCleanupJob(t *testing.T, repo *repository.MemoryRepository, fileID string) ingestionHandoff {
+	t.Helper()
+	return seedDeleteCleanupJobWithMaxAttempts(t, repo, fileID, service.DefaultIngestionMaxAttempts)
+}
+
+func seedDeleteCleanupJobWithMaxAttempts(t *testing.T, repo *repository.MemoryRepository, fileID string, maxAttempts int32) ingestionHandoff {
+	t.Helper()
+	now := fixedNow()
+	fileRef := fileID
+	repo.SeedDocument(service.KnowledgeDocument{
+		ID:              "doc_1",
+		KnowledgeBaseID: "kb_1",
+		FileRef:         &fileRef,
+		Name:            "manual.md",
+		Status:          service.DocumentStatusReady,
+		CreatedBy:       "usr_123",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	if err := repo.SoftDeleteDocument(context.Background(), service.DeleteDocumentRecord{
+		DocumentID:  "doc_1",
+		JobID:       "job_1",
+		JobType:     service.JobTypeDeleteCleanup,
+		JobStatus:   service.JobStatusQueued,
+		JobStage:    "delete_cleanup",
+		JobMessage:  "document marked deleted; cleanup is pending",
+		MaxAttempts: maxAttempts,
+		DeletedAt:   now.Add(time.Minute),
+		CreatedAt:   now.Add(time.Minute),
+		UpdatedAt:   now.Add(time.Minute),
+	}, service.AccessScope{UserID: "usr_123", CanWrite: true}); err != nil {
+		t.Fatalf("SoftDeleteDocument() error = %v", err)
+	}
+	return ingestionHandoff{knowledgeBaseID: "kb_1", documentID: "doc_1", jobID: "job_1"}
+}
+
+func seedRunningDeleteCleanupJob(t *testing.T, repo *repository.MemoryRepository, fileID string, runningAt time.Time) ingestionHandoff {
+	t.Helper()
+	handoff := seedDeleteCleanupJob(t, repo, fileID)
+	stage := "delete_cleanup"
+	attempts := int32(1)
+	if _, err := repo.UpdateJobState(context.Background(), handoff.jobID, service.JobStateUpdate{
+		Status:          service.JobStatusRunning,
+		CurrentStage:    &stage,
+		ProgressPercent: 20,
+		Attempts:        &attempts,
+		StartedAt:       &runningAt,
+		UpdatedAt:       runningAt,
+	}); err != nil {
+		t.Fatalf("UpdateJobState() error = %v", err)
+	}
+	return handoff
+}
+
 func seedKnowledgeBase(t *testing.T, repo *repository.MemoryRepository) {
 	t.Helper()
 	repo.SeedKnowledgeBase(service.KnowledgeBase{
@@ -743,8 +1149,16 @@ func (s *blockingSourceStore) ReadSource(ctx context.Context, reqCtx service.Req
 }
 
 type recordingVectorIndex struct {
-	mu     sync.Mutex
-	points []service.VectorPoint
+	mu               sync.Mutex
+	points           []service.VectorPoint
+	deletedDocuments []string
+	deleteErr        error
+}
+
+type cleanupFileClient struct {
+	deleted     []string
+	lastRequest service.RequestContext
+	err         error
 }
 
 type markFailureRepository struct {
@@ -800,11 +1214,56 @@ func (i *recordingVectorIndex) DeleteStaleDocumentPoints(ctx context.Context, do
 	return nil
 }
 
+func (i *recordingVectorIndex) DeleteByDocument(ctx context.Context, documentID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.deletedDocuments = append(i.deletedDocuments, documentID)
+	if i.deleteErr != nil {
+		return i.deleteErr
+	}
+	filtered := i.points[:0]
+	for _, point := range i.points {
+		if point.Payload[service.VectorPayloadDocumentID] != documentID {
+			filtered = append(filtered, point)
+		}
+	}
+	i.points = filtered
+	return nil
+}
+
 func (i *recordingVectorIndex) Search(ctx context.Context, request service.VectorSearchRequest) ([]service.VectorSearchHit, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return []service.VectorSearchHit{}, nil
+}
+
+func (f *cleanupFileClient) CreateFile(ctx context.Context, reqCtx service.RequestContext, file service.UploadedFile) (service.FileObject, error) {
+	return service.FileObject{}, service.NewError(service.CodeDependency, "file upload is not configured", nil)
+}
+
+func (f *cleanupFileClient) DeleteFile(ctx context.Context, reqCtx service.RequestContext, fileID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	f.deleted = append(f.deleted, fileID)
+	f.lastRequest = reqCtx
+	if f.err != nil {
+		return f.err
+	}
+	return nil
+}
+
+func (f *cleanupFileClient) GetFileContent(ctx context.Context, reqCtx service.RequestContext, fileID string) (service.FileContent, error) {
+	return service.FileContent{}, service.NewError(service.CodeDependency, "file content read is not configured", nil)
+}
+
+func hasAppCode(err error, code service.Code) bool {
+	appErr, ok := service.Classify(err)
+	return ok && appErr.Code == code
 }
 
 type reclaimingVectorIndex struct {

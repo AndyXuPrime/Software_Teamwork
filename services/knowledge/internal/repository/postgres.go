@@ -477,6 +477,84 @@ func (r *PostgresRepository) SoftDeleteDocument(ctx context.Context, input servi
 	return nil
 }
 
+func (r *PostgresRepository) GetDeletedDocumentCleanupTarget(ctx context.Context, jobID string) (service.DeletedDocumentCleanupTarget, error) {
+	var target service.DeletedDocumentCleanupTarget
+	var fileRef pgtype.Text
+	err := r.pool.QueryRow(ctx, `
+SELECT d.id, d.knowledge_base_id, d.file_ref
+FROM processing_jobs j
+JOIN knowledge_documents d ON d.id = j.document_id
+WHERE j.id = $1
+  AND j.job_type = $2
+  AND d.deleted_at IS NOT NULL`,
+		jobID,
+		service.JobTypeDeleteCleanup,
+	).Scan(&target.DocumentID, &target.KnowledgeBaseID, &fileRef)
+	if err != nil {
+		return service.DeletedDocumentCleanupTarget{}, wrapPostgresError("get deleted document cleanup target", err)
+	}
+	target.FileRef = textPtr(fileRef)
+	return target, nil
+}
+
+func (r *PostgresRepository) ListRetryableDeleteCleanupTasks(ctx context.Context, input service.DeleteCleanupTaskListInput) ([]service.DocumentDeleteCleanupTask, error) {
+	if input.Limit <= 0 {
+		return []service.DocumentDeleteCleanupTask{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+	SELECT j.id, d.id, j.knowledge_base_id, d.created_by
+	FROM processing_jobs j
+	JOIN knowledge_documents d ON d.id = j.document_id
+	WHERE j.job_type = $1
+	  AND d.deleted_at IS NOT NULL
+	  AND (
+	    (
+	      j.status = $2
+	      AND (j.max_attempts <= 0 OR j.attempts < j.max_attempts)
+	    )
+	    OR (
+	      j.status = $3
+	      AND (j.max_attempts <= 0 OR j.attempts < j.max_attempts)
+	      AND (j.error_code IS NULL OR j.error_code = '' OR j.error_code IN ($4, $5, $6))
+	    )
+	    OR (
+	      j.status = $7
+	      AND $8::timestamptz IS NOT NULL
+	      AND j.updated_at < $8
+	    )
+	  )
+	ORDER BY j.updated_at ASC
+	LIMIT $9`,
+		service.JobTypeDeleteCleanup,
+		service.JobStatusQueued,
+		service.JobStatusFailed,
+		string(service.CodeDependency),
+		string(service.CodeUnauthorized),
+		string(service.CodeForbidden),
+		service.JobStatusRunning,
+		pgTimePtr(input.StaleRunningBefore),
+		input.Limit,
+	)
+	if err != nil {
+		return nil, wrapPostgresError("list retryable delete cleanup tasks", err)
+	}
+	defer rows.Close()
+
+	tasks := []service.DocumentDeleteCleanupTask{}
+	for rows.Next() {
+		var task service.DocumentDeleteCleanupTask
+		task.RequestID = input.RequestID
+		if err := rows.Scan(&task.JobID, &task.DocumentID, &task.KnowledgeBaseID, &task.UserID); err != nil {
+			return nil, wrapPostgresError("scan retryable delete cleanup task", err)
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrapPostgresError("iterate retryable delete cleanup tasks", err)
+	}
+	return tasks, nil
+}
+
 func (r *PostgresRepository) ListDocumentChunks(ctx context.Context, documentID string, scope service.AccessScope, page service.PageInput) (service.DocumentChunkList, error) {
 	return r.ListChunks(ctx, documentID, scope, page)
 }
@@ -591,6 +669,7 @@ SET status = 'failed',
     updated_at = $5
 WHERE id = $1
   AND document_id = $2
+  AND status NOT IN ('succeeded', 'cancelled')
   AND ($6::int4 IS NULL OR (attempts = $6 AND status = 'running'))`,
 		jobID,
 		documentID,
@@ -603,10 +682,27 @@ WHERE id = $1
 		return wrapPostgresError("mark processing job failed", err)
 	}
 	if jobRows.RowsAffected() == 0 {
-		if expectedAttempts != nil {
+		var currentStatus string
+		statusErr := tx.QueryRow(ctx, `
+SELECT status
+FROM processing_jobs
+WHERE id = $1
+  AND document_id = $2`,
+			jobID,
+			documentID,
+		).Scan(&currentStatus)
+		if errors.Is(statusErr, pgx.ErrNoRows) {
+			return service.ErrNotFound
+		}
+		if statusErr != nil {
+			return wrapPostgresError("check processing job status after failed mark", statusErr)
+		}
+		// Queue handoff/reconciler failures are best-effort failure summaries; they
+		// must never rewrite an already terminal durable cleanup fact.
+		if terminalProcessingJobStatus(currentStatus) || expectedAttempts != nil {
 			return service.ErrConflict
 		}
-		return service.ErrNotFound
+		return service.ErrConflict
 	}
 	if _, err := tx.Exec(ctx, `
 UPDATE knowledge_documents

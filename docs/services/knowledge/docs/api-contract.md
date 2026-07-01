@@ -538,10 +538,10 @@ DELETE /api/v1/documents/{documentId}
 
 规则：
 
-- 删除文档必须同步标记 Qdrant 向量生命周期。
+- 删除文档必须同步完成 Knowledge PostgreSQL 软删除和 `delete_cleanup` job 创建；Qdrant 向量生命周期由 worker 异步清理。
 - 如果历史问答引用了该文档，引用详情应返回“原文已删除或无权限访问”的 fallback。
-- 首期不立即要求硬删底层文件对象；通过内部 `file_ref` 交由 `file` service 生命周期和后台清理策略处理。
-- 首期删除只做软删除，原始文件对象保留到后台生命周期任务确认无引用后清理。
+- delete cleanup worker 只能通过不透明 `file_ref` 调用 File Service 删除基础 file object，不得读取或暴露 bucket、object key、MinIO URL、签名 URL、storage backend 或凭据。
+- File 404、空 `file_ref`、Qdrant point 不存在和重复 worker 投递按幂等成功处理；File/Qdrant 失败写入脱敏 job 摘要并等待重试，不恢复文档可见性。
 
 ### 5.6 创建文档删除任务
 

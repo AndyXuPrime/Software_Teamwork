@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -69,7 +70,9 @@ func main() {
 	redisOpt := asynq.RedisClientOpt{Addr: cfg.RedisAddr}
 	asynqClient := asynq.NewClient(redisOpt)
 	defer asynqClient.Close()
-	ingestionQueue := queue.NewAsynqQueue(asynqClient)
+	asynqInspector := asynq.NewInspector(redisOpt)
+	defer asynqInspector.Close()
+	ingestionQueue := queue.NewAsynqQueueWithInspector(asynqClient, asynqInspector)
 
 	repo := repository.NewPostgresRepository(pool)
 	reranker, err := newReranker(cfg)
@@ -107,6 +110,10 @@ func main() {
 	asynqMux.HandleFunc(queue.DocumentIngestionTaskType, func(ctx context.Context, task *asynq.Task) error {
 		return ingestionHandler.HandleIngestionPayload(ctx, task.Payload())
 	})
+	deleteCleanupHandler := worker.NewDeleteCleanupHandler(knowledgeService, logger)
+	asynqMux.HandleFunc(queue.DocumentDeleteCleanupTaskType, func(ctx context.Context, task *asynq.Task) error {
+		return deleteCleanupHandler.HandleDeleteCleanupPayload(ctx, task.Payload())
+	})
 
 	go func() {
 		logger.Info("knowledge service starting", "service", "knowledge", "addr", cfg.HTTPAddr, "environment", cfg.Environment)
@@ -116,12 +123,13 @@ func main() {
 		}
 	}()
 	go func() {
-		logger.Info("knowledge ingestion worker starting", "service", "knowledge", "queue", queue.DocumentIngestionTaskType)
+		logger.Info("knowledge workers starting", "service", "knowledge", "queues", []string{queue.DocumentIngestionTaskType, queue.DocumentDeleteCleanupTaskType})
 		if err := asynqServer.Run(asynqMux); err != nil {
-			logger.Error("knowledge ingestion worker stopped unexpectedly", "service", "knowledge", "error", err)
+			logger.Error("knowledge worker stopped unexpectedly", "service", "knowledge", "error", err)
 			stop()
 		}
 	}()
+	go runDeleteCleanupReconciler(ctx, logger, knowledgeService, time.Minute, 50)
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
@@ -133,6 +141,69 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("knowledge service shutdown complete", "service", "knowledge")
+}
+
+func runDeleteCleanupReconciler(ctx context.Context, logger *slog.Logger, knowledge *service.Service, interval time.Duration, limit int) {
+	if knowledge == nil || interval <= 0 || limit <= 0 {
+		return
+	}
+	reconcile := func() {
+		reconcileCtx, cancel := context.WithTimeout(ctx, minDuration(interval, 30*time.Second))
+		defer cancel()
+		result, err := knowledge.RequeueDeleteCleanupTasks(reconcileCtx, service.RequestContext{
+			RequestID:     "delete_cleanup_reconciler",
+			CallerService: "knowledge",
+		}, limit)
+		if err != nil {
+			errorCode := "unknown"
+			if appErr, ok := service.Classify(err); ok {
+				errorCode = string(appErr.Code)
+			}
+			dependency := strings.TrimSpace(result.FailedDependency)
+			if dependency == "" {
+				dependency = "unknown"
+			}
+			logger.WarnContext(reconcileCtx, "knowledge delete cleanup requeue failed",
+				"service", "knowledge",
+				"operation", "knowledge_delete_cleanup_reconciler",
+				"dependency", dependency,
+				"status", "failed",
+				"scanned", result.Scanned,
+				"enqueued", result.Enqueued,
+				"failed", result.Failed,
+				"error_code", errorCode,
+			)
+			return
+		}
+		if result.Enqueued > 0 {
+			logger.InfoContext(reconcileCtx, "knowledge delete cleanup tasks requeued",
+				"service", "knowledge",
+				"operation", "knowledge_delete_cleanup_reconciler",
+				"status", "success",
+				"scanned", result.Scanned,
+				"enqueued", result.Enqueued,
+			)
+		}
+	}
+
+	reconcile()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reconcile()
+		}
+	}
+}
+
+func minDuration(a time.Duration, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func connectPostgres(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {

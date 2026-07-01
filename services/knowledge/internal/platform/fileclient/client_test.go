@@ -263,19 +263,64 @@ func TestDeleteFileTreatsMissingFileAsCleanedUp(t *testing.T) {
 		if r.Method != http.MethodDelete || r.URL.Path != "/internal/v1/files/file_001" {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
+		if got := r.Header.Get("X-Request-Id"); got != "req_delete" {
+			t.Fatalf("X-Request-Id = %q", got)
+		}
 		if got := r.Header.Get("X-Caller-Service"); got != "knowledge" {
 			t.Fatalf("X-Caller-Service = %q", got)
+		}
+		if got := r.Header.Get("X-Service-Token"); got != "svc-token" {
+			t.Fatalf("X-Service-Token = %q", got)
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
 
-	client, err := New(server.URL, "", server.Client())
+	client, err := New(server.URL, "svc-token", server.Client())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	if err := client.DeleteFile(context.Background(), service.RequestContext{}, "file_001"); err != nil {
+	if err := client.DeleteFile(context.Background(), service.RequestContext{RequestID: "req_delete"}, "file_001"); err != nil {
 		t.Fatalf("DeleteFile() error = %v", err)
+	}
+}
+
+func TestDeleteFileClassifiesDownstreamErrorsWithoutLeakingBody(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   int
+		wantCode service.Code
+	}{
+		{name: "unauthorized", status: http.StatusUnauthorized, wantCode: service.CodeUnauthorized},
+		{name: "forbidden", status: http.StatusForbidden, wantCode: service.CodeForbidden},
+		{name: "dependency", status: http.StatusInternalServerError, wantCode: service.CodeDependency},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(`{"bucket":"hidden-bucket","objectKey":"secret/object","url":"http://internal/files","token":"secret-token"}`))
+			}))
+			defer server.Close()
+
+			client, err := New(server.URL, "svc-token", server.Client())
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			err = client.DeleteFile(context.Background(), service.RequestContext{RequestID: "req_delete"}, "file_001")
+			if err == nil {
+				t.Fatal("DeleteFile() error = nil")
+			}
+			appErr, ok := service.Classify(err)
+			if !ok || appErr.Code != tt.wantCode {
+				t.Fatalf("error = %#v, want code %q", err, tt.wantCode)
+			}
+			for _, forbidden := range []string{"hidden-bucket", "secret/object", "internal/files", "secret-token"} {
+				if strings.Contains(appErr.Message, forbidden) {
+					t.Fatalf("downstream body leaked into message: %q", appErr.Message)
+				}
+			}
+		})
 	}
 }
 

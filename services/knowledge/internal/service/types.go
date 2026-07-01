@@ -343,6 +343,7 @@ const (
 
 type VectorIndex interface {
 	Upsert(ctx context.Context, points []VectorPoint) error
+	DeleteByDocument(ctx context.Context, documentID string) error
 	DeleteByDocumentIngestionAttempt(ctx context.Context, documentID string, ingestionAttempt string) error
 	DeleteStaleDocumentPoints(ctx context.Context, documentID string, activeIngestionAttempt string) error
 	Search(ctx context.Context, request VectorSearchRequest) ([]VectorSearchHit, error)
@@ -356,8 +357,17 @@ type DocumentIngestionTask struct {
 	UserID          string `json:"userId"`
 }
 
+type DocumentDeleteCleanupTask struct {
+	RequestID       string `json:"requestId"`
+	JobID           string `json:"jobId"`
+	DocumentID      string `json:"documentId"`
+	KnowledgeBaseID string `json:"knowledgeBaseId"`
+	UserID          string `json:"userId"`
+}
+
 type IngestionQueue interface {
 	EnqueueDocumentIngestion(ctx context.Context, task DocumentIngestionTask) error
+	EnqueueDocumentDeleteCleanup(ctx context.Context, task DocumentDeleteCleanupTask) error
 }
 
 type UploadDocumentInput struct {
@@ -391,6 +401,25 @@ type ChunkList struct {
 
 type DocumentChunkList = ChunkList
 
+type DeletedDocumentCleanupTarget struct {
+	DocumentID      string
+	KnowledgeBaseID string
+	FileRef         *string
+}
+
+type DeleteCleanupTaskListInput struct {
+	RequestID          string
+	Limit              int
+	StaleRunningBefore *time.Time
+}
+
+type DeleteCleanupRequeueResult struct {
+	Scanned          int
+	Enqueued         int
+	Failed           int
+	FailedDependency string
+}
+
 type Repository interface {
 	CreateKnowledgeBase(ctx context.Context, input CreateKnowledgeBaseRecord) (KnowledgeBase, error)
 	ListKnowledgeBases(ctx context.Context, scope AccessScope, page PageInput) (KnowledgeBaseList, error)
@@ -403,6 +432,8 @@ type Repository interface {
 	GetDocument(ctx context.Context, id string, scope AccessScope) (KnowledgeDocument, error)
 	UpdateDocument(ctx context.Context, input UpdateDocumentRecord, scope AccessScope) (KnowledgeDocument, error)
 	SoftDeleteDocument(ctx context.Context, input DeleteDocumentRecord, scope AccessScope) error
+	GetDeletedDocumentCleanupTarget(ctx context.Context, jobID string) (DeletedDocumentCleanupTarget, error)
+	ListRetryableDeleteCleanupTasks(ctx context.Context, input DeleteCleanupTaskListInput) ([]DocumentDeleteCleanupTask, error)
 	ListDocumentChunks(ctx context.Context, documentID string, scope AccessScope, page PageInput) (DocumentChunkList, error)
 	FindChunksByIDs(ctx context.Context, ids []string) ([]DocumentChunk, error)
 	ListParserConfigs(ctx context.Context, enabled *bool) ([]ParserConfig, error)

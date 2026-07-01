@@ -149,7 +149,8 @@ func TestDocumentListAndDetail(t *testing.T) {
 
 func TestDocumentLifecycleRoutes(t *testing.T) {
 	repo, now := seedHTTPKnowledgeDocumentWithChunk(t)
-	knowledge := service.NewWithDependencies(repo, nil, nil, func() time.Time { return now.Add(time.Hour) }, func(prefix string) string {
+	queue := &httpUploadQueue{}
+	knowledge := service.NewWithDependencies(repo, nil, queue, func() time.Time { return now.Add(time.Hour) }, func(prefix string) string {
 		return prefix + "_test"
 	})
 	server := knowledgehttp.NewServer(knowledge, knowledgehttp.Config{})
@@ -180,6 +181,13 @@ func TestDocumentLifecycleRoutes(t *testing.T) {
 	server.ServeHTTP(deleteRes, deleteReq)
 	if deleteRes.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d, body = %s", deleteRes.Code, deleteRes.Body.String())
+	}
+	if queue.cleanupTask.JobID != "job_test" ||
+		queue.cleanupTask.DocumentID != "doc_1" ||
+		queue.cleanupTask.KnowledgeBaseID != "kb_1" ||
+		queue.cleanupTask.RequestID != "req_delete_doc" ||
+		queue.cleanupTask.UserID != "usr_test" {
+		t.Fatalf("cleanup queue task = %+v", queue.cleanupTask)
 	}
 
 	getReq := authorizedRequest(http.MethodGet, "/internal/v1/documents/doc_1", nil)
@@ -812,9 +820,16 @@ func (c *httpUploadFileClient) GetFileContent(context.Context, service.RequestCo
 	return service.FileContent{}, service.NotFoundError("file content not found")
 }
 
-type httpUploadQueue struct{}
+type httpUploadQueue struct {
+	cleanupTask service.DocumentDeleteCleanupTask
+}
 
 func (q *httpUploadQueue) EnqueueDocumentIngestion(context.Context, service.DocumentIngestionTask) error {
+	return nil
+}
+
+func (q *httpUploadQueue) EnqueueDocumentDeleteCleanup(_ context.Context, task service.DocumentDeleteCleanupTask) error {
+	q.cleanupTask = task
 	return nil
 }
 
@@ -853,6 +868,10 @@ type httpVectorIndex struct {
 }
 
 func (i *httpVectorIndex) Upsert(context.Context, []service.VectorPoint) error {
+	return nil
+}
+
+func (i *httpVectorIndex) DeleteByDocument(context.Context, string) error {
 	return nil
 }
 
