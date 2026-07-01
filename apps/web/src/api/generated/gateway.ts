@@ -917,6 +917,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/qa-sessions/{sessionId}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List QA session attachments
+         * @description Lists attachments owned by the current user's QA session. QA owns
+         *     attachment metadata and parse status and may call file service
+         *     internally for the raw object; the response never exposes `file_ref`,
+         *     MinIO object keys, buckets, or internal URLs. Sessions not owned by the
+         *     current user return 404 rather than 403 so attachment existence for
+         *     other users is not disclosed.
+         */
+        get: operations["listQASessionAttachments"];
+        put?: never;
+        /**
+         * Upload a QA session attachment
+         * @description Uploads a temporary attachment to a QA session owned by the current
+         *     user. QA stores attachment metadata and parse status and calls file
+         *     service internally to persist the raw bytes; parsing is delegated to
+         *     parser internally. The attachment begins in `uploaded` status and is
+         *     purged by TTL cleanup. Sessions not owned by the current user return
+         *     404 so other users' sessions are not disclosed.
+         *
+         *     **File limits (authoritative, enforced by Gateway before forwarding):**
+         *     - Single file maximum: 20 MB (20 971 520 bytes). Larger payloads are
+         *       rejected with 413 before any storage or parser call is made.
+         *     - Per-session attachment count: maximum 10 active (non-purged)
+         *       attachments. Exceeding this limit returns 409.
+         *     - Per-session total size quota: 100 MB across all active attachments.
+         *       Exceeding this limit returns 409.
+         *
+         *     **Accepted MIME types** (declared in `Content-Type` of the `file`
+         *     part): `application/pdf`, `image/png`, `image/jpeg`, `text/plain`,
+         *     `application/vnd.openxmlformats-officedocument.wordprocessingml.document`.
+         *     Other types are rejected with 415. Clients should set the part
+         *     `Content-Type` header explicitly; Gateway rejects requests where the
+         *     part content type does not match the allowlist.
+         */
+        post: operations["uploadQASessionAttachment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/qa-sessions/{sessionId}/attachments/{attachmentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: components["parameters"]["SessionId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get QA session attachment
+         * @description Returns a single attachment owned by the current user's QA session.
+         *     The response exposes only public attachment metadata and parse status;
+         *     it never includes `file_ref`, MinIO object keys, buckets, or internal
+         *     URLs. Attachments in a session not owned by the current user, and
+         *     deleted or purged attachments, return 404 so their existence is not
+         *     disclosed.
+         */
+        get: operations["getQASessionAttachment"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete QA session attachment
+         * @description Deletes an attachment owned by the current user's QA session. QA
+         *     coordinates cleanup of temporary parse chunks and the underlying file
+         *     reference through its attachment lifecycle. Attachments in a session
+         *     not owned by the current user, and already deleted or purged
+         *     attachments, return 404.
+         */
+        delete: operations["deleteQASessionAttachment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/qa-sessions/{sessionId}/events": {
         parameters: {
             query?: never;
@@ -973,7 +1060,7 @@ export interface paths {
         };
         /**
          * List QA response run tool calls
-         * @description Returns sanitized tool-call summaries only. Raw MCP schemas, full arguments, raw tool results, prompts, internal URLs, object keys, and provider errors are not part of the public contract.
+         * @description Returns sanitized tool-call summaries only. Raw MCP schemas, full arguments, raw tool results, prompts, internal URLs, object keys, and provider errors are not part of the public contract. Document report-generation tools may include a `reportArtifact` object under `resultSummary` using the `QAReportArtifact` schema.
          */
         get: operations["listQAResponseRunToolCalls"];
         put?: never;
@@ -1238,6 +1325,57 @@ export interface paths {
         };
         /** List QA intent distribution */
         get: operations["listQAIntentDistribution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cross-service administration overview
+         * @description Aggregated snapshot for the administration dashboard.  Gateway
+         *     collects lightweight metrics from QA, Knowledge (document stats),
+         *     and Document (report stats) owner services on each request; the
+         *     `reports` response module reflects Document-owned report data.
+         *     Data is suitable for a landing-page dashboard and is not a
+         *     real-time operational view.
+         *     Route is registered and returns 501 Not Implemented until
+         *     aggregation implementation is complete.
+         */
+        get: operations["getAdminOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cross-service time-series metrics
+         * @description Daily or hourly trend data across QA, Knowledge (document stats),
+         *     and Document (report stats) owner services.  Supports a configurable
+         *     lookback window for dashboard trend charts.
+         *     **Route registration** is tracked in a separate backend issue;
+         *     this OpenAPI contract defines the design-time schema only.
+         */
+        get: operations["getAdminMetrics"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2212,6 +2350,14 @@ export interface components {
             /** @description User-visible process summaries only. Must not contain private chain-of-thought, full prompts, full tool arguments, raw tool results, internal URLs, or storage object keys. */
             thinking?: components["schemas"]["QAThinkingStep"][];
             citations?: components["schemas"]["QACitation"][];
+            /**
+             * @description IDs of session attachments linked to this message at creation time.
+             *     IDs are retained in message history even after TTL purge. Once an
+             *     attachment is purged, GET /attachments/{attachmentId} returns 404;
+             *     the ID is a historical reference only — clients must not assume the
+             *     attachment remains retrievable.
+             */
+            attachmentIds?: string[];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2242,6 +2388,12 @@ export interface components {
              */
             params?: components["schemas"]["QARetrievalOptions"];
             agent?: components["schemas"]["QAAgentOptions"];
+            /**
+             * @description Optional QA session attachment IDs to associate with this message.
+             *     Each ID must belong to the same session and must be in `ready`
+             *     status; attachments still parsing, failed, or purged are rejected.
+             */
+            attachmentIds?: string[];
         };
         QARetrievalOptions: {
             topK?: number;
@@ -2266,6 +2418,58 @@ export interface components {
         QAAgentOptions: {
             enabledToolNames?: string[];
             maxIterations?: number;
+        };
+        /**
+         * @description Lifecycle status of a QA session attachment. `uploaded` after the raw
+         *     object is stored, `parsing` while parser runs, `ready` when parsed
+         *     content is available for retrieval and message association, `failed`
+         *     when parsing fails, and `purged` as the terminal state after TTL
+         *     cleanup removes temporary content.
+         * @enum {string}
+         */
+        SessionAttachmentStatus: "uploaded" | "parsing" | "ready" | "failed" | "purged";
+        SessionAttachmentSummary: {
+            id: string;
+            /** @description QA session that owns this attachment. */
+            sessionId: string;
+            /** @description Original client-supplied file name. */
+            filename: string;
+            /** @description Declared MIME type of the uploaded file. */
+            contentType: string;
+            /** @description File size in bytes. Always present after upload is accepted. */
+            sizeBytes: number;
+            status: components["schemas"]["SessionAttachmentStatus"];
+            errorCode?: string | null;
+            /** @description Sanitized parse failure summary. Must not include object keys, buckets, internal paths, MinIO errors, or stack traces. */
+            errorMessage?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description TTL expiry after which the attachment and its temporary chunks are purged.
+             */
+            expiresAt?: string | null;
+        };
+        UploadSessionAttachmentRequest: {
+            /**
+             * Format: binary
+             * @description Attachment binary. Maximum size: 20 MB (20 971 520 bytes); larger
+             *     payloads are rejected with 413. The `Content-Type` of this multipart
+             *     part must be one of: `application/pdf`, `image/png`, `image/jpeg`,
+             *     `text/plain`,
+             *     `application/vnd.openxmlformats-officedocument.wordprocessingml.document`.
+             *     Other content types are rejected with 415.
+             */
+            file: string;
+        };
+        SessionAttachmentResponse: {
+            data: components["schemas"]["SessionAttachmentSummary"];
+            requestId: string;
+        };
+        SessionAttachmentListResponse: {
+            data: components["schemas"]["SessionAttachmentSummary"][];
+            page: components["schemas"]["PageInfo"];
+            requestId: string;
         };
         QAAnswerResponse: {
             data: {
@@ -2314,6 +2518,7 @@ export interface components {
             toolCallId: string;
             toolName: string;
             argumentsSummary?: components["schemas"]["JsonObject"];
+            /** @description Sanitized tool result summary. For Document report-generation tools, may contain `reportArtifact` with schema `QAReportArtifact`. */
             resultSummary?: components["schemas"]["JsonObject"];
             /** @enum {string} */
             status: "running" | "completed" | "failed" | "cancelled";
@@ -2322,6 +2527,64 @@ export interface components {
             startedAt?: string;
             /** Format: date-time */
             finishedAt?: string | null;
+        };
+        /** @description Safe user-visible preview for a QA-triggered report generation artifact. It must not contain full report body text, prompts, raw MCP arguments/results, provider errors, vector payloads, internal URLs, File internal IDs, buckets, or object keys. */
+        QAReportArtifactPreview: {
+            /** @description Short preview title shown to the user. */
+            title?: string;
+            /** @description Short user-visible summary, not full section content. */
+            summary?: string;
+            /** @description Report or section headings safe for preview cards. */
+            outlineTitles?: string[];
+            /** @description Generated or planned section titles safe for preview cards. */
+            sectionTitles?: string[];
+            progressPercent?: number;
+            /** @description User-visible status such as `generating outline` or `DOCX export failed`. */
+            statusText?: string;
+        };
+        /** @description Safe artifact summary returned by QA when Document report-generation tools create, update, export, or inspect a report. The object is allowed only inside sanitized QA tool results, never as raw MCP output. */
+        QAReportArtifact: {
+            /** @enum {string} */
+            artifactType: "report_generation";
+            /** @description Document-owned public report business id, when a report exists and the caller can read it. */
+            reportId?: string;
+            /** @description User-visible report title. */
+            reportName?: string;
+            /** @description Report type code such as `summer_peak_inspection`. */
+            reportType?: string;
+            /** @description Document-owned report job id for async generation/export tracking. */
+            jobId?: string;
+            jobType?: components["schemas"]["ReportJobType"];
+            /**
+             * @description QA-facing normalized job status. `accepted` may be used immediately after an async job is created before Document reports `pending`.
+             * @enum {string}
+             */
+            jobStatus?: "accepted" | "pending" | "running" | "succeeded" | "failed" | "canceled";
+            /** @description Report lifecycle status such as `outline_generated`, `generated`, or `failed`. */
+            reportStatus?: string;
+            /** @description Public report file id. Present only when Document can expose generated file metadata to the caller. */
+            reportFileId?: string;
+            filename?: string;
+            /** @enum {string} */
+            format?: "docx";
+            /**
+             * @description Export file status. The download button is allowed only when this is `succeeded` and `downloadPath` is present.
+             * @enum {string}
+             */
+            fileStatus?: "pending" | "running" | "succeeded" | "failed" | "canceled";
+            /** Format: int64 */
+            fileSize?: number;
+            preview?: components["schemas"]["QAReportArtifactPreview"];
+            /**
+             * @description Gateway public content path. Must be present only when `fileStatus` is `succeeded` and the caller has read permission for the report file.
+             * @example /api/v1/report-files/rf_123/content
+             */
+            downloadPath?: string;
+            /**
+             * @description Optional Gateway report detail path or frontend deep-link target based on the public report id.
+             * @example /api/v1/reports/rpt_123
+             */
+            detailPath?: string;
         };
         QAAgentToolCallListResponse: {
             data: components["schemas"]["QAAgentToolCall"][];
@@ -2332,6 +2595,7 @@ export interface components {
         QASseEvent: {
             eventSeq: number;
             eventType: components["schemas"]["QASseEventType"];
+            /** @description Event payload. `tool.completed` and `tool.failed` events may include `result.reportArtifact` with schema `QAReportArtifact`. */
             payload: components["schemas"]["JsonObject"];
             /** Format: date-time */
             createdAt: string;
@@ -2618,6 +2882,63 @@ export interface components {
             data: components["schemas"]["QAIntentDistributionItem"][];
             requestId: string;
         };
+        /** @description Cross-service snapshot for the administration landing page. */
+        AdminOverview: {
+            /** @description QA service summary. */
+            qa: {
+                totalQaCount: number;
+                todayQaCount: number;
+                conversationCount: number;
+                avgLatencyMs: number;
+            };
+            /** @description Document service summary. */
+            documents: {
+                totalCount: number;
+                parsingSuccessRate?: number;
+            };
+            /** @description Report service summary. */
+            reports: {
+                totalGenerated: number;
+                todayGenerated: number;
+            };
+            /** @description System-level metrics. */
+            system: {
+                activeUsersToday: number;
+            };
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AdminOverviewResponse: {
+            data: components["schemas"]["AdminOverview"];
+            requestId: string;
+        };
+        /** @description Single data point in a time-series. */
+        AdminMetricsPoint: {
+            /**
+             * Format: date-time
+             * @description Bucket start time. For daily granularity the time component is 00:00:00Z; for hourly the time component is the hour start.
+             */
+            date: string;
+            count: number;
+        };
+        /** @description Cross-service time-series for dashboard trend charts. */
+        AdminMetrics: {
+            days: number;
+            /** @enum {string} */
+            granularity?: "daily" | "hourly";
+            /** @description QA service daily/hourly query counts. */
+            qa: components["schemas"]["AdminMetricsPoint"][];
+            /** @description Document service daily/hourly processing counts. */
+            documents: components["schemas"]["AdminMetricsPoint"][];
+            /** @description Report service daily/hourly generation counts. */
+            reports: components["schemas"]["AdminMetricsPoint"][];
+            /** @description System-level daily/hourly active user counts. */
+            system: components["schemas"]["AdminMetricsPoint"][];
+        };
+        AdminMetricsResponse: {
+            data: components["schemas"]["AdminMetrics"];
+            requestId: string;
+        };
     };
     responses: {
         /** @description Error response. */
@@ -2643,6 +2964,7 @@ export interface components {
         ProfileId: string;
         ParserConfigId: string;
         SessionId: string;
+        AttachmentId: string;
         MessageId: string;
         ResponseRunId: string;
         CitationId: string;
@@ -4656,6 +4978,119 @@ export interface operations {
             502: components["responses"]["Error"];
         };
     };
+    listQASessionAttachments: {
+        parameters: {
+            query?: {
+                page?: components["parameters"]["Page"];
+                pageSize?: number;
+                status?: components["schemas"]["SessionAttachmentStatus"];
+            };
+            header?: never;
+            path: {
+                sessionId: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description QA session attachments. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionAttachmentListResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    uploadQASessionAttachment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["UploadSessionAttachmentRequest"];
+            };
+        };
+        responses: {
+            /** @description QA session attachment accepted for processing. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionAttachmentResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            415: components["responses"]["Error"];
+        };
+    };
+    getQASessionAttachment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: components["parameters"]["SessionId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description QA session attachment. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionAttachmentResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteQASessionAttachment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: components["parameters"]["SessionId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description QA session attachment deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
     listQAStreamEvents: {
         parameters: {
             query: {
@@ -5091,6 +5526,59 @@ export interface operations {
                 };
             };
             400: components["responses"]["Error"];
+        };
+    };
+    getAdminOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregated overview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOverviewResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    getAdminMetrics: {
+        parameters: {
+            query?: {
+                /** @description Number of days to look back. */
+                days?: number;
+                /** @description Time bucket size. */
+                granularity?: "daily" | "hourly";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregated time-series metrics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMetricsResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            501: components["responses"]["Error"];
         };
     };
 }

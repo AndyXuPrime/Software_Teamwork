@@ -373,7 +373,7 @@ Gateway 不应为这些资源建立自己的业务表，也不应把下游返回
 
 ## 7. 管理后台聚合预留模型
 
-`GET /api/v1/admin-overview` 和 `GET /api/v1/admin-metrics` 仍是缺失契约。后续若由 Gateway 提供聚合读接口，应新增只读聚合模型，例如：
+`GET /api/v1/admin/overview` 和 `GET /api/v1/admin/metrics` 已转为 active contracts。Gateway 负责轻量聚合读，schema 定义见 OpenAPI `AdminOverview` / `AdminMetrics` 及对应 Response envelope。
 
 | 字段 | 类型建议 | 说明 |
 | --- | --- | --- |

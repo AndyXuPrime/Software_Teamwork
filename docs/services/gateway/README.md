@@ -92,9 +92,7 @@ Gateway 后续实现必须遵循 [技术选型基线](../../architecture/technol
 
 仍暂缺的下游接口：
 
-| Placeholder | 预期 owner | 状态 |
-| --- | --- | --- |
-| `GET /api/v1/admin-overview`、`GET /api/v1/admin-metrics` | `gateway` + domain services | 缺失：概览/指标聚合来源和展示字段未定。模型 profile 和解析器配置管理不属于该缺失范围，已在 active paths 中定义。 |
+| 无。所有计划内公开 API 已转为 active paths。 |
 
 当某个 endpoint 涉及两个服务时，文档必须显式标注 workflow owner。默认规则是：拥有核心业务状态的服务拥有流程，gateway 只做入口和上下文传递。若流程需要模型能力，领域服务应通过 [AI Gateway 服务接口文档](../ai-gateway/README.md) 和 [AI Gateway OpenAPI 契约](../ai-gateway/api/internal.openapi.yaml) 调用内部模型接口，不能让 public gateway 直接拼 prompt 或直连 provider。
 
@@ -185,7 +183,7 @@ Gateway 可透传或映射 owner service 的服务特有错误码，但任何稳
 
 ## 缺失下游接口
 
-管理后台概览/指标聚合的前后端接口尚未完全确定。当前 OpenAPI 只在顶层 `x-missing-contracts` 标记这些缺失范围，不把这些 endpoint 作为可依赖的公开契约。QA 会话、消息、SSE、引用、配置、检索体验测试和统计已经进入 active paths。
+`GET /api/v1/admin/overview` 和 `GET /api/v1/admin/metrics` 已转为 active contracts，具体 schema 以 Gateway OpenAPI 为准。Gateway 负责轻量聚合，各领域服务提供指标来源。路由注册由单独后端 issue 追踪。
 
 AI Gateway 的内部模型调用接口已经有独立契约：[`docs/services/ai-gateway/api/internal.openapi.yaml`](../ai-gateway/api/internal.openapi.yaml)。该契约不属于前端可调用的 gateway OpenAPI，也不应生成到前端 API client。前端需要管理运行时模型配置时，只能使用 gateway OpenAPI 中的 `/api/v1/admin/model-profiles` 资源；gateway 再调用 AI Gateway 内部 `/internal/v1/model-profiles`。
 

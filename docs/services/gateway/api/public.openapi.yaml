@@ -12,8 +12,8 @@ info:
     knowledge-owned knowledge base, document upload, processing, content, chunk, and retrieval routes,
     document-owned report generation and report settings routes, qa-owned intelligent question answering
     routes, and admin-facing runtime model/parser configuration routes as active
-    contracts. Downstream admin overview/metrics aggregation interfaces remain
-    under x-missing-contracts until finalized.
+    contracts. Both admin-overview and admin-metrics are now active gateway
+    contracts for the administration dashboard.
 x-api-style:
   required: RESTful resource-oriented HTTP APIs
   appliesTo:
@@ -2427,6 +2427,87 @@ paths:
               schema:
                 $ref: '#/components/schemas/QAIntentDistributionResponse'
         '400':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/overview:
+    get:
+      tags:
+      - admin
+      summary: Cross-service administration overview
+      description: |
+        Aggregated snapshot for the administration dashboard.  Gateway
+        collects lightweight metrics from QA, Knowledge (document stats),
+        and Document (report stats) owner services on each request; the
+        `reports` response module reflects Document-owned report data.
+        Data is suitable for a landing-page dashboard and is not a
+        real-time operational view.
+        Route is registered and returns 501 Not Implemented until
+        aggregation implementation is complete.
+      operationId: getAdminOverview
+      x-owner-service: gateway
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Aggregated overview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOverviewResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '501':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/metrics:
+    get:
+      tags:
+      - admin
+      summary: Cross-service time-series metrics
+      description: |
+        Daily or hourly trend data across QA, Knowledge (document stats),
+        and Document (report stats) owner services.  Supports a configurable
+        lookback window for dashboard trend charts.
+        **Route registration** is tracked in a separate backend issue;
+        this OpenAPI contract defines the design-time schema only.
+      operationId: getAdminMetrics
+      x-owner-service: gateway
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: days
+        in: query
+        description: Number of days to look back.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 90
+          default: 30
+      - name: granularity
+        in: query
+        description: Time bucket size.
+        schema:
+          type: string
+          enum:
+          - daily
+          - hourly
+          default: daily
+      responses:
+        '200':
+          description: Aggregated time-series metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMetricsResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '501':
           $ref: '#/components/responses/Error'
 components:
   securitySchemes:
@@ -5961,10 +6042,153 @@ components:
             $ref: '#/components/schemas/QAIntentDistributionItem'
         requestId:
           type: string
+    AdminOverview:
+      type: object
+      description: Cross-service snapshot for the administration landing page.
+      required:
+      - qa
+      - documents
+      - reports
+      - system
+      - updatedAt
+      properties:
+        qa:
+          type: object
+          description: QA service summary.
+          required:
+          - totalQaCount
+          - todayQaCount
+          - conversationCount
+          - avgLatencyMs
+          properties:
+            totalQaCount:
+              type: integer
+              minimum: 0
+            todayQaCount:
+              type: integer
+              minimum: 0
+            conversationCount:
+              type: integer
+              minimum: 0
+            avgLatencyMs:
+              type: integer
+              minimum: 0
+        documents:
+          type: object
+          description: Document service summary.
+          required:
+          - totalCount
+          properties:
+            totalCount:
+              type: integer
+              minimum: 0
+            parsingSuccessRate:
+              type: number
+              minimum: 0
+              maximum: 1
+        reports:
+          type: object
+          description: Report service summary.
+          required:
+          - totalGenerated
+          - todayGenerated
+          properties:
+            totalGenerated:
+              type: integer
+              minimum: 0
+            todayGenerated:
+              type: integer
+              minimum: 0
+        system:
+          type: object
+          description: System-level metrics.
+          required:
+          - activeUsersToday
+          properties:
+            activeUsersToday:
+              type: integer
+              minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
+    AdminOverviewResponse:
+      type: object
+      required:
+      - data
+      - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminOverview'
+        requestId:
+          type: string
+    AdminMetricsPoint:
+      type: object
+      description: Single data point in a time-series.
+      required:
+      - date
+      - count
+      properties:
+        date:
+          type: string
+          format: date-time
+          description: Bucket start time. For daily granularity the time
+            component is 00:00:00Z; for hourly the time component is the
+            hour start.
+        count:
+          type: integer
+          minimum: 0
+    AdminMetrics:
+      type: object
+      description: Cross-service time-series for dashboard trend charts.
+      required:
+      - days
+      - qa
+      - documents
+      - reports
+      - system
+      properties:
+        days:
+          type: integer
+          minimum: 1
+        granularity:
+          type: string
+          enum:
+          - daily
+          - hourly
+        qa:
+          type: array
+          description: QA service daily/hourly query counts.
+          items:
+            $ref: '#/components/schemas/AdminMetricsPoint'
+        documents:
+          type: array
+          description: Document service daily/hourly processing counts.
+          items:
+            $ref: '#/components/schemas/AdminMetricsPoint'
+        reports:
+          type: array
+          description: Report service daily/hourly generation counts.
+          items:
+            $ref: '#/components/schemas/AdminMetricsPoint'
+        system:
+          type: array
+          description: System-level daily/hourly active user counts.
+          items:
+            $ref: '#/components/schemas/AdminMetricsPoint'
+    AdminMetricsResponse:
+      type: object
+      required:
+      - data
+      - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminMetrics'
+        requestId:
+          type: string
 x-missing-contracts:
 - service: gateway
-  status: missing
-  reason: Administration overview and metrics aggregation contract is not finalized yet. Runtime model/parser configuration is an active gateway contract.
-  placeholderOperations:
-  - GET /api/v1/admin-overview
-  - GET /api/v1/admin-metrics
+  status: resolved
+  reason: |
+    Both admin-overview and admin-metrics are now active gateway
+    contracts.  No remaining missing admin contracts.
+  placeholderOperations: []

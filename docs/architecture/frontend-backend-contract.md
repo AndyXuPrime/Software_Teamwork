@@ -25,7 +25,7 @@ AI Gateway 是内部模型服务，只提供 `/internal/v1/**` 给 `qa`、`knowl
 - 后端实现 endpoint 前，应先更新 OpenAPI。
 - 破坏性字段变更必须同步更新 OpenAPI 和本契约文档。
 - 所有前端到 gateway、gateway 到下游服务的 HTTP API 必须使用 RESTful 资源路径，由 HTTP method 表达动作；健康检查是唯一已允许的非 `/api/v1` 例外。
-- 本轮把 gateway 健康检查、auth、knowledge-owned 知识库/文档上传/文档处理/原文件内容/切片/检索接口、`document` 拥有的报告生成接口、`qa` 拥有的会话/消息/SSE/引用/配置/检索体验测试/统计接口，以及 admin-facing runtime model/parser configuration 接口列为已确定公开契约；`file` 只作为后端内部基础文件能力，不直接拥有前端公开 API。管理后台概览/指标聚合接口暂缺，见 OpenAPI 顶层 `x-missing-contracts`。
+- 本轮把 gateway 健康检查、auth、knowledge-owned 知识库/文档上传/文档处理/原文件内容/切片/检索接口、`document` 拥有的报告生成接口、`qa` 拥有的会话/消息/SSE/引用/配置/检索体验测试/统计接口，以及 admin-facing runtime model/parser configuration 接口列为已确定公开契约；`file` 只作为后端内部基础文件能力，不直接拥有前端公开 API。`GET /api/v1/admin/overview` 和 `GET /api/v1/admin/metrics` 均已是 active contract，详见 OpenAPI 顶层 `x-missing-contracts`。
 - AI Gateway 的 chat、Function Calling 透传、embedding 和 rerank 契约已经作为内部服务契约补齐，但不改变前端只能调用 gateway 的约束。
 
 ## 接口文档编写标准
@@ -140,7 +140,10 @@ AI Gateway 是内部模型服务，只提供 `/internal/v1/**` 给 `qa`、`knowl
 - `keyword` 表示模糊查询关键词。
 - 多值过滤可使用逗号分隔字符串，具体字段由 OpenAPI endpoint 定义。
 - 排序参数后续统一为 `sort`，例如 `sort=-createdAt`，本轮只保留扩展空间。
-- 在对应 OpenAPI path 补齐前，前端不得依赖管理后台概览/指标聚合接口。知识库、问答、报告生成和 admin runtime configuration 接口以当前 OpenAPI active paths 为准。
+- `GET /api/v1/admin/overview` 和 `GET /api/v1/admin/metrics` 均已是 active contract，
+  schema 已定义，前端可基于此生成 typed client 并开始 dashboard UI 开发。
+  当前路由返回 501 Not Implemented，后端聚合实现由单独 issue 追踪。
+  其余知识库、问答、报告生成和 admin runtime configuration 接口以当前 OpenAPI active paths 为准。
 
 ## Knowledge 接口
 

@@ -86,9 +86,7 @@
 - QA-owned 会话、消息、非流式/流式回答、SSE 事件回放、引用、配置、检索体验测试和统计接口。
 - AI Gateway 内部模型配置、OpenAI-compatible chat/function calling/embedding 和 OpenAI-style rerank 接口草案。
 
-仍待补齐的契约包括：
-
-- 管理后台聚合指标和跨服务统计接口。
+所有 planed public API 已转为 active contracts，无待补齐契约。
 
 新增或调整公开接口或内部模型接口时，需要同步更新：
 

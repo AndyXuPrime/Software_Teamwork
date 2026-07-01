@@ -15,6 +15,7 @@ type routeSpec struct {
 
 var modelProfileAdminPermissions = []string{"system:admin", "admin:model-profile:write"}
 var parserConfigAdminPermissions = []string{"system:admin", "knowledge:admin", "admin:parser-config:write"}
+var dashboardAdminPermissions = []string{"system:admin"}
 
 var activeProxyRoutes = []routeSpec{
 	{Method: "GET", Pattern: "/api/v1/knowledge-bases", Owner: "knowledge", OperationID: "listKnowledgeBases"},
@@ -91,6 +92,10 @@ var activeProxyRoutes = []routeSpec{
 	{Method: "GET", Pattern: "/api/v1/qa-sessions/{sessionId}/messages", Owner: "qa", OperationID: "listQAMessages"},
 	{Method: "POST", Pattern: "/api/v1/qa-sessions/{sessionId}/messages", Owner: "qa", OperationID: "createQAMessage", StreamResponse: true},
 	{Method: "GET", Pattern: "/api/v1/qa-sessions/{sessionId}/events", Owner: "qa", OperationID: "listQAStreamEvents"},
+	{Method: "GET", Pattern: "/api/v1/qa-sessions/{sessionId}/attachments", Owner: "qa", OperationID: "listQASessionAttachments", NotImplemented: true},
+	{Method: "POST", Pattern: "/api/v1/qa-sessions/{sessionId}/attachments", Owner: "qa", OperationID: "uploadQASessionAttachment", NotImplemented: true},
+	{Method: "GET", Pattern: "/api/v1/qa-sessions/{sessionId}/attachments/{attachmentId}", Owner: "qa", OperationID: "getQASessionAttachment", NotImplemented: true},
+	{Method: "DELETE", Pattern: "/api/v1/qa-sessions/{sessionId}/attachments/{attachmentId}", Owner: "qa", OperationID: "deleteQASessionAttachment", NotImplemented: true},
 	{Method: "GET", Pattern: "/api/v1/response-runs/{responseRunId}", Owner: "qa", OperationID: "getQAResponseRun"},
 	{Method: "PATCH", Pattern: "/api/v1/response-runs/{responseRunId}", Owner: "qa", OperationID: "updateQAResponseRun"},
 	{Method: "GET", Pattern: "/api/v1/response-runs/{responseRunId}/tool-calls", Owner: "qa", OperationID: "listQAResponseRunToolCalls"},
@@ -108,6 +113,8 @@ var activeProxyRoutes = []routeSpec{
 	{Method: "GET", Pattern: "/api/v1/qa-metrics/trend", Owner: "qa", OperationID: "getQAMetricsTrend"},
 	{Method: "GET", Pattern: "/api/v1/qa-metrics/top-queries", Owner: "qa", OperationID: "listQATopQueries"},
 	{Method: "GET", Pattern: "/api/v1/qa-metrics/intent-distribution", Owner: "qa", OperationID: "listQAIntentDistribution"},
+	{Method: "GET", Pattern: "/api/v1/admin/overview", Owner: "gateway", OperationID: "getAdminOverview", NotImplemented: true, AdminPermissions: dashboardAdminPermissions},
+	{Method: "GET", Pattern: "/api/v1/admin/metrics", Owner: "gateway", OperationID: "getAdminMetrics", NotImplemented: true, AdminPermissions: dashboardAdminPermissions},
 }
 
 var activeDirectRoutes = []routeSpec{

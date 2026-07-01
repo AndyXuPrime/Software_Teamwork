@@ -31,16 +31,16 @@ func (s *Server) handleProxy(route routeSpec) http.HandlerFunc {
 			return
 		}
 
-		if route.NotImplemented {
-			s.writeNotImplemented(w, r)
-			return
-		}
 		if route.requiresAdmin() && !hasAdminRouteAccess(authContext, route.AdminPermissions) {
 			response.WriteError(w, http.StatusForbidden, response.ErrorDetail{
 				Code:      response.CodeForbidden,
 				Message:   "forbidden",
 				RequestID: middleware.RequestIDFromContext(r.Context()),
 			})
+			return
+		}
+		if route.NotImplemented {
+			s.writeNotImplemented(w, r)
 			return
 		}
 
