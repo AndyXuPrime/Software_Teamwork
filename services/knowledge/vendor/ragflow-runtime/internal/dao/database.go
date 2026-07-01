@@ -23,16 +23,13 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"strings"
 	"sync"
 	"time"
 
 	"ragflow/internal/server"
 
 	"go.uber.org/zap"
-	gormLogger "gorm.io/gorm/logger"
 
-	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
@@ -69,32 +66,7 @@ func InitDB() error {
 	cfg := server.GetConfig()
 	dbCfg := cfg.Database
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-		dbCfg.Username,
-		dbCfg.Password,
-		dbCfg.Host,
-		dbCfg.Port,
-		dbCfg.Database,
-		dbCfg.Charset,
-	)
-
-	// Set log level
-	var gormLogLevel gormLogger.LogLevel
-	if cfg.Server.Mode == "debug" {
-		gormLogLevel = gormLogger.Info
-	} else {
-		gormLogLevel = gormLogger.Silent
-	}
-
-	// Connect to database
-	var err error
-	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: gormLogger.Default.LogMode(gormLogLevel),
-		NowFunc: func() time.Time {
-			return time.Now().Local()
-		},
-		TranslateError: true,
-	})
+	DB, err := openDatabase(dbCfg, cfg.Server.Mode)
 	if err != nil {
 		return fmt.Errorf("failed to connect database: %w", err)
 	}
@@ -213,38 +185,17 @@ func findModelConfigDir() (string, error) {
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
 // This handles cases where indexes already exist (e.g., created by Python backend)
 func autoMigrateSafely(db *gorm.DB, model interface{}) error {
-	//err := db.Debug().AutoMigrate(model) // to print debug info
 	err := db.AutoMigrate(model)
 	if err == nil {
 		return nil
 	}
-
-	// Check if error is MySQL duplicate index error (Error 1061)
-	errStr := err.Error()
-	if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
-		common.Warn("Index already exists, skipping", zap.String("error", errStr))
+	if isBenignMigrationError(err) {
+		common.Warn("Schema object already exists, skipping", zap.String("error", err.Error()))
 		return nil
 	}
-
-	if strings.Contains(errStr, "Error 1060") && strings.Contains(errStr, "Duplicate column name") {
-		common.Warn("Column already exists, skipping", zap.String("error", errStr))
-		return nil
-	}
-
-	if strings.Contains(errStr, "Error 1050") && strings.Contains(errStr, "Table") {
-		common.Warn("Table already exists, skipping", zap.String("error", errStr))
-		return nil
-	}
-
-	if strings.Contains(errStr, "Error 1091") && strings.Contains(errStr, "Can't DROP") {
-		common.Warn("Index/column already dropped, skipping", zap.String("error", errStr))
-		return nil
-	}
-
-	if strings.Contains(errStr, "Error 1138") && strings.Contains(errStr, "Invalid use of NULL") {
-		common.Warn("NULL value in existing rows, skipping migration change", zap.String("error", errStr))
-		return nil
-	}
-
 	return err
+}
+
+func localNow() time.Time {
+	return time.Now().Local()
 }

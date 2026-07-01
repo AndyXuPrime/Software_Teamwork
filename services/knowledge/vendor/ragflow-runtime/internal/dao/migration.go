@@ -28,6 +28,13 @@ import (
 // RunMigrations runs all manual database migrations
 // These are migrations that cannot be handled by AutoMigrate alone
 func RunMigrations(db *gorm.DB) error {
+	if db.Dialector != nil && db.Dialector.Name() == "postgres" {
+		return runPostgresMigrations(db)
+	}
+	return runMySQLMigrations(db)
+}
+
+func runMySQLMigrations(db *gorm.DB) error {
 	// Check if tenant_llm table has composite primary key and migrate to ID primary key
 	if err := migrateTenantLLMPrimaryKey(db); err != nil {
 		return fmt.Errorf("failed to migrate tenant_llm primary key: %w", err)

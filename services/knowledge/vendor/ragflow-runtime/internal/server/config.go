@@ -85,7 +85,7 @@ type ServerConfig struct {
 
 // DatabaseConfig database configuration
 type DatabaseConfig struct {
-	Driver   string `mapstructure:"driver"` // mysql
+	Driver   string `mapstructure:"driver"` // mysql or postgres
 	Host     string `mapstructure:"host"`
 	Port     int    `mapstructure:"port"`
 	Database string `mapstructure:"database"`
@@ -350,6 +350,23 @@ func Init(configPath string) error {
 			delete(configDict, "max_allowed_packet")
 			delete(configDict, "user")
 			delete(configDict, "password")
+		case "postgres":
+			host := getString(configDict, "host")
+			port := getInt(configDict, "port")
+			user := getString(configDict, "user")
+			password := getString(configDict, "password")
+			configDict["id"] = id
+			configDict["name"] = "postgres"
+			configDict["host"] = host
+			configDict["port"] = port
+			configDict["service_type"] = "meta_data"
+			configDict["extra"] = map[string]interface{}{
+				"meta_type": "postgres",
+				"username":  user,
+				"password":  password,
+			}
+			delete(configDict, "user")
+			delete(configDict, "password")
 		case "task_executor":
 			mqType := getString(configDict, "message_queue_type")
 			configDict["id"] = id
@@ -417,10 +434,16 @@ func FromEnvironments() error {
 	}
 
 	// Meta database
+	if err := applyDatabaseURLEnv(); err != nil {
+		return err
+	}
+
 	databaseType := strings.ToLower(os.Getenv("DB_TYPE"))
 	switch databaseType {
 	case "mysql":
 		globalConfig.Database.Driver = "mysql"
+	case "postgres", "postgresql":
+		globalConfig.Database.Driver = "postgres"
 	case "":
 		// Default
 		if globalConfig.Database.Driver == "" {
@@ -527,10 +550,19 @@ func FromConfigFile(configPath string) error {
 		return fmt.Errorf("unmarshal config error: %w", err)
 	}
 
-	// If we loaded service_conf.yaml, map mysql fields to DatabaseConfig
+	// If we loaded service_conf.yaml, map postgres/mysql fields to DatabaseConfig
 	if globalConfig != nil && globalConfig.Database.Host == "" {
-		// Try to map from mysql section
-		if v.IsSet("mysql") {
+		if v.IsSet("postgres") {
+			pgConfig := v.Sub("postgres")
+			if pgConfig != nil {
+				globalConfig.Database.Driver = "postgres"
+				globalConfig.Database.Host = pgConfig.GetString("host")
+				globalConfig.Database.Port = pgConfig.GetInt("port")
+				globalConfig.Database.Database = pgConfig.GetString("name")
+				globalConfig.Database.Username = pgConfig.GetString("user")
+				globalConfig.Database.Password = pgConfig.GetString("password")
+			}
+		} else if v.IsSet("mysql") {
 			mysqlConfig := v.Sub("mysql")
 			if mysqlConfig != nil {
 				globalConfig.Database.Driver = "mysql"
@@ -810,6 +842,50 @@ func parseHostPort(hostPort string) (string, int) {
 		port, _ = strconv.Atoi(parts[1])
 	}
 	return host, port
+}
+
+func applyDatabaseURLEnv() error {
+	rawURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if rawURL == "" {
+		return nil
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid DATABASE_URL: %w", err)
+	}
+
+	switch strings.ToLower(parsed.Scheme) {
+	case "postgres", "postgresql":
+		globalConfig.Database.Driver = "postgres"
+	case "mysql":
+		globalConfig.Database.Driver = "mysql"
+	default:
+		return fmt.Errorf("unsupported DATABASE_URL scheme: %s", parsed.Scheme)
+	}
+
+	globalConfig.Database.Host = parsed.Hostname()
+	globalConfig.Database.Database = strings.TrimPrefix(parsed.Path, "/")
+	if parsed.User != nil {
+		globalConfig.Database.Username = parsed.User.Username()
+		if password, ok := parsed.User.Password(); ok {
+			globalConfig.Database.Password = password
+		}
+	}
+	if port := parsed.Port(); port != "" {
+		if parsedPort, convErr := strconv.Atoi(port); convErr == nil {
+			globalConfig.Database.Port = parsedPort
+		}
+	}
+	if globalConfig.Database.Port == 0 {
+		switch globalConfig.Database.Driver {
+		case "postgres":
+			globalConfig.Database.Port = 5432
+		case "mysql":
+			globalConfig.Database.Port = 3306
+		}
+	}
+	return nil
 }
 
 // getString gets string value from map

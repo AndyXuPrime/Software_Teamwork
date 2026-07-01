@@ -599,6 +599,8 @@ first, most likely Parser-backed document parsing before retrieval replacement.
   expose upstream product auth (login, JWT issuance, API token self-service).
 - Confirmed by user before cleanup: yes
 
+### 2026-07-01: retain file manager and model chat proxy surfaces
+
 - Kept intentionally (not in future trim scope unless product boundary changes):
   - `/files` (Go + Python `file_api.py`): upstream personal file-cabinet product flow
     (upload/folder/move → link-to-datasets), distinct from raw object storage
@@ -608,3 +610,34 @@ first, most likely Parser-backed document parsing before retrieval replacement.
   file-ingestion UX and third-party/local LLM invocation, even though core
   parser/RAG retrieval does not require them at HTTP layer.
 - Confirmed by user: yes
+
+### 2026-07-01: knowledge vendor replacement phase 1 scaffold
+
+- Added contract adapter scaffold:
+  - `services/knowledge/cmd/adapter/`
+  - `services/knowledge/internal/adapter/`
+  - `services/knowledge/internal/adapterconfig/`
+- Added runtime deployment scaffolding:
+  - `services/knowledge/runtime/entrypoint.sh` (`KNOWLEDGE_RUNTIME_MODE=legacy|adapter`)
+  - `services/knowledge/runtime/service_conf.compose.yaml`
+  - `services/knowledge/runtime/README.md`
+- Updated `services/knowledge/Dockerfile` to build both legacy server and adapter
+- Updated `deploy/docker-compose.yml`:
+  - optional `elasticsearch` + `knowledge-minio-init` under profile `knowledge-v2`
+  - `KNOWLEDGE_RUNTIME_MODE` / `VENDOR_RUNTIME_URL` env on `knowledge` service
+- Default compose path unchanged (`legacy` mode); adapter mode is opt-in
+- Next: Phase 2 PostgreSQL metadata port for vendor ORM
+
+### 2026-07-01: knowledge vendor replacement phase 2 PostgreSQL metadata port
+
+- Go vendor database layer:
+  - `internal/dao/database_dialect.go` — postgres/mysql DSN + benign migration errors
+  - `internal/dao/migration_postgres.go` — PG manual migrations (tenant_llm PK, user.email unique)
+  - `internal/server/config.go` — `DB_TYPE=postgres`, `postgres:` YAML, `DATABASE_URL` override
+  - entity GORM tags: `type:longtext` → `type:text`
+  - `internal/dao/user_tenant.go` — `TO_CHAR` on PostgreSQL
+- Runtime config:
+  - `services/knowledge/runtime/service_conf.compose.yaml` now targets `knowledge_system` postgres
+- Python path: existing `DB_TYPE=postgres` Peewee support reused (no code changes required)
+- Coexistence: legacy goose tables remain; vendor AutoMigrate creates separate RAGFlow tables
+- Next: Phase 3 contract adapter routes

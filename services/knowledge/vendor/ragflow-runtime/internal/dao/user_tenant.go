@@ -141,17 +141,25 @@ type TenantMemberItem struct {
 // GetMembersByTenantID returns all non-owner members of a tenant with user details.
 // update_date is formatted as "2006-01-02T15:04:05" (no timezone) to match the Python API.
 func (dao *UserTenantDAO) GetMembersByTenantID(tenantID string) ([]*TenantMemberItem, error) {
+	updateDateExpr := userUpdateDateSelectExpr()
 	var results []*TenantMemberItem
 	err := DB.Table("user_tenant").
 		Select("user_tenant.id, user_tenant.user_id, user_tenant.role, user_tenant.status, "+
 			"user.nickname, user.email, user.avatar, user.is_authenticated, "+
 			"user.status AS is_active, user.is_anonymous, user.is_superuser, "+
-			"DATE_FORMAT(user.update_date, '%Y-%m-%dT%H:%i:%s') AS update_date").
-		Joins("JOIN user ON user_tenant.user_id = user.id").
+			updateDateExpr+" AS update_date").
+		Joins("JOIN \"user\" ON user_tenant.user_id = \"user\".id").
 		Where("user_tenant.tenant_id = ? AND user_tenant.status = ? AND user_tenant.role != ?",
 			tenantID, "1", "owner").
 		Scan(&results).Error
 	return results, err
+}
+
+func userUpdateDateSelectExpr() string {
+	if DB != nil && DB.Dialector != nil && DB.Dialector.Name() == "postgres" {
+		return "TO_CHAR(\"user\".update_date, 'YYYY-MM-DD\"T\"HH24:MI:SS')"
+	}
+	return "DATE_FORMAT(user.update_date, '%Y-%m-%dT%H:%i:%s')"
 }
 
 // GetTenantsByUserID get tenants by user ID with user details
