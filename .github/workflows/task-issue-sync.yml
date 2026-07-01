@@ -138,6 +138,18 @@ jobs:
                 .filter(Boolean)
                 .join(', ') || '无';
             };
+            const parseModuleNames = (value) => {
+              const normalized = cleanValue(value || '');
+              if (!normalized) {
+                return ['ci'];
+              }
+
+              const moduleNames = normalized
+                .split(/\s*(?:\/|／|,|，|、|\+|&)\s*/u)
+                .map((item) => cleanValue(item))
+                .filter(Boolean);
+              return moduleNames.length > 0 ? [...new Set(moduleNames)] : ['ci'];
+            };
             const extractIssueNumbers = (value) => {
               const normalized = cleanValue(value || '');
               if (!normalized || normalized === '无') {
@@ -160,7 +172,11 @@ jobs:
             }
             const priority = readField('优先级') || 'P1';
             const batch = readField('批次') || 'Batch 4';
-            const moduleName = readField('模块') || 'ci';
+            const moduleNames = parseModuleNames(readField('模块'));
+            const unknownModuleNames = moduleNames.filter((candidate) => !moduleLabelByModule[candidate]);
+            if (unknownModuleNames.length > 0) {
+              core.warning(`Issue module field contains unknown module names: ${unknownModuleNames.join(', ')}`);
+            }
             const expectedHoursRaw = readHourField('预期工时');
             const actualHoursRaw = readHourField('实际工时');
             const explicitRisk = readField('Risk');
@@ -186,9 +202,11 @@ jobs:
             if (['L1nggTeam', 'JerryTeam', 'PrimeTeam', 'Test'].includes(group)) {
               labelsToAdd.add(group);
             }
-            const moduleLabel = moduleLabelByModule[moduleName];
-            if (moduleLabel) {
-              labelsToAdd.add(moduleLabel);
+            for (const moduleName of moduleNames) {
+              const moduleLabel = moduleLabelByModule[moduleName];
+              if (moduleLabel) {
+                labelsToAdd.add(moduleLabel);
+              }
             }
 
             if (labelsToAdd.size > 0) {
@@ -619,6 +637,22 @@ jobs:
                   value,
                 });
               };
+              const updateModule = async () => {
+                const field = fieldByName.get('Module');
+                if (!field?.options) {
+                  throw new Error("Project field 'Module' is missing or is not single-select.");
+                }
+                const moduleOptionNames = new Set(field.options.map((option) => option.name));
+                const moduleName = moduleNames.find((candidate) => moduleOptionNames.has(candidate));
+                if (!moduleName) {
+                  core.warning(`Project field 'Module' has no matching option for issue modules: ${moduleNames.join(', ')}; skipping Module update.`);
+                  return;
+                }
+                if (moduleNames.length > 1) {
+                  core.info(`Issue declares multiple modules (${moduleNames.join(', ')}); using '${moduleName}' for the Project Module field.`);
+                }
+                await updateSingleSelect('Module', moduleName);
+              };
 
               const expectedHours = parseHourNumber(expectedHoursRaw, '预期工时（小时数）');
               const actualHours = parseHourNumber(actualHoursRaw, '实际工时（小时数）');
@@ -627,7 +661,7 @@ jobs:
               await updateSingleSelect('Group', group);
               await updateSingleSelect('Priority', priority);
               await updateSingleSelect('Batch', batch);
-              await updateSingleSelect('Module', moduleName);
+              await updateModule();
               await updateSingleSelect('Risk', risk);
               await updateText('Dependency', dependency);
               await updateNumberOrText('ExpectedHours', expectedHours);
