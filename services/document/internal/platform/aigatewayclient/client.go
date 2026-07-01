@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -19,73 +20,80 @@ const (
 	defaultTimeout   = 30 * time.Second
 	maxResponseBytes = 2 << 20 // 2 MiB
 	callerService    = "document"
+	aiGatewayPort    = "8086"
 )
 
-// Client is a lightweight HTTP client for calling the AI Gateway chat completions
-// endpoint. Unlike the aigateway package's ChatClient, it accepts any http(s) base
-// URL and takes requestID / serviceToken per call rather than at construction time.
-type Client struct {
-	baseURL    string
-	httpClient *http.Client
+// trustedBaseURL is a validated, normalised AI Gateway base URL that is safe
+// to use as an HTTP request target. The type prevents unvalidated strings from
+// reaching the HTTP client.
+type trustedBaseURL string
+
+func (b trustedBaseURL) join(elem ...string) (string, error) {
+	return url.JoinPath(string(b), elem...)
 }
 
-// New validates baseURL and returns a ready-to-use Client.
-// Returns an error if baseURL is empty, a relative reference, uses a non-http(s)
-// scheme, or has an empty host.
-func New(baseURL string) (*Client, error) {
-	trimmed := strings.TrimSpace(baseURL)
-	if trimmed == "" {
-		return nil, errors.New("aigatewayclient: baseURL must not be empty")
-	}
-	parsed, err := url.Parse(trimmed)
+// Client is a lightweight HTTP client for the AI Gateway chat completions
+// endpoint. It enforces the same trusted-host URL policy as the rest of the
+// Document service and embeds a default profile/model for each call.
+type Client struct {
+	baseURL          trustedBaseURL
+	defaultProfileID string
+	defaultModel     string
+	httpClient       *http.Client
+}
+
+// New validates baseURL against the Document service AI Gateway URL policy and
+// returns a ready Client. profileID is required; model falls back to profileID
+// when empty. Pass a non-nil httpClient to override the default (e.g., in tests).
+func New(baseURL, profileID, model string, httpClient *http.Client) (*Client, error) {
+	normalized, err := validateBaseURL(baseURL)
 	if err != nil {
-		return nil, fmt.Errorf("aigatewayclient: invalid baseURL: %w", err)
+		return nil, err
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return nil, errors.New("aigatewayclient: baseURL must use http or https scheme")
+	profileID = strings.TrimSpace(profileID)
+	if profileID == "" {
+		return nil, errors.New("aigatewayclient: profileID must not be empty")
 	}
-	if parsed.Host == "" {
-		return nil, errors.New("aigatewayclient: baseURL must have a non-empty host")
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = profileID
+	}
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: defaultTimeout}
 	}
 	return &Client{
-		baseURL:    strings.TrimRight(trimmed, "/"),
-		httpClient: &http.Client{Timeout: defaultTimeout},
+		baseURL:          normalized,
+		defaultProfileID: profileID,
+		defaultModel:     model,
+		httpClient:       httpClient,
 	}, nil
 }
 
-type chatRequest struct {
-	Messages []chatMessage `json:"messages"`
-}
-
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type chatResponse struct {
-	Choices []struct {
-		Message chatMessage `json:"message"`
-	} `json:"choices"`
-}
-
-// ChatCompletion sends messages to the AI Gateway chat completions endpoint and
-// returns the first choice's content string.
+// ChatCompletion sends messages to the AI Gateway and returns the first
+// choice's content string.
 //
 // requestID is forwarded as X-Request-Id when non-empty.
 // serviceToken is forwarded as X-Service-Token when non-empty.
-// Non-2xx responses, invalid JSON, empty choices and whitespace-only content all
-// map to a service.CodeDependency error; downstream body is never included in the
+// Non-2xx responses, invalid JSON, empty choices and whitespace-only content
+// all map to service.CodeDependency; downstream body is never included in the
 // returned error message.
 func (c *Client) ChatCompletion(ctx context.Context, requestID, serviceToken string, messages []service.ChatMessage) (string, error) {
 	reqMsgs := make([]chatMessage, len(messages))
 	for i, m := range messages {
 		reqMsgs[i] = chatMessage{Role: m.Role, Content: m.Content}
 	}
-	raw, err := json.Marshal(chatRequest{Messages: reqMsgs})
+	raw, err := json.Marshal(chatRequest{
+		Model:     c.defaultModel,
+		ProfileID: c.defaultProfileID,
+		Messages:  reqMsgs,
+	})
 	if err != nil {
 		return "", service.NewError(service.CodeInternal, "encode chat request", err)
 	}
-	endpoint := c.baseURL + "/internal/v1/chat/completions"
+	endpoint, err := c.baseURL.join("internal/v1/chat/completions")
+	if err != nil {
+		return "", service.NewError(service.CodeDependency, "build chat endpoint", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
 	if err != nil {
 		return "", service.NewError(service.CodeDependency, "build chat request", err)
@@ -126,4 +134,92 @@ func (c *Client) ChatCompletion(ctx context.Context, requestID, serviceToken str
 		return "", service.NewError(service.CodeDependency, "chat response content is empty", nil)
 	}
 	return content, nil
+}
+
+// ── internal request / response types ────────────────────────────────────────
+
+type chatRequest struct {
+	Model     string        `json:"model"`
+	ProfileID string        `json:"profile_id"`
+	Messages  []chatMessage `json:"messages"`
+}
+
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type chatResponse struct {
+	Choices []struct {
+		Message chatMessage `json:"message"`
+	} `json:"choices"`
+}
+
+// ── URL validation ────────────────────────────────────────────────────────────
+
+// validateBaseURL enforces the same AI Gateway URL policy used by all Document
+// service platform clients: absolute http(s) URL, trusted internal host only,
+// standard port (8086 or omitted), no credentials, no query string or fragment,
+// clean base path (empty or /internal/v1).
+func validateBaseURL(raw string) (trustedBaseURL, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", errors.New("aigatewayclient: baseURL must not be empty")
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", errors.New("aigatewayclient: baseURL must be an absolute http(s) URL")
+	}
+	if parsed.User != nil {
+		return "", errors.New("aigatewayclient: baseURL must not contain credentials")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("aigatewayclient: baseURL must not contain query or fragment")
+	}
+	path := strings.TrimRight(parsed.EscapedPath(), "/")
+	if path != "" && path != "/internal/v1" {
+		return "", errors.New("aigatewayclient: baseURL must be an AI Gateway service base URL")
+	}
+	if !trustedHost(parsed.Hostname()) {
+		return "", errors.New("aigatewayclient: baseURL host is not trusted")
+	}
+	if port := parsed.Port(); port != "" && port != aiGatewayPort {
+		return "", errors.New("aigatewayclient: baseURL port is not trusted")
+	}
+	base, ok := canonicalBase(parsed.Scheme, parsed.Hostname())
+	if !ok {
+		return "", errors.New("aigatewayclient: baseURL host is not trusted")
+	}
+	return base, nil
+}
+
+func trustedHost(host string) bool {
+	host = strings.Trim(strings.ToLower(host), "[]")
+	if host == "" {
+		return false
+	}
+	switch host {
+	case "localhost", "ai-gateway":
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
+func canonicalBase(scheme, host string) (trustedBaseURL, bool) {
+	host = strings.Trim(strings.ToLower(host), "[]")
+	prefix := scheme + "://"
+	switch host {
+	case "localhost":
+		return trustedBaseURL(prefix + "localhost:" + aiGatewayPort), true
+	case "ai-gateway":
+		return trustedBaseURL(prefix + "ai-gateway:" + aiGatewayPort), true
+	case "127.0.0.1":
+		return trustedBaseURL(prefix + "127.0.0.1:" + aiGatewayPort), true
+	case "::1":
+		return trustedBaseURL(prefix + "[::1]:" + aiGatewayPort), true
+	}
+	return "", false
 }
