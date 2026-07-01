@@ -787,6 +787,63 @@ func (r *MemoryRepository) GetDeletedDocumentCleanupTarget(ctx context.Context, 
 	}, nil
 }
 
+func (r *MemoryRepository) ListRetryableDeleteCleanupTasks(ctx context.Context, input service.DeleteCleanupTaskListInput) ([]service.DocumentDeleteCleanupTask, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if input.Limit <= 0 {
+		return []service.DocumentDeleteCleanupTask{}, nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	jobs := make([]service.ProcessingJob, 0, len(r.jobs))
+	for _, job := range r.jobs {
+		jobs = append(jobs, job)
+	}
+	sort.SliceStable(jobs, func(i, j int) bool {
+		return jobs[i].UpdatedAt.Before(jobs[j].UpdatedAt)
+	})
+
+	tasks := make([]service.DocumentDeleteCleanupTask, 0, input.Limit)
+	for _, job := range jobs {
+		if len(tasks) >= input.Limit || !retryableDeleteCleanupJob(job, input.StaleRunningBefore) || job.DocumentID == nil {
+			continue
+		}
+		doc, exists := r.documents[*job.DocumentID]
+		if !exists || doc.DeletedAt == nil {
+			continue
+		}
+		tasks = append(tasks, service.DocumentDeleteCleanupTask{
+			RequestID:       strings.TrimSpace(input.RequestID),
+			JobID:           job.ID,
+			DocumentID:      doc.ID,
+			KnowledgeBaseID: job.KnowledgeBaseID,
+			UserID:          doc.CreatedBy,
+		})
+	}
+	return tasks, nil
+}
+
+func retryableDeleteCleanupJob(job service.ProcessingJob, staleRunningBefore *time.Time) bool {
+	if job.JobType != service.JobTypeDeleteCleanup {
+		return false
+	}
+	if job.MaxAttempts > 0 && job.Attempts >= job.MaxAttempts {
+		return false
+	}
+	switch job.Status {
+	case service.JobStatusQueued:
+		return true
+	case service.JobStatusFailed:
+		return job.ErrorCode == nil || strings.TrimSpace(*job.ErrorCode) == "" || strings.TrimSpace(*job.ErrorCode) == string(service.CodeDependency)
+	case service.JobStatusRunning:
+		return staleRunningBefore != nil && job.UpdatedAt.Before(*staleRunningBefore)
+	default:
+		return false
+	}
+}
+
 func (r *MemoryRepository) ListDocumentChunks(ctx context.Context, documentID string, scope service.AccessScope, page service.PageInput) (service.DocumentChunkList, error) {
 	return r.ListChunks(ctx, documentID, scope, page)
 }

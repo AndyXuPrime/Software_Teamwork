@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+const defaultDeleteCleanupRequeueLimit = 50
+
 func (s *Service) ProcessDeleteCleanupTask(ctx context.Context, reqCtx RequestContext, task DocumentDeleteCleanupTask) (ProcessingJob, error) {
 	normalized, err := normalizeDeleteCleanupTask(task)
 	if err != nil {
@@ -177,6 +179,42 @@ func (s *Service) ProcessDeleteCleanupJob(ctx context.Context, reqCtx RequestCon
 	})
 }
 
+func (s *Service) RequeueDeleteCleanupTasks(ctx context.Context, reqCtx RequestContext, limit int) (DeleteCleanupRequeueResult, error) {
+	if s.queue == nil {
+		return DeleteCleanupRequeueResult{}, DependencyError("delete cleanup queue is not configured", nil)
+	}
+	requestID := strings.TrimSpace(reqCtx.RequestID)
+	if requestID == "" {
+		requestID = "delete_cleanup_reconciler"
+	}
+	tasks, err := s.repo.ListRetryableDeleteCleanupTasks(ctx, DeleteCleanupTaskListInput{
+		RequestID:          requestID,
+		Limit:              normalizeDeleteCleanupRequeueLimit(limit),
+		StaleRunningBefore: runningStaleBefore(s.now(), s.runningLease),
+	})
+	if err != nil {
+		return DeleteCleanupRequeueResult{}, repositoryError(err)
+	}
+
+	result := DeleteCleanupRequeueResult{Scanned: len(tasks)}
+	for _, task := range tasks {
+		task.RequestID = requestID
+		normalized, err := normalizeDeleteCleanupTask(task)
+		if err != nil {
+			result.Failed++
+			_ = s.repo.MarkDocumentJobFailed(ctx, task.DocumentID, task.JobID, nil, string(CodeDependency), "delete cleanup queue handoff failed", s.now())
+			return result, DependencyError("delete cleanup task payload is invalid", err)
+		}
+		if err := s.queue.EnqueueDocumentDeleteCleanup(ctx, normalized); err != nil {
+			result.Failed++
+			_ = s.repo.MarkDocumentJobFailed(ctx, task.DocumentID, task.JobID, nil, string(CodeDependency), "delete cleanup queue handoff failed", s.now())
+			return result, DependencyError("delete cleanup queue handoff failed", err)
+		}
+		result.Enqueued++
+	}
+	return result, nil
+}
+
 func (s *Service) failDeleteCleanupAndReturn(ctx context.Context, job ProcessingJob, documentID string, code string, message string, cleanupErr error) (ProcessingJob, error) {
 	failed, err := s.failDeleteCleanup(ctx, job, documentID, code, message)
 	if err != nil {
@@ -231,6 +269,16 @@ func normalizeDeleteCleanupTask(task DocumentDeleteCleanupTask) (DocumentDeleteC
 		return DocumentDeleteCleanupTask{}, ValidationError("worker payload validation failed", fields)
 	}
 	return task, nil
+}
+
+func normalizeDeleteCleanupRequeueLimit(limit int) int {
+	if limit <= 0 {
+		return defaultDeleteCleanupRequeueLimit
+	}
+	if limit > maxPageSize {
+		return maxPageSize
+	}
+	return limit
 }
 
 func cleanupFailureCode(err error) string {

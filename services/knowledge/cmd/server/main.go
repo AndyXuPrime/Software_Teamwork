@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -126,6 +127,7 @@ func main() {
 			stop()
 		}
 	}()
+	go runDeleteCleanupReconciler(ctx, logger, knowledgeService, time.Minute, 50)
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
@@ -137,6 +139,65 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("knowledge service shutdown complete", "service", "knowledge")
+}
+
+func runDeleteCleanupReconciler(ctx context.Context, logger *slog.Logger, knowledge *service.Service, interval time.Duration, limit int) {
+	if knowledge == nil || interval <= 0 || limit <= 0 {
+		return
+	}
+	reconcile := func() {
+		reconcileCtx, cancel := context.WithTimeout(ctx, minDuration(interval, 30*time.Second))
+		defer cancel()
+		result, err := knowledge.RequeueDeleteCleanupTasks(reconcileCtx, service.RequestContext{
+			RequestID:     "delete_cleanup_reconciler",
+			CallerService: "knowledge",
+		}, limit)
+		if err != nil {
+			errorCode := "unknown"
+			if appErr, ok := service.Classify(err); ok {
+				errorCode = string(appErr.Code)
+			}
+			logger.WarnContext(reconcileCtx, "knowledge delete cleanup requeue failed",
+				"service", "knowledge",
+				"operation", "knowledge_delete_cleanup_reconciler",
+				"dependency", "redis",
+				"status", "failed",
+				"scanned", result.Scanned,
+				"enqueued", result.Enqueued,
+				"failed", result.Failed,
+				"error_code", errorCode,
+			)
+			return
+		}
+		if result.Enqueued > 0 {
+			logger.InfoContext(reconcileCtx, "knowledge delete cleanup tasks requeued",
+				"service", "knowledge",
+				"operation", "knowledge_delete_cleanup_reconciler",
+				"status", "success",
+				"scanned", result.Scanned,
+				"enqueued", result.Enqueued,
+			)
+		}
+	}
+
+	reconcile()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reconcile()
+		}
+	}
+}
+
+func minDuration(a time.Duration, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func connectPostgres(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {

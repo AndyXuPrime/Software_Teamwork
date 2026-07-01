@@ -26,7 +26,9 @@ Qdrant point 写入和状态更新；同时新增 Gateway -> Knowledge owner rou
 `createdBy` 真实 session user 断言。完整上传到检索、rerank、MCP/Gateway 总入口仍由
 后续跨服务 smoke 覆盖。文档删除清理 worker 已消费
 `knowledge:document:delete_cleanup`，负责在软删除后幂等清理 File 引用和
-Qdrant points；Redis/asynq 只承载投递，PostgreSQL 的 document/job 状态仍是事实来源。
+Qdrant points；同进程 reconciler 会从 PostgreSQL 重投 retryable cleanup job
+以补偿短暂 Redis/asynq handoff 失败。Redis/asynq 只承载投递，PostgreSQL 的
+document/job 状态仍是事实来源。
 
 ## 技术基线
 

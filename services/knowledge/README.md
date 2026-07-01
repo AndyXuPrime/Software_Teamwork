@@ -142,7 +142,10 @@ Document deletion is also soft-delete-first:
   key, URL, service token, or vector payload.
 - The worker treats empty `file_ref`, File `404`, missing Qdrant points, and
   duplicate delivery as idempotent success. File/Qdrant/Redis failures persist a
-  sanitized job error summary and do not restore document visibility.
+  sanitized job error summary and do not restore document visibility. A
+  lightweight reconciler in the Knowledge process periodically scans
+  PostgreSQL for retryable `delete_cleanup` jobs and re-enqueues them after
+  transient Redis/asynq handoff failures.
 
 ## Local Integration Notes
 
@@ -267,7 +270,10 @@ document first, then reads the raw bytes from File Service internally. It never
 exposes `file_ref`, bucket names, object keys, File Service IDs, or storage URLs in JSON
 responses.
 
-Delete-cleanup troubleshooting starts from PostgreSQL, not Redis:
+Delete-cleanup troubleshooting starts from PostgreSQL, not Redis. If Redis was
+temporarily unavailable during delete, the Knowledge reconciler will re-enqueue
+retryable `queued`, dependency-failed, or stale-running jobs after Redis
+recovers:
 
 ```sql
 SELECT id, document_id, status, current_stage, attempts, max_attempts,

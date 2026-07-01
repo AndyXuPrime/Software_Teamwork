@@ -559,6 +559,126 @@ func TestDeleteDocumentKeepsDocumentHiddenWhenCleanupQueueHandoffFails(t *testin
 	}
 }
 
+func TestDeleteCleanupReconcilerRequeuesQueueHandoffFailure(t *testing.T) {
+	now := time.Date(2026, 6, 30, 8, 30, 0, 0, time.UTC)
+	repo := repository.NewMemoryRepository()
+	fileRef := "file_1"
+	repo.SeedKnowledgeBase(service.KnowledgeBase{
+		ID:                "kb_1",
+		Name:              "规程库",
+		Description:       "",
+		DocType:           "GENERAL",
+		ChunkStrategy:     json.RawMessage(`{}`),
+		RetrievalStrategy: json.RawMessage(`{}`),
+		CreatedBy:         "usr_1",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	repo.SeedDocument(service.KnowledgeDocument{
+		ID:              "doc_1",
+		KnowledgeBaseID: "kb_1",
+		FileRef:         &fileRef,
+		Name:            "规程.pdf",
+		Status:          service.DocumentStatusReady,
+		CreatedBy:       "usr_1",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	queue := &uploadQueue{err: errors.New("redis unavailable with secret file_1")}
+	svc := service.NewWithDependencies(repo, nil, queue, func() time.Time {
+		return now.Add(time.Hour)
+	}, func(prefix string) string {
+		return prefix + "_test"
+	})
+
+	err := svc.DeleteDocument(context.Background(), writeContext("usr_1"), "doc_1")
+	if !hasCode(err, service.CodeDependency) {
+		t.Fatalf("DeleteDocument() error = %v", err)
+	}
+	queue.err = nil
+
+	result, err := svc.RequeueDeleteCleanupTasks(context.Background(), service.RequestContext{RequestID: "req_reconcile"}, 10)
+	if err != nil {
+		t.Fatalf("RequeueDeleteCleanupTasks() error = %v", err)
+	}
+	if result.Scanned != 1 || result.Enqueued != 1 || result.Failed != 0 {
+		t.Fatalf("requeue result = %+v", result)
+	}
+	if queue.cleanupCalls != 2 {
+		t.Fatalf("cleanup queue calls = %d, want initial failed call plus reconciler call", queue.cleanupCalls)
+	}
+	task := queue.cleanupTask
+	if task.RequestID != "req_reconcile" ||
+		task.JobID != "job_test" ||
+		task.DocumentID != "doc_1" ||
+		task.KnowledgeBaseID != "kb_1" ||
+		task.UserID != "usr_1" {
+		t.Fatalf("cleanup task = %+v", task)
+	}
+	_, err = svc.GetDocument(context.Background(), readContext("usr_1"), "doc_1")
+	if !hasCode(err, service.CodeNotFound) {
+		t.Fatalf("GetDocument() after requeue error = %v", err)
+	}
+}
+
+func TestDeleteCleanupReconcilerSkipsPermanentConflictFailure(t *testing.T) {
+	now := time.Date(2026, 6, 30, 8, 30, 0, 0, time.UTC)
+	repo := repository.NewMemoryRepository()
+	fileRef := "file_1"
+	repo.SeedKnowledgeBase(service.KnowledgeBase{
+		ID:                "kb_1",
+		Name:              "规程库",
+		Description:       "",
+		DocType:           "GENERAL",
+		ChunkStrategy:     json.RawMessage(`{}`),
+		RetrievalStrategy: json.RawMessage(`{}`),
+		CreatedBy:         "usr_1",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	repo.SeedDocument(service.KnowledgeDocument{
+		ID:              "doc_1",
+		KnowledgeBaseID: "kb_1",
+		FileRef:         &fileRef,
+		Name:            "规程.pdf",
+		Status:          service.DocumentStatusReady,
+		CreatedBy:       "usr_1",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	if err := repo.SoftDeleteDocument(context.Background(), service.DeleteDocumentRecord{
+		DocumentID:  "doc_1",
+		JobID:       "job_conflict",
+		JobType:     service.JobTypeDeleteCleanup,
+		JobStatus:   service.JobStatusQueued,
+		JobStage:    "delete_cleanup",
+		JobMessage:  "document marked deleted; cleanup is pending",
+		MaxAttempts: service.DefaultIngestionMaxAttempts,
+		DeletedAt:   now,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}, service.AccessScope{UserID: "usr_1", CanWrite: true}); err != nil {
+		t.Fatalf("SoftDeleteDocument() error = %v", err)
+	}
+	if err := repo.MarkDocumentJobFailed(context.Background(), "doc_1", "job_conflict", nil, string(service.CodeConflict), "delete cleanup target mismatch", now.Add(time.Minute)); err != nil {
+		t.Fatalf("MarkDocumentJobFailed() error = %v", err)
+	}
+	queue := &uploadQueue{}
+	svc := service.NewWithDependencies(repo, nil, queue, func() time.Time {
+		return now.Add(time.Hour)
+	}, func(prefix string) string {
+		return prefix + "_test"
+	})
+
+	result, err := svc.RequeueDeleteCleanupTasks(context.Background(), service.RequestContext{RequestID: "req_reconcile"}, 10)
+	if err != nil {
+		t.Fatalf("RequeueDeleteCleanupTasks() error = %v", err)
+	}
+	if result.Scanned != 0 || result.Enqueued != 0 || result.Failed != 0 || queue.cleanupCalls != 0 {
+		t.Fatalf("result = %+v cleanupCalls=%d", result, queue.cleanupCalls)
+	}
+}
+
 func TestDocumentLifecycleUpdateDeleteChunksAndContent(t *testing.T) {
 	now := time.Date(2026, 6, 30, 9, 0, 0, 0, time.UTC)
 	repo := repository.NewMemoryRepository()

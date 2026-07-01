@@ -497,6 +497,59 @@ WHERE j.id = $1
 	return target, nil
 }
 
+func (r *PostgresRepository) ListRetryableDeleteCleanupTasks(ctx context.Context, input service.DeleteCleanupTaskListInput) ([]service.DocumentDeleteCleanupTask, error) {
+	if input.Limit <= 0 {
+		return []service.DocumentDeleteCleanupTask{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT j.id, d.id, j.knowledge_base_id, d.created_by
+FROM processing_jobs j
+JOIN knowledge_documents d ON d.id = j.document_id
+WHERE j.job_type = $1
+  AND d.deleted_at IS NOT NULL
+  AND (j.max_attempts <= 0 OR j.attempts < j.max_attempts)
+  AND (
+    j.status = $2
+    OR (
+      j.status = $3
+      AND (j.error_code IS NULL OR j.error_code = '' OR j.error_code = $4)
+    )
+    OR (
+      j.status = $5
+      AND $6::timestamptz IS NOT NULL
+      AND j.updated_at < $6
+    )
+  )
+ORDER BY j.updated_at ASC
+LIMIT $7`,
+		service.JobTypeDeleteCleanup,
+		service.JobStatusQueued,
+		service.JobStatusFailed,
+		string(service.CodeDependency),
+		service.JobStatusRunning,
+		pgTimePtr(input.StaleRunningBefore),
+		input.Limit,
+	)
+	if err != nil {
+		return nil, wrapPostgresError("list retryable delete cleanup tasks", err)
+	}
+	defer rows.Close()
+
+	tasks := []service.DocumentDeleteCleanupTask{}
+	for rows.Next() {
+		var task service.DocumentDeleteCleanupTask
+		task.RequestID = input.RequestID
+		if err := rows.Scan(&task.JobID, &task.DocumentID, &task.KnowledgeBaseID, &task.UserID); err != nil {
+			return nil, wrapPostgresError("scan retryable delete cleanup task", err)
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrapPostgresError("iterate retryable delete cleanup tasks", err)
+	}
+	return tasks, nil
+}
+
 func (r *PostgresRepository) ListDocumentChunks(ctx context.Context, documentID string, scope service.AccessScope, page service.PageInput) (service.DocumentChunkList, error) {
 	return r.ListChunks(ctx, documentID, scope, page)
 }

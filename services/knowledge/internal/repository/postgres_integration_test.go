@@ -222,6 +222,21 @@ func TestPostgresRepositoryDocumentLifecycleUpdateAndDelete(t *testing.T) {
 	if target.DocumentID != doc.ID || target.KnowledgeBaseID != kb.ID || target.FileRef == nil || *target.FileRef != "file_lifecycle" {
 		t.Fatalf("cleanup target = %+v", target)
 	}
+	retryableTasks, err := repo.ListRetryableDeleteCleanupTasks(ctx, service.DeleteCleanupTaskListInput{
+		RequestID: "req_reconcile",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("ListRetryableDeleteCleanupTasks() error = %v", err)
+	}
+	if len(retryableTasks) != 1 ||
+		retryableTasks[0].RequestID != "req_reconcile" ||
+		retryableTasks[0].JobID != "job_delete_cleanup_lifecycle" ||
+		retryableTasks[0].DocumentID != doc.ID ||
+		retryableTasks[0].KnowledgeBaseID != kb.ID ||
+		retryableTasks[0].UserID != ownerScope.UserID {
+		t.Fatalf("retryable cleanup tasks = %+v", retryableTasks)
+	}
 
 	list, err := repo.ListDocumentsByKnowledgeBase(ctx, kb.ID, nil, ownerScope, service.PageInput{Page: 1, PageSize: 20})
 	if err != nil {

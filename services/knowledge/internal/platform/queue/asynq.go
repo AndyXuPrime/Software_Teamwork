@@ -3,6 +3,8 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 
 	"github.com/hibiken/asynq"
 
@@ -53,9 +55,19 @@ func (q *AsynqQueue) EnqueueDocumentDeleteCleanup(ctx context.Context, task serv
 	if maxRetries < 0 {
 		maxRetries = 0
 	}
-	_, err = q.client.EnqueueContext(ctx, asynq.NewTask(DocumentDeleteCleanupTaskType, payload), asynq.MaxRetry(maxRetries))
+	_, err = q.client.EnqueueContext(ctx, asynq.NewTask(DocumentDeleteCleanupTaskType, payload),
+		asynq.MaxRetry(maxRetries),
+		asynq.TaskID(deleteCleanupTaskID(task.JobID)),
+	)
+	if errors.Is(err, asynq.ErrTaskIDConflict) || errors.Is(err, asynq.ErrDuplicateTask) {
+		return nil
+	}
 	if err != nil {
 		return service.NewError(service.CodeDependency, "delete cleanup queue handoff failed", err)
 	}
 	return nil
+}
+
+func deleteCleanupTaskID(jobID string) string {
+	return "knowledge-delete-cleanup-" + strings.TrimSpace(jobID)
 }
