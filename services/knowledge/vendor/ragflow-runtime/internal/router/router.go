@@ -24,17 +24,16 @@ import (
 )
 
 type Router struct {
-	authHandler          *handler.AuthHandler
-	tenantHandler        *handler.TenantHandler
-	documentHandler      *handler.DocumentHandler
-	datasetsHandler      *handler.DatasetsHandler
-	systemHandler        *handler.SystemHandler
-	knowledgebaseHandler *handler.KnowledgebaseHandler
-	chunkHandler         *handler.ChunkHandler
-	fileHandler          *handler.FileHandler
-	mcpHandler           *handler.MCPHandler
-	providerHandler      *handler.ProviderHandler
-	modelHandler         *handler.ModelHandler
+	authHandler     *handler.AuthHandler
+	tenantHandler   *handler.TenantHandler
+	documentHandler *handler.DocumentHandler
+	datasetsHandler *handler.DatasetsHandler
+	systemHandler   *handler.SystemHandler
+	chunkHandler    *handler.ChunkHandler
+	fileHandler     *handler.FileHandler
+	mcpHandler      *handler.MCPHandler
+	providerHandler *handler.ProviderHandler
+	modelHandler    *handler.ModelHandler
 }
 
 // NewRouter create router
@@ -44,7 +43,6 @@ func NewRouter(
 	documentHandler *handler.DocumentHandler,
 	datasetsHandler *handler.DatasetsHandler,
 	systemHandler *handler.SystemHandler,
-	knowledgebaseHandler *handler.KnowledgebaseHandler,
 	chunkHandler *handler.ChunkHandler,
 	fileHandler *handler.FileHandler,
 	mcpHandler *handler.MCPHandler,
@@ -52,17 +50,16 @@ func NewRouter(
 	modelHandler *handler.ModelHandler,
 ) *Router {
 	return &Router{
-		authHandler:          authHandler,
-		tenantHandler:        tenantHandler,
-		documentHandler:      documentHandler,
-		datasetsHandler:      datasetsHandler,
-		systemHandler:        systemHandler,
-		knowledgebaseHandler: knowledgebaseHandler,
-		chunkHandler:         chunkHandler,
-		fileHandler:          fileHandler,
-		mcpHandler:           mcpHandler,
-		providerHandler:      providerHandler,
-		modelHandler:         modelHandler,
+		authHandler:     authHandler,
+		tenantHandler:   tenantHandler,
+		documentHandler: documentHandler,
+		datasetsHandler: datasetsHandler,
+		systemHandler:   systemHandler,
+		chunkHandler:    chunkHandler,
+		fileHandler:     fileHandler,
+		mcpHandler:      mcpHandler,
+		providerHandler: providerHandler,
+		modelHandler:    modelHandler,
 	}
 }
 
@@ -192,12 +189,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.GET("/:id", r.fileHandler.Download)
 			}
 
-			// Author routes
-			authors := v1.Group("/authors")
-			{
-				authors.GET("/:author_id/documents", r.documentHandler.GetDocumentsByAuthorID)
-			}
-
 			// provider pool route group
 			provider := v1.Group("/providers")
 			{
@@ -275,21 +266,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
 				system.GET("/status", r.systemHandler.GetStatus)
-				system.GET("/stats", r.systemHandler.GetStats)
 
 				config := system.Group("/config")
 				{
 					config.GET("/log", r.systemHandler.GetLogLevel)
 					config.PUT("/log", r.systemHandler.SetLogLevel)
 				}
-
-				// Variables/Settings
-				system.GET("/variables", r.systemHandler.ListVariables)
-				system.PUT("/variables", r.systemHandler.SetVariable)
-				system.GET("/variables/:var_name", r.systemHandler.ShowVariable)
-
-				// Environments
-				system.GET("/environments", r.systemHandler.ListEnvironments)
 
 				//log := system.Group("/log")
 				//{
@@ -308,36 +290,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 					// delete token /api/v1/system/tokens/:key DELETE
 					tokens.DELETE("/:key", r.systemHandler.DeleteKey)
 				}
-
-				keys := system.Group("/keys")
-				{
-					// list keys /api/v1/system/keys GET
-					keys.GET("", r.systemHandler.ListAPIKeys)
-					// create key /api/v1/system/keys POST
-					keys.POST("", r.systemHandler.CreateKey)
-					// delete key /api/v1/system/keys/:key DELETE
-					keys.DELETE("/:key", r.systemHandler.DeleteKey)
-				}
-			}
-		}
-
-		// Knowledge base routes
-		kb := v1.Group("/kb")
-		{
-			kb.POST("/update", r.knowledgebaseHandler.UpdateKB)
-			kb.POST("/update_metadata_setting", r.knowledgebaseHandler.UpdateMetadataSetting)
-			kb.GET("/detail", r.knowledgebaseHandler.GetDetail)
-			kb.GET("/tags", r.knowledgebaseHandler.ListTagsFromKbs)
-			kb.GET("/get_meta", r.knowledgebaseHandler.GetMeta)
-			kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
-
-			// KB ID specific routes
-			kbByID := kb.Group("/:kb_id")
-			{
-				kbByID.GET("/tags", r.knowledgebaseHandler.ListTags)
-				kbByID.POST("/rename_tag", r.knowledgebaseHandler.RenameTag)
-				kbByID.GET("/knowledge_graph", r.knowledgebaseHandler.KnowledgeGraph)
-				kbByID.DELETE("/knowledge_graph", r.knowledgebaseHandler.DeleteKnowledgeGraph)
 			}
 		}
 

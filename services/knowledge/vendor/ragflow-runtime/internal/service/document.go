@@ -762,22 +762,6 @@ func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize i
 	return responses, total, nil
 }
 
-// GetDocumentsByAuthorID get documents by author ID
-func (s *DocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*DocumentResponse, int64, error) {
-	offset := (page - 1) * pageSize
-	documents, total, err := s.documentDAO.GetByAuthorID(fmt.Sprintf("%d", authorID), offset, pageSize)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	responses := make([]*DocumentResponse, len(documents))
-	for i, doc := range documents {
-		responses[i] = s.toResponse(doc)
-	}
-
-	return responses, total, nil
-}
-
 func (s *DocumentService) ListIngestionTasks(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	offset := (page - 1) * pageSize
 

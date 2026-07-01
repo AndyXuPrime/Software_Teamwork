@@ -543,3 +543,45 @@ first, most likely Parser-backed document parsing before retrieval replacement.
 - Updated: `docs/references/http_api_reference.md`, `README_zh.md`
 - Contract: `{ "thumbup": bool, "reference": { "chunks": [...] } }` using chunks from
   retrieval/search responses; requires `CHUNK_FEEDBACK_ENABLED=true` for weight updates.
+
+### 2026-07-01: remove orphan chat/agent code and Go product surfaces (batches E+F+G partial)
+
+- Removed (batch E):
+  - broken `GET /system/stats` route (handler missing) and its REST test
+  - `internal/entity/models/llm.go` (`EinoChatModel` / `cloudwego/eino`)
+  - chat dialog query rewrite: `full_question` (Python/Go), `full_question_prompt.md`
+  - unused `GetChatModelConfig` / `isImage2TextLLM` in Go model service
+- Removed (batch F):
+  - Go `/system/variables`, `/system/environments`, duplicate `/system/keys` routes
+  - `/authors/:author_id/documents` route and document service handler method
+  - dead user registration/login/profile/password methods from `internal/service/user.go`
+    (kept JWT/API-token/beta-token auth paths)
+- Removed (batch G partial):
+  - legacy Go `/v1/kb/*` routes and `internal/handler/kb.go`
+  - `docs/guides/models/deploy_local_llm.mdx` (Docusaurus-only local LLM guide)
+  - manual GraphRAG dev scripts `rag/graphrag/*/smoke.py`
+- Updated:
+  - `docs/guides/models/llm_api_key_setup.md` to drop link to removed deploy guide
+  - `go.mod` to drop direct `cloudwego/eino` dependency
+- Kept:
+  - `/system/tokens`, status/health/config/log routes
+  - `/files`, `/chat/completions`, MCP, dataset/document/retrieval APIs
+  - `CrossLanguages` / `KeywordExtraction` retrieval helpers
+- Validation:
+  - `gofmt` over touched Go files
+  - `python3 -m py_compile rag/prompts/generator.py test/testcases/restful_api/test_system.py`
+  - `bash -n run_go_tests.sh`
+  - `go build ./internal/router/... ./internal/handler/... ./internal/service/...`
+- Confirmed by user before cleanup: yes (E+F full; G: kb legacy + deploy_local_llm + smoke only)
+
+### 2026-07-01: retain file manager and model chat proxy surfaces
+
+- Kept intentionally (not in future trim scope unless product boundary changes):
+  - `/files` (Go + Python `file_api.py`): upstream personal file-cabinet product flow
+    (upload/folder/move → link-to-datasets), distinct from raw object storage
+  - `POST /chat/completions`: OpenAI-compatible chat inference proxy over tenant
+    model providers (complements `/providers` / `/models` configuration routes)
+- Reason: user confirmed these remain as reference/adaptation candidates for
+  file-ingestion UX and third-party/local LLM invocation, even though core
+  parser/RAG retrieval does not require them at HTTP layer.
+- Confirmed by user: yes

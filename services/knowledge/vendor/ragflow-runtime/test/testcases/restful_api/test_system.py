@@ -95,23 +95,6 @@ def test_system_tokens_auth_and_crud(rest_client, rest_client_noauth):
 
 
 @pytest.mark.p2
-def test_system_stats_auth_and_shape(rest_client, rest_client_noauth):
-    unauth_res = rest_client_noauth.get("/system/stats")
-    assert unauth_res.status_code == 401
-    unauth_payload = unauth_res.json()
-    assert unauth_payload["code"] == 401, unauth_payload
-
-    res = rest_client.get("/system/stats")
-    assert res.status_code == 200
-    payload = res.json()
-    assert payload["code"] == 0, payload
-    data = payload["data"]
-    for key in ("pv", "uv", "speed", "tokens", "round", "thumb_up"):
-        assert key in data, payload
-        assert isinstance(data[key], list), payload
-
-
-@pytest.mark.p2
 def test_system_log_config_routes_auth_and_validation(rest_client, rest_client_noauth):
     unauth = rest_client_noauth.get("/system/config/log")
     assert unauth.status_code == 401

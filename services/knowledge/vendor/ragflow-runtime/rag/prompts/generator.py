@@ -171,7 +171,6 @@ CITATION_PLUS_TEMPLATE = load_prompt("citation_plus")
 CONTENT_TAGGING_PROMPT_TEMPLATE = load_prompt("content_tagging_prompt")
 CROSS_LANGUAGES_SYS_PROMPT_TEMPLATE = load_prompt("cross_languages_sys_prompt")
 CROSS_LANGUAGES_USER_PROMPT_TEMPLATE = load_prompt("cross_languages_user_prompt")
-FULL_QUESTION_PROMPT_TEMPLATE = load_prompt("full_question_prompt")
 KEYWORD_PROMPT_TEMPLATE = load_prompt("keyword_prompt")
 QUESTION_PROMPT_TEMPLATE = load_prompt("question_prompt")
 VISION_LLM_DESCRIBE_PROMPT = load_prompt("vision_llm_describe_prompt")
@@ -224,42 +223,6 @@ async def question_proposal(chat_mdl, content, topn=3):
     if kwd.find("**ERROR**") >= 0:
         return ""
     return kwd
-
-
-async def full_question(tenant_id=None, llm_id=None, messages=[], language=None, chat_mdl=None):
-    from common.constants import LLMType
-    from api.db.services.llm_service import LLMBundle
-    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
-
-    if not chat_mdl:
-        model_types = get_model_type_by_name(tenant_id, llm_id)
-        if "image2text" in model_types:
-            chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, llm_id)
-        else:
-            chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, llm_id)
-        chat_mdl = LLMBundle(tenant_id, chat_model_config)
-    conv = []
-    for m in messages:
-        if m["role"] not in ["user", "assistant"]:
-            continue
-        conv.append("{}: {}".format(m["role"].upper(), m["content"]))
-    conversation = "\n".join(conv)
-    today = datetime.date.today().isoformat()
-    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
-    tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
-
-    template = PROMPT_JINJA_ENV.from_string(FULL_QUESTION_PROMPT_TEMPLATE)
-    rendered_prompt = template.render(
-        today=today,
-        yesterday=yesterday,
-        tomorrow=tomorrow,
-        conversation=conversation,
-        language=language,
-    )
-
-    ans = await chat_mdl.async_chat(rendered_prompt, [{"role": "user", "content": "Output: "}])
-    ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-    return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
 
 async def cross_languages(tenant_id, llm_id, query, languages=[]):

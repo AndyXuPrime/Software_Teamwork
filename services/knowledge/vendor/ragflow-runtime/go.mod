@@ -15,7 +15,6 @@ require (
 	github.com/aws/smithy-go v1.24.2
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/cloudwego/eino v0.9.9
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/elastic/go-elasticsearch/v8 v8.19.1
 	github.com/eric642/e2b-go-sdk v0.1.3

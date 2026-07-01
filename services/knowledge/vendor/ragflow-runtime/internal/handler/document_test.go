@@ -136,9 +136,6 @@ func (f *fakeDocumentService) GetThumbnail(docID string) (*service.ThumbnailResp
 func (f *fakeDocumentService) GetDocumentImage(imageID string) ([]byte, error) {
 	return nil, nil
 }
-func (f *fakeDocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*service.DocumentResponse, int64, error) {
-	return nil, 0, nil
-}
 func (f *fakeDocumentService) GetMetadataSummary(kbID string, docIDs []string) (map[string]interface{}, error) {
 	f.metadataKBID = kbID
 	f.metadataDocIDs = docIDs
