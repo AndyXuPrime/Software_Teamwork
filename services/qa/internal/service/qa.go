@@ -15,7 +15,6 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/platform/contextutil"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/service/agent"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/service/tools"
-	"github.com/google/uuid"
 )
 
 type Code string
@@ -464,15 +463,19 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 			if startNo <= 0 {
 				startNo = 1
 			}
-			extracted, totalItems := extractCitationsFromToolResult(observation.Result, startNo)
+			extracted := extractCitationsFromToolResult(observation.Result, startNo)
 			for _, citation := range extracted {
-				emit("citation.delta", citation)
-				if citMap, ok := citation["citation"].(map[string]any); ok {
-					citations = append(citations, citationFromMap(citMap))
-				}
+				citation.MessageID = assistantMessage.ID
+				citation.ResponseRunID = run.ID
+				citation = NormalizeCitation(citation)
+				citations = append(citations, citation)
 			}
-			if totalItems > 0 {
-				contextutil.AddCitationNo(runCtx, totalItems)
+			citations = revalidateCitationSources(ctx, userID, s.sourceChecker, citations)
+			for _, citation := range citations[len(citations)-len(extracted):] {
+				emit("citation.delta", map[string]any{"citation": citation})
+			}
+			if len(extracted) > 0 {
+				contextutil.AddCitationNo(runCtx, len(extracted))
 			}
 		}
 	}
@@ -575,13 +578,13 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	}
 	assistantMessage.Content = result.Final.Content
 	assistantMessage.Status = "completed"
-	finalCitations := citationsFromAgentMessages(assistantMessage.ID, run.ID, result.Messages)
+	finalCitations := citations
+	if len(finalCitations) == 0 {
+		finalCitations = citationsFromAgentMessages(assistantMessage.ID, run.ID, result.Messages)
+	}
 	finalCitations = revalidateCitationSources(ctx, userID, s.sourceChecker, finalCitations)
 	assistantMessage.Citations = finalCitations
 	emit("answer.delta", map[string]any{"messageId": assistantMessage.ID, "text": assistantMessage.Content, "index": 0})
-	for _, citation := range finalCitations {
-		emit("citation.delta", map[string]any{"citation": citation})
-	}
 	emit("answer.completed", map[string]any{
 		"responseRunId": run.ID,
 		"messageId":     assistantMessage.ID,
@@ -843,92 +846,23 @@ func normalizeMessageListOptions(options MessageListOptions) (MessageListOptions
 	return options, nil
 }
 
-func extractCitationsFromToolResult(result string, startCitationNo int) ([]map[string]any, int) {
-	var data map[string]any
-	if err := json.Unmarshal([]byte(result), &data); err != nil {
-		return nil, 0
+func extractCitationsFromToolResult(result string, startCitationNo int) []Citation {
+	var payload any
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		return nil
 	}
-	results, ok := data["results"].([]any)
-	if !ok {
-		return nil, 0
-	}
-	citations := make([]map[string]any, 0, len(results))
+	records := collectCitationRecords(payload)
+	citations := make([]Citation, 0, len(records))
 	citationNo := startCitationNo
-	for _, item := range results {
-		resultMap, ok := item.(map[string]any)
+	for _, record := range records {
+		citation, ok := citationFromRecord(record)
 		if !ok {
 			continue
 		}
-		citation := map[string]any{
-			"citation": map[string]any{
-				"id":          uuid.NewString(),
-				"citationNo":  citationNo,
-				"kbId":        resultMap["knowledge_base_id"],
-				"docId":       resultMap["document_id"],
-				"docName":     resultMap["document_name"],
-				"chunkId":     resultMap["chunk_id"],
-				"text":        resultMap["context"],
-				"context":     resultMap["context"],
-				"score":       resultMap["score"],
-				"rerankScore": resultMap["rerank_score"],
-				"sectionPath": resultMap["section_path"],
-				"pageNumber":  resultMap["page_number"],
-				"chunkType":   resultMap["chunk_type"],
-			},
-		}
+		citation.ID = newUUID()
+		citation.CitationNo = citationNo
 		citations = append(citations, citation)
 		citationNo++
 	}
-	return citations, len(citations)
-}
-
-func citationFromMap(m map[string]any) Citation {
-	var score, rerankScore *float64
-	var pageNumber *int
-	if s, ok := m["score"].(float64); ok {
-		score = &s
-	}
-	if s, ok := m["rerankScore"].(float64); ok {
-		rerankScore = &s
-	}
-	if p, ok := m["pageNumber"].(float64); ok {
-		pn := int(p)
-		pageNumber = &pn
-	}
-	id, _ := m["id"].(string)
-	citationNo := 0
-	switch cn := m["citationNo"].(type) {
-	case float64:
-		citationNo = int(cn)
-	case int:
-		citationNo = cn
-	}
-	kbID, _ := m["kbId"].(string)
-	docID, _ := m["docId"].(string)
-	chunkID, _ := m["chunkId"].(string)
-	docName, _ := m["docName"].(string)
-	sectionPath, _ := m["sectionPath"].(string)
-	text, _ := m["text"].(string)
-	context, _ := m["context"].(string)
-	chunkType, _ := m["chunkType"].(string)
-	metadata, _ := m["metadata"].(map[string]any)
-	if metadata == nil {
-		metadata = map[string]any{}
-	}
-	return Citation{
-		ID:              id,
-		CitationNo:      citationNo,
-		KnowledgeBaseID: kbID,
-		DocumentID:      docID,
-		ChunkID:         chunkID,
-		DocumentName:    docName,
-		SectionPath:     sectionPath,
-		Text:            text,
-		Context:         context,
-		PageNumber:      pageNumber,
-		Score:           score,
-		RerankScore:     rerankScore,
-		ChunkType:       chunkType,
-		Metadata:        metadata,
-	}
+	return citations
 }

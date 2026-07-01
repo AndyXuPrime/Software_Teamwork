@@ -201,6 +201,8 @@ func (toolProgressRunner) RunWithToolResultCallback(ctx context.Context, input [
 
 type citationToolRunner struct{}
 
+const citationToolResultContent = `{"data":{"results":[{"documentId":"doc-1","documentName":"Boiler Manual","knowledgeBaseId":"kb-1","chunkId":"chunk-7","sectionPath":"3.1","quoteText":"inspect the valve before startup","contentPreview":"inspect the valve before startup","context":"Operators inspect the valve before startup.","content":"FULL RAW DOCUMENT BODY MUST NOT LEAK","fullText":"FULL RAW DOCUMENT BODY MUST NOT LEAK EITHER","pageNumber":12,"score":0.91,"rerankScore":0.88,"chunkType":"paragraph","metadata":{"pageLabel":"12","objectKey":"secret","internalUrl":"http://internal/doc","vector":[0.1,0.2]}}]}}`
+
 func (citationToolRunner) RunWithObserver(_ context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
 	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
 	observer(agent.Event{Type: agent.EventToolStarted, Iteration: 1, ToolCallID: "call-1", ToolName: "search_knowledge"})
@@ -210,15 +212,31 @@ func (citationToolRunner) RunWithObserver(_ context.Context, input []agent.Messa
 		Role:       agent.RoleTool,
 		Name:       "search_knowledge",
 		ToolCallID: "call-1",
-		Content:    `{"data":{"results":[{"documentId":"doc-1","documentName":"Boiler Manual","knowledgeBaseId":"kb-1","chunkId":"chunk-7","sectionPath":"3.1","quoteText":"inspect the valve before startup","contentPreview":"inspect the valve before startup","context":"Operators inspect the valve before startup.","content":"FULL RAW DOCUMENT BODY MUST NOT LEAK","fullText":"FULL RAW DOCUMENT BODY MUST NOT LEAK EITHER","pageNumber":12,"score":0.91,"rerankScore":0.88,"chunkType":"paragraph","metadata":{"pageLabel":"12","objectKey":"secret","internalUrl":"http://internal/doc","vector":[0.1,0.2]}}]}}`,
+		Content:    citationToolResultContent,
 	}
 	final := agent.Message{Role: agent.RoleAssistant, Content: "answer with citation [1]"}
 	messages := append([]agent.Message{}, input...)
 	messages = append(messages, toolResult, final)
 	return agent.Result{Final: final, Messages: messages, Iterations: 1}, nil
 }
-func (r citationToolRunner) RunWithToolResultCallback(ctx context.Context, input []agent.Message, observer agent.Observer, _ agent.ToolObserver) (agent.Result, error) {
-	return r.RunWithObserver(ctx, input, observer)
+func (citationToolRunner) RunWithToolResultCallback(_ context.Context, input []agent.Message, observer agent.Observer, toolObserver agent.ToolObserver) (agent.Result, error) {
+	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
+	observer(agent.Event{Type: agent.EventToolStarted, Iteration: 1, ToolCallID: "call-1", ToolName: "search_knowledge"})
+	if toolObserver != nil {
+		toolObserver(agent.ToolObservation{Type: agent.EventToolCompleted, Iteration: 1, ToolCallID: "call-1", ToolName: "search_knowledge", Result: citationToolResultContent})
+	}
+	observer(agent.Event{Type: agent.EventToolCompleted, Iteration: 1, ToolCallID: "call-1", ToolName: "search_knowledge"})
+	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1, Usage: agent.TokenUsage{PromptTokens: 8, CompletionTokens: 6, TotalTokens: 14}})
+	toolResult := agent.Message{
+		Role:       agent.RoleTool,
+		Name:       "search_knowledge",
+		ToolCallID: "call-1",
+		Content:    citationToolResultContent,
+	}
+	final := agent.Message{Role: agent.RoleAssistant, Content: "answer with citation [1]"}
+	messages := append([]agent.Message{}, input...)
+	messages = append(messages, toolResult, final)
+	return agent.Result{Final: final, Messages: messages, Iterations: 1}, nil
 }
 
 func (r *fakeAgentRunner) RunWithObserver(ctx context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
@@ -777,14 +795,18 @@ func TestAskPersistsCitationSnapshotsFromKnowledgeToolResults(t *testing.T) {
 			t.Fatalf("citation metadata leaked %q: %#v", forbidden, citation.Metadata)
 		}
 	}
-	citationSeq, completedSeq := 0, 0
+	citationSeq, citationCount, completedSeq := 0, 0, 0
 	for _, event := range repository.savedEvents {
 		if event.EventType == "citation.delta" {
+			citationCount++
 			citationSeq = event.EventSeq
 		}
 		if event.EventType == "answer.completed" {
 			completedSeq = event.EventSeq
 		}
+	}
+	if citationCount != 1 {
+		t.Fatalf("citation.delta event count=%d events=%+v", citationCount, repository.savedEvents)
 	}
 	if citationSeq == 0 || completedSeq == 0 || citationSeq > completedSeq {
 		t.Fatalf("citation event sequence=%d completed=%d events=%+v", citationSeq, completedSeq, repository.savedEvents)
@@ -837,6 +859,22 @@ func TestAskSSEPayloadsDoNotLeakPromptRawToolOrProviderSecrets(t *testing.T) {
 		assertProgressPayloadsDoNotLeakSensitiveData(t, observed)
 		assertStreamPayloadsDoNotLeakSensitiveData(t, repository.savedEvents)
 	})
+}
+
+func TestExtractCitationsFromToolResultSupportsKnowledgeSummaryFields(t *testing.T) {
+	result := `{"results":[{"citation_no":3,"knowledge_base_id":"kb-1","document_id":"doc-1","document_name":"Doc","chunk_id":"chunk-1","preview":"safe preview","context":"safe context","page_number":7,"score":0.5,"rerank_score":0.4,"chunk_type":"paragraph"}]}`
+	citations := extractCitationsFromToolResult(result, 3)
+
+	if len(citations) != 1 {
+		t.Fatalf("citations=%+v", citations)
+	}
+	citation := citations[0]
+	if citation.CitationNo != 3 || citation.KnowledgeBaseID != "kb-1" || citation.DocumentID != "doc-1" || citation.DocumentName != "Doc" {
+		t.Fatalf("unexpected citation=%+v", citation)
+	}
+	if citation.Text != "" || citation.ContentPreview != "safe preview" || citation.Context != "safe context" {
+		t.Fatalf("unexpected citation text fields=%+v", citation)
+	}
 }
 
 func TestNormalizeCitationMarksUnavailableSourceAndSanitizesMetadata(t *testing.T) {

@@ -88,7 +88,7 @@ func collectCitationRecords(value any) []map[string]any {
 func looksLikeCitationRecord(record map[string]any) bool {
 	for _, key := range []string{
 		"documentId", "docId", "externalDocId", "external_doc_id",
-		"documentName", "docName", "chunkId", "externalChunkId",
+		"document_id", "documentName", "docName", "document_name", "chunkId", "chunk_id", "externalChunkId",
 		"contentPreview", "content_preview", "quoteText", "quote_text", "text",
 	} {
 		if _, ok := record[key]; ok {
@@ -100,7 +100,7 @@ func looksLikeCitationRecord(record map[string]any) bool {
 
 func citationFromRecord(record map[string]any) (Citation, bool) {
 	citation := Citation{
-		DocumentID:              firstString(record, "documentId", "docId", "externalDocId", "external_doc_id"),
+		DocumentID:              firstString(record, "documentId", "document_id", "docId", "externalDocId", "external_doc_id"),
 		DocumentName:            firstString(record, "documentName", "docName", "document_name", "doc_name", "title", "filename"),
 		KnowledgeBaseID:         firstString(record, "knowledgeBaseId", "knowledge_base_id", "externalKbId", "external_kb_id", "kbId"),
 		ChunkID:                 firstString(record, "chunkId", "chunk_id", "externalChunkId", "external_chunk_id"),
