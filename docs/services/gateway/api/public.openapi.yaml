@@ -5587,8 +5587,8 @@ components:
           $ref: '#/components/schemas/QAAgentConfig'
         systemPrompt:
           type: string
-          maxLength: 20000
-          description: Global Agent system prompt. Always present with qa:settings:read. Must not appear in ordinary QA responses, SSE, errors, logs, or metrics.
+          x-qa-maxBytes: 20000
+          description: Global Agent system prompt. Always present with qa:settings:read. Must not appear in ordinary QA responses, SSE, errors, logs, or metrics. Enforced at 20000 bytes via database octet_length check, not OpenAPI maxLength.
         isActive:
           type: boolean
         createdAt:
@@ -5652,9 +5652,9 @@ components:
           $ref: '#/components/schemas/QAAgentConfig'
         systemPrompt:
           type: string
-          minLength: 1
-          maxLength: 20000
-          description: Global Agent system prompt. When provided, must be non-empty after trimming. When omitted, the active prompt is inherited. Requires qa:settings:write.
+          x-qa-maxBytes: 20000
+          x-qa-nonEmptyAfterTrim: true
+          description: Global Agent system prompt. When provided, must be non-empty after trimming. When omitted, the active prompt is inherited. Requires qa:settings:write. Enforced at 20000 bytes via database octet_length check.
         activate:
           type: boolean
           default: true
