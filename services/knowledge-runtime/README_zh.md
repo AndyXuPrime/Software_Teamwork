@@ -6,10 +6,10 @@
 
 ## 进程
 
-| 服务 | 端口 | 入口 | 职责 |
+| 进程 | 端口 | 入口 | 职责 |
 | --- | --- | --- | --- |
-| `knowledge-runtime-api` | `127.0.0.1:9380` | `api/ragflow_server.py` | 数据集/文档/检索 HTTP API |
-| `knowledge-runtime-worker` | n/a | `rag/svr/task_executor.py` | deepdoc 解析、分块、嵌入（Redis 队列） |
+| runtime API | `127.0.0.1:9380` | `api/ragflow_server.py` | 数据集/文档/检索 HTTP API |
+| runtime worker | n/a | `rag/svr/task_executor.py` | deepdoc 解析、分块、嵌入（Redis 队列） |
 
 共用 PostgreSQL（`knowledge_system`）、MinIO（`software-teamwork-knowledge`）、Elasticsearch、Redis。
 上游 RAGFlow MCP server/client 产品面不属于本运行时；项目自有 Knowledge MCP 桥接在 `services/knowledge`。

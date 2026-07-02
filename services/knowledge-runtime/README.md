@@ -5,10 +5,10 @@ The Knowledge **contract adapter** lives separately in `services/knowledge/cmd/a
 
 ## Processes (Tier 2 split)
 
-| Service | Port | Entry | Role |
+| Process | Port | Entry | Role |
 | --- | --- | --- | --- |
-| `knowledge-runtime-api` | `127.0.0.1:9380` | `api/ragflow_server.py` | Dataset/document/search HTTP API |
-| `knowledge-runtime-worker` | n/a | `rag/svr/task_executor.py` | deepdoc parse, chunk, embed (Redis queue) |
+| runtime API | `127.0.0.1:9380` | `api/ragflow_server.py` | Dataset/document/search HTTP API |
+| runtime worker | n/a | `rag/svr/task_executor.py` | deepdoc parse, chunk, embed (Redis queue) |
 
 Both share PostgreSQL (`knowledge_system`), MinIO (`software-teamwork-knowledge`), Elasticsearch, and Redis.
 The upstream RAGFlow MCP server/client product surface is intentionally not part

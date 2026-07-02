@@ -137,7 +137,7 @@ RAGFlow runtime 启动慢：
 
 - 先看 `.local/logs/<service>.log`。
 - Knowledge ingestion 到 embedding/index 阶段失败时，先确认 `VENDOR_RUNTIME_URL`
-  指向可访问的 runtime API，并检查 `knowledge-runtime-worker` 是否在处理任务。
+  指向可访问的 runtime API，并检查宿主机 runtime worker 是否在处理任务。
 - Auth、File、Knowledge、QA、Document、AI Gateway 优先查数据库和 migration。
 - Gateway 优先查 Redis、Auth URL 和下游服务端口。
 - File/Knowledge 内部调用 `401` 时，检查 `INTERNAL_SERVICE_TOKEN` 是否一致。
