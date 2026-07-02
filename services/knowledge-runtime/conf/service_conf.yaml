@@ -37,7 +37,7 @@ task_executor:
 user_default_llm:
   default_models:
     embedding_model:
-      name: bge-m3
-      factory: Builtin
-      api_key: local
-      base_url: http://127.0.0.1:6380
+      name: ''
+      factory: ''
+      api_key: ''
+      base_url: ''

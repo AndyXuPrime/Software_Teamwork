@@ -11,7 +11,7 @@
 | runtime API | `127.0.0.1:9380` | `api/ragflow_server.py` | 数据集/文档/检索 HTTP API |
 | runtime worker | n/a | `rag/svr/task_executor.py` | deepdoc 解析、分块、嵌入（Redis 队列） |
 
-共用 PostgreSQL（`knowledge_system`）、MinIO（`software-teamwork-knowledge`）、Elasticsearch、Redis。
+共用 PostgreSQL（`knowledge_system`）、MinIO（`software-teamwork-knowledge`）、受支持的 doc engine（如 Elasticsearch）和 Redis。
 上游 RAGFlow MCP server/client 产品面不属于本运行时；项目自有 Knowledge MCP 桥接在 `services/knowledge`。
 
 ## 已裁剪的产品面
@@ -44,10 +44,14 @@
 | `KNOWLEDGE_RUNTIME_RERANK_MODEL` | rerank model id |
 | `KNOWLEDGE_RUNTIME_RERANK_BASE_URL` | rerank provider base URL |
 
+`deploy/api/run-local.sh` 和 `deploy/worker/run-local.sh` 会在启动前检查 doc
+engine 与 embedding provider。根级 Compose 不启动 Elasticsearch，也不启动本地
+embedding 服务；启用真实 ingestion 前需要先配置宿主机或外部依赖。
+
 ## 本地验证
 
 ```bash
-PYTHONPATH=. uv run --no-project --with pytest --with pytest-asyncio --with filelock --with ruamel-yaml python -m pytest test/routes/test_config_utils.py test/routes/test_route_registry.py test/routes/test_gateway_auth.py -q
+PYTHONPATH=. uv run --no-project --with pytest --with pytest-asyncio --with filelock --with ruamel-yaml python -m pytest test/routes/test_config_utils.py test/routes/test_route_registry.py test/routes/test_gateway_auth.py test/routes/test_runtime_dependency_check.py -q
 ```
 
 ## 许可证

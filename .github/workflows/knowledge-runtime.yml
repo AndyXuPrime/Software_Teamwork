@@ -53,4 +53,5 @@ jobs:
           test/routes/test_config_utils.py
           test/routes/test_route_registry.py
           test/routes/test_gateway_auth.py
+          test/routes/test_runtime_dependency_check.py
           -q

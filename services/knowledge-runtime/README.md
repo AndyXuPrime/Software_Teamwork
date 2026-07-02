@@ -10,7 +10,8 @@ The Knowledge **contract adapter** lives separately in `services/knowledge/cmd/a
 | runtime API | `127.0.0.1:9380` | `api/ragflow_server.py` | Dataset/document/search HTTP API |
 | runtime worker | n/a | `rag/svr/task_executor.py` | deepdoc parse, chunk, embed (Redis queue) |
 
-Both share PostgreSQL (`knowledge_system`), MinIO (`software-teamwork-knowledge`), Elasticsearch, and Redis.
+Both share PostgreSQL (`knowledge_system`), MinIO (`software-teamwork-knowledge`),
+a supported doc engine such as Elasticsearch, and Redis.
 The upstream RAGFlow MCP server/client product surface is intentionally not part
 of this runtime; the project-owned Knowledge MCP bridge lives in
 `services/knowledge`.
@@ -24,7 +25,10 @@ cd services/knowledge-runtime
 uv sync --python 3.13 --frozen
 export PYTHONPATH=.
 set -a && . ../../deploy/.env && set +a
-# Edit conf/service_conf.yaml hosts for localhost (postgres, redis, minio, es)
+# Edit conf/service_conf.yaml hosts for localhost (postgres, redis, minio, es).
+# Start a host/external Elasticsearch for DOC_ENGINE=elasticsearch.
+# Set KNOWLEDGE_RUNTIME_EMBEDDING_FACTORY/MODEL/BASE_URL and
+# KNOWLEDGE_RUNTIME_MODEL_API_KEY before enabling ingestion.
 
 # Terminal 1 — API
 ./deploy/api/run-local.sh
@@ -54,7 +58,8 @@ go run ./cmd/adapter
   `KNOWLEDGE_RUNTIME_EMBEDDING_MODEL`, `KNOWLEDGE_RUNTIME_EMBEDDING_BASE_URL`,
   `KNOWLEDGE_RUNTIME_RERANK_FACTORY`, `KNOWLEDGE_RUNTIME_RERANK_MODEL`, and
   `KNOWLEDGE_RUNTIME_RERANK_BASE_URL` to select external embedding/rerank
-  providers without editing committed config.
+  providers without editing committed config. The startup scripts fail fast if
+  the selected doc engine or embedding provider is not configured.
 
 ## Upstream
 
