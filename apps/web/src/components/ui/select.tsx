@@ -24,6 +24,8 @@ type SelectContextValue = {
   open: boolean
   setOpen: (open: boolean) => void
   labelMap: React.MutableRefObject<Map<string, string>>
+  labelVersion: number
+  registerLabel: (value: string, label: string) => void
   triggerRef: React.RefObject<HTMLButtonElement | null>
   listRef: React.RefObject<HTMLDivElement | null>
   highlightedIndex: number
@@ -54,10 +56,18 @@ function Select({ value: controlledValue, onValueChange, disabled, children }: S
   const [open, setOpen] = React.useState(false)
   const [highlightedIndex, setHighlightedIndex] = React.useState(-1)
   const labelMap = React.useRef<Map<string, string>>(new Map())
+  const [labelVersion, setLabelVersion] = React.useState(0)
   const triggerRef = React.useRef<HTMLButtonElement | null>(null)
   const listRef = React.useRef<HTMLDivElement | null>(null)
   const itemsRef = React.useRef<string[]>([])
   const rootRef = React.useRef<HTMLDivElement | null>(null)
+
+  const registerLabel = React.useCallback((val: string, label: string) => {
+    if (!labelMap.current.has(val) || labelMap.current.get(val) !== label) {
+      labelMap.current.set(val, label)
+      setLabelVersion((v) => v + 1)
+    }
+  }, [])
 
   const value = controlledValue !== undefined ? controlledValue : internalValue
 
@@ -110,6 +120,8 @@ function Select({ value: controlledValue, onValueChange, disabled, children }: S
         open,
         setOpen,
         labelMap,
+        labelVersion,
+        registerLabel,
         triggerRef,
         listRef,
         highlightedIndex,
@@ -186,7 +198,9 @@ function SelectTrigger({ className, children, id, ...props }: SelectTriggerProps
 type SelectValueProps = { placeholder?: string; className?: string }
 
 function SelectValue({ placeholder, className }: SelectValueProps) {
-  const { value, labelMap } = useSelectContext()
+  const { value, labelMap, labelVersion } = useSelectContext()
+  // labelVersion is read to trigger re-render when labels are registered
+  void labelVersion
   const label = value ? (labelMap.current.get(value) ?? value) : undefined
 
   return (
@@ -332,7 +346,7 @@ function SelectItem({
   const {
     value: selectedValue,
     onValueChange,
-    labelMap,
+    registerLabel,
     highlightedIndex,
     itemsRef,
   } = useSelectContext()
@@ -342,8 +356,8 @@ function SelectItem({
   // and <SelectItemText> wrappers for compound expressions)
   React.useEffect(() => {
     const text = extractText(children)
-    if (text) labelMap.current.set(value, text)
-  }, [value, children, labelMap])
+    if (text) registerLabel(value, text)
+  }, [value, children, registerLabel])
 
   // Register / unregister item value
   React.useEffect(() => {
@@ -378,7 +392,7 @@ function SelectItem({
       onClick={() => {
         if (!disabled) {
           if (typeof children === 'string') {
-            labelMap.current.set(value, children)
+            registerLabel(value, children)
           }
           onValueChange(value)
         }
