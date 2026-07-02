@@ -279,23 +279,29 @@ func (s *Server) handleUpdateDocument(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) findDocumentByID(ctx context.Context, userID, documentID string) (map[string]interface{}, error) {
-	datasets, _, err := s.vendor.ListDatasets(ctx, userID, 1, 100)
-	if err != nil {
-		return nil, err
-	}
-	for _, dataset := range datasets {
-		kbID := stringField(dataset, "id")
-		if kbID == "" {
-			continue
+	const pageSize = 100
+	for page := 1; ; page++ {
+		datasets, total, err := s.vendor.ListDatasets(ctx, userID, page, pageSize)
+		if err != nil {
+			return nil, err
 		}
-		doc, err := s.vendor.GetDatasetDocument(ctx, userID, kbID, documentID)
-		if err == nil {
-			return doc, nil
+		for _, dataset := range datasets {
+			kbID := stringField(dataset, "id")
+			if kbID == "" {
+				continue
+			}
+			doc, err := s.vendor.GetDatasetDocument(ctx, userID, kbID, documentID)
+			if err == nil {
+				return doc, nil
+			}
+			if apiErr, ok := err.(*vendorclient.APIError); ok && apiErr.Code == 404 {
+				continue
+			}
+			return nil, err
 		}
-		if apiErr, ok := err.(*vendorclient.APIError); ok && apiErr.Code == 404 {
-			continue
+		if len(datasets) == 0 || int64(page*pageSize) >= total {
+			break
 		}
-		return nil, err
 	}
 	return nil, &vendorclient.APIError{Code: 404, Message: "document not found"}
 }

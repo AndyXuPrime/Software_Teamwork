@@ -6,7 +6,7 @@ flow through the RAGFlow runtime at `VENDOR_RUNTIME_URL` (`services/knowledge-ru
 deepdoc + Elasticsearch + MinIO).
 
 Parser-config admin routes (`/internal/v1/parser-configs`) optionally use legacy
-goose PostgreSQL tables when `DATABASE_URL` is set.
+goose PostgreSQL tables when `DATABASE_URL` or `KNOWLEDGE_DATABASE_URL` is set.
 
 ## Runtime
 
@@ -25,7 +25,7 @@ See `../knowledge-runtime/README.md` for host-run vendor runtime wiring.
 | `VENDOR_RUNTIME_URL` | yes | `http://127.0.0.1:9380` | RAGFlow vendor HTTP base URL. |
 | `VENDOR_RUNTIME_SERVICE_TOKEN` | yes | - | Token forwarded to the runtime as `X-Service-Token`; must match `KNOWLEDGE_RUNTIME_SERVICE_TOKEN`. |
 | `KNOWLEDGE_SERVICE_TOKEN` / `INTERNAL_SERVICE_TOKEN` | yes | - | Shared service token required on `/internal/v1/**` via `X-Service-Token`. |
-| `DATABASE_URL` | no | - | PostgreSQL for parser-config admin; omit to return `502` on those routes. |
+| `DATABASE_URL` / `KNOWLEDGE_DATABASE_URL` | no | - | PostgreSQL for parser-config admin; omit to return `502` on those routes. |
 | `KNOWLEDGE_HTTP_ADDR` | no | `:8083` | HTTP listen address. |
 | `KNOWLEDGE_SERVICE_VERSION` | no | `dev` | Version returned by readiness checks. |
 | `KNOWLEDGE_ENV` | no | `local` | Runtime environment label. |
@@ -62,7 +62,7 @@ user identity and permission headers are trusted.
 - `PATCH /internal/v1/documents/{documentId}`
 - `DELETE /internal/v1/documents/{documentId}`
 - `POST /internal/v1/knowledge-queries`
-- `GET|POST|PATCH|DELETE /internal/v1/parser-configs[/**]` (requires `DATABASE_URL`)
+- `GET|POST|PATCH|DELETE /internal/v1/parser-configs[/**]` (requires `DATABASE_URL` or `KNOWLEDGE_DATABASE_URL`)
 
 Public gateway equivalents are documented in
 `docs/services/gateway/api/public.openapi.yaml`.

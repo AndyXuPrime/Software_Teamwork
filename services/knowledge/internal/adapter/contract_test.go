@@ -3,10 +3,13 @@ package adapter
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -58,7 +61,31 @@ func startFakeVendor(t *testing.T, state *fakeVendorState) *httptest.Server {
 			for _, item := range state.datasets {
 				items = append(items, item)
 			}
-			writeVendorJSON(w, http.StatusOK, map[string]any{"code": 0, "data": items, "total_datasets": len(items)})
+			sort.Slice(items, func(i, j int) bool {
+				left, _ := items[i]["id"].(string)
+				right, _ := items[j]["id"].(string)
+				return left < right
+			})
+			total := len(items)
+			page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+			if page <= 0 {
+				page = 1
+			}
+			pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+			if pageSize <= 0 {
+				pageSize = total
+			}
+			start := (page - 1) * pageSize
+			if start >= total {
+				items = []map[string]any{}
+			} else {
+				end := start + pageSize
+				if end > total {
+					end = total
+				}
+				items = items[start:end]
+			}
+			writeVendorJSON(w, http.StatusOK, map[string]any{"code": 0, "data": items, "total_datasets": total})
 			return
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/datasets":
 			var body map[string]any
@@ -146,7 +173,7 @@ func startFakeVendor(t *testing.T, state *fakeVendorState) *httptest.Server {
 				state.deleteCalls = append(state.deleteCalls, deleteCall{datasetID: kbID, documentID: docID})
 				delete(state.documents, docID)
 			}
-			w.WriteHeader(http.StatusOK)
+			writeVendorJSON(w, http.StatusOK, map[string]any{"code": 0, "data": map[string]any{"deleted": len(body.IDs)}})
 			return
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -533,6 +560,41 @@ func TestAdapterDeleteDocumentUsesDatasetScopedRuntimeRoute(t *testing.T) {
 	}
 	if _, ok := state.documents["doc_fake_1"]; ok {
 		t.Fatal("document should be removed after delete")
+	}
+}
+
+func TestAdapterDeleteDocumentFindsDocumentAfterFirstDatasetPage(t *testing.T) {
+	state := newFakeVendorState()
+	for i := 1; i <= 101; i++ {
+		kbID := fmt.Sprintf("kb_%03d", i)
+		state.datasets[kbID] = map[string]any{"id": kbID, "name": fmt.Sprintf("KB %03d", i)}
+	}
+	state.documents["doc_late_page"] = map[string]any{
+		"id": "doc_late_page", "kb_id": "kb_101", "dataset_id": "kb_101", "name": "late.txt",
+	}
+	vendor := startFakeVendor(t, state)
+	defer vendor.Close()
+
+	server := NewServer(adapterconfig.Config{
+		ServiceVersion:   "test",
+		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodDelete, "/internal/v1/documents/doc_late_page", nil)
+	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-Service-Token", testServiceToken)
+	req.Header.Set("X-User-Permissions", "knowledge:write")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if len(state.deleteCalls) != 1 || state.deleteCalls[0] != (deleteCall{datasetID: "kb_101", documentID: "doc_late_page"}) {
+		t.Fatalf("deleteCalls=%v", state.deleteCalls)
 	}
 }
 

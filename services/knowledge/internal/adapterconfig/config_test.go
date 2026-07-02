@@ -69,6 +69,20 @@ func TestLoadKnowledgeServiceTokenOverridesSharedToken(t *testing.T) {
 	}
 }
 
+func TestLoadKnowledgeDatabaseURLFallback(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("KNOWLEDGE_DATABASE_URL", "postgres://knowledge_app:test@localhost:5432/knowledge_system?sslmode=disable")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DatabaseURL != "postgres://knowledge_app:test@localhost:5432/knowledge_system?sslmode=disable" {
+		t.Fatalf("DatabaseURL=%q", cfg.DatabaseURL)
+	}
+}
+
 func TestLoadAutoStartIngestionDefault(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv("KNOWLEDGE_AUTO_START_INGESTION", "")
