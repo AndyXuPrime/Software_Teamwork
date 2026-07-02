@@ -5586,8 +5586,7 @@ components:
           $ref: '#/components/schemas/QAAgentConfig'
         systemPrompt:
           type: string
-          description: The global Agent system prompt. Only returned to callers with qa:settings:read permission. Must not be returned in ordinary QA responses, SSE, errors, logs, or metrics.
-          maxLength: 20000
+          description: The global Agent system prompt. Only returned to callers with qa:settings:read permission. Must not be returned in ordinary QA responses, SSE, errors, logs, or metrics. The service enforces a 20000-byte limit (octet_length).
         isActive:
           type: boolean
         createdAt:
@@ -5651,9 +5650,7 @@ components:
           $ref: '#/components/schemas/QAAgentConfig'
         systemPrompt:
           type: string
-          description: The global Agent system prompt. Must be non-empty after trimming, up to 20000 bytes. Requires qa:settings:write.
-          minLength: 1
-          maxLength: 20000
+          description: The global Agent system prompt. When provided, must be non-empty after trimming and up to 20000 bytes (octet_length). When omitted, the active config version's prompt is inherited. Requires qa:settings:write.
         activate:
           type: boolean
           default: true
