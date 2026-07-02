@@ -1,5 +1,7 @@
 package httpapi
 
+import "strings"
+
 type routeSpec struct {
 	Method            string
 	Pattern           string
@@ -131,5 +133,5 @@ func activeOperationCount() int {
 }
 
 func (route routeSpec) requiresAdmin() bool {
-	return len(route.AdminPermissions) > 0
+	return strings.HasPrefix(route.Pattern, "/api/v1/admin/") || len(route.AdminPermissions) > 0
 }
