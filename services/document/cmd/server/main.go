@@ -15,6 +15,7 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/platform/aigateway"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/platform/fileclient"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/platform/knowledgeclient"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/platform/mcpserver"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/repository"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/service"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/worker"
@@ -68,6 +69,13 @@ func main() {
 	adminService := service.NewAdminService(repo, profiles)
 	reportFileService := service.NewReportFileService(repo, files, taskClient, service.NewSimpleDOCXGenerator())
 	reportGenerationService := service.NewReportGenerationService(repo, chatClient, knowledgeRetriever)
+	documentMCPTools := service.NewMCPToolService(service.MCPToolServiceConfig{
+		DocumentService: documents,
+		JobService:      jobService,
+		ReportService:   reportService,
+		ReportFileSvc:   reportFileService,
+		Recorder:        repo,
+	})
 	w := worker.New(cfg.RedisAddr, logger, repo, reportFileService, reportGenerationService)
 	go func() {
 		if err := w.Start(); err != nil {
@@ -84,6 +92,13 @@ func main() {
 		JobSvc:          jobService,
 		AdminService:    adminService,
 		ReportFileSvc:   reportFileService,
+		MCPHandler: mcpserver.NewHandler(mcpserver.Config{
+			ToolService:  documentMCPTools,
+			ServiceToken: cfg.MCPServiceToken,
+			TokenHeader:  cfg.MCPTokenHeader,
+			Logger:       logger,
+		}),
+		MCPPath: cfg.MCPPath,
 	})
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
