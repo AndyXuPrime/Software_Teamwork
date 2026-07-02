@@ -54,12 +54,12 @@ func TestQAMCPRAGSmoke(t *testing.T) {
 }
 
 type qaSmokeConfig struct {
-	gatewayBaseURL    string
-	qaBaseURL         string
-	knowledgeBaseURL  string
-	aiGatewayBaseURL  string
-	username          string
-	password          string
+	gatewayBaseURL   string
+	qaBaseURL        string
+	knowledgeBaseURL string
+	aiGatewayBaseURL string
+	username         string
+	password         string
 }
 
 func loadQASmokeConfig(t *testing.T) qaSmokeConfig {
@@ -67,8 +67,7 @@ func loadQASmokeConfig(t *testing.T) qaSmokeConfig {
 	required := map[string]string{
 		"GATEWAY_BASE_URL":                               os.Getenv("GATEWAY_BASE_URL"),
 		"QA_SERVICE_BASE_URL":                            os.Getenv("QA_SERVICE_BASE_URL"),
-		"AI_GATEWAY_BASE_URL":                            firstNonEmptyEnv("AI_GATEWAY_BASE_URL"),
-			"KNOWLEDGE_SERVICE_BASE_URL":                     os.Getenv("KNOWLEDGE_SERVICE_BASE_URL"),
+		"KNOWLEDGE_SERVICE_BASE_URL":                     os.Getenv("KNOWLEDGE_SERVICE_BASE_URL"),
 		"GATEWAY_SMOKE_USERNAME or LOCAL_ADMIN_USERNAME": firstNonEmptyEnv("GATEWAY_SMOKE_USERNAME", "LOCAL_ADMIN_USERNAME"),
 		"GATEWAY_SMOKE_PASSWORD or LOCAL_ADMIN_PASSWORD": firstNonEmptyEnv("GATEWAY_SMOKE_PASSWORD", "LOCAL_ADMIN_PASSWORD"),
 	}
@@ -86,9 +85,9 @@ func loadQASmokeConfig(t *testing.T) qaSmokeConfig {
 		gatewayBaseURL:   trimBaseURL(t, "GATEWAY_BASE_URL", required["GATEWAY_BASE_URL"]),
 		qaBaseURL:        trimBaseURL(t, "QA_SERVICE_BASE_URL", required["QA_SERVICE_BASE_URL"]),
 		knowledgeBaseURL: trimBaseURL(t, "KNOWLEDGE_SERVICE_BASE_URL", required["KNOWLEDGE_SERVICE_BASE_URL"]),
-		aiGatewayBaseURL: trimBaseURL(t, "AI_GATEWAY_BASE_URL", required["AI_GATEWAY_BASE_URL"]),
 		username:         strings.TrimSpace(required["GATEWAY_SMOKE_USERNAME or LOCAL_ADMIN_USERNAME"]),
 		password:         strings.TrimSpace(required["GATEWAY_SMOKE_PASSWORD or LOCAL_ADMIN_PASSWORD"]),
+		aiGatewayBaseURL: strings.TrimSpace(os.Getenv("AI_GATEWAY_BASE_URL")),
 	}
 }
 
