@@ -12,7 +12,7 @@ class Settings:
     service_token: str = ""
     backend: str = "ppstructurev3"
     profile: str = "accurate"
-    max_document_bytes: int = 8 * 1024 * 1024
+    max_document_bytes: int = 20 * 1024 * 1024
     max_concurrency: int = 1
     queue_timeout_seconds: float = 0.0
     parse_timeout_seconds: float = 120.0

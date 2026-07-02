@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	TransportDisabled       = "disabled"
-	TransportStdio          = "stdio"
-	TransportStreamableHTTP = "streamable_http"
+	TransportDisabled         = "disabled"
+	TransportStdio            = "stdio"
+	TransportStreamableHTTP   = "streamable_http"
+	maxSessionAttachmentBytes = int64(20 << 20)
 
 	defaultAIGatewayURL         = "http://localhost:8086/internal/v1/chat/completions"
 	defaultAIGatewayTokenHeader = "X-Service-Token"
@@ -52,13 +53,21 @@ type Config struct {
 	MCPServerTokenHeader string
 	MCPToolTimeout       time.Duration
 
-	SystemPrompt       string
-	MaxIterations      int
-	MaxToolResultBytes int
-	WorkDir            string
-	MaxFileBytes       int
-	EnableCommandTool  bool
-	CommandTimeout     time.Duration
+	SystemPrompt             string
+	MaxIterations            int
+	MaxToolResultBytes       int
+	WorkDir                  string
+	MaxFileBytes             int
+	EnableCommandTool        bool
+	CommandTimeout           time.Duration
+	AttachmentTTL            time.Duration
+	AttachmentMaxBytes       int64
+	AttachmentMaxPerSession  int
+	AttachmentProcessTimeout time.Duration
+	FileServiceURL           string
+	ParserServiceBaseURL     string
+	ParserServiceToken       string
+	ParserServiceTimeout     time.Duration
 }
 
 func Load() (Config, error) {
@@ -131,6 +140,27 @@ func Load() (Config, error) {
 	if cfg.EnableCommandTool, err = boolEnv("AGENT_ENABLE_COMMAND_TOOL", false); err != nil {
 		return Config{}, err
 	}
+	if cfg.AttachmentTTL, err = hoursDurationEnv("QA_SESSION_ATTACHMENT_TTL_HOURS", 24*time.Hour); err != nil {
+		return Config{}, err
+	}
+	if cfg.AttachmentMaxBytes, err = positiveInt64Env("QA_SESSION_ATTACHMENT_MAX_BYTES", 20<<20); err != nil {
+		return Config{}, err
+	}
+	if cfg.AttachmentMaxPerSession, err = positiveIntEnv("QA_SESSION_ATTACHMENT_MAX_PER_SESSION", 10); err != nil {
+		return Config{}, err
+	}
+	if cfg.AttachmentProcessTimeout, err = secondsDurationEnv("QA_SESSION_ATTACHMENT_PROCESS_TIMEOUT_SECONDS", 60*time.Second); err != nil {
+		return Config{}, err
+	}
+	cfg.FileServiceURL = envOr("FILE_SERVICE_BASE_URL", "http://localhost:8082")
+	cfg.ParserServiceBaseURL = envOr("PARSER_SERVICE_BASE_URL", "http://localhost:8087")
+	cfg.ParserServiceToken = strings.TrimSpace(os.Getenv("PARSER_SERVICE_TOKEN"))
+	if cfg.ParserServiceToken == "" {
+		cfg.ParserServiceToken = serviceToken
+	}
+	if cfg.ParserServiceTimeout, err = durationEnv("PARSER_SERVICE_TIMEOUT", cfg.AttachmentProcessTimeout); err != nil {
+		return Config{}, err
+	}
 	if cfg.SettingsOpen, err = boolEnv("QA_SETTINGS_OPEN", false); err != nil {
 		return Config{}, err
 	}
@@ -150,7 +180,16 @@ func Load() (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if c.AttachmentMaxBytes > maxSessionAttachmentBytes {
+		return fmt.Errorf("QA_SESSION_ATTACHMENT_MAX_BYTES must not exceed %d", maxSessionAttachmentBytes)
+	}
 	if err := validateHTTPURL("KNOWLEDGE_SERVICE_URL", c.KnowledgeURL); err != nil {
+		return err
+	}
+	if err := validateHTTPURL("FILE_SERVICE_BASE_URL", c.FileServiceURL); err != nil {
+		return err
+	}
+	if err := validateHTTPURL("PARSER_SERVICE_BASE_URL", c.ParserServiceBaseURL); err != nil {
 		return err
 	}
 	if err := validateHTTPURL("AI_GATEWAY_URL", c.AIGatewayURL); err != nil {
@@ -294,4 +333,28 @@ func splitCSV(value string) []string {
 		}
 	}
 	return result
+}
+
+func hoursDurationEnv(name string, fallback time.Duration) (time.Duration, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer hour count", name)
+	}
+	return time.Duration(parsed) * time.Hour, nil
+}
+
+func secondsDurationEnv(name string, fallback time.Duration) (time.Duration, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer second count", name)
+	}
+	return time.Duration(parsed) * time.Second, nil
 }

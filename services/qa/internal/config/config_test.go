@@ -1,6 +1,8 @@
 package config
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -35,12 +37,37 @@ func TestLoadDefaultConfiguration(t *testing.T) {
 	if cfg.HTTPAddr != ":8084" || cfg.ShutdownTimeout != 10*time.Second || cfg.MaxRequestBytes != 1<<20 {
 		t.Fatalf("unexpected HTTP defaults: %+v", cfg)
 	}
+	if cfg.AttachmentMaxBytes != maxSessionAttachmentBytes {
+		t.Fatalf("attachment max bytes = %d, want %d", cfg.AttachmentMaxBytes, maxSessionAttachmentBytes)
+	}
 	if cfg.AIGatewayURL != defaultAIGatewayURL ||
 		cfg.AIGatewayToken != "test-service-token" ||
 		cfg.AIGatewayTokenHeader != defaultAIGatewayTokenHeader ||
 		cfg.ModelID != "deepseek-chat" ||
 		cfg.AIGatewayStream {
 		t.Fatalf("unexpected AI Gateway defaults: %+v", cfg)
+	}
+}
+
+func TestLoadRejectsAttachmentLimitAbovePublicContract(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("QA_SESSION_ATTACHMENT_MAX_BYTES", strconv.FormatInt(maxSessionAttachmentBytes+1, 10))
+
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "QA_SESSION_ATTACHMENT_MAX_BYTES must not exceed 20971520") {
+		t.Fatalf("Load() error = %v, want public-contract limit error", err)
+	}
+}
+
+func TestLoadAcceptsSmallerAttachmentLimit(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("QA_SESSION_ATTACHMENT_MAX_BYTES", "1048576")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AttachmentMaxBytes != 1<<20 {
+		t.Fatalf("attachment max bytes = %d, want %d", cfg.AttachmentMaxBytes, 1<<20)
 	}
 }
 

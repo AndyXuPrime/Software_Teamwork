@@ -27,7 +27,9 @@ const (
 	CodeConflict          Code = "conflict"
 	CodeDependency        Code = "dependency_error"
 	CodeInternal          Code = "internal_error"
+	CodeUnsupportedMedia  Code = "unsupported_media_type"
 	CodeUnsupportedIntent Code = "unsupported_intent"
+	CodeTooLarge         Code = "too_large"
 )
 
 type AppError struct {
@@ -83,6 +85,7 @@ type Message struct {
 	Thinking       []ReasoningStep `json:"thinking,omitempty"`
 	Citations      []Citation      `json:"citations,omitempty"`
 	CitationCount  int             `json:"-"`
+	AttachmentIDs  []string        `json:"attachmentIds,omitempty"`
 	CreatedAt      time.Time       `json:"createdAt"`
 	CompletedAt    *time.Time      `json:"completedAt,omitempty"`
 }
@@ -175,6 +178,7 @@ type AskInput struct {
 	Mode             string           `json:"mode,omitempty"`
 	KnowledgeBaseIDs []string         `json:"knowledgeBaseIds,omitempty"`
 	Retrieval        RetrievalOptions `json:"retrieval,omitempty"`
+	AttachmentIDs    []string         `json:"attachmentIds,omitempty"`
 }
 
 type AskResult struct {
@@ -246,13 +250,14 @@ type Repository interface {
 	UpdateConversation(context.Context, string, Conversation) (Conversation, error)
 	DeleteConversation(context.Context, string, string) error
 	ListMessages(context.Context, string, string, MessageListOptions) (Page[Message], error)
-	AppendMessages(context.Context, string, string, ResponseRunStart, ...Message) (ResponseRun, error)
+	AppendMessages(context.Context, string, string, ResponseRunStart, []string, ...Message) (ResponseRun, error)
 	UpdateMessage(context.Context, string, Message) error
 	FinalizeResponseRun(context.Context, string, ResponseRunFinalization) (ResponseRun, error)
 	SaveReasoningSteps(context.Context, string, string, []ReasoningStep) error
 	SaveStreamEvents(context.Context, string, string, []StreamEvent) error
 	SaveCitations(context.Context, string, string, []Citation) error
 	SaveModelInvocation(context.Context, string, ModelInvocation) (string, error)
+	ValidateReadyAttachments(context.Context, string, string, []string) ([]SessionAttachment, error)
 	GetResponseRun(context.Context, string, string) (ResponseRun, error)
 }
 
@@ -404,6 +409,13 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	userMessage := Message{ID: newID("msg"), ConversationID: conversationID, Role: agent.RoleUser, Content: strings.TrimSpace(input.Message), Intent: intent, Status: "completed", CreatedAt: now}
 	assistantMessage := Message{ID: newID("msg"), ConversationID: conversationID, Role: agent.RoleAssistant, Intent: intent, Status: "streaming", CreatedAt: now}
 
+	attachmentIDs := normalizeIDList(input.AttachmentIDs)
+	if len(attachmentIDs) > 0 {
+		if _, err := s.repository.ValidateReadyAttachments(ctx, userID, conversationID, attachmentIDs); err != nil {
+			return AskResult{}, err
+		}
+	}
+
 	if runtime.DefaultKnowledgeBaseIDs != nil {
 		if len(input.KnowledgeBaseIDs) > 0 {
 			allowed := make(map[string]struct{}, len(runtime.DefaultKnowledgeBaseIDs))
@@ -423,7 +435,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 		QAConfigVersionID:  runtime.QAConfigVersionID,
 		LLMConfigVersionID: runtime.LLMConfigVersionID,
 		MaxIterations:      runtime.MaxIterations,
-	}, userMessage, assistantMessage)
+	}, attachmentIDs, userMessage, assistantMessage)
 	if err != nil {
 		return AskResult{}, err
 	}
@@ -432,6 +444,8 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	baseCtx = contextutil.WithDefaultKnowledgeBaseIDs(baseCtx, runtime.DefaultKnowledgeBaseIDs)
 	baseCtx = contextutil.WithRetrievalSettings(baseCtx, retrievalSettingsForAsk(runtime.RetrievalSettings, input.Retrieval))
 	baseCtx = contextutil.WithCitationNo(baseCtx, 1)
+	baseCtx = contextutil.WithSessionID(baseCtx, conversationID)
+	baseCtx = contextutil.WithMessageAttachmentIDs(baseCtx, attachmentIDs)
 	cancelBase := func() {}
 	if runtime.OverallTimeout > 0 {
 		var cancel context.CancelFunc
@@ -496,7 +510,10 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 		if observation.Type != agent.EventToolCompleted {
 			return
 		}
-		if observation.ToolName == tools.ToolSearchKnowledge && observation.Result != "" {
+		if observation.Result == "" {
+			return
+		}
+		if observation.ToolName == tools.ToolSearchKnowledge || observation.ToolName == tools.ToolSearchSessionAttachments {
 			startNo := contextutil.CitationNoFromContext(runCtx)
 			if startNo <= 0 {
 				startNo = 1
@@ -888,7 +905,7 @@ func toolProgressPayload(summary string, event agent.Event, observation agent.To
 
 func toolSourceName(toolName string) string {
 	switch toolName {
-	case tools.ToolSearchKnowledge, tools.ToolGetCitationSource:
+	case tools.ToolSearchKnowledge, tools.ToolGetCitationSource, tools.ToolSearchSessionAttachments:
 		return "qa_builtin"
 	}
 	if before, _, ok := strings.Cut(toolName, "__"); ok {
@@ -1006,4 +1023,21 @@ func extractCitationsFromToolResult(result string, startCitationNo int) []Citati
 		citationNo++
 	}
 	return citations
+}
+
+func normalizeIDList(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }

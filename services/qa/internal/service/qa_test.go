@@ -61,7 +61,7 @@ func (r *fakeRepository) ListMessages(_ context.Context, _ string, _ string, opt
 	r.messageOptions = options
 	return Page[Message]{Items: append([]Message(nil), r.messages...), Page: options.Page, PageSize: options.PageSize, Total: len(r.messages)}, nil
 }
-func (r *fakeRepository) AppendMessages(_ context.Context, _, sessionID string, start ResponseRunStart, values ...Message) (ResponseRun, error) {
+func (r *fakeRepository) AppendMessages(_ context.Context, _, sessionID string, start ResponseRunStart, _ []string, values ...Message) (ResponseRun, error) {
 	r.messages = append(r.messages, values...)
 	maxIterations := start.MaxIterations
 	if maxIterations == 0 {
@@ -130,6 +130,9 @@ func (r *fakeRepository) SaveModelInvocation(ctx context.Context, _ string, invo
 }
 func (r *fakeRepository) SaveCitations(_ context.Context, _, _ string, citations []Citation) error {
 	return nil
+}
+func (r *fakeRepository) ValidateReadyAttachments(context.Context, string, string, []string) ([]SessionAttachment, error) {
+	return nil, nil
 }
 
 type fakeAgentRunner struct {
@@ -1195,6 +1198,52 @@ func assertStreamPayloadsDoNotLeakSensitiveData(t *testing.T, events []StreamEve
 	t.Helper()
 	for _, event := range events {
 		assertPayloadDoesNotLeakSensitiveData(t, event.EventType, event.Payload)
+	}
+}
+
+func TestListMessagesReturnsAttachmentIDs(t *testing.T) {
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	repo := &fakeRepository{
+		conversation: Conversation{ID: "sess-1", OwnerUserID: "user-1", Status: "active", CreatedAt: now, UpdatedAt: now},
+		messages: []Message{
+			{ID: "msg-1", ConversationID: "sess-1", Role: "user", Content: "question", Status: "completed", CreatedAt: now, AttachmentIDs: []string{"att-1", "att-2"}},
+		},
+	}
+	qa, err := NewQAService(repo, fakeRuntimeProvider{runner: &fakeAgentRunner{}, prompt: "system"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := qa.ListMessages(context.Background(), "user-1", "sess-1", MessageListOptions{Page: 1, PageSize: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("got %d items, want 1", len(page.Items))
+	}
+	msg := page.Items[0]
+	if len(msg.AttachmentIDs) != 2 || msg.AttachmentIDs[0] != "att-1" || msg.AttachmentIDs[1] != "att-2" {
+		t.Fatalf("AttachmentIDs = %v, want [att-1 att-2]", msg.AttachmentIDs)
+	}
+}
+
+func TestMessageAttachmentIDsOmittedWhenEmpty(t *testing.T) {
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	repo := &fakeRepository{
+		conversation: Conversation{ID: "sess-1", OwnerUserID: "user-1", Status: "active", CreatedAt: now, UpdatedAt: now},
+		messages: []Message{
+			{ID: "msg-1", ConversationID: "sess-1", Role: "user", Content: "no attachments", Status: "completed", CreatedAt: now},
+		},
+	}
+	qa, err := NewQAService(repo, fakeRuntimeProvider{runner: &fakeAgentRunner{}, prompt: "system"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := qa.ListMessages(context.Background(), "user-1", "sess-1", MessageListOptions{Page: 1, PageSize: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items[0].AttachmentIDs) != 0 {
+		t.Fatalf("AttachmentIDs = %v, want empty", page.Items[0].AttachmentIDs)
 	}
 }
 

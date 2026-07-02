@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -162,7 +163,21 @@ func scanCitation(row rowScanner) (service.Citation, error) {
 	if item.Metadata == nil {
 		item.Metadata = map[string]any{}
 	}
+	item.AttachmentID = citationAttachmentIDFromMetadata(item.Metadata)
+	delete(item.Metadata, "attachmentId")
+	delete(item.Metadata, "attachment_id")
 	return service.NormalizeCitation(item), nil
+}
+
+func citationAttachmentIDFromMetadata(metadata map[string]any) string {
+	for _, key := range []string{"attachmentId", "attachment_id"} {
+		if value, ok := metadata[key].(string); ok {
+			if attachmentID := strings.TrimSpace(value); attachmentID != "" {
+				return attachmentID
+			}
+		}
+	}
+	return ""
 }
 
 func (r *Postgres) ListToolCalls(ctx context.Context, userID, runID string) ([]service.AgentToolCall, error) {

@@ -53,6 +53,7 @@ type Citation struct {
 	Score                   *float64        `json:"score,omitempty"`
 	RerankScore             *float64        `json:"rerankScore,omitempty"`
 	ChunkType               string          `json:"chunkType,omitempty"`
+	AttachmentID            string          `json:"attachmentId,omitempty"`
 	IsSourceAvailable       bool            `json:"isSourceAvailable"`
 	SourceUnavailableReason string          `json:"-"`
 	Metadata                map[string]any  `json:"metadata"`
@@ -88,12 +89,14 @@ func NormalizeCitation(item Citation) Citation {
 	if item.Content == "" {
 		item.Content = item.ContentPreview
 	}
-	if item.IsSourceAvailable && item.DocumentID == "" {
+	if item.IsSourceAvailable && item.DocumentID == "" && item.AttachmentID == "" {
 		item.IsSourceAvailable = false
 	}
 	item.Source = &CitationSource{Available: item.IsSourceAvailable}
 	if item.IsSourceAvailable {
-		item.Source.DownloadEndpoint = "/api/v1/documents/" + item.DocumentID + "/content"
+		if item.DocumentID != "" {
+			item.Source.DownloadEndpoint = "/api/v1/documents/" + item.DocumentID + "/content"
+			}
 	} else {
 		if item.SourceUnavailableReason == "" {
 			item.SourceUnavailableReason = citationSourceUnavailableReason
@@ -107,7 +110,7 @@ func ApplyCitationSourceAvailability(item Citation, available bool) Citation {
 	documentID := strings.TrimSpace(firstNonBlank(item.DocumentID, item.DocID))
 	item.DocumentID = documentID
 	item.DocID = documentID
-	item.IsSourceAvailable = available && documentID != ""
+	item.IsSourceAvailable = (available && documentID != "") || strings.TrimSpace(item.AttachmentID) != ""
 	if item.IsSourceAvailable {
 		item.SourceUnavailableReason = ""
 	} else if strings.TrimSpace(item.SourceUnavailableReason) == "" {
@@ -218,7 +221,7 @@ func DefaultAgentConfig() AgentConfig {
 		ModelTimeoutSeconds:   60,
 		OverallTimeoutSeconds: 120,
 		EnabledToolNames: append([]string{
-			"search_knowledge",
+			"search_knowledge", "search_session_attachments",
 		}, tools.DefaultDocumentReportToolNames...),
 	}
 }

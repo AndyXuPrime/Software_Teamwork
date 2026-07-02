@@ -52,12 +52,12 @@ func TestQAActiveOpenAPIContractsHaveSchemasAndAuth(t *testing.T) {
 			assertQueryParameterSchema(t, operation, parameters, "pageSize", "integer")
 		}
 
-		// Skip JSON schema check for upload endpoints (they use multipart/form-data)
-		reqBody := resolveOpenAPIMapValue(t, document, operation.Operation["requestBody"])
-		isUpload := reqBody != nil && resolveOpenAPIMapValue(t, document, reqBody["content"]) != nil &&
-			resolveOpenAPIMapValue(t, document, reqBody["content"].(map[string]any)["multipart/form-data"]) != nil
-		if !isUpload && (operation.Method == http.MethodPost || operation.Method == http.MethodPatch) {
-			assertJSONRequestSchema(t, document, operation)
+		if operation.Method == http.MethodPost || operation.Method == http.MethodPatch {
+			if operation.OperationID == "uploadQASessionAttachment" {
+				assertMultipartRequestSchema(t, document, operation)
+			} else {
+				assertJSONRequestSchema(t, document, operation)
+			}
 		}
 		assertQASuccessResponseSchemas(t, document, operation)
 		assertQAErrorResponseSchemas(t, document, operation)
@@ -313,6 +313,19 @@ func assertJSONRequestSchema(t *testing.T, document map[string]any, operation op
 	}
 }
 
+func assertMultipartRequestSchema(t *testing.T, document map[string]any, operation openAPIOperation) {
+	t.Helper()
+	requestBody := resolveOpenAPIMapValue(t, document, operation.Operation["requestBody"])
+	if requestBody == nil {
+		t.Fatalf("%s %s missing multipart request body schema", operation.Method, operation.Path)
+	}
+	content := requiredNestedMap(t, requestBody, "content")
+	mediaType := requiredNestedMap(t, content, "multipart/form-data")
+	if mapValue(mediaType["schema"]) == nil {
+		t.Fatalf("%s %s multipart/form-data request body missing schema", operation.Method, operation.Path)
+	}
+}
+
 func assertQASuccessResponseSchemas(t *testing.T, document map[string]any, operation openAPIOperation) {
 	t.Helper()
 	successes := successResponses(t, operation)
@@ -416,7 +429,7 @@ func successResponses(t *testing.T, operation openAPIOperation) map[string]any {
 
 func qaOperationRequiresPagination(operationID string) bool {
 	switch operationID {
-	case "listQASessions", "listQAMessages", "listQASessionAttachments":
+	case "listQASessions", "listQAMessages":
 		return true
 	default:
 		return false

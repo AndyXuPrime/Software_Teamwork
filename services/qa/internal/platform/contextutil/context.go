@@ -139,3 +139,31 @@ func RetrievalSettingsFromContext(ctx context.Context) RetrievalSettings {
 	value, _ := ctx.Value(retrievalSettingsContextKey{}).(RetrievalSettings)
 	return value
 }
+
+type sessionIDContextKey struct{}
+
+type messageAttachmentIDsContextKey struct{}
+
+func WithSessionID(ctx context.Context, sessionID string) context.Context {
+	return context.WithValue(ctx, sessionIDContextKey{}, strings.TrimSpace(sessionID))
+}
+
+func SessionIDFromContext(ctx context.Context) string {
+	value, _ := ctx.Value(sessionIDContextKey{}).(string)
+	return value
+}
+
+func WithMessageAttachmentIDs(ctx context.Context, ids []string) context.Context {
+	copied := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if trimmed := strings.TrimSpace(id); trimmed != "" {
+			copied = append(copied, trimmed)
+		}
+	}
+	return context.WithValue(ctx, messageAttachmentIDsContextKey{}, copied)
+}
+
+func MessageAttachmentIDsFromContext(ctx context.Context) []string {
+	value, _ := ctx.Value(messageAttachmentIDsContextKey{}).([]string)
+	return value
+}

@@ -10,6 +10,27 @@ import (
 	"time"
 )
 
+func TestDefaultAgentConfigEnablesAttachmentSearch(t *testing.T) {
+	config := DefaultAgentConfig()
+	if !containsString(config.EnabledToolNames, "search_session_attachments") {
+		t.Fatalf("enabledToolNames=%v, want search_session_attachments", config.EnabledToolNames)
+	}
+}
+
+func TestNormalizeCitationPreservesAvailableAttachmentSource(t *testing.T) {
+	citation := NormalizeCitation(Citation{
+		AttachmentID:      "attachment-1",
+		DocumentName:      "guide.pdf",
+		IsSourceAvailable: true,
+	})
+	if !citation.IsSourceAvailable || citation.Source == nil || !citation.Source.Available {
+		t.Fatalf("attachment citation source = %+v, want available", citation)
+	}
+	if citation.Source.DownloadEndpoint != "" {
+		t.Fatalf("attachment citation download endpoint = %q, want empty", citation.Source.DownloadEndpoint)
+	}
+}
+
 type resourceRepositoryStub struct {
 	activeQAConfig   QAConfigVersion
 	activeLLMConfig  LLMConfigVersion

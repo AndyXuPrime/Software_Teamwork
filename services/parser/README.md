@@ -187,7 +187,7 @@ DOCKER_BUILDKIT=1 docker build \
 | `PARSER_PORT` | `8080` | HTTP bind port. |
 | `PARSER_SERVICE_TOKEN` | empty | Optional expected `X-Service-Token`. |
 | `PARSER_BACKEND` | `ppstructurev3` | Backend selector. `document` parses TXT/Markdown and Office OpenXML without OCR; `ppstructurev3` enables structured PDF/image parsing through PaddleOCR PP-StructureV3; `paddleocr` keeps the legacy line-level OCR path. |
-| `PARSER_MAX_DOCUMENT_BYTES` | `8388608` | Maximum decoded document bytes. |
+| `PARSER_MAX_DOCUMENT_BYTES` | `20971520` | Maximum decoded document bytes (aligned with QA attachment limit). |
 | `PARSER_MAX_CONCURRENCY` | `1` | Maximum concurrent parse jobs in one process. |
 | `PARSER_QUEUE_TIMEOUT_SECONDS` | `0` | Queue wait timeout; `0` waits until capacity is available. |
 | `PARSER_PARSE_TIMEOUT_SECONDS` | `120` | Per-document backend timeout. |
