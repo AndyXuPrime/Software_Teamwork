@@ -1138,7 +1138,7 @@ export interface paths {
         };
         /**
          * Get current QA config version
-         * @description Returns the active QA configuration version including the global system prompt. Requires qa:settings:read. The systemPrompt field is the only place where the full prompt is returned to callers; it must not appear in ordinary QA responses, SSE events, errors, logs, or metrics.
+         * @description Returns the active QA runtime configuration including the global Agent system prompt. Requires qa:settings:read permission. The full systemPrompt is returned in admin QA config endpoints only; it must never appear in SSE events, QA chat responses, logs, metrics, tool call summaries, or error messages.
          */
         get: operations["getCurrentQAConfigVersion"];
         put?: never;
@@ -1160,7 +1160,7 @@ export interface paths {
         put?: never;
         /**
          * Create QA config version
-         * @description Creates a versioned QA runtime configuration so historical answers remain traceable to the retrieval, Agent settings and system prompt used at generation time. Requires qa:settings:write. The new version becomes active immediately for the next question; in-flight answers continue using their original snapshot.
+         * @description Creates a versioned QA runtime configuration so historical answers remain traceable to the retrieval, Agent settings, and system prompt used at generation time. Requires qa:settings:write permission. The created version (including systemPrompt) is returned on success. The published system prompt becomes active for the next question; in-flight answer generations continue using their previously acquired snapshot.
          */
         post: operations["createQAConfigVersion"];
         delete?: never;
@@ -2681,7 +2681,7 @@ export interface components {
             enabledToolNames?: string[];
             llm?: components["schemas"]["QALLMConfigVersion"];
             agent?: components["schemas"]["QAAgentConfig"];
-            /** @description Global Agent system prompt. Always present with qa:settings:read. Must not appear in ordinary QA responses, SSE, errors, logs, or metrics. Enforced at 20000 bytes via database octet_length check, not OpenAPI maxLength. */
+            /** @description Global Agent system prompt. Returned only in admin QA config endpoints (requires qa:settings:read). Must not appear in SSE events, QA chat responses, logs, metrics, tool call summaries, or error messages. Server validates 1–20000 bytes (octet_length, not character count); multi-byte UTF-8 characters count toward the byte limit. */
             systemPrompt: string;
             isActive: boolean;
             /** Format: date-time */
@@ -2709,7 +2709,7 @@ export interface components {
             enabledToolNames?: string[];
             llm?: components["schemas"]["CreateQALLMConfigVersionRequest"];
             agent?: components["schemas"]["QAAgentConfig"];
-            /** @description Global Agent system prompt. When provided, must be non-empty after trimming. When omitted, the active prompt is inherited. Requires qa:settings:write. Enforced at 20000 bytes via database octet_length check. */
+            /** @description Global Agent system prompt. Optional on create; if omitted, the current active version's prompt is inherited so that only changing retrieval/agent settings does not clear the existing prompt. Server validates 1–20000 bytes (octet_length, not character count) after trimming; multi-byte UTF-8 characters count toward the byte limit. Clients should apply the same byte-length check before submitting to avoid 400 validation errors. */
             systemPrompt?: string;
             /** @default true */
             activate: boolean;
