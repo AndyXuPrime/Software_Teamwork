@@ -136,7 +136,8 @@ function SelectTrigger({ className, children, id, ...props }: SelectTriggerProps
   const { open, setOpen, disabled, triggerRef, setHighlightedIndex } = useSelectContext()
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    // When already open, let the Content keydown handler manage navigation
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !open) {
       e.preventDefault()
       setOpen(true)
       setHighlightedIndex(e.key === 'ArrowDown' ? 0 : -1)
