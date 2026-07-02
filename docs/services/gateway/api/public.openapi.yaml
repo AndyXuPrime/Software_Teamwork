@@ -2180,6 +2180,7 @@ paths:
       summary: Get current QA config version
       operationId: getCurrentQAConfigVersion
       x-owner-service: qa
+      description: Returns the active QA configuration version including the global system prompt. Requires qa:settings:read. The systemPrompt field is the only place where the full prompt is returned to callers; it must not appear in ordinary QA responses, SSE events, errors, logs, or metrics.
       responses:
         '200':
           description: Current QA config version.
@@ -2196,7 +2197,7 @@ paths:
       summary: Create QA config version
       operationId: createQAConfigVersion
       x-owner-service: qa
-      description: Creates a versioned QA runtime configuration so historical answers remain traceable to the retrieval and Agent settings used at generation time.
+      description: Creates a versioned QA runtime configuration so historical answers remain traceable to the retrieval, Agent settings and system prompt used at generation time. Requires qa:settings:write. The new version becomes active immediately for the next question; in-flight answers continue using their original snapshot.
       requestBody:
         required: true
         content:
@@ -5583,6 +5584,10 @@ components:
           $ref: '#/components/schemas/QALLMConfigVersion'
         agent:
           $ref: '#/components/schemas/QAAgentConfig'
+        systemPrompt:
+          type: string
+          description: The global Agent system prompt. Only returned to callers with qa:settings:read permission. Must not be returned in ordinary QA responses, SSE, errors, logs, or metrics.
+          maxLength: 20000
         isActive:
           type: boolean
         createdAt:
@@ -5644,6 +5649,11 @@ components:
           $ref: '#/components/schemas/CreateQALLMConfigVersionRequest'
         agent:
           $ref: '#/components/schemas/QAAgentConfig'
+        systemPrompt:
+          type: string
+          description: The global Agent system prompt. Must be non-empty after trimming, up to 20000 bytes. Requires qa:settings:write.
+          minLength: 1
+          maxLength: 20000
         activate:
           type: boolean
           default: true
