@@ -169,7 +169,7 @@ export function KnowledgeSearchPage() {
 
       {/* Search input */}
       <div className="mb-4">
-        <div className="search-expand relative">
+        <div className="relative">
           <Search
             aria-hidden="true"
             className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -184,7 +184,7 @@ export function KnowledgeSearchPage() {
           />
           <Button
             size="sm"
-            className="absolute right-1 top-1/2 -translate-y-1/2"
+            className="!absolute right-1 top-1/2 -translate-y-1/2"
             onClick={handleSearch}
             disabled={!query.trim() || searchMutation.isPending}
           >
