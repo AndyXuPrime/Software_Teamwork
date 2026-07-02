@@ -224,7 +224,7 @@ function SelectValue({ placeholder, className }: SelectValueProps) {
 type SelectContentProps = React.ComponentProps<'div'>
 
 function SelectContent({ className, children, ...props }: SelectContentProps) {
-  const { open, setHighlightedIndex, highlightedIndex, onValueChange, itemsRef } =
+  const { open, setOpen, setHighlightedIndex, highlightedIndex, onValueChange, itemsRef } =
     useSelectContext()
   const innerRef = React.useRef<HTMLDivElement | null>(null)
   const [contentHeight, setContentHeight] = React.useState(0)
@@ -243,6 +243,10 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
     if (!open) return
     const handleKey = (e: KeyboardEvent) => {
       const items = itemsRef.current.filter((v) => v !== undefined)
+      if (e.key === 'Tab') {
+        setOpen(false)
+        return
+      }
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         setHighlightedIndex((prev) => Math.min(prev + 1, items.length - 1))
@@ -319,13 +323,20 @@ function SelectContentInner({ children }: { children: React.ReactNode }) {
           hover:before:translate-y-[var(--slider-offset)]"
         role="presentation"
       >
-        {React.Children.map(children, (child, index) => {
-          if (!React.isValidElement(child)) return child
-          return React.cloneElement(child, {
-            onMouseEnterItem: (e: React.MouseEvent<HTMLElement>) => handleMouseEnterItem(e, index),
-            index,
-          } as Record<string, unknown>)
-        })}
+        {(() => {
+          let itemIndex = 0
+          return React.Children.map(children, (child) => {
+            if (!React.isValidElement(child)) return child
+            // Only count SelectItem children for consistent indexing
+            const isSelectItem =
+              typeof child.type === 'function' && child.type.name === 'SelectItem'
+            const idx = isSelectItem ? itemIndex++ : -1
+            return React.cloneElement(child, {
+              onMouseEnterItem: (e: React.MouseEvent<HTMLElement>) => handleMouseEnterItem(e, idx),
+              index: idx,
+            } as Record<string, unknown>)
+          })
+        })()}
       </div>
     </div>
   )
