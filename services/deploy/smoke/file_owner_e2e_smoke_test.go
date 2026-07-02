@@ -315,6 +315,21 @@ func assertKnowledgeUploadAndReadViaGateway(t *testing.T, ctx context.Context, c
 	}
 	realDocID := uploadEnv.Data.ID
 
+	// Clean up the uploaded document after the test.
+	t.Cleanup(func() {
+		cleanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		delReq, _ := http.NewRequestWithContext(cleanCtx, http.MethodDelete,
+			cfg.gatewayBaseURL+"/api/v1/documents/"+realDocID, nil)
+		delReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+		delReq.Header.Set("X-Request-Id", requestID+"_cleanup")
+		resp, err := client.Do(delReq)
+		if err != nil {
+			return
+		}
+		resp.Body.Close()
+	})
+
 	// Read back the uploaded document metadata through Gateway to verify the full round-trip.
 	readReq := gatewayAuthRequest(http.MethodGet,
 		cfg.gatewayBaseURL+"/api/v1/documents/"+realDocID,
