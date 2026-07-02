@@ -264,7 +264,8 @@ Configured owner service base URLs for knowledge, qa, document, and ai-gateway
 | Gateway process can respond | `/healthz` returns `200` project envelope. |
 | Redis session cache is unavailable | `/readyz` returns `503 dependency_error`; logs include request id and sanitized dependency name. |
 | Auth `/readyz` is unavailable | `/readyz` returns `503 dependency_error`; logs include request id and sanitized dependency name. |
-| Required owner base URL is blank or invalid for routing | `/readyz` returns `503 dependency_error` before claiming Gateway can route public traffic. |
+| Required owner base URL is missing or blank | `/readyz` returns `503 dependency_error` before claiming Gateway can route public traffic. |
+| Required owner base URL is non-empty but malformed | Current `/readyz` does not guarantee URL syntax validation; proxy routes fail with their normal sanitized dependency error if the URL cannot be parsed for routing. Add a code test before strengthening this contract. |
 | Owner service business workflow is unavailable after `/readyz` passed | The affected public API returns its normal sanitized dependency error; investigate with targeted smoke and request id, not by expanding `/readyz` into a full workflow probe. |
 | AI Gateway profile/provider credential is missing or placeholder | AI-dependent smoke or owner routes report the failure; Gateway `/readyz` is not the proof point. |
 
@@ -284,7 +285,9 @@ Configured owner service base URLs for knowledge, qa, document, and ai-gateway
 - Gateway handler tests must cover successful `/healthz`, successful `/readyz`,
   and failed `/readyz` returning `503 dependency_error` with request id.
 - When `gatewayReadyCheck` behavior changes, add or update unit tests for Redis,
-  Auth, and owner base URL failure classification.
+  Auth, and owner base URL failure classification. If readiness starts
+  rejecting malformed non-empty owner URLs, add a regression test for that
+  exact case in the same change.
 - Documentation-only readiness changes must parse the changed Gateway OpenAPI
   files, run `python3 scripts/verify_gateway_active_api.py`, and run
   `git diff --check`.
