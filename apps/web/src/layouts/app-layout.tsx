@@ -33,6 +33,7 @@ const navItems: Array<{
     requirement: {
       any: [
         'system:admin',
+        'qa:use',
         'report:read',
         'report:write',
         'reports:write',
