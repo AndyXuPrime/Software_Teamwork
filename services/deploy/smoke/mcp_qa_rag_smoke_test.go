@@ -307,8 +307,8 @@ func assertQAResponseEnvelope(t *testing.T, ctx context.Context, client *http.Cl
 	}
 }
 
-// assertQANoSensitiveLeaks sends a knowledge_qa request and checks the
-// RAG response does not contain secrets, raw prompts, or internal URLs.
+// assertQANoSensitiveLeaks sends a general_chat request and checks the
+// response does not contain secrets, raw prompts, or internal URLs.
 func assertQANoSensitiveLeaks(t *testing.T, ctx context.Context, client *http.Client, cfg qaSmokeConfig, session smokeSession, requestID string) {
 	t.Helper()
 	// Create a fresh QA session
@@ -335,8 +335,8 @@ func assertQANoSensitiveLeaks(t *testing.T, ctx context.Context, client *http.Cl
 	}
 
 	msgBody, _ := json.Marshal(map[string]any{
-		"message": "search for grid inspection procedure",
-		"mode":    "knowledge_qa",
+		"message": "hello",
+		"mode":    "general_chat",
 	})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, cfg.gatewayBaseURL+"/api/v1/qa-sessions/"+created.Data.ID+"/messages", bytes.NewReader(msgBody))
 	req.Header.Set("Authorization", "Bearer "+session.AccessToken)

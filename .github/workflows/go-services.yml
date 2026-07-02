@@ -22,6 +22,7 @@ jobs:
     outputs:
       services: ${{ steps.changed.outputs.services }}
       has-services: ${{ steps.changed.outputs.has-services }}
+      has-smoke-changes: ${{ steps.changed.outputs.has-smoke-changes }}
       knowledge-integration: ${{ steps.changed.outputs.knowledge-integration }}
     steps:
       - name: Detect changed services
@@ -80,6 +81,7 @@ jobs:
               for (const service of knownServices) {
                 changedServices.add(service);
               }
+              hasSmokeChanges = true;
             } else {
               for (const file of files) {
                 const match = file.match(/^services\/([^/]+)\//u);
