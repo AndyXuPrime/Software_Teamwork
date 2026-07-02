@@ -5290,6 +5290,7 @@ export interface operations {
                     "application/json": components["schemas"]["QAConfigVersionResponse"];
                 };
             };
+            403: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };
