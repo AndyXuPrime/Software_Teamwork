@@ -893,6 +893,10 @@ Runtime rules:
 - `run-backend.sh` prepares Parser with
   `uv sync --frozen --group dev --extra paddleocr`; users need uv, not a
   separate manual Python install step.
+- Keep `UV_DEFAULT_INDEX` in `deploy/.env.example` as the default host-run uv
+  package index for mainland China developer networks. It affects Python
+  dependency downloads only; Docker registry rewrite remains the Compose image
+  path.
 - Use named volumes for PostgreSQL, Qdrant, and MinIO persistence.
 - Keep frontend and browser traffic routed through Gateway.
 - Health checks for infra stay in Compose; service health checks are host-run

@@ -64,6 +64,10 @@ admin / LocalDemoAdmin#12345
 从 `deploy/.env` 删除 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`QDRANT_IMAGE`、
 `MINIO_IMAGE` 和 `MINIO_MC_IMAGE` 这几行即可回到 Compose 里的 Docker Hub pinned tags。
 
+`UV_DEFAULT_INDEX` 控制宿主机 `uv sync` 使用的 Python 包索引，默认使用清华 PyPI
+镜像以加速 Parser 首次准备 PaddleOCR 依赖。需要直连 PyPI 时，从 `deploy/.env`
+删除 `UV_DEFAULT_INDEX` 这一行即可。
+
 ## 脚本职责
 
 `./scripts/local/dev-up.sh`：
@@ -75,7 +79,8 @@ admin / LocalDemoAdmin#12345
 
 `./scripts/local/run-backend.sh`：
 
-- 用 uv 准备 Parser 运行依赖，包括 PaddleOCR extra。
+- 用 uv 准备 Parser 运行依赖，包括 PaddleOCR extra；Python 包下载走
+  `deploy/.env` 里的 `UV_DEFAULT_INDEX`，不是 Docker registry。
 - 按顺序启动 `auth`、`file`、`parser`、`knowledge`、`ai-gateway`、`qa`、`document`、`gateway`。
 - 日志写入 `.local/logs/`，PID 写入 `.local/run/`。
 

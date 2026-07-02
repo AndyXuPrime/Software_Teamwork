@@ -275,6 +275,9 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - `run-backend.sh` prepares Parser with
   `uv sync --frozen --group dev --extra paddleocr` so the default host-run
   backend starts with the OCR runtime dependencies required by current features.
+- Host-run uv package downloads should use `UV_DEFAULT_INDEX` from
+  `deploy/.env.example` for mainland China developer networks. This is separate
+  from Docker registry rewrite and should not be handled in Docker policy.
 - Compose must include practical health checks for infrastructure containers.
 - PostgreSQL health checks must probe TCP readiness, e.g.
   `pg_isready -h localhost -U postgres -d postgres`.

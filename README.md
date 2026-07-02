@@ -165,6 +165,8 @@ cd apps/web && bun run dev
 `deploy/.env.example` 是唯一默认配置来源。用户只复制成 `deploy/.env`；
 脚本不会创建、改写或维护另一套默认变量，只会读取 `deploy/.env` 让宿主机进程拿到配置。
 默认 demo 管理员账号来自 `deploy/.env.example`：`admin` / `LocalDemoAdmin#12345`。
+`UV_DEFAULT_INDEX` 也在这份文件里，默认使用清华 PyPI 镜像加速 Parser 首次准备
+PaddleOCR 依赖；它影响 uv，不影响 Docker。
 
 `./scripts/local/dev-up.sh` 会拉取并启动 `postgres`、`redis`、`qdrant`、`minio`、
 `minio-init`，然后执行本机 migration 和 demo seed。

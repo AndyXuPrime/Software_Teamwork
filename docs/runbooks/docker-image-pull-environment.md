@@ -9,6 +9,8 @@
 - `minio-init`
 
 业务服务、migration、seed、Parser 和前端都不通过 Docker 启动。
+Parser 的 `uv sync` 下载 Python 包，不走 Docker registry。uv 默认包索引由
+`deploy/.env.example` 里的 `UV_DEFAULT_INDEX` 控制。
 
 ## 默认路径
 
