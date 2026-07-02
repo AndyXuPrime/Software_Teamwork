@@ -21,7 +21,7 @@ function SelectTrigger({ className, children, ...props }: SelectPrimitive.Trigge
       {...props}
     >
       {children}
-      <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+      <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform duration-300 [&[data-popup-open]]:rotate-180" />
     </SelectPrimitive.Trigger>
   )
 }
@@ -66,9 +66,7 @@ function SelectContent({
           <SelectPrimitive.ScrollUpArrow className="flex justify-center py-1">
             <ChevronUp className="size-3 text-muted-foreground" />
           </SelectPrimitive.ScrollUpArrow>
-          <SelectPrimitive.List className="flex flex-col gap-0.5 overflow-auto py-1">
-            {children}
-          </SelectPrimitive.List>
+          <SelectContentInner>{children}</SelectContentInner>
           <SelectPrimitive.ScrollDownArrow className="flex justify-center py-1">
             <ChevronDown className="size-3 text-muted-foreground" />
           </SelectPrimitive.ScrollDownArrow>
@@ -78,7 +76,95 @@ function SelectContent({
   )
 }
 
-function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Props) {
+/**
+ * Inner wrapper that manages the sliding highlight background and floating
+ * cursor icon. Extracted so state (refs, event handlers) lives outside the
+ * Portal/Positioner tree.
+ */
+function SelectContentInner({ children }: { children: React.ReactNode }) {
+  const listRef = React.useRef<HTMLDivElement>(null)
+  const floatingRef = React.useRef<HTMLDivElement>(null)
+  const rafRef = React.useRef<number>(0)
+
+  const handleMouseEnterItem = React.useCallback((e: React.MouseEvent<HTMLElement>) => {
+    const item = e.currentTarget
+    const list = item.closest<HTMLElement>('[data-slot="select-content-inner"]')
+    if (!list) return
+    list.style.setProperty('--slider-offset', `${item.offsetTop}px`)
+  }, [])
+
+  const handleMouseMove = React.useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (rafRef.current) return
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0
+      const floating = floatingRef.current
+      if (!floating) return
+      const list = listRef.current
+      if (!list) return
+      const rect = list.getBoundingClientRect()
+      const x = e.clientX - rect.x
+      const y = e.clientY - rect.y
+      const size = floating.offsetWidth || 26
+      floating.style.setProperty('--float-x', `${x - size / 2}px`)
+      floating.style.setProperty('--float-y', `${y - size / 2}px`)
+    })
+  }, [])
+
+  React.useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
+
+  return (
+    <div
+      data-slot="select-content-inner"
+      className="group relative"
+      style={
+        {
+          '--slider-offset': '0px',
+          '--float-x': '0px',
+          '--float-y': '0px',
+        } as React.CSSProperties
+      }
+      onMouseMove={handleMouseMove}
+    >
+      <SelectPrimitive.List
+        ref={listRef}
+        className="relative flex flex-col gap-0.5 overflow-auto py-1
+          before:pointer-events-none before:absolute before:left-0 before:right-0
+          before:z-0 before:h-8 before:rounded-md before:bg-accent
+          before:opacity-0 before:transition-all before:duration-300
+          before:ease-out hover:before:opacity-100
+          hover:before:translate-y-[var(--slider-offset)]"
+      >
+        {React.Children.map(children, (child) => {
+          if (!React.isValidElement(child)) return child
+          return React.cloneElement(child, { onMouseEnterItem: handleMouseEnterItem } as Record<
+            string,
+            unknown
+          >)
+        })}
+      </SelectPrimitive.List>
+      <div
+        ref={floatingRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute z-20 flex size-7 items-center justify-center rounded-lg bg-foreground/10 opacity-0 transition-opacity duration-300 [.group:hover_&]:opacity-100"
+        style={{
+          left: 'var(--float-x)',
+          top: 'var(--float-y)',
+        }}
+      />
+    </div>
+  )
+}
+
+function SelectItem({
+  className,
+  children,
+  onMouseEnterItem,
+  ...props
+}: SelectPrimitive.Item.Props & { onMouseEnterItem?: React.MouseEventHandler<HTMLElement> }) {
   // Auto-wrap plain text children in SelectItemText so SelectValue
   // displays the label instead of the raw value (e.g. kb name vs kb id).
   const content =
@@ -90,6 +176,7 @@ function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Prop
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
+      onMouseEnter={onMouseEnterItem}
       className={cn(
         'relative flex w-full cursor-default items-center gap-2 rounded-md py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*="size-"])]:size-4',
         className,
