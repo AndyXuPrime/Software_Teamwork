@@ -1,4 +1,4 @@
-import { Download, ExternalLink, FileText } from 'lucide-react'
+import { Download, FileText } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -73,10 +73,6 @@ export default function ReportArtifactCard({ artifact, onDownload }: ReportArtif
     onDownload?.(artifact.downloadPath, artifact.filename ?? 'report.docx')
   }
 
-  const reportUrl = artifact.reportId
-    ? `/reports/records?reportId=${encodeURIComponent(artifact.reportId)}`
-    : null
-
   return (
     <div className="mt-3 overflow-hidden rounded-lg border border-border bg-card shadow-sm transition-shadow hover:shadow-md">
       {/* Header */}
@@ -144,17 +140,6 @@ export default function ReportArtifactCard({ artifact, onDownload }: ReportArtif
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-2 border-t border-border/50 px-4 py-2">
-        {reportUrl && (
-          <a
-            href={reportUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ExternalLink className="size-3" />
-            查看详情
-          </a>
-        )}
         <Button
           variant="outline"
           size="sm"
