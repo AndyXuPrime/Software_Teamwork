@@ -1,0 +1,28 @@
+{
+  "id": "fix-model-profile-form-validation",
+  "name": "fix-model-profile-form-validation",
+  "title": "Fix model profile form validation",
+  "description": "Resolve GitHub issue #445: model profile create/update form sends max_tokens=0 by default and lacks purpose-specific validation, causing AI Gateway validation failures.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "frontend",
+  "package": null,
+  "priority": "P1",
+  "creator": "liu",
+  "assignee": "liu",
+  "createdAt": "2026-07-02",
+  "completedAt": null,
+  "branch": "Frontend/fix/model-profile-form-validation",
+  "base_branch": "develop",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "github_issue": 445
+  }
+}

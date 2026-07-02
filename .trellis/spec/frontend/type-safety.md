@@ -211,14 +211,14 @@ return data.results
 
 ### 4. Validation & Error Matrix
 
-| Condition | UI behavior |
-| --- | --- |
-| `501 not_implemented` | Show "capability not ready"; do not render empty data or fake success. |
-| `502 dependency_error` | Show dependency failure with retry affordance when relevant. |
-| `403 forbidden` | Show permission denied / forbidden state. |
-| Gateway error with requestId | Include `requestId: <id>` in the notice detail. |
-| Gateway error without requestId | State that no requestId was returned. |
-| Non-Gateway error | State that requestId is unavailable because it was not a Gateway error. |
+| Condition                       | UI behavior                                                             |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `501 not_implemented`           | Show "capability not ready"; do not render empty data or fake success.  |
+| `502 dependency_error`          | Show dependency failure with retry affordance when relevant.            |
+| `403 forbidden`                 | Show permission denied / forbidden state.                               |
+| Gateway error with requestId    | Include `requestId: <id>` in the notice detail.                         |
+| Gateway error without requestId | State that no requestId was returned.                                   |
+| Non-Gateway error               | State that requestId is unavailable because it was not a Gateway error. |
 
 ### 5. Good/Base/Bad Cases
 
@@ -256,6 +256,103 @@ setResults([])
 const issue = getGatewayCapabilityIssue(error, '知识检索')
 setNotice(`${issue.title}: ${issue.description}`)
 setResults(null)
+```
+
+## Scenario: Admin Model Profile Forms
+
+### 1. Scope / Trigger
+
+- Trigger: frontend admin pages create or update AI Gateway model profiles
+  through public Gateway admin-runtime-config paths.
+- Applies to model profile form helpers and pages under
+  `apps/web/src/features/admin-config/` and `apps/web/src/pages/admin/`.
+- Browser code must continue using Gateway `/api/v1/admin/model-profiles`; do
+  not call AI Gateway internal `/internal/v1/**` paths directly.
+
+### 2. Signatures
+
+- `POST /api/v1/admin/model-profiles` with
+  `CreateModelProfileRequest` creates a runtime profile.
+- `PATCH /api/v1/admin/model-profiles/{profileId}` with
+  `UpdateModelProfileRequest` updates a runtime profile.
+- UI payload builders should use generated types from
+  `apps/web/src/api/generated/gateway.ts` via `@/lib/types`.
+
+### 3. Contracts
+
+- Create requires `name`, `purpose`, `provider`, `baseUrl`, `model`, and
+  write-only `apiKey`.
+- Update requires the visible connection fields the form edits; `apiKey` is
+  optional and must be omitted when the admin leaves it blank.
+- Embedding profiles require `dimensions > 0`; rerank profiles require
+  `topN > 0` before submit.
+- Chat profiles may send `supportsStreaming`; embedding and rerank profiles
+  should not imply chat-only settings.
+- Do not default arbitrary provider parameters into `defaultParameters`.
+  In particular, do not emit `defaultParameters.max_tokens` from the admin
+  form: AI Gateway currently rejects keys containing sensitive tokens such as
+  `token`, even when the public OpenAPI description lists `max_tokens` as an
+  example provider parameter.
+- User-visible mutation failures must include the Gateway normalized message,
+  field details, and `requestId` when `ApiError` provides them.
+
+### 4. Validation & Error Matrix
+
+| Condition                                         | UI behavior                                            |
+| ------------------------------------------------- | ------------------------------------------------------ |
+| Missing create `apiKey`                           | Block submit and show a local form error.              |
+| Missing name/provider/baseUrl/model               | Block submit and show a local form error.              |
+| `purpose === "embedding"` and `dimensions <= 0`   | Block submit with a dimensions error.                  |
+| `purpose === "rerank"` and `topN <= 0`            | Block submit with a TopN error.                        |
+| Gateway `ApiError.fields.defaultParameters`       | Show the field detail and requestId for log tracing.   |
+| Admin max token input is blank, zero, or positive | Do not emit `defaultParameters.max_tokens` by default. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a feature helper builds `CreateModelProfileRequest` and
+  `UpdateModelProfileRequest`, omits blank `apiKey` on update, and formats
+  `ApiError` field details in one place.
+- Base: the page owns dialog state and delegates validation/payload mapping to
+  the feature helper.
+- Bad: a route page hand-rolls `defaultParameters: { max_tokens: value }` or
+  hides `ApiError.requestId` from mutation failures.
+
+### 6. Tests Required
+
+- Unit-test create and update payload builders so they omit
+  `defaultParameters.max_tokens`.
+- Unit-test purpose-specific validation for embedding dimensions and rerank
+  TopN.
+- Unit-test mutation error formatting with `ApiError.fields` and `requestId`.
+- Run frontend typecheck, lint, build, and relevant unit tests after changing
+  model profile form behavior.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const request: CreateModelProfileRequest = {
+  ...form,
+  defaultParameters: { max_tokens: form.maxTokens },
+}
+```
+
+#### Correct
+
+```ts
+const request: CreateModelProfileRequest = {
+  name: form.name.trim(),
+  purpose: form.purpose,
+  provider: form.provider,
+  baseUrl: form.baseUrl.trim(),
+  model: form.model.trim(),
+  apiKey: form.apiKey.trim(),
+  enabled: true,
+  isDefault: false,
+  timeoutMs: form.timeoutMs,
+  supportsStreaming: form.purpose === 'chat' ? form.supportsStreaming : false,
+}
 ```
 
 ## Scenario: QA/LLM Config Version Forms
