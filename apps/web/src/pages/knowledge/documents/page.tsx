@@ -573,6 +573,7 @@ export function KnowledgeDocumentsPage({
                 <SelectValue placeholder="全部状态" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="">全部状态</SelectItem>
                 {(FILTERABLE_STATUSES.filter(Boolean) as DocumentStatus[]).map((s) => (
                   <SelectItem key={s} value={s}>
                     {STATUS_LABELS[s]}

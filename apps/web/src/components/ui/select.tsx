@@ -77,14 +77,12 @@ function SelectContent({
 }
 
 /**
- * Inner wrapper that manages the sliding highlight background and floating
- * cursor icon. Extracted so state (refs, event handlers) lives outside the
+ * Inner wrapper that manages the sliding highlight background.
+ * Extracted so state (refs, event handlers) lives outside the
  * Portal/Positioner tree.
  */
 function SelectContentInner({ children }: { children: React.ReactNode }) {
   const listRef = React.useRef<HTMLDivElement>(null)
-  const floatingRef = React.useRef<HTMLDivElement>(null)
-  const rafRef = React.useRef<number>(0)
 
   const handleMouseEnterItem = React.useCallback((e: React.MouseEvent<HTMLElement>) => {
     const item = e.currentTarget
@@ -93,41 +91,11 @@ function SelectContentInner({ children }: { children: React.ReactNode }) {
     list.style.setProperty('--slider-offset', `${item.offsetTop}px`)
   }, [])
 
-  const handleMouseMove = React.useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (rafRef.current) return
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = 0
-      const floating = floatingRef.current
-      if (!floating) return
-      const list = listRef.current
-      if (!list) return
-      const rect = list.getBoundingClientRect()
-      const x = e.clientX - rect.x
-      const y = e.clientY - rect.y
-      const size = floating.offsetWidth || 26
-      floating.style.setProperty('--float-x', `${x - size / 2}px`)
-      floating.style.setProperty('--float-y', `${y - size / 2}px`)
-    })
-  }, [])
-
-  React.useEffect(() => {
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-    }
-  }, [])
-
   return (
     <div
       data-slot="select-content-inner"
-      className="group relative"
-      style={
-        {
-          '--slider-offset': '0px',
-          '--float-x': '0px',
-          '--float-y': '0px',
-        } as React.CSSProperties
-      }
-      onMouseMove={handleMouseMove}
+      className="relative"
+      style={{ '--slider-offset': '0px' } as React.CSSProperties}
     >
       <SelectPrimitive.List
         ref={listRef}
@@ -146,15 +114,6 @@ function SelectContentInner({ children }: { children: React.ReactNode }) {
           >)
         })}
       </SelectPrimitive.List>
-      <div
-        ref={floatingRef}
-        aria-hidden="true"
-        className="pointer-events-none absolute z-20 flex size-7 items-center justify-center rounded-lg bg-foreground/10 opacity-0 transition-opacity duration-300 [.group:hover_&]:opacity-100"
-        style={{
-          left: 'var(--float-x)',
-          top: 'var(--float-y)',
-        }}
-      />
     </div>
   )
 }

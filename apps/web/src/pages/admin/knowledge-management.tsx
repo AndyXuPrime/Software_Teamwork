@@ -346,6 +346,7 @@ export function KnowledgeManagement() {
                 <SelectValue placeholder="全部类型" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="">全部类型</SelectItem>
                 {DOC_TYPE_OPTIONS.map((dt) => (
                   <SelectItem key={dt} value={dt}>
                     {dt}
