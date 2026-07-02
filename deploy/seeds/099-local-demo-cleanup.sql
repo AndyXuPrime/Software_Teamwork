@@ -1,3 +1,5 @@
+-- Local integration contract: optional cleanup companion for local demo seed
+-- data; keep it in sync with deploy/seeds/001-local-demo-seed.sql.
 \connect qa_system
 
 DELETE FROM mcp_servers

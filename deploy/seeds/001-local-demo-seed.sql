@@ -1,3 +1,5 @@
+-- Local integration contract: scripts/local/dev-up.sh applies this seed after
+-- service migrations so the demo admin and cross-service fixtures exist.
 \connect auth_system
 
 INSERT INTO auth_users (
