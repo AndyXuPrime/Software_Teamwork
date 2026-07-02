@@ -279,30 +279,21 @@ input[type='range'].range-slider::-moz-range-thumb {
   cursor: pointer;
 }
 
-/* ===== Button click ripple (pure CSS) ===== */
+/* ===== Button click ripple (pure CSS ::after on :active) ===== */
 .btn-ripple {
-  position: relative;
   overflow: hidden;
 }
 
-.btn-ripple::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle, var(--foreground) 10%, transparent 10%);
+.btn-ripple:active {
+  background-image: radial-gradient(
+    circle at center,
+    hsl(var(--foreground) / 0.12) 0%,
+    transparent 60%
+  );
+  background-size: 200% 200%;
   background-position: center;
   background-repeat: no-repeat;
-  opacity: 0;
-  transition:
-    opacity 0.3s,
-    background-size 0.3s;
-  background-size: 0% 0%;
-}
-
-.btn-ripple:active::after {
-  background-size: 200% 200%;
-  opacity: 0.15;
-  transition: background-size 0s;
+  transition: background-size 0.3s ease-out;
 }
 
 /* ===== Message entrance stagger animation ===== */
