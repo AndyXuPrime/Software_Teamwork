@@ -154,10 +154,41 @@ func generateAttachmentSearchSummary(results []SessionAttachmentHit, startCitati
 	if len(results) == 0 {
 		return `{"hit_count":0,"message":"No relevant attachment chunks found"}`
 	}
-	summary := map[string]any{
+	for _, budget := range attachmentResultBudgets {
+		payload := marshalAttachmentSearchSummary(results, len(results), startCitationNo, budget.previewRunes, budget.contextRunes, budget.excerptRunes, false)
+		if len(payload) <= maxAttachmentResultSize {
+			return string(payload)
+		}
+	}
+	for returned := len(results) - 1; returned >= 1; returned-- {
+		budget := attachmentResultBudgets[len(attachmentResultBudgets)-1]
+		payload := marshalAttachmentSearchSummary(results[:returned], len(results), startCitationNo, budget.previewRunes, budget.contextRunes, budget.excerptRunes, true)
+		if len(payload) <= maxAttachmentResultSize {
+			return string(payload)
+		}
+	}
+	budget := attachmentResultBudgets[len(attachmentResultBudgets)-1]
+	payload := marshalAttachmentSearchSummary(results[:1], len(results), startCitationNo, 60, 20, budget.excerptRunes, true)
+	if len(payload) <= maxAttachmentResultSize {
+		return string(payload)
+	}
+	truncated, _ := json.Marshal(map[string]any{
 		"hit_count": len(results),
+		"returned":  0,
+		"truncated": true,
+		"message":   "Results truncated due to size limit",
+	})
+	return string(truncated)
+}
+
+func marshalAttachmentSearchSummary(results []SessionAttachmentHit, totalHits, startCitationNo, previewRunes, contextRunes, excerptRunes int, truncated bool) []byte {
+	summary := map[string]any{
+		"hit_count": totalHits,
 		"returned":  len(results),
 		"results":   make([]map[string]any, 0, len(results)),
+	}
+	if truncated {
+		summary["truncated"] = true
 	}
 	for i, result := range results {
 		content := strings.TrimSpace(result.Content)
@@ -170,9 +201,9 @@ func generateAttachmentSearchSummary(results []SessionAttachmentHit, startCitati
 			"chunk_id":        truncateString(result.ChunkID, 64),
 			"filename":        truncateString(result.Filename, 100),
 			"section_path":    truncateString(result.SectionPath, 100),
-			"preview":         truncateString(result.ContentPreview, 200),
-			"context":         truncateString(content, 500),
-			"content_excerpt": truncateString(content, maxAttachmentContentExcerptRunes),
+			"preview":         truncateString(result.ContentPreview, previewRunes),
+			"context":         truncateString(content, contextRunes),
+			"content_excerpt": truncateString(content, excerptRunes),
 		}
 		if result.PageNumber > 0 {
 			item["page_number"] = result.PageNumber
@@ -180,14 +211,20 @@ func generateAttachmentSearchSummary(results []SessionAttachmentHit, startCitati
 		summary["results"] = append(summary["results"].([]map[string]any), item)
 	}
 	payload, _ := json.Marshal(summary)
-	if len(payload) <= maxAttachmentResultSize {
-		return string(payload)
-	}
-	truncated, _ := json.Marshal(map[string]any{
-		"hit_count": len(results),
-		"returned":  0,
-		"truncated": true,
-		"message":   "Results truncated due to size limit",
-	})
-	return string(truncated)
+	return payload
+}
+
+type attachmentResultBudget struct {
+	previewRunes int
+	contextRunes int
+	excerptRunes int
+}
+
+var attachmentResultBudgets = []attachmentResultBudget{
+	{previewRunes: 200, contextRunes: 500, excerptRunes: maxAttachmentContentExcerptRunes},
+	{previewRunes: 160, contextRunes: 300, excerptRunes: 900},
+	{previewRunes: 140, contextRunes: 220, excerptRunes: 600},
+	{previewRunes: 120, contextRunes: 160, excerptRunes: 360},
+	{previewRunes: 100, contextRunes: 120, excerptRunes: 240},
+	{previewRunes: 80, contextRunes: 80, excerptRunes: 160},
 }

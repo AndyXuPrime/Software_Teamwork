@@ -383,7 +383,10 @@ func sanitizeMap(input map[string]any) map[string]any {
 	output := map[string]any{}
 	for key, value := range input {
 		cleanKey := strings.TrimSpace(key)
-		if cleanKey == "" || isSensitiveLogKey(cleanKey) {
+		if cleanKey == "" {
+			continue
+		}
+		if isSensitiveLogKey(cleanKey) && !isSafeSensitiveLogMetric(cleanKey, value) {
 			continue
 		}
 		output[cleanKey] = sanitizeValue(value)
@@ -479,6 +482,21 @@ func isSensitiveLogKey(key string) bool {
 		}
 	}
 	return false
+}
+
+func isSafeSensitiveLogMetric(key string, value any) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(key, "_", ""), "-", ""))
+	if normalized != "contentlength" {
+		return false
+	}
+	switch value.(type) {
+	case int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64:
+		return true
+	default:
+		return false
+	}
 }
 
 func updatedSettingsFields(input UpdateReportSettingsInput) []string {

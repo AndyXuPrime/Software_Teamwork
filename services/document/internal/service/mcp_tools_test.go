@@ -140,7 +140,11 @@ func TestMCPToolServiceGenerateReportFromContentCreatesReportAndOutlineJob(t *te
 	if _, ok := summary["content"]; ok {
 		t.Fatalf("operation log leaked content: %+v", summary)
 	}
-	if summary["contentLength"] == 0 || summary["excerptLength"] == 0 || summary["documentNameProvided"] != true || summary["instructionsLength"] == 0 {
+	contentLength, ok := summary["contentLength"]
+	if !ok || contentLength == 0 {
+		t.Fatalf("operation log summary missing contentLength: %+v", summary)
+	}
+	if summary["excerptLength"] == 0 || summary["documentNameProvided"] != true || summary["instructionsLength"] == 0 {
 		t.Fatalf("operation log summary = %+v", summary)
 	}
 }
