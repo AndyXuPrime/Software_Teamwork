@@ -145,7 +145,12 @@ type SelectTriggerProps = React.ComponentProps<'button'> & {
 }
 
 function SelectTrigger({ className, children, id, ...props }: SelectTriggerProps) {
-  const { open, setOpen, disabled, triggerRef, setHighlightedIndex } = useSelectContext()
+  const { open, setOpen, disabled, triggerRef, setHighlightedIndex, highlightedIndex, itemsRef } =
+    useSelectContext()
+  const highlightedValue =
+    open && highlightedIndex >= 0 ? itemsRef.current[highlightedIndex] : undefined
+  const activeDescendant =
+    highlightedValue !== undefined ? `select-option-${highlightedValue}` : undefined
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // When already open, let the Content keydown handler manage navigation
@@ -171,6 +176,7 @@ function SelectTrigger({ className, children, id, ...props }: SelectTriggerProps
       disabled={disabled}
       aria-expanded={open}
       aria-haspopup="listbox"
+      aria-activedescendant={activeDescendant ?? ''}
       onClick={() => {
         setOpen(!open)
         setHighlightedIndex(-1)
@@ -201,7 +207,7 @@ function SelectValue({ placeholder, className }: SelectValueProps) {
   const { value, labelMap, labelVersion } = useSelectContext()
   // labelVersion is read to trigger re-render when labels are registered
   void labelVersion
-  const label = value ? (labelMap.current.get(value) ?? value) : undefined
+  const label = value !== undefined ? (labelMap.current.get(value) ?? value) : undefined
 
   return (
     <span
@@ -384,6 +390,7 @@ function SelectItem({
   return (
     <div
       role="option"
+      id={`select-option-${value}`}
       aria-selected={isSelected}
       data-slot="select-item"
       data-value={value}
