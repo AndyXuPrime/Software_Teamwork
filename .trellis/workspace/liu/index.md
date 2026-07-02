@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 27
-- **Last Active**: 2026-07-01
+- **Total Sessions**: 28
+- **Last Active**: 2026-07-02
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~988 | Active |
+| `journal-1.md` | ~1029 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-07-02 | Fix model profile form validation | `db68dce`, `2b10410` | `Frontend/fix/model-profile-form-validation` |
 | 27 | 2026-07-01 | Issue 305 local seed baseline | `0290afb` | `Special/chore/local-seed-baseline` |
 | 26 | 2026-07-01 | PR 350 running marker and journal cleanup | `2a4b4a0` | `PrimeTeam/feat/report-section-versions` |
 | 25 | 2026-07-01 | PR 350 stale conflict handling | `0242872` | `PrimeTeam/feat/report-section-versions` |
