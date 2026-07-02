@@ -383,6 +383,7 @@ input[type='range'].range-slider::-moz-range-thumb {
 
 /* ===== Search input focus width expansion ===== */
 .search-expand {
+  max-width: 100%;
   transition:
     width 0.3s ease,
     min-width 0.3s ease;
