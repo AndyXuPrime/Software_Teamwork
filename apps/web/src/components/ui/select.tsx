@@ -221,7 +221,7 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
   React.useEffect(() => {
     if (!open) return
     const handleKey = (e: KeyboardEvent) => {
-      const items = itemsRef.current.filter(Boolean)
+      const items = itemsRef.current.filter((v) => v !== undefined)
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         setHighlightedIndex((prev) => Math.min(prev + 1, items.length - 1))
@@ -231,7 +231,7 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
       } else if (e.key === 'Enter' && highlightedIndex >= 0) {
         e.preventDefault()
         const itemValue = items[highlightedIndex]
-        if (itemValue) onValueChange(itemValue)
+        if (itemValue !== undefined) onValueChange(itemValue)
       }
     }
     document.addEventListener('keydown', handleKey)
