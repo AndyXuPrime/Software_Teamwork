@@ -64,10 +64,14 @@ admin / LocalDemoAdmin#12345
 从 `deploy/.env` 删除 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`QDRANT_IMAGE`、
 `MINIO_IMAGE` 和 `MINIO_MC_IMAGE` 这几行即可回到 Compose 里的 Docker Hub pinned tags。
 
-`UV_DEFAULT_INDEX` 控制宿主机 `uv sync` 使用的 Python 包索引，默认使用清华 PyPI
-镜像以加速 Parser 首次准备 PaddleOCR 依赖。需要直连 PyPI 时，从 `deploy/.env`
-删除 `UV_DEFAULT_INDEX` 这一行即可。首次准备 OCR runtime 仍会下载几十个 Python
-包；如果 `uv.lock` 锁回官方 PyPI URL，`scripts/verify_local_seed_contract.py` 会报错。
+`UV_DEFAULT_INDEX` 控制宿主机 uv 在解析或重锁依赖时使用的 Python 包索引，默认使用
+清华 PyPI 镜像以加速 Parser 首次准备 PaddleOCR 依赖。当前 `services/parser/uv.lock`
+也锁定到清华源；`run-backend.sh` 使用 `uv sync --frozen`，所以删除
+`deploy/.env` 里的 `UV_DEFAULT_INDEX` 不会让已锁定的包下载 URL 切回官方 PyPI。
+默认路径需要保留清华源基线。无法访问清华源的环境应先按网络/代理路径解决；如必须
+使用 PyPI 或自建源，需要用同一索引重新生成 `services/parser/uv.lock`，并在合并前
+重锁回清华源，否则 `scripts/verify_local_seed_contract.py` 会报错。首次准备 OCR
+runtime 仍会下载几十个 Python 包。
 
 ## 脚本职责
 

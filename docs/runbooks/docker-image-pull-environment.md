@@ -10,7 +10,8 @@
 
 业务服务、migration、seed、Parser 和前端都不通过 Docker 启动。
 Parser 的 `uv sync` 下载 Python 包，不走 Docker registry。uv 默认包索引由
-`deploy/.env.example` 里的 `UV_DEFAULT_INDEX` 控制。
+`deploy/.env.example` 里的 `UV_DEFAULT_INDEX` 控制；当前 `services/parser/uv.lock`
+也锁到同一清华源，`uv sync --frozen` 不会因为删除该变量而改用官方 PyPI。
 
 ## 默认路径
 

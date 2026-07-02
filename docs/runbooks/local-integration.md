@@ -67,7 +67,8 @@ curl --noproxy '*' -fsS http://localhost:8080/readyz
 - `dev-up.sh`：infra pull/up、等待 Compose health checks、Qdrant collection
   初始化、migration、demo seed。
 - `run-backend.sh`：Parser uv 依赖准备、后端进程启动、日志和进程组 PID。uv 的
-  Python 包索引来自 `deploy/.env` 里的 `UV_DEFAULT_INDEX`，不走 Docker 镜像源。
+  Python 包索引默认来自 `deploy/.env` 里的 `UV_DEFAULT_INDEX`，不走 Docker 镜像源；
+  frozen 同步仍会按 `services/parser/uv.lock` 里的包 URL 下载。
 - `stop-backend.sh`：按 `.local/run/` 中记录的进程组停止后端，避免只杀掉
   `go run` / `uv run` wrapper 后留下真实服务占用端口。
 - `deploy/.env`：本地配置。脚本不生成、不改写、不维护第二套默认值。
@@ -83,7 +84,11 @@ Infra 拉取慢：
 Parser uv 依赖慢：
 
 - 默认保留 `deploy/.env.example` 里的 `UV_DEFAULT_INDEX`。
-- 如果公司网络只能访问 PyPI 或自建源，改 `deploy/.env` 里的 `UV_DEFAULT_INDEX`。
+- 默认 `services/parser/uv.lock` 也锁定到清华源；`uv sync --frozen` 不会因为删除或
+  修改 `UV_DEFAULT_INDEX` 而改用官方 PyPI。
+- 如果公司网络只能访问 PyPI 或自建源，需要用同一索引重新生成
+  `services/parser/uv.lock` 作为本机排障路径；提交前必须重锁回清华源并通过
+  `scripts/verify_local_seed_contract.py`。
 - uv 下载的是 Python 包；Docker registry rewrite 不影响它。
 - 第一次准备 PaddleOCR extra 会下载几十个包；确认 `services/parser/uv.lock`
   里的 URL 也是清华源，而不是 `pypi.org` 或 `files.pythonhosted.org`。
