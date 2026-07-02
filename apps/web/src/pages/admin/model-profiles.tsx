@@ -13,6 +13,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   buildCreateModelProfileRequest,
   buildUpdateModelProfileRequest,
   formatModelProfileError,
@@ -460,20 +467,23 @@ export function ModelProfilesPage() {
               >
                 用途 <span className="text-destructive">*</span>
               </label>
-              <select
-                id="mp-create-purpose"
+              <Select
                 value={form.purpose}
-                onChange={(e) =>
-                  updateField('purpose', e.target.value as ModelProfileFormValues['purpose'])
+                onValueChange={(v) =>
+                  updateField('purpose', String(v) as ModelProfileFormValues['purpose'])
                 }
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
               >
-                {PURPOSE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="mp-create-purpose" className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PURPOSE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Provider */}
@@ -484,20 +494,23 @@ export function ModelProfilesPage() {
               >
                 服务商 <span className="text-destructive">*</span>
               </label>
-              <select
-                id="mp-create-provider"
+              <Select
                 value={form.provider}
-                onChange={(e) =>
-                  updateField('provider', e.target.value as ModelProfileFormValues['provider'])
+                onValueChange={(v) =>
+                  updateField('provider', String(v) as ModelProfileFormValues['provider'])
                 }
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
               >
-                {PROVIDER_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="mp-create-provider" className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROVIDER_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Base URL */}
@@ -736,20 +749,23 @@ export function ModelProfilesPage() {
               >
                 服务商 <span className="text-destructive">*</span>
               </label>
-              <select
-                id="mp-edit-provider"
+              <Select
                 value={form.provider}
-                onChange={(e) =>
-                  updateField('provider', e.target.value as ModelProfileFormValues['provider'])
+                onValueChange={(v) =>
+                  updateField('provider', String(v) as ModelProfileFormValues['provider'])
                 }
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
               >
-                {PROVIDER_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="mp-edit-provider" className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROVIDER_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Base URL */}

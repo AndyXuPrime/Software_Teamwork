@@ -562,21 +562,24 @@ export function KnowledgeDocumentsPage({
                 className="pl-8"
               />
             </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value as DocumentStatus | '')
+            <Select
+              value={statusFilter || undefined}
+              onValueChange={(v) => {
+                setStatusFilter(String(v) as DocumentStatus | '')
                 setPage(1)
               }}
-              className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
             >
-              <option value="">全部状态</option>
-              {(FILTERABLE_STATUSES.filter(Boolean) as DocumentStatus[]).map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-8 w-auto min-w-[110px]">
+                <SelectValue placeholder="全部状态" />
+              </SelectTrigger>
+              <SelectContent>
+                {(FILTERABLE_STATUSES.filter(Boolean) as DocumentStatus[]).map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {STATUS_LABELS[s]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Empty state */}

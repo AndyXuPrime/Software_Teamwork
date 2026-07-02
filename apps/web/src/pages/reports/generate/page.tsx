@@ -15,6 +15,13 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { InlineNotice, ProgressSummary, StateBlock } from '@/components/common'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useModelProfiles } from '@/features/admin-config'
 import { useCurrentQALLMConfigQuery } from '@/features/qa-settings/qa-settings.queries'
 import type {
@@ -707,12 +714,11 @@ export function ReportGeneratePage() {
                 </label>
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium">报告类型</span>
-                  <select
-                    className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+                  <Select
                     disabled={typeQuery.isLoading || typeQuery.isError || reportTypes.length === 0}
-                    value={form.reportType}
-                    onChange={(event) => {
-                      const nextReportType = event.target.value
+                    value={form.reportType || undefined}
+                    onValueChange={(v) => {
+                      const nextReportType = String(v)
                       setForm((prev) => ({
                         ...(nextReportType
                           ? applyReportTypeDraftDefaults(prev, nextReportType)
@@ -721,31 +727,38 @@ export function ReportGeneratePage() {
                       }))
                     }}
                   >
-                    <option value="">请选择报告类型</option>
-                    {reportTypes.map((type) => (
-                      <option key={type.code} value={type.code}>
-                        {type.name}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-8 w-full">
+                      <SelectValue placeholder="请选择报告类型" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {reportTypes.map((type) => (
+                        <SelectItem key={type.code} value={type.code}>
+                          {type.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </label>
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium">报告模板</span>
-                  <select
-                    className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+                  <Select
                     disabled={
                       templateQuery.isLoading || templateQuery.isError || templates.length === 0
                     }
-                    value={form.templateId}
-                    onChange={(event) => updateForm('templateId', event.target.value)}
+                    value={form.templateId || undefined}
+                    onValueChange={(v) => updateForm('templateId', String(v))}
                   >
-                    <option value="">请选择报告模板</option>
-                    {templates.map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {template.templateName} v{template.version}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-8 w-full">
+                      <SelectValue placeholder="请选择报告模板" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {templates.map((template) => (
+                        <SelectItem key={template.id} value={template.id}>
+                          {template.templateName} v{template.version}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </label>
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium">年份</span>
