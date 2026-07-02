@@ -425,7 +425,7 @@ func rejectSensitiveKeys(value any) error {
 
 func containsSensitiveToken(value string) bool {
 	normalized := strings.ToLower(strings.ReplaceAll(value, "-", "_"))
-	denylist := []string{"api_key", "apikey", "authorization", "bearer", "token", "secret", "password", "credential", "connection_string", "database_url", "prompt", "document_text", "provider_response"}
+	denylist := []string{"api_key", "apikey", "authorization", "bearer", "access_token", "auth_token", "secret", "password", "credential", "connection_string", "database_url", "prompt", "document_text", "provider_response"}
 	return slices.ContainsFunc(denylist, func(token string) bool {
 		return strings.Contains(normalized, token)
 	})
