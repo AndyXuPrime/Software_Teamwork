@@ -215,6 +215,34 @@ func TestHandlerRejectsWhenServiceTokenIsNotConfigured(t *testing.T) {
 	}
 }
 
+func TestHandlerRejectsOversizedRequestBodyBeforeToolDecode(t *testing.T) {
+	toolService := &fakeToolService{}
+	server := httptest.NewServer(NewHandler(Config{
+		ToolService:         toolService,
+		ServiceToken:        "mcp-token",
+		MaxRequestBodyBytes: 64,
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, strings.NewReader(strings.Repeat("x", 65)))
+	if err != nil {
+		t.Fatalf("NewRequest() failed: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer mcp-token")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do() failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413", resp.StatusCode)
+	}
+	if toolService.call.Name != "" {
+		t.Fatalf("oversized request reached tool service: %+v", toolService.call)
+	}
+}
+
 func newTestSession(t *testing.T, handler http.Handler, headers http.Header) (*mcp.ClientSession, func()) {
 	t.Helper()
 	server := httptest.NewServer(handler)

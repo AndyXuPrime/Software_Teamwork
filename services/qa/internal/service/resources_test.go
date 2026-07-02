@@ -23,7 +23,10 @@ func TestDefaultAgentConfigEnablesAttachmentSearch(t *testing.T) {
 
 func TestReportGenerationDirectiveMentionsContentReportTool(t *testing.T) {
 	directive := requestDirective(AskInput{Mode: "report_generation"})
-	if !strings.Contains(directive, "document__generate_report_from_content") || !strings.Contains(directive, "search_session_attachments") {
+	if !strings.Contains(directive, "document__generate_report_from_content") ||
+		!strings.Contains(directive, "search_session_attachments") ||
+		!strings.Contains(directive, "include_report_source=true") ||
+		!strings.Contains(directive, "report_source_excerpt") {
 		t.Fatalf("directive=%q, want attachment-to-report tool guidance", directive)
 	}
 }

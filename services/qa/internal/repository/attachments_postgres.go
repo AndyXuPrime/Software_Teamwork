@@ -205,7 +205,7 @@ func (r *Postgres) SearchSessionAttachmentChunks(ctx context.Context, userID, se
 		filter = " AND a.id::text = ANY($5)"
 		args = append(args, attachmentIDs)
 	}
-	rows, err := r.pool.Query(ctx, `SELECT ch.id::text, ch.attachment_id::text, ch.conversation_id::text, ch.chunk_index, ch.page_number, COALESCE(ch.section_path,''), ch.content, ch.content_preview, ch.token_count, a.filename FROM session_attachment_chunks ch JOIN session_attachments a ON a.id=ch.attachment_id WHERE ch.conversation_id::text=$1 AND a.external_user_id=$2 AND a.status='ready' AND a.deleted_at IS NULL AND lower(ch.content) LIKE $3`+filter+` ORDER BY ch.chunk_index LIMIT $4`, args...)
+	rows, err := r.pool.Query(ctx, `SELECT ch.id::text, ch.attachment_id::text, ch.conversation_id::text, ch.chunk_index, ch.page_number, COALESCE(ch.section_path,''), ch.content, ch.content_preview, ch.token_count, a.filename FROM session_attachment_chunks ch JOIN session_attachments a ON a.id=ch.attachment_id WHERE ch.conversation_id::text=$1 AND a.external_user_id=$2 AND a.status='ready' AND a.deleted_at IS NULL AND lower(ch.content) LIKE $3`+filter+` ORDER BY a.created_at, a.id, ch.chunk_index LIMIT $4`, args...)
 	if err != nil {
 		return nil, err
 	}
