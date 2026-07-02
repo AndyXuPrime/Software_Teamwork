@@ -35,7 +35,7 @@ func NewChatClient(baseURL, serviceToken, defaultProfileID, defaultModel string,
 		defaultModel = strings.TrimSpace(defaultProfileID)
 	}
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: defaultTimeout}
+		httpClient = &http.Client{Timeout: defaultChatTimeout}
 	}
 	return &ChatClient{
 		baseURL:          normalized,

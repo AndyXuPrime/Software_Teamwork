@@ -15,6 +15,7 @@ import (
 )
 
 const defaultTimeout = 10 * time.Second
+const defaultChatTimeout = 120 * time.Second
 const callerService = "document"
 const aiGatewayPort = "8086"
 
