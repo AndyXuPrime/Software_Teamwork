@@ -27,10 +27,10 @@
 | --- | --- | --- |
 | 文档状态 | active | README、数据模型和内部 OpenAPI 存在。 |
 | 代码状态 | implemented | Go service、PostgreSQL repository、migrations、用户/会话内部 API、argon2id、token hash、`pgx/v5@v5.9.2` 和 `x/crypto` 安全更新已落地。 |
-| 契约对齐 | aligned | Auth 内部 routes 与服务 OpenAPI 主体一致；Gateway 公开 auth routes 已有专门 handler。 |
+| 契约对齐 | aligned | Auth 内部 routes 与服务 OpenAPI 主体一致；Gateway 公开 auth routes 已有专门 handler / proxy。 |
 | 数据持久化 | postgres | `AUTH_DATABASE_URL` 配置后使用 PostgreSQL；无 memory runtime。 |
 | 测试状态 | covered | config、repository mapping、service crypto/session、HTTP handler 测试存在。 |
-| 建议动作 | 联调 / 回写文档 | 保留 DB migration smoke 记录；Gateway/Auth/Redis full smoke 已脚本化，初始化管理员账号说明仍需继续完善。 |
+| 建议动作 | 联调 / 回写文档 | 保留 DB migration smoke 记录；Gateway/Auth/Redis full smoke 已脚本化；本地管理员和超管 seed 已补齐，生产初始化流程仍需继续完善。 |
 
 ## 3. 已实现
 
@@ -41,9 +41,12 @@
 | 创建会话 | `services/auth/internal/service/auth.go` | Auth OpenAPI / Gateway OpenAPI | `TestCreateSessionRejectsWrongPasswordAndRecordsFailure` | 校验密码并签发 opaque token。 |
 | 查询用户和权限 | `services/auth/internal/http/server.go`、`internal/repository/postgres.go` | Auth OpenAPI | repository/http tests | 支持 user summary 和 permissions。 |
 | 查询/撤销会话 | `services/auth/internal/service/auth.go` | Auth OpenAPI | `TestRevokedTokenNoLongerReturnsActiveSession` | 只保存 token hash。 |
+| 当前用户资料 | `services/auth/internal/http/auth_handlers.go`、`internal/service/service.go` | Auth/Gateway OpenAPI profile paths | `cd services/auth && go test ./...` | 允许更新 `displayName`、`email`、`phone`；`email`/`phone` 可清空且不做唯一约束；写接口要求 Gateway 专用 token 和 `CallerService=gateway`。 |
+| 必需改密 | `services/auth/internal/service/service.go` | Auth/Gateway OpenAPI password-change paths | `TestRequiredPasswordChangeVerifiesCurrentPasswordAndClearsFlag`、`TestRequiredPasswordChangeRejectsUserWithoutRequiredChange` | 校验当前临时密码、新密码确认、8..1024 字符策略和 `must_change_password` 当前状态，成功清除 `must_change_password` 并记录 `password.changed` 安全事件；写接口要求 Gateway 专用 token 和 `CallerService=gateway`。 |
+| 管理员用户管理 | `services/auth/internal/http/auth_handlers.go`、`internal/repository/postgres.go` | Auth/Gateway OpenAPI admin-users paths | service/http/repository tests | 管理员管理 standard；super_admin 管理 standard/admin；拒绝 super_admin target 和敏感自操作；管理层级按 Auth DB 角色复核，不信任转发角色头；临时密码校验字段名保持 `temporaryPassword`，重置密码记录 `password.reset` 安全事件。 |
 | 密码哈希 | `services/auth/internal/service/crypto.go` | `technology-decisions.md` | `TestPasswordHashUsesArgon2idV1PHC` | argon2id PHC 参数固定。 |
-| PostgreSQL schema | `services/auth/migrations/0001_create_auth_core_tables.sql`、`0002_seed_auth_roles_permissions.sql`、`0003_seed_qa_settings_permissions.sql` | Auth 数据模型 | goose apply 需手工 | seed roles/permissions 存在。 |
-| 服务间 token | `services/auth/internal/http/server.go` | Auth README | handler tests | 配置后校验 `X-Service-Token`。 |
+| PostgreSQL schema | `services/auth/migrations/0001_create_auth_core_tables.sql` 到 `0005_add_must_change_password.sql` | Auth 数据模型 | goose apply 需手工 | seed roles/permissions 存在；credentials 包含 `must_change_password`。 |
+| 服务间 token | `services/auth/internal/http/server.go` | Auth README | handler tests | 一般内部路由校验共享 `X-Service-Token`；`/internal/v1/admin/**` 和当前用户资料/改密写接口只接受 Gateway 专用 token。 |
 
 ## 4. 未实现
 
@@ -60,6 +63,7 @@
 | README 状态记录 | README 曾称 `services/auth/` 代码尚未落地 | 实际已有 Go module、migrations、repository、HTTP routes；本次已回写 README | 后续若重复写实现状态，容易再次漂移 | README 只链接 implementation，当前状态在本文维护。 |
 | 技术选型 pgx 版本 | 技术基线要求 PostgreSQL 服务统一使用 `pgx/v5@v5.9.2` | Auth 已迁移到 `pgx/v5@v5.9.2`，sqlc 生成代码和 repository 适配层同步更新 | 已对齐 | 后续新增 PostgreSQL 服务沿用 `pgx/v5`，不得复制旧 v4 用法。 |
 | 无 DB 时 runtime | README 允许无 `AUTH_DATABASE_URL` 启动但 ready 503 | 当前 handlers 无 auth service 时业务 routes 会依赖缺失服务 | 本地误以为可用 | README/implementation 说明无 DB 仅用于进程启动检查。 |
+| 用户管理契约 | OpenAPI 已新增管理员用户管理、profile 和必需改密路径 | Auth 已注册对应 handler、migration、service 和 repository 方法 | 剩余主要是前端 UI 与真实依赖联调 | 前端子任务继续接入这些 active contract。 |
 
 ## 6. MVP / mock / memory backend / 占位
 
@@ -73,8 +77,8 @@
 | 项目 | 当前状态 | 缺口 |
 | --- | --- | --- |
 | 启动命令 | `cd services/auth && AUTH_HTTP_ADDR=:8001 go run ./cmd/server` | 业务可用需配置 DB、token secret、service token。 |
-| 环境变量 | `AUTH_DATABASE_URL`、`AUTH_INTERNAL_SERVICE_TOKEN`、`AUTH_TOKEN_HASH_SECRET`、session TTL、default role、timeouts | 需要部署 secret 注入说明。 |
-| PostgreSQL / migration | `migrations/0001` 到 `0003`，`sqlc.yaml`，runtime repository | 本地 PostgreSQL smoke 已验证 goose apply 到 version 3。 |
+| 环境变量 | `AUTH_DATABASE_URL`、`AUTH_INTERNAL_SERVICE_TOKEN`、`AUTH_GATEWAY_ADMIN_SERVICE_TOKEN`、`AUTH_TOKEN_HASH_SECRET`、session TTL、default role、timeouts | 需要部署 secret 注入说明。 |
+| PostgreSQL / migration | `migrations/0001` 到 `0005`，`sqlc.yaml`，runtime repository | 本地 PostgreSQL smoke 需补到 version 5。 |
 | Redis / queue | Auth 不使用 Redis；Gateway 使用 Redis session cache | 无。 |
 | Object storage / vector store / AI provider | 不涉及 | 无。 |
 
@@ -82,9 +86,9 @@
 
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
-| 单元测试 | `cd services/auth && go test ./...` | pass（既有记录，2026-06-30；本轮文档审计未重跑） | 无。 |
-| 集成测试 | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up` | pass（2026-07-01，本地 Docker PostgreSQL 16，迁移到 version 3） | 未跑 gateway 端到端 smoke。 |
-| 契约测试 | HTTP handler tests + Gateway auth proxy tests | partial | 未从 OpenAPI 自动生成校验。 |
+| 单元测试 | `cd services/auth && go test ./...` | pass（2026-07-02） | 无。 |
+| 集成测试 | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up` | pass（2026-07-01，本地 Docker PostgreSQL 16，迁移到 version 3） | 需随 migration 版本继续更新记录。 |
+| 契约测试 | HTTP handler tests + Gateway auth proxy tests | pass（2026-07-03，后端与 Gateway auth proxy 本地测试） | 未从 OpenAPI 自动生成校验。 |
 | 本地 / optional CI smoke | `bash scripts/run_issue_352_smoke.sh`；手动 workflow `Auth Gateway Redis Smoke` | available（env-gated；执行会 apply Auth migration、启动 Auth/Gateway、验证 Redis 和 fake owner header capture） | 真实执行需要 Docker daemon、PostgreSQL、Redis 和 Go；默认 PR CI 只跑 skip 编译。 |
 
 ## 9. 建议任务
@@ -101,3 +105,4 @@
 | --- | --- | --- | --- |
 | 2026-06-29 | Codex goal | `eddf917` + working tree | Auth 实现已落地且基本对齐契约；主要剩余是 DB smoke、管理员初始化和 README 状态回写。 |
 | 2026-06-30 | Codex full-day audit | `develop@92d3afc` | 复核今日 PR/issue：Auth 已保持 PostgreSQL runtime、`pgx/v5@v5.9.2` 和 `x/crypto` 安全基线；DB migration smoke 已有记录，剩余为 Gateway/Auth/Redis 端到端 smoke 与管理员初始化说明。 |
+| 2026-07-02 | Codex backend task | `develop@cda73a10` + user-management working tree | Auth 已实现管理员用户管理、当前用户资料、必需改密、`must_change_password` migration/sqlc/service/handler；`go test ./...` 和 `go build ./cmd/server` 通过。 |

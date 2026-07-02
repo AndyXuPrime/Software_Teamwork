@@ -43,7 +43,7 @@ Gateway 后续实现必须遵循 [技术选型基线](../../architecture/technol
 | Session cache | 用户或会话创建成功后缓存 auth 返回的会话身份信息，后续请求优先从 Redis 获取会话上下文。 |
 | Response contract | 对前端保持统一成功响应、分页响应和错误响应结构。 |
 | Request correlation | 生成或透传 `X-Request-Id`，并要求下游服务保留该 request id。 |
-| Admin runtime configuration entrypoint | 暴露模型 profile 和文档解析器配置的管理入口；模型配置转发给 `ai-gateway`，解析器配置转发给 `knowledge`。 |
+| Admin runtime configuration entrypoint | 暴露模型 profile、文档解析器配置和用户管理的管理入口；模型配置转发给 `ai-gateway`，解析器配置转发给 `knowledge`，用户管理转发给 `auth`。 |
 | Cross-service aggregation | 仅在前后端契约明确后提供聚合读接口；本轮管理后台概览暂标缺失。 |
 | Streaming entrypoint | 问答通过 `POST /api/v1/qa-sessions/{sessionId}/messages` 提供 `text/event-stream` 响应，并通过 `/api/v1/qa-sessions/{sessionId}/events` 提供短期事件回放；报告生成当前提供事件列表资源，后续如需 SSE 需先补 OpenAPI 契约。 |
 | Edge policy | 集中处理 CORS、基础请求头、请求大小原则、健康检查和公开 API 命名。 |
@@ -85,7 +85,7 @@ Gateway 后续实现必须遵循 [技术选型基线](../../architecture/technol
 | Owner | Gateway 公开资源范围 |
 | --- | --- |
 | `gateway` | 健康检查和就绪检查。 |
-| `auth` | 用户、会话和当前用户身份。 |
+| `auth` | 用户、会话、当前用户身份、当前用户资料、必需改密和管理员用户管理。 |
 | `knowledge` | 知识库、知识库文档、文档详情、文档切片、原始文件内容、知识查询和管理员解析器配置。 |
 | `document` | 报告类型、模板、素材、报告记录、大纲、章节、任务、事件、生成文件、统计、操作日志和报告设置。 |
 | `qa` | QA 会话、消息、回答运行、脱敏工具调用摘要、引用、配置版本、连接测试、检索体验测试和 QA 指标。 |
@@ -150,6 +150,21 @@ Gateway 对前端暴露 auth 拥有的用户与会话资源，精确 method、pa
 Gateway 负责转发用户创建和会话创建请求，成功后把 auth 返回的会话身份写入 Redis 会话缓存；当前用户查询优先从 Redis 会话缓存读取；登出时定位当前会话，调用 auth 删除会话或令牌，并删除 Redis 缓存。
 
 Auth service 负责创建用户、校验凭证、维护角色权限、签发会话身份和记录安全事件。Gateway 必须只把 `data.session.accessToken` 返回给前端，不得把 Redis key、token hash、内部 auth URL 或 session secret 暴露给前端。
+
+公开 `POST /api/v1/users` 保持自助注册语义：不要求管理员认证，创建默认
+`standard` 用户并返回会话，不触发首次强制改密。管理员创建用户使用
+`POST /api/v1/admin/users`，要求管理员认证，不返回被创建用户的 session，并由 Auth
+设置 `mustChangePassword=true`。
+
+Gateway 还暴露 Auth 拥有的当前用户资料和必需改密资源。`/api/v1/users/me/profile`
+只允许用户自助编辑 `displayName`、`email`、`phone`；`/api/v1/users/me/password-changes`
+用于提交当前临时密码、新密码和确认值。Gateway 负责公开路由、envelope 和认证上下文传递，
+并使用 `GATEWAY_AUTH_ADMIN_SERVICE_TOKEN` 调用 Auth 自助写接口；Auth 负责校验当前密码、更新密码哈希和清除 `mustChangePassword`。
+
+管理员用户管理路由 `/api/v1/admin/users` 由 Gateway 做粗粒度管理员入口校验并转发给 Auth。
+Auth 是最终权限裁判：`admin` 只能管理 `standard`，`super_admin`
+可管理 `standard` 与 `admin`，普通 `system:admin` 业务权限不会提升用户管理层级，任何公开 UI/API 都不能管理 `super_admin`。用户禁用、
+密码重置和角色变化后，Gateway 必须配合 Auth 撤销或刷新受影响 Redis 会话缓存，避免旧权限快照继续可用。
 
 ## Gateway Knowledge 行为
 

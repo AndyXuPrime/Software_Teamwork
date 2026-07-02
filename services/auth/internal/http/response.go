@@ -12,6 +12,12 @@ type successEnvelope struct {
 	RequestID string `json:"requestId"`
 }
 
+type paginatedEnvelope struct {
+	Data      any              `json:"data"`
+	Page      pageInfoResponse `json:"page"`
+	RequestID string           `json:"requestId"`
+}
+
 type errorEnvelope struct {
 	Error errorBody `json:"error"`
 }
@@ -27,6 +33,12 @@ func writeJSON(w http.ResponseWriter, status int, data any, requestID string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(successEnvelope{Data: data, RequestID: requestID})
+}
+
+func writePaginatedJSON(w http.ResponseWriter, status int, data any, page pageInfoResponse, requestID string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(paginatedEnvelope{Data: data, Page: page, RequestID: requestID})
 }
 
 func writeAppError(w http.ResponseWriter, r *http.Request, err error) {

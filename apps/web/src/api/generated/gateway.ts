@@ -106,6 +106,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/users/me/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get current user profile
+         * @description Returns the authenticated user's account profile. Gateway exposes this
+         *     current-user resource and auth owns the profile fields, roles,
+         *     permissions, account status, and password-change state.
+         */
+        get: operations["getCurrentUserProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update current user profile
+         * @description Updates only editable current-user profile fields: display name, email,
+         *     and phone. Username, roles, permissions, status, and password-change
+         *     state are read-only through this resource.
+         */
+        patch: operations["updateCurrentUserProfile"];
+        trace?: never;
+    };
+    "/api/v1/users/me/password-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change required password
+         * @description Changes the authenticated user's password when a temporary password
+         *     change is required. The caller must submit the current temporary
+         *     password plus the new password and confirmation. Auth verifies the
+         *     current password, applies the 8 to 1024 character password policy, then
+         *     clears mustChangePassword.
+         */
+        post: operations["createCurrentUserPasswordChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/knowledge-bases": {
         parameters: {
             query?: never;
@@ -251,6 +303,92 @@ export interface paths {
          * @description Run a resource-mode knowledge retrieval query. Query execution is modeled as creating a knowledge-query resource, not as an action-style search path.
          */
         post: operations["createKnowledgeQuery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List manageable users
+         * @description Lists users the caller is allowed to manage. Administrators see
+         *     standard users only. Super administrators see standard and admin users.
+         *     A bare system:admin permission without the admin or super_admin role
+         *     does not grant user-management authority. Super administrator accounts are
+         *     excluded from this management list. Filtering and pagination are
+         *     performed by Gateway/Auth, not by frontend-only filtering.
+         */
+        get: operations["listAdminUsers"];
+        put?: never;
+        /**
+         * Create managed user
+         * @description Creates a user managed by administrators. This is distinct from public
+         *     self-service registration at POST /api/v1/users: no session is returned
+         *     to the administrator, and the created user must change the temporary
+         *     password on first login.
+         */
+        post: operations["createAdminUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Public user id. */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update managed user
+         * @description Updates a manageable user's optional profile fields, active/disabled
+         *     status, or managed role. Role updates are single-role replacement
+         *     between standard and admin. No caller can target super_admin through
+         *     this API, and callers cannot disable or change the role of their own
+         *     account through admin user management.
+         */
+        patch: operations["updateAdminUser"];
+        trace?: never;
+    };
+    "/api/v1/admin/users/{userId}/password-resets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Public user id. */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset managed user password
+         * @description Resets a manageable user's password to an administrator-entered
+         *     temporary password and requires the target user to change it on next
+         *     login. The temporary password is write-only and must never be logged or
+         *     returned. Callers cannot reset their own password through admin user
+         *     management.
+         */
+        post: operations["createAdminUserPasswordReset"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1410,6 +1548,12 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /**
+         * @description Public self-service registration request. This route creates a standard
+         *     user, returns a session, and does not set mustChangePassword. It does
+         *     not collect displayName, email, or phone; those are edited later through
+         *     the current-user profile resource.
+         */
         CreateUserRequest: {
             username: string;
             /** Format: password */
@@ -1423,8 +1567,123 @@ export interface components {
         UserSummary: {
             id: string;
             username: string;
+            /** @description Optional display name. May be empty; clients may fall back to username. */
+            displayName?: string;
+            /**
+             * Format: email
+             * @description Optional non-unique profile email. Not a login identifier.
+             */
+            email?: string | null;
+            /** @description Optional non-unique profile phone. Not a login identifier. */
+            phone?: string | null;
+            status?: components["schemas"]["UserStatus"];
+            /** @description True when the authenticated user must complete the required password-change flow before normal routes. */
+            mustChangePassword?: boolean;
             roles: string[];
             permissions: string[];
+        };
+        /**
+         * @description Account lifecycle status owned by auth.
+         * @enum {string}
+         */
+        UserStatus: "active" | "disabled" | "locked";
+        /**
+         * @description Role values assignable through admin user management. super_admin is intentionally excluded.
+         * @enum {string}
+         */
+        ManagedUserRole: "standard" | "admin";
+        UserProfile: components["schemas"]["UserSummary"] & {
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        UserProfileResponse: {
+            data: components["schemas"]["UserProfile"];
+            requestId: string;
+        };
+        /** @description Current-user editable profile fields only. */
+        UpdateUserProfileRequest: {
+            /** @description Optional display name. Empty string is allowed. */
+            displayName?: string;
+            /**
+             * Format: email
+             * @description Optional non-unique profile email. Blank/null clears the field.
+             */
+            email?: string | null;
+            /** @description Optional non-unique profile phone. Blank/null clears the field. */
+            phone?: string | null;
+        };
+        CreatePasswordChangeRequest: {
+            /**
+             * Format: password
+             * @description Current temporary password that auth verifies before replacing it.
+             */
+            currentPassword: string;
+            /** Format: password */
+            newPassword: string;
+            /** Format: password */
+            newPasswordConfirmation: string;
+        };
+        AdminUser: components["schemas"]["UserProfile"] & {
+            /** @description Roles the current caller may set for this row. Empty when role change is not allowed. */
+            manageableRoles?: components["schemas"]["ManagedUserRole"][];
+            /** @description Stable action hints for management UI rendering; auth remains final authority. */
+            actions?: {
+                canDisable: boolean;
+                canEnable: boolean;
+                canResetPassword: boolean;
+                canChangeRole: boolean;
+            };
+        };
+        AdminUserResponse: {
+            data: components["schemas"]["AdminUser"];
+            requestId: string;
+        };
+        AdminUserListResponse: {
+            data: components["schemas"]["AdminUser"][];
+            page: components["schemas"]["PageInfo"];
+            requestId: string;
+        };
+        CreateAdminUserRequest: {
+            username: string;
+            /**
+             * Format: password
+             * @description Administrator-entered temporary password. It is never returned and forces mustChangePassword.
+             */
+            temporaryPassword: string;
+            role: components["schemas"]["ManagedUserRole"];
+            /** @description Optional display name. Empty string is allowed. */
+            displayName?: string;
+            /**
+             * Format: email
+             * @description Optional non-unique profile email.
+             */
+            email?: string | null;
+            /** @description Optional non-unique profile phone. */
+            phone?: string | null;
+        };
+        /**
+         * @description Managed user patch. Omitted fields are unchanged. Status can move
+         *     between active and disabled; locked is a read-only status for this
+         *     management slice. Role changes replace the managed role with exactly one
+         *     target role.
+         */
+        UpdateAdminUserRequest: {
+            displayName?: string;
+            /** Format: email */
+            email?: string | null;
+            phone?: string | null;
+            /** @enum {string} */
+            status?: "active" | "disabled";
+            role?: components["schemas"]["ManagedUserRole"];
+        };
+        CreateAdminPasswordResetRequest: {
+            /**
+             * Format: password
+             * @description Administrator-entered temporary password. It is never returned and forces mustChangePassword.
+             */
+            temporaryPassword: string;
         };
         SessionSummary: {
             sessionId: string;
@@ -2976,6 +3235,8 @@ export interface components {
         ResponseRunId: string;
         CitationId: string;
         TestRunId: string;
+        /** @description Public user id. */
+        UserId: string;
         Page: number;
         PageSize: number;
     };
@@ -3117,6 +3378,81 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+        };
+    };
+    getCurrentUserProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current user profile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfileResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+        };
+    };
+    updateCurrentUserProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Current user profile updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfileResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    createCurrentUserPasswordChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePasswordChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Password changed and current user state refreshed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfileResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     listKnowledgeBases: {
@@ -3444,6 +3780,130 @@ export interface operations {
             };
             400: components["responses"]["Error"];
             404: components["responses"]["Error"];
+        };
+    };
+    listAdminUsers: {
+        parameters: {
+            query?: {
+                page?: components["parameters"]["Page"];
+                pageSize?: components["parameters"]["PageSize"];
+                /** @description Case-insensitive username substring filter. */
+                username?: string;
+                /** @description Managed role filter. Super administrator rows are never returned. */
+                role?: "standard" | "admin";
+                /** @description Account status filter. */
+                status?: components["schemas"]["UserStatus"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Manageable users. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserListResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createAdminUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAdminUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Managed user created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateAdminUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Public user id. */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAdminUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Managed user updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    createAdminUserPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Public user id. */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAdminPasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Managed user password reset. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     listAdminModelProfiles: {

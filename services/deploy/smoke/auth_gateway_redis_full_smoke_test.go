@@ -80,12 +80,13 @@ func TestAuthGatewayRedisFullSmoke(t *testing.T) {
 }
 
 type authGatewayRedisFullSmokeConfig struct {
-	databaseURL     string
-	redisAddr       string
-	redisPassword   string
-	redisDB         int
-	serviceToken    string
-	tokenHashSecret string
+	databaseURL       string
+	redisAddr         string
+	redisPassword     string
+	redisDB           int
+	serviceToken      string
+	adminServiceToken string
+	tokenHashSecret   string
 }
 
 func loadAuthGatewayRedisFullSmokeConfig(t *testing.T) authGatewayRedisFullSmokeConfig {
@@ -107,12 +108,13 @@ func loadAuthGatewayRedisFullSmokeConfig(t *testing.T) authGatewayRedisFullSmoke
 		redisDB = value
 	}
 	return authGatewayRedisFullSmokeConfig{
-		databaseURL:     strings.TrimSpace(databaseURL),
-		redisAddr:       firstNonEmptyEnvOr("127.0.0.1:6379", "AUTH_GATEWAY_REDIS_ADDR", "GATEWAY_REDIS_ADDR", "REDIS_ADDR"),
-		redisPassword:   os.Getenv("GATEWAY_REDIS_PASSWORD"),
-		redisDB:         redisDB,
-		serviceToken:    firstNonEmptyEnvOr("local-dev-internal-service-token-change-me", "AUTH_GATEWAY_REDIS_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
-		tokenHashSecret: firstNonEmptyEnvOr("local-demo-token-hash-secret-change-me", "AUTH_GATEWAY_REDIS_TOKEN_HASH_SECRET", "TOKEN_HASH_SECRET"),
+		databaseURL:       strings.TrimSpace(databaseURL),
+		redisAddr:         firstNonEmptyEnvOr("127.0.0.1:6379", "AUTH_GATEWAY_REDIS_ADDR", "GATEWAY_REDIS_ADDR", "REDIS_ADDR"),
+		redisPassword:     os.Getenv("GATEWAY_REDIS_PASSWORD"),
+		redisDB:           redisDB,
+		serviceToken:      firstNonEmptyEnvOr("local-dev-internal-service-token-change-me", "AUTH_GATEWAY_REDIS_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
+		adminServiceToken: firstNonEmptyEnvOr("local-dev-gateway-admin-token-change-me", "AUTH_GATEWAY_REDIS_ADMIN_SERVICE_TOKEN", "AUTH_GATEWAY_ADMIN_SERVICE_TOKEN"),
+		tokenHashSecret:   firstNonEmptyEnvOr("local-demo-token-hash-secret-change-me", "AUTH_GATEWAY_REDIS_TOKEN_HASH_SECRET", "TOKEN_HASH_SECRET"),
 	}
 }
 
@@ -202,6 +204,7 @@ func startAuthServer(t *testing.T, ctx context.Context, cfg authGatewayRedisFull
 		"AUTH_HTTP_ADDR="+addr,
 		"AUTH_DATABASE_URL="+cfg.databaseURL,
 		"AUTH_INTERNAL_SERVICE_TOKEN="+cfg.serviceToken,
+		"AUTH_GATEWAY_ADMIN_SERVICE_TOKEN="+cfg.adminServiceToken,
 		"AUTH_TOKEN_HASH_SECRET="+cfg.tokenHashSecret,
 		"AUTH_ENV=smoke",
 	)
@@ -241,6 +244,7 @@ func startGatewayServer(t *testing.T, ctx context.Context, cfg authGatewayRedisF
 		"GATEWAY_DOCUMENT_BASE_URL="+ownerURL,
 		"GATEWAY_AI_GATEWAY_BASE_URL="+ownerURL,
 		"GATEWAY_INTERNAL_SERVICE_TOKEN="+cfg.serviceToken,
+		"GATEWAY_AUTH_ADMIN_SERVICE_TOKEN="+cfg.adminServiceToken,
 		"GATEWAY_TOKEN_HASH_SECRET="+cfg.tokenHashSecret,
 		"GATEWAY_ENV=smoke",
 	)

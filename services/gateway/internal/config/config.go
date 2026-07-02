@@ -23,54 +23,56 @@ const (
 )
 
 type Config struct {
-	HTTPAddr             string
-	MetricsAddr          string
-	ServiceVersion       string
-	Environment          string
-	MaxBodyBytes         int64
-	RequestTimeout       time.Duration
-	ShutdownTimeout      time.Duration
-	DownstreamTimeout    time.Duration
-	CORSAllowedOrigins   []string
-	CORSAllowedMethods   []string
-	CORSAllowedHeaders   []string
-	CORSAllowCredentials bool
-	RedisAddr            string
-	RedisPassword        string
-	RedisDB              int
-	TokenHashSecret      string
-	TokenHashKeyVersion  string
-	InternalServiceToken string
-	AuthBaseURL          string
-	KnowledgeBaseURL     string
-	QABaseURL            string
-	DocumentBaseURL      string
-	AIGatewayBaseURL     string
+	HTTPAddr              string
+	MetricsAddr           string
+	ServiceVersion        string
+	Environment           string
+	MaxBodyBytes          int64
+	RequestTimeout        time.Duration
+	ShutdownTimeout       time.Duration
+	DownstreamTimeout     time.Duration
+	CORSAllowedOrigins    []string
+	CORSAllowedMethods    []string
+	CORSAllowedHeaders    []string
+	CORSAllowCredentials  bool
+	RedisAddr             string
+	RedisPassword         string
+	RedisDB               int
+	TokenHashSecret       string
+	TokenHashKeyVersion   string
+	InternalServiceToken  string
+	AuthAdminServiceToken string
+	AuthBaseURL           string
+	KnowledgeBaseURL      string
+	QABaseURL             string
+	DocumentBaseURL       string
+	AIGatewayBaseURL      string
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr:             stringValue("GATEWAY_HTTP_ADDR", DefaultHTTPAddr),
-		MetricsAddr:          stringValue("GATEWAY_METRICS_ADDR", DefaultMetricsAddr),
-		ServiceVersion:       stringValue("GATEWAY_SERVICE_VERSION", DefaultServiceVersion),
-		Environment:          stringValue("GATEWAY_ENV", DefaultEnvironment),
-		MaxBodyBytes:         DefaultMaxBodyBytes,
-		RequestTimeout:       DefaultRequestTimeout,
-		ShutdownTimeout:      DefaultShutdownTimeout,
-		DownstreamTimeout:    DefaultDownstreamTimeout,
-		CORSAllowedOrigins:   csvValue("GATEWAY_CORS_ALLOWED_ORIGINS", []string{"*"}),
-		CORSAllowedMethods:   csvValue("GATEWAY_CORS_ALLOWED_METHODS", []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"}),
-		CORSAllowedHeaders:   csvValue("GATEWAY_CORS_ALLOWED_HEADERS", []string{"Authorization", "Content-Type", "X-Request-Id"}),
-		RedisAddr:            stringValue("GATEWAY_REDIS_ADDR", DefaultRedisAddr),
-		RedisPassword:        os.Getenv("GATEWAY_REDIS_PASSWORD"),
-		TokenHashSecret:      stringValueFromKeys([]string{"GATEWAY_TOKEN_HASH_SECRET", "TOKEN_HASH_SECRET"}, DefaultTokenHashSecret),
-		TokenHashKeyVersion:  stringValue("GATEWAY_TOKEN_HASH_KEY_VERSION", DefaultTokenKeyVersion),
-		InternalServiceToken: firstNonEmptyEnv("GATEWAY_INTERNAL_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
-		AuthBaseURL:          stringValue("GATEWAY_AUTH_BASE_URL", "http://localhost:8001"),
-		KnowledgeBaseURL:     strings.TrimSpace(os.Getenv("GATEWAY_KNOWLEDGE_BASE_URL")),
-		QABaseURL:            strings.TrimSpace(os.Getenv("GATEWAY_QA_BASE_URL")),
-		DocumentBaseURL:      strings.TrimSpace(os.Getenv("GATEWAY_DOCUMENT_BASE_URL")),
-		AIGatewayBaseURL:     strings.TrimSpace(os.Getenv("GATEWAY_AI_GATEWAY_BASE_URL")),
+		HTTPAddr:              stringValue("GATEWAY_HTTP_ADDR", DefaultHTTPAddr),
+		MetricsAddr:           stringValue("GATEWAY_METRICS_ADDR", DefaultMetricsAddr),
+		ServiceVersion:        stringValue("GATEWAY_SERVICE_VERSION", DefaultServiceVersion),
+		Environment:           stringValue("GATEWAY_ENV", DefaultEnvironment),
+		MaxBodyBytes:          DefaultMaxBodyBytes,
+		RequestTimeout:        DefaultRequestTimeout,
+		ShutdownTimeout:       DefaultShutdownTimeout,
+		DownstreamTimeout:     DefaultDownstreamTimeout,
+		CORSAllowedOrigins:    csvValue("GATEWAY_CORS_ALLOWED_ORIGINS", []string{"*"}),
+		CORSAllowedMethods:    csvValue("GATEWAY_CORS_ALLOWED_METHODS", []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"}),
+		CORSAllowedHeaders:    csvValue("GATEWAY_CORS_ALLOWED_HEADERS", []string{"Authorization", "Content-Type", "X-Request-Id"}),
+		RedisAddr:             stringValue("GATEWAY_REDIS_ADDR", DefaultRedisAddr),
+		RedisPassword:         os.Getenv("GATEWAY_REDIS_PASSWORD"),
+		TokenHashSecret:       stringValueFromKeys([]string{"GATEWAY_TOKEN_HASH_SECRET", "TOKEN_HASH_SECRET"}, DefaultTokenHashSecret),
+		TokenHashKeyVersion:   stringValue("GATEWAY_TOKEN_HASH_KEY_VERSION", DefaultTokenKeyVersion),
+		InternalServiceToken:  firstNonEmptyEnv("GATEWAY_INTERNAL_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
+		AuthAdminServiceToken: strings.TrimSpace(os.Getenv("GATEWAY_AUTH_ADMIN_SERVICE_TOKEN")),
+		AuthBaseURL:           stringValue("GATEWAY_AUTH_BASE_URL", "http://localhost:8001"),
+		KnowledgeBaseURL:      strings.TrimSpace(os.Getenv("GATEWAY_KNOWLEDGE_BASE_URL")),
+		QABaseURL:             strings.TrimSpace(os.Getenv("GATEWAY_QA_BASE_URL")),
+		DocumentBaseURL:       strings.TrimSpace(os.Getenv("GATEWAY_DOCUMENT_BASE_URL")),
+		AIGatewayBaseURL:      strings.TrimSpace(os.Getenv("GATEWAY_AI_GATEWAY_BASE_URL")),
 	}
 
 	if raw := os.Getenv("GATEWAY_MAX_BODY_BYTES"); raw != "" {
@@ -135,6 +137,12 @@ func Load() (Config, error) {
 	}
 	if strings.TrimSpace(cfg.TokenHashKeyVersion) == "" {
 		return Config{}, fmt.Errorf("GATEWAY_TOKEN_HASH_KEY_VERSION must not be empty")
+	}
+	if strings.TrimSpace(cfg.AuthAdminServiceToken) == "" {
+		return Config{}, fmt.Errorf("GATEWAY_AUTH_ADMIN_SERVICE_TOKEN must not be empty")
+	}
+	if strings.TrimSpace(cfg.AuthAdminServiceToken) != "" && strings.TrimSpace(cfg.AuthAdminServiceToken) == strings.TrimSpace(cfg.InternalServiceToken) {
+		return Config{}, fmt.Errorf("GATEWAY_AUTH_ADMIN_SERVICE_TOKEN must differ from GATEWAY_INTERNAL_SERVICE_TOKEN")
 	}
 
 	return cfg, nil

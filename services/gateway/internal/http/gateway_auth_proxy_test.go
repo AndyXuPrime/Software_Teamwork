@@ -217,6 +217,236 @@ func TestKnowledgeQueriesRouteProxiesToKnowledge(t *testing.T) {
 	}
 }
 
+func TestAdminUsersRouteProxiesToAuthWithActorContext(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_1",
+		UserID:      "usr_admin",
+		Username:    "admin",
+		Roles:       []string{"admin"},
+		Permissions: []string{"knowledge:read"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+
+	var capturedPath string
+	var capturedHeader http.Header
+	authDownstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		capturedHeader = r.Header.Clone()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"page":{"page":1,"pageSize":20,"total":0},"requestId":"req_users"}`))
+	}))
+	defer authDownstream.Close()
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		store:                 store,
+		hasher:                hasher,
+		ownerBaseURLs:         map[string]string{"auth": authDownstream.URL},
+		serviceToken:          "svc-token",
+		authAdminServiceToken: "auth-admin-token",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users?page=1", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("X-Request-Id", "req_users")
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	if capturedPath != "/internal/v1/admin/users" ||
+		capturedHeader.Get("X-User-Id") != "usr_admin" ||
+		capturedHeader.Get("X-User-Roles") != "admin" ||
+		capturedHeader.Get("X-Caller-Service") != "gateway" ||
+		capturedHeader.Get("X-Service-Token") != "auth-admin-token" {
+		t.Fatalf("downstream path/header = %s %#v", capturedPath, capturedHeader)
+	}
+}
+
+func TestAdminUsersRouteUsesDedicatedAuthAdminServiceToken(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_1",
+		UserID:      "usr_admin",
+		Username:    "admin",
+		Roles:       []string{"admin"},
+		Permissions: []string{"knowledge:read"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+
+	authDownstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Service-Token"); got != "auth-admin-token" {
+			t.Fatalf("X-Service-Token = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"page":{"page":1,"pageSize":20,"total":0},"requestId":"req_users"}`))
+	}))
+	defer authDownstream.Close()
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		store:                 store,
+		hasher:                hasher,
+		ownerBaseURLs:         map[string]string{"auth": authDownstream.URL},
+		serviceToken:          "svc-token",
+		authAdminServiceToken: "auth-admin-token",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users?page=1", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("X-Request-Id", "req_users")
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+}
+
+func TestAdminUsersRouteRejectsBareSystemAdminPermission(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_1",
+		UserID:      "usr_system_admin",
+		Username:    "system-admin",
+		Roles:       []string{"standard"},
+		Permissions: []string{"system:admin"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+
+	authDownstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("bare system:admin must not reach auth user management")
+	}))
+	defer authDownstream.Close()
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		store:         store,
+		hasher:        hasher,
+		ownerBaseURLs: map[string]string{"auth": authDownstream.URL},
+		serviceToken:  "svc-token",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users?page=1", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("X-Request-Id", "req_users_forbidden")
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+}
+
+func TestMustChangePasswordBlocksProtectedRoutesButAllowsPasswordChange(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:          "sess_1",
+		UserID:             "usr_1",
+		Username:           "alice",
+		Roles:              []string{"standard"},
+		Permissions:        []string{"knowledge:read"},
+		TokenType:          "Bearer",
+		ExpiresAt:          time.Now().Add(time.Hour).UTC(),
+		MustChangePassword: true,
+		Status:             "active",
+	})
+	auth := &fakeAuthClient{
+		getUserResult: service.UserRecord{
+			ID:                 "usr_1",
+			Username:           "alice",
+			Roles:              []string{"standard"},
+			Permissions:        []string{"knowledge:read"},
+			Status:             "active",
+			MustChangePassword: true,
+		},
+		changePasswordResult: service.UserRecord{
+			ID:          "usr_1",
+			Username:    "alice",
+			Roles:       []string{"standard"},
+			Permissions: []string{"knowledge:read"},
+			Status:      "active",
+		},
+	}
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("protected downstream should not be called before password change")
+	}))
+	defer downstream.Close()
+	server := newGatewayTestServer(t, gatewayDeps{
+		auth:          auth,
+		store:         store,
+		hasher:        hasher,
+		ownerBaseURLs: map[string]string{"knowledge": downstream.URL},
+	})
+
+	blockedReq := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge-bases", nil)
+	blockedReq.Header.Set("Authorization", "Bearer "+accessToken)
+	blockedRes := httptest.NewRecorder()
+	server.ServeHTTP(blockedRes, blockedReq)
+	if blockedRes.Code != http.StatusForbidden {
+		t.Fatalf("blocked status = %d, body = %s", blockedRes.Code, blockedRes.Body.String())
+	}
+
+	profilePatchReq := httptest.NewRequest(http.MethodPatch, "/api/v1/users/me/profile", strings.NewReader(`{"displayName":"Alice"}`))
+	profilePatchReq.Header.Set("Authorization", "Bearer "+accessToken)
+	profilePatchRes := httptest.NewRecorder()
+	server.ServeHTTP(profilePatchRes, profilePatchReq)
+	if profilePatchRes.Code != http.StatusForbidden {
+		t.Fatalf("profile patch status = %d, body = %s", profilePatchRes.Code, profilePatchRes.Body.String())
+	}
+
+	logoutReq := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", nil)
+	logoutReq.Header.Set("Authorization", "Bearer "+accessToken)
+	logoutRes := httptest.NewRecorder()
+	server.ServeHTTP(logoutRes, logoutReq)
+	if logoutRes.Code != http.StatusNoContent {
+		t.Fatalf("logout status = %d, body = %s", logoutRes.Code, logoutRes.Body.String())
+	}
+
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:          "sess_1",
+		UserID:             "usr_1",
+		Username:           "alice",
+		Roles:              []string{"standard"},
+		Permissions:        []string{"knowledge:read"},
+		TokenType:          "Bearer",
+		ExpiresAt:          time.Now().Add(time.Hour).UTC(),
+		MustChangePassword: true,
+		Status:             "active",
+	})
+
+	changeReq := httptest.NewRequest(http.MethodPost, "/api/v1/users/me/password-changes", strings.NewReader(`{"currentPassword":"temporary","newPassword":"new-password","newPasswordConfirmation":"new-password"}`))
+	changeReq.Header.Set("Authorization", "Bearer "+accessToken)
+	changeRes := httptest.NewRecorder()
+	server.ServeHTTP(changeRes, changeReq)
+	if changeRes.Code != http.StatusOK {
+		t.Fatalf("change status = %d, body = %s", changeRes.Code, changeRes.Body.String())
+	}
+
+	meReq := httptest.NewRequest(http.MethodGet, "/api/v1/users/me", nil)
+	meReq.Header.Set("Authorization", "Bearer "+accessToken)
+	meRes := httptest.NewRecorder()
+	server.ServeHTTP(meRes, meReq)
+	if meRes.Code != http.StatusOK {
+		t.Fatalf("me status = %d, body = %s", meRes.Code, meRes.Body.String())
+	}
+	var meBody service.UserEnvelope
+	decodeJSON(t, meRes.Body, &meBody)
+	if meBody.Data.MustChangePassword {
+		t.Fatalf("mustChangePassword = true after password change")
+	}
+}
+
 func TestKnowledgeDocumentChunkAndContentRoutesProxyToKnowledge(t *testing.T) {
 	hasher := testHasher(t)
 	store := newMemorySessionStore()
@@ -424,6 +654,7 @@ func TestProtectedRouteRejectsRevokedAuthoritativeSession(t *testing.T) {
 					Permissions: []string{"knowledge:read"},
 				},
 				TokenType: "Bearer",
+				Status:    "active",
 				ExpiresAt: time.Now().Add(time.Hour).UTC(),
 				IssuedAt:  time.Now().Add(-time.Minute).UTC(),
 				RevokedAt: &revokedAt,
@@ -443,6 +674,71 @@ func TestProtectedRouteRejectsRevokedAuthoritativeSession(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge-bases", nil)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("X-Request-Id", "req_revoked")
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	hash, err := hasher.Hash(accessToken)
+	if err != nil {
+		t.Fatalf("Hash() error = %v", err)
+	}
+	if _, err := store.Get(context.Background(), hash); !errors.Is(err, service.ErrSessionNotFound) {
+		t.Fatalf("cache lookup error = %v, want ErrSessionNotFound", err)
+	}
+}
+
+func TestProtectedRouteRejectsRevokedSessionStatus(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_1",
+		UserID:      "usr_1",
+		Username:    "alice",
+		Roles:       []string{"admin"},
+		Permissions: []string{"knowledge:read"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("downstream should not be called for a revoked session")
+	}))
+	defer downstream.Close()
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		auth: &fakeAuthClient{
+			getSessionResult: service.SessionIdentity{
+				SessionID: "sess_1",
+				User: service.UserSummary{
+					ID:          "usr_1",
+					Username:    "alice",
+					Roles:       []string{"admin"},
+					Permissions: []string{"knowledge:read"},
+				},
+				TokenType: "Bearer",
+				Status:    "revoked",
+				ExpiresAt: time.Now().Add(time.Hour).UTC(),
+				IssuedAt:  time.Now().Add(-time.Minute).UTC(),
+			},
+			getUserResult: service.UserRecord{
+				ID:          "usr_1",
+				Username:    "alice",
+				Roles:       []string{"admin"},
+				Permissions: []string{"knowledge:read"},
+				Status:      "active",
+			},
+		},
+		store:         store,
+		hasher:        hasher,
+		ownerBaseURLs: map[string]string{"knowledge": downstream.URL},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge-bases", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("X-Request-Id", "req_revoked_status")
 	res := httptest.NewRecorder()
 
 	server.ServeHTTP(res, req)
@@ -898,30 +1194,30 @@ func TestProxyMapsDownstreamErrorCodes(t *testing.T) {
 			bodyMustAbsent: "service unavailable from upstream",
 		},
 		{
-			name:          "downstream 403 yields 403 forbidden",
+			name:           "downstream 403 yields 403 forbidden",
 			downstreamCode: http.StatusForbidden,
-			wantCode:      http.StatusForbidden,
-			wantErrorCode: "forbidden",
+			wantCode:       http.StatusForbidden,
+			wantErrorCode:  "forbidden",
 		},
 		{
-			name:          "downstream 409 yields 409 conflict",
+			name:           "downstream 409 yields 409 conflict",
 			downstreamCode: http.StatusConflict,
-			wantCode:      http.StatusConflict,
-			wantErrorCode: "conflict",
+			wantCode:       http.StatusConflict,
+			wantErrorCode:  "conflict",
 		},
 		{
-			name:          "downstream 429 yields 429 rate_limited",
+			name:           "downstream 429 yields 429 rate_limited",
 			downstreamCode: http.StatusTooManyRequests,
-			wantCode:      http.StatusTooManyRequests,
-			wantErrorCode: "rate_limited",
+			wantCode:       http.StatusTooManyRequests,
+			wantErrorCode:  "rate_limited",
 		},
 		{
 			// covers the 401 branch in downstreamErrorCode when a business service (not auth)
 			// returns 401 — gateway transparently passes it through as unauthorized.
-			name:          "downstream 401 yields 401 unauthorized",
+			name:           "downstream 401 yields 401 unauthorized",
 			downstreamCode: http.StatusUnauthorized,
-			wantCode:      http.StatusUnauthorized,
-			wantErrorCode: "unauthorized",
+			wantCode:       http.StatusUnauthorized,
+			wantErrorCode:  "unauthorized",
 		},
 	}
 
@@ -979,11 +1275,12 @@ func TestProxyMapsDownstreamErrorCodes(t *testing.T) {
 }
 
 type gatewayDeps struct {
-	auth          gatewayhttp.AuthClient
-	store         service.SessionStore
-	hasher        service.TokenHasher
-	ownerBaseURLs map[string]string
-	serviceToken  string
+	auth                  gatewayhttp.AuthClient
+	store                 service.SessionStore
+	hasher                service.TokenHasher
+	ownerBaseURLs         map[string]string
+	serviceToken          string
+	authAdminServiceToken string
 }
 
 func newGatewayTestServer(t *testing.T, deps gatewayDeps) http.Handler {
@@ -992,18 +1289,19 @@ func newGatewayTestServer(t *testing.T, deps gatewayDeps) http.Handler {
 		deps.ownerBaseURLs = map[string]string{}
 	}
 	return gatewayhttp.NewServer(gatewayhttp.Config{
-		Logger:               slog.New(slog.NewTextHandler(io.Discard, nil)),
-		ServiceVersion:       "test",
-		Environment:          "test",
-		RequestTimeout:       time.Second,
-		MaxBodyBytes:         1024 * 1024,
-		CORSAllowedOrigins:   []string{"*"},
-		DownstreamTimeout:    time.Second,
-		AuthClient:           deps.auth,
-		SessionStore:         deps.store,
-		TokenHasher:          deps.hasher,
-		OwnerBaseURLs:        deps.ownerBaseURLs,
-		InternalServiceToken: deps.serviceToken,
+		Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ServiceVersion:        "test",
+		Environment:           "test",
+		RequestTimeout:        time.Second,
+		MaxBodyBytes:          1024 * 1024,
+		CORSAllowedOrigins:    []string{"*"},
+		DownstreamTimeout:     time.Second,
+		AuthClient:            deps.auth,
+		SessionStore:          deps.store,
+		TokenHasher:           deps.hasher,
+		OwnerBaseURLs:         deps.ownerBaseURLs,
+		InternalServiceToken:  deps.serviceToken,
+		AuthAdminServiceToken: deps.authAdminServiceToken,
 	})
 }
 
@@ -1017,16 +1315,20 @@ func testHasher(t *testing.T) service.TokenHasher {
 }
 
 type fakeAuthClient struct {
-	createUserResult    service.SessionResponse
-	createUserErr       error
-	createSessionResult service.SessionResponse
-	createSessionErr    error
-	getUserResult       service.UserRecord
-	getUserErr          error
-	getSessionResult    service.SessionIdentity
-	getSessionErr       error
-	deleteSessionID     string
-	deleteSessionErr    error
+	createUserResult     service.SessionResponse
+	createUserErr        error
+	createSessionResult  service.SessionResponse
+	createSessionErr     error
+	getUserResult        service.UserRecord
+	getUserErr           error
+	getSessionResult     service.SessionIdentity
+	getSessionErr        error
+	deleteSessionID      string
+	deleteSessionErr     error
+	updateProfileResult  service.UserRecord
+	updateProfileErr     error
+	changePasswordResult service.UserRecord
+	changePasswordErr    error
 }
 
 func (c *fakeAuthClient) CreateUser(context.Context, string, []byte, authclient.ForwardingContext) (service.SessionResponse, error) {
@@ -1086,6 +1388,29 @@ func (c *fakeAuthClient) DeleteSession(_ context.Context, _ string, sessionID st
 	}
 	c.deleteSessionID = sessionID
 	return nil
+}
+
+func (c *fakeAuthClient) UpdateUserProfile(context.Context, string, string, []byte, authclient.ForwardingContext) (service.UserRecord, error) {
+	if c.updateProfileErr != nil {
+		return service.UserRecord{}, c.updateProfileErr
+	}
+	if strings.TrimSpace(c.updateProfileResult.ID) != "" {
+		return c.updateProfileResult, nil
+	}
+	return c.GetUser(context.Background(), "", "", authclient.ForwardingContext{})
+}
+
+func (c *fakeAuthClient) ChangeUserPassword(context.Context, string, string, []byte, authclient.ForwardingContext) (service.UserRecord, error) {
+	if c.changePasswordErr != nil {
+		return service.UserRecord{}, c.changePasswordErr
+	}
+	if strings.TrimSpace(c.changePasswordResult.ID) != "" {
+		if c.changePasswordResult.ID == c.getUserResult.ID {
+			c.getUserResult = c.changePasswordResult
+		}
+		return c.changePasswordResult, nil
+	}
+	return c.GetUser(context.Background(), "", "", authclient.ForwardingContext{})
 }
 
 type memorySessionStore struct {

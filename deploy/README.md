@@ -54,10 +54,11 @@ cp deploy/.env.example deploy/.env
 脚本不会生成、改写或维护另一套默认变量。它们只读取 `deploy/.env`，让宿主机
 Go/uv 进程拿到同一份本地配置。
 
-默认 demo 管理员账号：
+默认 demo 账号：
 
 ```text
 admin / LocalDemoAdmin#12345
+superadmin / LocalDemoAdmin#12345
 ```
 
 `deploy/.env.example` 已经内置中国大陆开发网络默认镜像源。需要直连 Docker Hub 时，

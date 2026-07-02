@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { canAccess, hasPermission, hasRole } from './permissions'
+import { canAccess, hasAuthority, hasPermission, hasRole } from './permissions'
 import type { UserSummary } from './types'
 
 const user: UserSummary = {
@@ -15,6 +15,8 @@ describe('permission helpers', () => {
     expect(hasPermission(user.permissions, 'qa:use')).toBe(true)
     expect(hasPermission(user.permissions, 'REPORT:WRITE')).toBe(true)
     expect(hasRole(user.roles, 'system:admin')).toBe(true)
+    expect(hasAuthority(user, 'qa:use')).toBe(true)
+    expect(hasAuthority(user, 'reviewer')).toBe(true)
   })
 
   it('requires an authenticated user when no explicit requirement is provided', () => {
@@ -33,6 +35,8 @@ describe('permission helpers', () => {
 
     expect(canAccess(user, { all: ['knowledge:read', 'knowledge:write'] })).toBe(false)
     expect(canAccess(user, { any: ['system:admin'] })).toBe(false)
+    expect(canAccess(user, { authorities: ['system:admin'] })).toBe(true)
+    expect(canAccess(user, { authorities: ['report:write'] })).toBe(true)
     expect(canAccess(user, { roles: ['auditor'] })).toBe(false)
   })
 })

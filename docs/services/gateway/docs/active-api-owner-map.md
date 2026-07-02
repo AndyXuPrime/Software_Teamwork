@@ -4,7 +4,7 @@ This document is the human-readable audit list for gateway active API paths. The
 
 ## Audit Result
 
-- Active operations: `103`.
+- Active operations: `110`.
 - Every `/api/v1/**` active operation has `operationId`, `tags`, `x-owner-service`, security, at least one `2XX` response, and at least one `4XX` response.
 - `/healthz` and `/readyz` are operational routes owned by `gateway`; they intentionally do not use bearer auth.
 - No stable active path uses action-style segments such as `/login`, `/logout`, `/search`, `/generate`, `/export`, `/retry`, or `/revoke`.
@@ -20,7 +20,7 @@ This document is the human-readable audit list for gateway active API paths. The
 | Owner service | Active operations | Notes |
 | --- | ---: | --- |
 | `gateway` | 4 | Gateway health/readiness, public routing, admin overview and metrics aggregation. |
-| `auth` | 4 | Users, sessions, current-user identity, roles, and permissions. |
+| `auth` | 11 | Users, sessions, current-user identity, current-user profile, required password change, admin user management, roles, and permissions. |
 | `knowledge` | 18 | Knowledge bases, knowledge documents, chunks, retrieval, and parser runtime config. |
 | `ai-gateway` | 5 | Model profile runtime configuration exposed through gateway admin paths. |
 | `document` | 43 | Report templates, materials, records, outlines, sections, jobs, files, settings, statistics, and logs. |
@@ -41,6 +41,9 @@ aggregation endpoints are now active gateway contracts listed below.
 | `POST` | `/api/v1/sessions` | `auth` | `auth` | `createSession` | `none` |
 | `DELETE` | `/api/v1/sessions/current` | `auth` | `auth` | `deleteCurrentSession` | `bearerAuth` |
 | `GET` | `/api/v1/users/me` | `auth` | `auth` | `getCurrentUser` | `bearerAuth` |
+| `GET` | `/api/v1/users/me/profile` | `auth` | `auth` | `getCurrentUserProfile` | `bearerAuth` |
+| `PATCH` | `/api/v1/users/me/profile` | `auth` | `auth` | `updateCurrentUserProfile` | `bearerAuth` |
+| `POST` | `/api/v1/users/me/password-changes` | `auth` | `auth` | `createCurrentUserPasswordChange` | `bearerAuth` |
 | `GET` | `/api/v1/knowledge-bases` | `knowledge` | `knowledge` | `listKnowledgeBases` | `bearerAuth` |
 | `POST` | `/api/v1/knowledge-bases` | `knowledge` | `knowledge` | `createKnowledgeBase` | `bearerAuth` |
 | `GET` | `/api/v1/knowledge-bases/{knowledgeBaseId}` | `knowledge` | `knowledge` | `getKnowledgeBase` | `bearerAuth` |
@@ -54,6 +57,10 @@ aggregation endpoints are now active gateway contracts listed below.
 | `GET` | `/api/v1/documents/{documentId}/chunks` | `knowledge` | `knowledge` | `listDocumentChunks` | `bearerAuth` |
 | `GET` | `/api/v1/documents/{documentId}/content` | `knowledge` | `documents` | `getDocumentContent` | `bearerAuth` |
 | `POST` | `/api/v1/knowledge-queries` | `knowledge` | `knowledge` | `createKnowledgeQuery` | `bearerAuth` |
+| `GET` | `/api/v1/admin/users` | `auth` | `admin-users` | `listAdminUsers` | `bearerAuth` |
+| `POST` | `/api/v1/admin/users` | `auth` | `admin-users` | `createAdminUser` | `bearerAuth` |
+| `PATCH` | `/api/v1/admin/users/{userId}` | `auth` | `admin-users` | `updateAdminUser` | `bearerAuth` |
+| `POST` | `/api/v1/admin/users/{userId}/password-resets` | `auth` | `admin-users` | `createAdminUserPasswordReset` | `bearerAuth` |
 | `GET` | `/api/v1/admin/model-profiles` | `ai-gateway` | `admin-runtime-config` | `listAdminModelProfiles` | `bearerAuth` |
 | `POST` | `/api/v1/admin/model-profiles` | `ai-gateway` | `admin-runtime-config` | `createAdminModelProfile` | `bearerAuth` |
 | `GET` | `/api/v1/admin/model-profiles/{profileId}` | `ai-gateway` | `admin-runtime-config` | `getAdminModelProfile` | `bearerAuth` |

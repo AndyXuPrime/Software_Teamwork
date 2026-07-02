@@ -3,6 +3,7 @@ import type { UserSummary } from './types'
 export type PermissionRequirement = {
   all?: string[]
   any?: string[]
+  authorities?: string[]
   roles?: string[]
 }
 
@@ -18,10 +19,17 @@ export function hasRole(roles: readonly string[], role: string): boolean {
   return roles.map(normalize).includes(normalize(role))
 }
 
+export function hasAuthority(user: UserSummary, authority: string): boolean {
+  return hasRole(user.roles, authority) || hasPermission(user.permissions, authority)
+}
+
 export function canAccess(user: UserSummary | null, requirement?: PermissionRequirement): boolean {
   if (!requirement) return Boolean(user)
   if (!user) return false
 
+  const authorityOk =
+    !requirement.authorities?.length ||
+    requirement.authorities.some((authority) => hasAuthority(user, authority))
   const roleOk =
     !requirement.roles?.length || requirement.roles.some((role) => hasRole(user.roles, role))
   const allOk =
@@ -31,5 +39,5 @@ export function canAccess(user: UserSummary | null, requirement?: PermissionRequ
     !requirement.any?.length ||
     requirement.any.some((permission) => hasPermission(user.permissions, permission))
 
-  return roleOk && allOk && anyOk
+  return authorityOk && roleOk && allOk && anyOk
 }

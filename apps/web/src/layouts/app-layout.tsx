@@ -1,9 +1,10 @@
 import { Link, useRouter, useRouterState } from '@tanstack/react-router'
-import { Loader2, LogOut, RefreshCw, ShieldAlert } from 'lucide-react'
+import { Loader2, LogOut, RefreshCw, ShieldAlert, UserRound } from 'lucide-react'
 import { type PropsWithChildren, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { apiClient } from '@/api/client'
 import { Button } from '@/components/ui/button'
+import { adminShellAccess } from '@/lib/access'
 import type { PermissionRequirement } from '@/lib/permissions'
 import { canAccess } from '@/lib/permissions'
 import { useAuthStore } from '@/stores/auth-store'
@@ -13,6 +14,7 @@ const pathLabels: Record<string, string> = {
   '/chat': '智能问答',
   '/reports': '报告生成',
   '/admin': '系统管理',
+  '/profile': '个人资料',
   '/forbidden': '权限不足',
 }
 
@@ -30,21 +32,7 @@ const navItems: Array<{
   {
     label: '管理',
     to: '/admin',
-    requirement: {
-      any: [
-        'system:admin',
-        'qa:use',
-        'report:read',
-        'report:write',
-        'reports:write',
-        'knowledge:read',
-        'knowledge:write',
-        'knowledge:admin',
-        'document:upload',
-        'admin:model-profile:write',
-        'admin:parser-config:write',
-      ],
-    },
+    requirement: adminShellAccess,
   },
 ]
 
@@ -194,7 +182,14 @@ export function AppLayout({ children }: PropsWithChildren) {
         </nav>
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="hidden max-w-40 truncate sm:inline">{user?.username ?? '未登录'}</span>
+          <Link
+            aria-label="打开个人资料"
+            className="hidden max-w-40 items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
+            to="/profile"
+          >
+            <UserRound className="size-3.5" />
+            <span className="truncate">{user?.displayName || user?.username || '未登录'}</span>
+          </Link>
           {user && user.roles.length > 0 && (
             <span className="hidden rounded-md bg-muted px-2 py-1 sm:inline">
               {user.roles.join(', ')}

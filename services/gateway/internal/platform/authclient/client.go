@@ -15,14 +15,18 @@ import (
 )
 
 type Client struct {
-	baseURL      *url.URL
-	serviceToken string
-	httpClient   *http.Client
+	baseURL                  *url.URL
+	serviceToken             string
+	gatewayAdminServiceToken string
+	httpClient               *http.Client
 }
 
 type ForwardingContext struct {
 	ForwardedFor   string
 	ForwardedProto string
+	UserID         string
+	Roles          []string
+	Permissions    []string
 }
 
 type ErrorDetail struct {
@@ -47,7 +51,7 @@ func (e *RemoteError) Error() string {
 	return fmt.Sprintf("auth service returned HTTP %d", e.Status)
 }
 
-func New(baseURL string, serviceToken string, timeout time.Duration) (*Client, error) {
+func New(baseURL string, serviceToken string, gatewayAdminServiceToken string, timeout time.Duration) (*Client, error) {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
 		return nil, nil
@@ -63,9 +67,10 @@ func New(baseURL string, serviceToken string, timeout time.Duration) (*Client, e
 		timeout = 10 * time.Second
 	}
 	return &Client{
-		baseURL:      parsed,
-		serviceToken: strings.TrimSpace(serviceToken),
-		httpClient:   &http.Client{Timeout: timeout},
+		baseURL:                  parsed,
+		serviceToken:             strings.TrimSpace(serviceToken),
+		gatewayAdminServiceToken: strings.TrimSpace(gatewayAdminServiceToken),
+		httpClient:               &http.Client{Timeout: timeout},
 	}, nil
 }
 
@@ -117,11 +122,43 @@ func (c *Client) DeleteSession(ctx context.Context, requestID string, sessionID 
 	return c.doJSON(ctx, http.MethodDelete, "/internal/v1/sessions/"+url.PathEscape(sessionID), requestID, nil, http.StatusNoContent, forwarding, nil)
 }
 
+func (c *Client) UpdateUserProfile(ctx context.Context, requestID string, userID string, body []byte, forwarding ForwardingContext) (service.UserRecord, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return service.UserRecord{}, &RemoteError{Status: http.StatusUnauthorized, Detail: ErrorDetail{Code: "unauthorized", Message: "invalid user"}}
+	}
+	var envelope service.UserRecordEnvelope
+	if err := c.doGatewayJSON(ctx, http.MethodPatch, "/internal/v1/users/"+url.PathEscape(userID)+"/profile", requestID, body, http.StatusOK, forwarding, &envelope); err != nil {
+		return service.UserRecord{}, err
+	}
+	return envelope.Data, nil
+}
+
+func (c *Client) ChangeUserPassword(ctx context.Context, requestID string, userID string, body []byte, forwarding ForwardingContext) (service.UserRecord, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return service.UserRecord{}, &RemoteError{Status: http.StatusUnauthorized, Detail: ErrorDetail{Code: "unauthorized", Message: "invalid user"}}
+	}
+	var envelope service.UserRecordEnvelope
+	if err := c.doGatewayJSON(ctx, http.MethodPost, "/internal/v1/users/"+url.PathEscape(userID)+"/password-changes", requestID, body, http.StatusOK, forwarding, &envelope); err != nil {
+		return service.UserRecord{}, err
+	}
+	return envelope.Data, nil
+}
+
 func (c *Client) CheckReady(ctx context.Context) error {
 	return c.doJSON(ctx, http.MethodGet, "/readyz", "", nil, http.StatusOK, ForwardingContext{}, nil)
 }
 
 func (c *Client) doJSON(ctx context.Context, method string, path string, requestID string, body []byte, successStatus int, forwarding ForwardingContext, target any) error {
+	return c.doJSONWithToken(ctx, method, path, requestID, body, successStatus, forwarding, target, c.serviceToken)
+}
+
+func (c *Client) doGatewayJSON(ctx context.Context, method string, path string, requestID string, body []byte, successStatus int, forwarding ForwardingContext, target any) error {
+	return c.doJSONWithToken(ctx, method, path, requestID, body, successStatus, forwarding, target, c.gatewayAdminServiceToken)
+}
+
+func (c *Client) doJSONWithToken(ctx context.Context, method string, path string, requestID string, body []byte, successStatus int, forwarding ForwardingContext, target any, serviceToken string) error {
 	if c == nil || c.baseURL == nil {
 		return fmt.Errorf("auth client is not configured")
 	}
@@ -139,14 +176,23 @@ func (c *Client) doJSON(ctx context.Context, method string, path string, request
 	}
 	req.Header.Set("X-Request-Id", requestID)
 	req.Header.Set("X-Caller-Service", "gateway")
-	if c.serviceToken != "" {
-		req.Header.Set("X-Service-Token", c.serviceToken)
+	if serviceToken = strings.TrimSpace(serviceToken); serviceToken != "" {
+		req.Header.Set("X-Service-Token", serviceToken)
 	}
 	if forwardedFor := strings.TrimSpace(forwarding.ForwardedFor); forwardedFor != "" {
 		req.Header.Set("X-Forwarded-For", forwardedFor)
 	}
 	if forwardedProto := strings.TrimSpace(forwarding.ForwardedProto); forwardedProto != "" {
 		req.Header.Set("X-Forwarded-Proto", forwardedProto)
+	}
+	if userID := strings.TrimSpace(forwarding.UserID); userID != "" {
+		req.Header.Set("X-User-Id", userID)
+	}
+	if len(forwarding.Roles) > 0 {
+		req.Header.Set("X-User-Roles", strings.Join(cleanStrings(forwarding.Roles), ","))
+	}
+	if len(forwarding.Permissions) > 0 {
+		req.Header.Set("X-User-Permissions", strings.Join(cleanStrings(forwarding.Permissions), ","))
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -169,6 +215,17 @@ func (c *Client) doJSON(ctx context.Context, method string, path string, request
 		return fmt.Errorf("decode auth response: %w", err)
 	}
 	return nil
+}
+
+func cleanStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func decodeRemoteError(res *http.Response) error {

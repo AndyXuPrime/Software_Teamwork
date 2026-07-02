@@ -20,6 +20,8 @@ type AuthClient interface {
 	GetUser(ctx context.Context, requestID string, userID string, forwarding authclient.ForwardingContext) (service.UserRecord, error)
 	GetSession(ctx context.Context, requestID string, sessionID string, forwarding authclient.ForwardingContext) (service.SessionIdentity, error)
 	DeleteSession(ctx context.Context, requestID string, sessionID string, forwarding authclient.ForwardingContext) error
+	UpdateUserProfile(ctx context.Context, requestID string, userID string, body []byte, forwarding authclient.ForwardingContext) (service.UserRecord, error)
+	ChangeUserPassword(ctx context.Context, requestID string, userID string, body []byte, forwarding authclient.ForwardingContext) (service.UserRecord, error)
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +81,66 @@ func (s *Server) handleCurrentUser(w http.ResponseWriter, r *http.Request) {
 	response.WriteJSON(w, http.StatusOK, entry.UserSummary(), middleware.RequestIDFromContext(r.Context()))
 }
 
+func (s *Server) handleCurrentUserProfile(w http.ResponseWriter, r *http.Request) {
+	entry, _, ok := s.authenticateRequest(w, r)
+	if !ok {
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, entry.UserSummary(), middleware.RequestIDFromContext(r.Context()))
+}
+
+func (s *Server) handleUpdateCurrentUserProfile(w http.ResponseWriter, r *http.Request) {
+	entry, accessTokenHash, ok := s.authenticateRequest(w, r)
+	if !ok {
+		return
+	}
+	if s.authClient == nil {
+		s.writeDependencyError(w, r, "auth client is not configured")
+		return
+	}
+	body, ok := readRequestBody(w, r)
+	if !ok {
+		return
+	}
+	requestID := middleware.RequestIDFromContext(r.Context())
+	user, err := s.authClient.UpdateUserProfile(r.Context(), requestID, entry.UserID, body, forwardingContextFromEntry(r, entry))
+	if err != nil {
+		s.writeAuthClientError(w, r, err)
+		return
+	}
+	refreshed, ok := s.refreshCacheFromUser(w, r, entry, user, accessTokenHash)
+	if !ok {
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, refreshed.UserSummary(), requestID)
+}
+
+func (s *Server) handleChangeCurrentUserPassword(w http.ResponseWriter, r *http.Request) {
+	entry, accessTokenHash, ok := s.authenticateRequest(w, r)
+	if !ok {
+		return
+	}
+	if s.authClient == nil {
+		s.writeDependencyError(w, r, "auth client is not configured")
+		return
+	}
+	body, ok := readRequestBody(w, r)
+	if !ok {
+		return
+	}
+	requestID := middleware.RequestIDFromContext(r.Context())
+	user, err := s.authClient.ChangeUserPassword(r.Context(), requestID, entry.UserID, body, forwardingContextFromEntry(r, entry))
+	if err != nil {
+		s.writeAuthClientError(w, r, err)
+		return
+	}
+	refreshed, ok := s.refreshCacheFromUser(w, r, entry, user, accessTokenHash)
+	if !ok {
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, refreshed.UserSummary(), requestID)
+}
+
 func (s *Server) handleDeleteCurrentSession(w http.ResponseWriter, r *http.Request) {
 	entry, accessTokenHash, ok := s.authenticateRequest(w, r)
 	if !ok {
@@ -135,6 +197,14 @@ func (s *Server) authenticateRequest(w http.ResponseWriter, r *http.Request) (se
 		}
 		entry = refreshed
 	}
+	if entry.MustChangePassword && !allowsMustChangePassword(entry, r) {
+		response.WriteError(w, http.StatusForbidden, response.ErrorDetail{
+			Code:      response.CodeForbidden,
+			Message:   "password change required",
+			RequestID: middleware.RequestIDFromContext(r.Context()),
+		})
+		return service.SessionCacheEntry{}, "", false
+	}
 	return entry, accessTokenHash, true
 }
 
@@ -164,6 +234,33 @@ func (s *Server) refreshSessionAuthority(w http.ResponseWriter, r *http.Request,
 	return refreshed, true
 }
 
+func (s *Server) refreshCacheFromUser(w http.ResponseWriter, r *http.Request, entry service.SessionCacheEntry, user service.UserRecord, accessTokenHash string) (service.SessionCacheEntry, bool) {
+	entry.UserID = strings.TrimSpace(user.ID)
+	entry.Username = strings.TrimSpace(user.Username)
+	entry.DisplayName = strings.TrimSpace(user.DisplayName)
+	entry.Email = cloneStringPtr(user.Email)
+	entry.Phone = cloneStringPtr(user.Phone)
+	entry.Status = strings.TrimSpace(user.Status)
+	entry.MustChangePassword = user.MustChangePassword
+	entry.Roles = safeStrings(user.Roles)
+	entry.Permissions = safeStrings(user.Permissions)
+	entry.CachedAt = time.Now().UTC()
+	entry.RequestID = middleware.RequestIDFromContext(r.Context())
+	if entry.Status == "" {
+		entry.Status = "active"
+	}
+	if err := entry.Validate(accessTokenHash, time.Now().UTC()); err != nil || !strings.EqualFold(entry.Status, "active") {
+		_ = s.sessionStore.Delete(r.Context(), accessTokenHash)
+		s.writeUnauthorized(w, r, "invalid authentication")
+		return service.SessionCacheEntry{}, false
+	}
+	if err := s.sessionStore.Put(r.Context(), entry, time.Until(entry.ExpiresAt)); err != nil {
+		s.writeDependencyError(w, r, "session cache is unavailable")
+		return service.SessionCacheEntry{}, false
+	}
+	return entry, true
+}
+
 func (s *Server) writeSessionAuthorityError(w http.ResponseWriter, r *http.Request, err error, accessTokenHash string) {
 	var remote *authclient.RemoteError
 	if errors.As(err, &remote) {
@@ -187,6 +284,24 @@ func forwardingContextFromRequest(r *http.Request) authclient.ForwardingContext 
 	}
 }
 
+func forwardingContextFromEntry(r *http.Request, entry service.SessionCacheEntry) authclient.ForwardingContext {
+	forwarding := forwardingContextFromRequest(r)
+	forwarding.UserID = entry.UserID
+	forwarding.Roles = safeStrings(entry.Roles)
+	forwarding.Permissions = safeStrings(entry.Permissions)
+	return forwarding
+}
+
+func allowsMustChangePassword(entry service.SessionCacheEntry, r *http.Request) bool {
+	if r.Method == http.MethodGet && (r.URL.Path == "/api/v1/users/me" || r.URL.Path == "/api/v1/users/me/profile") {
+		return true
+	}
+	if r.Method == http.MethodDelete && r.URL.Path == "/api/v1/sessions/current" {
+		return true
+	}
+	return r.Method == http.MethodPost && r.URL.Path == "/api/v1/users/me/password-changes"
+}
+
 func bearerToken(value string) (string, bool) {
 	parts := strings.Fields(value)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
@@ -195,7 +310,18 @@ func bearerToken(value string) (string, bool) {
 	return strings.TrimSpace(parts[1]), true
 }
 
-func hasAdminRouteAccess(entry service.SessionCacheEntry, allowedPermissions []string, isAdminPath bool) bool {
+func hasAdminRouteAccess(entry service.SessionCacheEntry, allowedPermissions []string, allowedRoles []string, isAdminPath bool) bool {
+	if len(allowedRoles) > 0 {
+		for _, role := range entry.Roles {
+			role = strings.TrimSpace(role)
+			for _, allowed := range allowedRoles {
+				if strings.EqualFold(role, strings.TrimSpace(allowed)) {
+					return true
+				}
+			}
+		}
+		return false
+	}
 	// For /api/v1/admin/ routes, the "admin" role is sufficient by itself
 	// (backward-compatible with existing admin route conventions).
 	if isAdminPath {
@@ -219,6 +345,21 @@ func hasAdminRouteAccess(entry service.SessionCacheEntry, allowedPermissions []s
 		}
 	}
 	return false
+}
+
+func safeStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return append([]string(nil), values...)
+}
+
+func cloneStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func readRequestBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {

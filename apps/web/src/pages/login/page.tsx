@@ -296,6 +296,9 @@ export function LoginPage() {
                   user: {
                     id: 'dev',
                     username: '开发者',
+                    displayName: '开发者',
+                    status: 'active',
+                    mustChangePassword: false,
                     roles: ['system:admin'],
                     permissions: [
                       'qa:use',

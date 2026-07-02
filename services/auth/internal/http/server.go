@@ -29,29 +29,37 @@ type AuthService interface {
 	CreateSession(ctx context.Context, reqCtx service.RequestContext, input service.CreateSessionInput) (service.SessionResponse, error)
 	GetUser(ctx context.Context, reqCtx service.RequestContext, userID string) (service.UserRecord, error)
 	GetUserPermissions(ctx context.Context, reqCtx service.RequestContext, userID string) (service.UserPermissions, error)
+	ListManagedUsers(ctx context.Context, reqCtx service.RequestContext, input service.ListManagedUsersInput) (service.AdminUserList, error)
+	CreateAdminUser(ctx context.Context, reqCtx service.RequestContext, input service.CreateAdminUserInput) (service.AdminUserRecord, error)
+	UpdateManagedUser(ctx context.Context, reqCtx service.RequestContext, userID string, input service.UpdateAdminUserInput) (service.AdminUserRecord, error)
+	ResetManagedUserPassword(ctx context.Context, reqCtx service.RequestContext, userID string, input service.ResetAdminPasswordInput) (service.AdminUserRecord, error)
+	UpdateProfile(ctx context.Context, reqCtx service.RequestContext, userID string, input service.UpdateProfileInput) (service.UserRecord, error)
+	ChangeRequiredPassword(ctx context.Context, reqCtx service.RequestContext, userID string, input service.ChangePasswordInput) (service.UserRecord, error)
 	GetSession(ctx context.Context, reqCtx service.RequestContext, sessionID string) (service.SessionIdentity, error)
 	RevokeSession(ctx context.Context, reqCtx service.RequestContext, sessionID string, reason string) error
 }
 
 type Config struct {
-	ServiceVersion   string
-	Environment      string
-	ReadinessTimeout time.Duration
-	ReadinessChecker ReadinessChecker
-	Auth             AuthService
-	ServiceToken     string
-	Logger           *slog.Logger
+	ServiceVersion    string
+	Environment       string
+	ReadinessTimeout  time.Duration
+	ReadinessChecker  ReadinessChecker
+	Auth              AuthService
+	ServiceToken      string
+	GatewayAdminToken string
+	Logger            *slog.Logger
 }
 
 type Server struct {
-	auth             AuthService
-	serviceToken     string
-	serviceVersion   string
-	environment      string
-	readinessTimeout time.Duration
-	readinessChecker ReadinessChecker
-	logger           *slog.Logger
-	mux              *http.ServeMux
+	auth              AuthService
+	serviceToken      string
+	gatewayAdminToken string
+	serviceVersion    string
+	environment       string
+	readinessTimeout  time.Duration
+	readinessChecker  ReadinessChecker
+	logger            *slog.Logger
+	mux               *http.ServeMux
 }
 
 func NewServer(cfg Config) *Server {
@@ -69,14 +77,15 @@ func NewServer(cfg Config) *Server {
 	}
 
 	s := &Server{
-		auth:             cfg.Auth,
-		serviceToken:     strings.TrimSpace(cfg.ServiceToken),
-		serviceVersion:   cfg.ServiceVersion,
-		environment:      cfg.Environment,
-		readinessTimeout: cfg.ReadinessTimeout,
-		readinessChecker: cfg.ReadinessChecker,
-		logger:           cfg.Logger,
-		mux:              http.NewServeMux(),
+		auth:              cfg.Auth,
+		serviceToken:      strings.TrimSpace(cfg.ServiceToken),
+		gatewayAdminToken: strings.TrimSpace(cfg.GatewayAdminToken),
+		serviceVersion:    cfg.ServiceVersion,
+		environment:       cfg.Environment,
+		readinessTimeout:  cfg.ReadinessTimeout,
+		readinessChecker:  cfg.ReadinessChecker,
+		logger:            cfg.Logger,
+		mux:               http.NewServeMux(),
 	}
 	s.routes()
 	return s
@@ -88,6 +97,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /internal/v1/users", s.handleCreateUser)
 	s.mux.HandleFunc("GET /internal/v1/users/{userId}", s.handleGetUser)
 	s.mux.HandleFunc("GET /internal/v1/users/{userId}/permissions", s.handleGetUserPermissions)
+	s.mux.HandleFunc("PATCH /internal/v1/users/{userId}/profile", s.handleUpdateUserProfile)
+	s.mux.HandleFunc("POST /internal/v1/users/{userId}/password-changes", s.handleChangeUserPassword)
+	s.mux.HandleFunc("GET /internal/v1/admin/users", s.handleListAdminUsers)
+	s.mux.HandleFunc("POST /internal/v1/admin/users", s.handleCreateAdminUser)
+	s.mux.HandleFunc("PATCH /internal/v1/admin/users/{userId}", s.handleUpdateAdminUser)
+	s.mux.HandleFunc("POST /internal/v1/admin/users/{userId}/password-resets", s.handleResetAdminUserPassword)
 	s.mux.HandleFunc("POST /internal/v1/sessions", s.handleCreateSession)
 	s.mux.HandleFunc("GET /internal/v1/sessions/{sessionId}", s.handleGetSession)
 	s.mux.HandleFunc("DELETE /internal/v1/sessions/{sessionId}", s.handleDeleteSession)
@@ -104,7 +119,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 	w.Header().Set("X-Request-Id", requestID)
 
-	if strings.HasPrefix(r.URL.Path, "/internal/v1/") && s.serviceToken != "" && !secureTokenEqual(r.Header.Get("X-Service-Token"), s.serviceToken) {
+	if requiresGatewayServiceToken(r) {
+		if s.gatewayAdminToken == "" || !secureTokenEqual(r.Header.Get("X-Service-Token"), s.gatewayAdminToken) {
+			writeAppError(w, r, service.NewError(service.CodeUnauthorized, "gateway authentication required", nil))
+			return
+		}
+	} else if strings.HasPrefix(r.URL.Path, "/internal/v1/") && s.serviceToken != "" && !secureTokenEqual(r.Header.Get("X-Service-Token"), s.serviceToken) {
 		writeAppError(w, r, service.NewError(service.CodeUnauthorized, "service authentication required", nil))
 		return
 	}
@@ -182,6 +202,20 @@ func secureTokenEqual(left string, right string) bool {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
+}
+
+func requiresGatewayServiceToken(r *http.Request) bool {
+	if strings.HasPrefix(r.URL.Path, "/internal/v1/admin/") {
+		return true
+	}
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 5 || parts[0] != "internal" || parts[1] != "v1" || parts[2] != "users" || parts[3] == "" {
+		return false
+	}
+	if r.Method == http.MethodPatch && parts[4] == "profile" {
+		return true
+	}
+	return r.Method == http.MethodPost && parts[4] == "password-changes"
 }
 
 type healthResponse struct {

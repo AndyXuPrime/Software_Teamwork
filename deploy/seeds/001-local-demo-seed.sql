@@ -75,6 +75,81 @@ FROM auth_roles r
 WHERE r.code = 'admin'
 ON CONFLICT (user_id, role_id) DO NOTHING;
 
+INSERT INTO auth_users (
+    id,
+    username,
+    display_name,
+    email,
+    status,
+    created_at,
+    updated_at
+)
+VALUES (
+    'usr_local_super_admin',
+    'superadmin',
+    'Local Demo Super Administrator',
+    'superadmin@example.invalid',
+    'active',
+    now(),
+    now()
+)
+ON CONFLICT (username) WHERE deleted_at IS NULL DO UPDATE
+SET display_name = EXCLUDED.display_name,
+    email = EXCLUDED.email,
+    status = EXCLUDED.status,
+    updated_at = now();
+
+INSERT INTO auth_credentials (
+    id,
+    user_id,
+    credential_type,
+    password_hash,
+    password_hash_alg,
+    password_hash_params_version,
+    password_hash_params_json,
+    password_changed_at,
+    created_at,
+    updated_at
+)
+VALUES (
+    'cred_local_super_admin_password',
+    'usr_local_super_admin',
+    'password',
+    '$argon2id$v=19$m=65536,t=3,p=2$bG9jYWwtZGVtby1zYWx0IQ$tESTl/LqUlaDlE8hP4+CNLG5go/+X2xvYXBdqk+4eOI',
+    'argon2id',
+    'argon2id-v1',
+    '{"memoryKiB":65536,"iterations":3,"parallelism":2,"saltBytes":16,"keyBytes":32}'::jsonb,
+    now(),
+    now(),
+    now()
+)
+ON CONFLICT (user_id, credential_type) DO UPDATE
+SET password_hash = EXCLUDED.password_hash,
+    password_hash_alg = EXCLUDED.password_hash_alg,
+    password_hash_params_version = EXCLUDED.password_hash_params_version,
+    password_hash_params_json = EXCLUDED.password_hash_params_json,
+    password_changed_at = now(),
+    updated_at = now();
+
+INSERT INTO user_roles (
+    id,
+    user_id,
+    role_id,
+    assigned_by,
+    assigned_at,
+    created_at
+)
+SELECT
+    'urole_local_super_admin_super_admin',
+    'usr_local_super_admin',
+    r.id,
+    'local-seed',
+    now(),
+    now()
+FROM auth_roles r
+WHERE r.code = 'super_admin'
+ON CONFLICT (user_id, role_id) DO NOTHING;
+
 \connect knowledge_system
 
 INSERT INTO knowledge_bases (

@@ -179,6 +179,94 @@ func TestCreateSessionInvalidServiceTokenReturnsUnauthorized(t *testing.T) {
 	}
 }
 
+func TestAdminUsersRequiresGatewayAdminServiceToken(t *testing.T) {
+	auth := fakeAuthService{now: time.Date(2026, 6, 29, 8, 0, 0, 0, time.UTC)}
+	server := authhttp.NewServer(authhttp.Config{
+		Auth:              auth,
+		ServiceToken:      "test-service-token",
+		GatewayAdminToken: "gateway-admin-token",
+	})
+
+	sharedReq := httptest.NewRequest(http.MethodGet, "/internal/v1/admin/users?page=1", nil)
+	sharedReq.Header.Set("X-Request-Id", "req_admin_shared")
+	sharedReq.Header.Set("X-Service-Token", "test-service-token")
+	sharedReq.Header.Set("X-Caller-Service", "gateway")
+	sharedReq.Header.Set("X-User-Id", "usr_admin")
+	sharedReq.Header.Set("X-User-Roles", "admin")
+	sharedRes := httptest.NewRecorder()
+	server.ServeHTTP(sharedRes, sharedReq)
+	if sharedRes.Code != http.StatusUnauthorized {
+		t.Fatalf("shared token status = %d, body = %s", sharedRes.Code, sharedRes.Body.String())
+	}
+
+	adminReq := httptest.NewRequest(http.MethodGet, "/internal/v1/admin/users?page=1", nil)
+	adminReq.Header.Set("X-Request-Id", "req_admin")
+	adminReq.Header.Set("X-Service-Token", "gateway-admin-token")
+	adminReq.Header.Set("X-Caller-Service", "gateway")
+	adminReq.Header.Set("X-User-Id", "usr_admin")
+	adminReq.Header.Set("X-User-Roles", "admin")
+	adminRes := httptest.NewRecorder()
+	server.ServeHTTP(adminRes, adminReq)
+	if adminRes.Code != http.StatusOK {
+		t.Fatalf("admin token status = %d, body = %s", adminRes.Code, adminRes.Body.String())
+	}
+}
+
+func TestSelfWriteRoutesRequireGatewayServiceToken(t *testing.T) {
+	auth := fakeAuthService{now: time.Date(2026, 6, 29, 8, 0, 0, 0, time.UTC)}
+	server := authhttp.NewServer(authhttp.Config{
+		Auth:              auth,
+		ServiceToken:      "test-service-token",
+		GatewayAdminToken: "gateway-admin-token",
+	})
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{
+			name:   "profile",
+			method: http.MethodPatch,
+			path:   "/internal/v1/users/usr_123/profile",
+			body:   `{"displayName":"Alice"}`,
+		},
+		{
+			name:   "password change",
+			method: http.MethodPost,
+			path:   "/internal/v1/users/usr_123/password-changes",
+			body:   `{"currentPassword":"temporary","newPassword":"new-password","newPasswordConfirmation":"new-password"}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sharedReq := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
+			sharedReq.Header.Set("X-Request-Id", "req_self_shared")
+			sharedReq.Header.Set("X-Service-Token", "test-service-token")
+			sharedReq.Header.Set("X-Caller-Service", "gateway")
+			sharedReq.Header.Set("X-User-Id", "usr_123")
+			sharedRes := httptest.NewRecorder()
+			server.ServeHTTP(sharedRes, sharedReq)
+			if sharedRes.Code != http.StatusUnauthorized {
+				t.Fatalf("shared token status = %d, body = %s", sharedRes.Code, sharedRes.Body.String())
+			}
+
+			gatewayReq := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
+			gatewayReq.Header.Set("X-Request-Id", "req_self_gateway")
+			gatewayReq.Header.Set("X-Service-Token", "gateway-admin-token")
+			gatewayReq.Header.Set("X-Caller-Service", "gateway")
+			gatewayReq.Header.Set("X-User-Id", "usr_123")
+			gatewayRes := httptest.NewRecorder()
+			server.ServeHTTP(gatewayRes, gatewayReq)
+			if gatewayRes.Code != http.StatusOK {
+				t.Fatalf("gateway token status = %d, body = %s", gatewayRes.Code, gatewayRes.Body.String())
+			}
+		})
+	}
+}
+
 func TestGetSessionDoesNotReturnTokenHash(t *testing.T) {
 	auth := fakeAuthService{now: time.Date(2026, 6, 29, 8, 0, 0, 0, time.UTC)}
 	server := authhttp.NewServer(authhttp.Config{Auth: auth, ServiceToken: "test-service-token"})
@@ -300,6 +388,52 @@ func (s fakeAuthService) GetUserPermissions(_ context.Context, reqCtx service.Re
 	return service.UserPermissions{UserID: "usr_123", Roles: []string{"standard"}, Permissions: []string{"knowledge:read"}, UpdatedAt: s.now}, nil
 }
 
+func (s fakeAuthService) ListManagedUsers(_ context.Context, reqCtx service.RequestContext, _ service.ListManagedUsersInput) (service.AdminUserList, error) {
+	if reqCtx.CallerService == "" {
+		return service.AdminUserList{}, service.UnauthorizedError()
+	}
+	user := s.adminUser()
+	return service.AdminUserList{
+		Users: []service.AdminUserRecord{user},
+		Page:  service.PageInfo{Page: 1, PageSize: 20, Total: 1},
+	}, nil
+}
+
+func (s fakeAuthService) CreateAdminUser(_ context.Context, reqCtx service.RequestContext, _ service.CreateAdminUserInput) (service.AdminUserRecord, error) {
+	if reqCtx.CallerService == "" {
+		return service.AdminUserRecord{}, service.UnauthorizedError()
+	}
+	return s.adminUser(), nil
+}
+
+func (s fakeAuthService) UpdateManagedUser(_ context.Context, reqCtx service.RequestContext, _ string, _ service.UpdateAdminUserInput) (service.AdminUserRecord, error) {
+	if reqCtx.CallerService == "" {
+		return service.AdminUserRecord{}, service.UnauthorizedError()
+	}
+	return s.adminUser(), nil
+}
+
+func (s fakeAuthService) ResetManagedUserPassword(_ context.Context, reqCtx service.RequestContext, _ string, _ service.ResetAdminPasswordInput) (service.AdminUserRecord, error) {
+	if reqCtx.CallerService == "" {
+		return service.AdminUserRecord{}, service.UnauthorizedError()
+	}
+	return s.adminUser(), nil
+}
+
+func (s fakeAuthService) UpdateProfile(_ context.Context, reqCtx service.RequestContext, _ string, _ service.UpdateProfileInput) (service.UserRecord, error) {
+	if reqCtx.CallerService == "" {
+		return service.UserRecord{}, service.UnauthorizedError()
+	}
+	return s.userRecord(), nil
+}
+
+func (s fakeAuthService) ChangeRequiredPassword(_ context.Context, reqCtx service.RequestContext, _ string, _ service.ChangePasswordInput) (service.UserRecord, error) {
+	if reqCtx.CallerService == "" {
+		return service.UserRecord{}, service.UnauthorizedError()
+	}
+	return s.userRecord(), nil
+}
+
 func (s fakeAuthService) GetSession(_ context.Context, reqCtx service.RequestContext, _ string) (service.SessionIdentity, error) {
 	if reqCtx.CallerService == "" {
 		return service.SessionIdentity{}, service.UnauthorizedError()
@@ -323,6 +457,33 @@ func (s fakeAuthService) RevokeSession(_ context.Context, reqCtx service.Request
 		return service.UnauthorizedError()
 	}
 	return nil
+}
+
+func (s fakeAuthService) userRecord() service.UserRecord {
+	return service.UserRecord{
+		User: service.User{
+			ID:          "usr_123",
+			Username:    "alice",
+			DisplayName: "Alice",
+			Status:      service.UserStatusActive,
+			CreatedAt:   s.now,
+			UpdatedAt:   s.now,
+		},
+		Roles:       []string{"standard"},
+		Permissions: []string{"knowledge:read"},
+	}
+}
+
+func (s fakeAuthService) adminUser() service.AdminUserRecord {
+	return service.AdminUserRecord{
+		UserRecord:      s.userRecord(),
+		ManageableRoles: []string{"standard"},
+		Actions: service.AdminUserActions{
+			CanDisable:       true,
+			CanResetPassword: true,
+			CanChangeRole:    true,
+		},
+	}
 }
 
 func (s fakeAuthService) sessionResponse() service.SessionResponse {

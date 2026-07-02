@@ -104,9 +104,9 @@ AuthSession 1 ── N AuthSecurityEvent
 | --- | --- | --- |
 | `id` | string / uuid | 用户公开 ID，对外映射为 `UserSummary.id`。 |
 | `username` | string | 登录用户名，唯一。 |
-| `display_name` | string | 展示名称，可选；当前 gateway UserSummary 未暴露。 |
-| `email` | string | 邮箱，可选；首期公开契约未使用。 |
-| `phone` | string | 手机号，可选；首期公开契约未使用。 |
+| `display_name` | string | 展示名称，可选；Gateway profile 和 admin user 资源可暴露。为空时前端可回退显示用户名。 |
+| `email` | string | 邮箱，可选、非唯一；不作为登录标识、找回密码或通知投递依据。 |
+| `phone` | string | 手机号，可选、非唯一；不作为登录标识、找回密码或通知投递依据。 |
 | `status` | string | 用户状态，见状态枚举。 |
 | `locked_until` | datetime | 临时锁定截止时间，可选。 |
 | `last_login_at` | datetime | 最近成功创建会话时间。 |
@@ -128,7 +128,10 @@ AuthSession 1 ── N AuthSecurityEvent
 | --- | --- |
 | `id` | `id` |
 | `username` | `username` |
-| `status` | `UserRecord.status`，仅内部 auth OpenAPI 暴露；gateway `UserSummary` 当前不暴露。 |
+| `display_name` | `displayName` |
+| `email` | `email` |
+| `phone` | `phone` |
+| `status` | `UserRecord.status` / Gateway profile 和 admin user 资源中的 `status`。 |
 
 ### 6.2 AuthCredential
 
@@ -145,6 +148,7 @@ AuthSession 1 ── N AuthSecurityEvent
 | `password_hash_params_json` | json | 哈希参数快照，例如 memory、iterations、parallelism、salt 长度和 key 长度。 |
 | `password_changed_at` | datetime | 最近修改密码时间。 |
 | `password_expires_at` | datetime | 密码过期时间，可选。 |
+| `must_change_password` | boolean | 管理员创建用户或管理员重置密码后置为 true；用户完成必需改密后置为 false。自助注册默认为 false。 |
 | `failed_attempt_count` | int | 连续失败次数，用于风控或锁定。 |
 | `last_failed_at` | datetime | 最近失败时间。 |
 | `created_at` | datetime | 创建时间。 |
@@ -153,8 +157,9 @@ AuthSession 1 ── N AuthSecurityEvent
 安全约束：
 
 - `password_hash` 不得通过任何 API、日志或错误响应返回。
-- `CreateUserRequest.password` 和 `CreateSessionRequest.password` 只存在于请求处理过程，写入数据库前必须转换为安全哈希。
+- `CreateUserRequest.password`、管理员临时密码、管理员重置临时密码和必需改密请求中的明文密码只存在于请求处理过程，写入数据库前必须转换为安全哈希。
 - 登录失败响应不得区分“用户不存在”和“密码错误”。
+- 密码策略为 8 到 1024 个字符，不要求大小写、数字或符号复杂度。
 
 `argon2id-v1` 固定参数：
 
@@ -385,6 +390,11 @@ AuthSession 1 ── N AuthSecurityEvent
 | --- | --- |
 | `id` | `auth_users.id` |
 | `username` | `auth_users.username` |
+| `displayName` | `auth_users.display_name` |
+| `email` | `auth_users.email` |
+| `phone` | `auth_users.phone` |
+| `status` | `auth_users.status`，在 Gateway profile/admin user 响应中暴露。 |
+| `mustChangePassword` | `auth_credentials.must_change_password` |
 | `roles` | `auth_roles.code` 聚合 |
 | `permissions` | `auth_permissions.code` 聚合 |
 
@@ -396,9 +406,13 @@ AuthSession 1 ── N AuthSecurityEvent
 | --- | --- |
 | `id` | `auth_users.id` |
 | `username` | `auth_users.username` |
+| `displayName` | `auth_users.display_name` |
+| `email` | `auth_users.email` |
+| `phone` | `auth_users.phone` |
 | `roles` | 角色聚合 |
 | `permissions` | 权限聚合 |
 | `status` | `auth_users.status` |
+| `mustChangePassword` | `auth_credentials.must_change_password` |
 | `createdAt` | `auth_users.created_at` |
 | `updatedAt` | `auth_users.updated_at` |
 
@@ -445,6 +459,7 @@ AuthSession 1 ── N AuthSecurityEvent
 | --- | --- | --- |
 | `auth_users` | `UNIQUE(username)` | 用户名唯一。 |
 | `auth_users` | `INDEX(status)` | 支持按状态筛选和禁用流程。 |
+| `auth_users.email` / `auth_users.phone` | 无唯一约束 | 邮箱和手机号是可选非唯一资料字段，不作为登录或找回密码标识。 |
 | `auth_credentials` | `UNIQUE(user_id, credential_type)` | 每用户每类型一个主凭证。 |
 | `auth_roles` | `UNIQUE(code)` | 角色编码唯一。 |
 | `auth_permissions` | `UNIQUE(code)` | 权限字符串唯一。 |
@@ -459,24 +474,36 @@ AuthSession 1 ── N AuthSecurityEvent
 
 ## 9. 生命周期规则
 
-### 9.1 用户创建
+### 9.1 自助注册用户创建
 
 1. Gateway 调用 `POST /internal/v1/users`。
 2. Auth 创建 `AuthUser` 和 `AuthCredential`。
-3. Auth 为新用户计算默认角色和权限。
+3. Auth 为新用户计算默认 `standard` 角色和权限，并设置
+   `must_change_password=false`。
 4. Auth 生成 opaque token，创建保存 token hash 的 `AuthSession`，返回 `SessionResponse`。
 5. Gateway 将 `UserSummary` 和 `SessionSummary` 写入 Redis。
 6. Auth 记录 `user.created` 和 `session.created` 安全事件。
 
-### 9.2 会话创建
+### 9.2 管理员创建用户
+
+1. Gateway 调用 `POST /internal/v1/admin/users` 并透传管理员身份上下文。
+2. Auth 校验调用方可管理的目标角色范围。
+3. Auth 创建 `AuthUser`、`AuthCredential` 和单一 `UserRole`，目标角色只能是
+   `standard` 或 `admin`。
+4. Auth 使用管理员输入的临时密码生成密码哈希，并设置
+   `must_change_password=true`。
+5. Auth 返回 `AdminUser`，不返回被创建用户的 session 或 access token。
+6. Auth 记录用户创建、角色分配和临时密码设置相关安全事件。
+
+### 9.3 会话创建
 
 1. Gateway 调用 `POST /internal/v1/sessions`。
 2. Auth 根据 `username` 查询用户和凭证。
 3. Auth 校验用户状态、锁定状态和密码哈希。
-4. 成功时生成 opaque token，创建保存 token hash 的 `AuthSession`，更新 `last_login_at`，返回 `SessionResponse`。
+4. 成功时生成 opaque token，创建保存 token hash 的 `AuthSession`，更新 `last_login_at`，返回 `SessionResponse`。当 `must_change_password=true` 时，返回给 Gateway 的用户摘要必须包含该状态，以便前端进入必需改密路由。
 5. 失败时更新失败计数，记录 `session.create_failed`，返回统一 `401 unauthorized` 或 `429 rate_limited`。
 
-### 9.3 会话删除
+### 9.4 会话删除
 
 1. Gateway 从 Redis 当前会话缓存读取 `sessionId`。
 2. Gateway 调用 `DELETE /internal/v1/sessions/{sessionId}`。
@@ -484,12 +511,23 @@ AuthSession 1 ── N AuthSecurityEvent
 4. Auth 记录 `session.revoked`。
 5. Gateway 删除 Redis 缓存键。
 
-### 9.4 权限变更
+### 9.5 权限变更
 
 1. Auth 修改 `UserRole` 或 `RolePermission`。
 2. Auth 记录 `role.assigned`、`role.removed` 或 `permission.changed`。
 3. Auth 应撤销受影响用户的活跃会话，或提供机制让 gateway 刷新 Redis 会话缓存。
 4. 下游服务后续只能信任 gateway 注入的新 `X-User-Roles` 和 `X-User-Permissions`。
+
+### 9.6 管理员密码重置和必需改密
+
+1. 管理员密码重置走 `POST /internal/v1/admin/users/{userId}/password-resets`。
+2. Auth 校验调用方管理范围、目标用户不是 `super_admin`、且不是调用方自己。
+3. Auth 用管理员输入的临时密码替换密码哈希，设置
+   `must_change_password=true`，并撤销或刷新目标用户现有会话。
+4. 用户下次登录后进入必需改密路由，调用
+   `POST /internal/v1/users/{userId}/password-changes`。
+5. Auth 验证当前临时密码，校验新密码策略，替换密码哈希，设置
+   `must_change_password=false`，并记录安全事件。
 
 ## 10. 安全保留策略
 

@@ -22,6 +22,7 @@ type AuthCredential struct {
 	LastFailedAt              pgtype.Timestamptz `db:"last_failed_at" json:"last_failed_at"`
 	CreatedAt                 pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	UpdatedAt                 pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	MustChangePassword        bool               `db:"must_change_password" json:"must_change_password"`
 }
 
 type AuthPermission struct {

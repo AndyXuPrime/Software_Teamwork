@@ -15,40 +15,42 @@ import (
 )
 
 type Config struct {
-	Logger               *slog.Logger
-	ServiceVersion       string
-	Environment          string
-	RequestTimeout       time.Duration
-	MaxBodyBytes         int64
-	CORSAllowedOrigins   []string
-	CORSAllowedMethods   []string
-	CORSAllowedHeaders   []string
-	CORSAllowCredentials bool
-	DownstreamTimeout    time.Duration
-	InternalServiceToken string
-	OwnerBaseURLs        map[string]string
-	AuthClient           AuthClient
-	SessionStore         service.SessionStore
-	TokenHasher          service.TokenHasher
-	HTTPClient           *http.Client
-	ReadyCheck           func(context.Context) error
-	MetricsReg           *metrics.Registry
+	Logger                *slog.Logger
+	ServiceVersion        string
+	Environment           string
+	RequestTimeout        time.Duration
+	MaxBodyBytes          int64
+	CORSAllowedOrigins    []string
+	CORSAllowedMethods    []string
+	CORSAllowedHeaders    []string
+	CORSAllowCredentials  bool
+	DownstreamTimeout     time.Duration
+	InternalServiceToken  string
+	AuthAdminServiceToken string
+	OwnerBaseURLs         map[string]string
+	AuthClient            AuthClient
+	SessionStore          service.SessionStore
+	TokenHasher           service.TokenHasher
+	HTTPClient            *http.Client
+	ReadyCheck            func(context.Context) error
+	MetricsReg            *metrics.Registry
 }
 
 type Server struct {
-	logger               *slog.Logger
-	serviceVersion       string
-	environment          string
-	internalServiceToken string
-	authClient           AuthClient
-	sessionStore         service.SessionStore
-	tokenHasher          service.TokenHasher
-	ownerBaseURLs        map[string]*url.URL
-	httpClient           *http.Client
-	streamHTTPClient     *http.Client
-	readyCheck           func(context.Context) error
-	mux                  *http.ServeMux
-	handler              http.Handler
+	logger                *slog.Logger
+	serviceVersion        string
+	environment           string
+	internalServiceToken  string
+	authAdminServiceToken string
+	authClient            AuthClient
+	sessionStore          service.SessionStore
+	tokenHasher           service.TokenHasher
+	ownerBaseURLs         map[string]*url.URL
+	httpClient            *http.Client
+	streamHTTPClient      *http.Client
+	readyCheck            func(context.Context) error
+	mux                   *http.ServeMux
+	handler               http.Handler
 }
 
 func NewServer(cfg Config) *Server {
@@ -62,18 +64,19 @@ func NewServer(cfg Config) *Server {
 		cfg.HTTPClient = &http.Client{Timeout: cfg.DownstreamTimeout}
 	}
 	s := &Server{
-		logger:               cfg.Logger,
-		serviceVersion:       cfg.ServiceVersion,
-		environment:          cfg.Environment,
-		internalServiceToken: strings.TrimSpace(cfg.InternalServiceToken),
-		authClient:           cfg.AuthClient,
-		sessionStore:         cfg.SessionStore,
-		tokenHasher:          cfg.TokenHasher,
-		ownerBaseURLs:        parseOwnerBaseURLs(cfg.OwnerBaseURLs),
-		httpClient:           cfg.HTTPClient,
-		streamHTTPClient:     cloneHTTPClientWithoutTimeout(cfg.HTTPClient),
-		readyCheck:           cfg.ReadyCheck,
-		mux:                  http.NewServeMux(),
+		logger:                cfg.Logger,
+		serviceVersion:        cfg.ServiceVersion,
+		environment:           cfg.Environment,
+		internalServiceToken:  strings.TrimSpace(cfg.InternalServiceToken),
+		authAdminServiceToken: strings.TrimSpace(cfg.AuthAdminServiceToken),
+		authClient:            cfg.AuthClient,
+		sessionStore:          cfg.SessionStore,
+		tokenHasher:           cfg.TokenHasher,
+		ownerBaseURLs:         parseOwnerBaseURLs(cfg.OwnerBaseURLs),
+		httpClient:            cfg.HTTPClient,
+		streamHTTPClient:      cloneHTTPClientWithoutTimeout(cfg.HTTPClient),
+		readyCheck:            cfg.ReadyCheck,
+		mux:                   http.NewServeMux(),
 	}
 	s.routes()
 	s.handler = middleware.Chain(
@@ -99,6 +102,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/users", s.handleCreateUser)
 	s.mux.HandleFunc("POST /api/v1/sessions", s.handleCreateSession)
 	s.mux.HandleFunc("GET /api/v1/users/me", s.handleCurrentUser)
+	s.mux.HandleFunc("GET /api/v1/users/me/profile", s.handleCurrentUserProfile)
+	s.mux.HandleFunc("PATCH /api/v1/users/me/profile", s.handleUpdateCurrentUserProfile)
+	s.mux.HandleFunc("POST /api/v1/users/me/password-changes", s.handleChangeCurrentUserPassword)
 	s.mux.HandleFunc("DELETE /api/v1/sessions/current", s.handleDeleteCurrentSession)
 	for _, route := range activeProxyRoutes {
 		route := route

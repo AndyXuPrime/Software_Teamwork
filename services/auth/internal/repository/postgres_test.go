@@ -108,11 +108,11 @@ func (q *fakeQueries) GetUserByUsername(_ context.Context, username string) (sql
 	return q.user(), nil
 }
 
-func (q *fakeQueries) GetCredentialByUserID(_ context.Context, arg sqlc.GetCredentialByUserIDParams) (sqlc.AuthCredential, error) {
+func (q *fakeQueries) GetCredentialByUserID(_ context.Context, arg sqlc.GetCredentialByUserIDParams) (sqlc.GetCredentialByUserIDRow, error) {
 	if arg.UserID != "usr_123" || arg.CredentialType != service.CredentialTypePassword {
-		return sqlc.AuthCredential{}, pgx.ErrNoRows
+		return sqlc.GetCredentialByUserIDRow{}, pgx.ErrNoRows
 	}
-	return sqlc.AuthCredential{
+	return sqlc.GetCredentialByUserIDRow{
 		ID:                        "cred_123",
 		UserID:                    "usr_123",
 		CredentialType:            service.CredentialTypePassword,
@@ -122,6 +122,37 @@ func (q *fakeQueries) GetCredentialByUserID(_ context.Context, arg sqlc.GetCrede
 		PasswordHashParamsJson:    []byte(`{"memory":65536}`),
 		PasswordChangedAt:         timestamptzFromTime(q.now),
 		FailedAttemptCount:        0,
+		CreatedAt:                 timestamptzFromTime(q.now),
+		UpdatedAt:                 timestamptzFromTime(q.now),
+	}, nil
+}
+
+func (q *fakeQueries) CountManagedUsers(context.Context, sqlc.CountManagedUsersParams) (int64, error) {
+	return 1, nil
+}
+
+func (q *fakeQueries) ListManagedUsers(context.Context, sqlc.ListManagedUsersParams) ([]sqlc.AuthUser, error) {
+	return []sqlc.AuthUser{q.user()}, nil
+}
+
+func (q *fakeQueries) UpdateUserProfile(context.Context, sqlc.UpdateUserProfileParams) (sqlc.AuthUser, error) {
+	return q.user(), nil
+}
+
+func (q *fakeQueries) UpdateUserStatus(context.Context, sqlc.UpdateUserStatusParams) (sqlc.AuthUser, error) {
+	return q.user(), nil
+}
+
+func (q *fakeQueries) UpdateCredentialPassword(context.Context, sqlc.UpdateCredentialPasswordParams) (sqlc.UpdateCredentialPasswordRow, error) {
+	return sqlc.UpdateCredentialPasswordRow{
+		ID:                        "cred_123",
+		UserID:                    "usr_123",
+		CredentialType:            service.CredentialTypePassword,
+		PasswordHash:              "$argon2id$...",
+		PasswordHashAlg:           "argon2id",
+		PasswordHashParamsVersion: "argon2id-v1",
+		PasswordHashParamsJson:    []byte(`{"memory":65536}`),
+		PasswordChangedAt:         timestamptzFromTime(q.now),
 		CreatedAt:                 timestamptzFromTime(q.now),
 		UpdatedAt:                 timestamptzFromTime(q.now),
 	}, nil
@@ -169,6 +200,12 @@ func (q *fakeQueries) RevokeSession(_ context.Context, arg sqlc.RevokeSessionPar
 	session.RevokeReason = arg.RevokeReason
 	session.RevokedRequestID = arg.RevokedRequestID
 	return session, nil
+}
+
+func (q *fakeQueries) RevokeActiveSessionsForUser(context.Context, sqlc.RevokeActiveSessionsForUserParams) ([]sqlc.AuthSession, error) {
+	session := q.session()
+	session.Status = service.SessionStatusRevoked
+	return []sqlc.AuthSession{session}, nil
 }
 
 func (q *fakeQueries) CreateSecurityEvent(context.Context, sqlc.CreateSecurityEventParams) error {

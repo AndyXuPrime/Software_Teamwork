@@ -59,6 +59,18 @@ const user: UserSummary = {
   username: 'operator',
 }
 
+const standardUser: UserSummary = {
+  id: 'user-2',
+  permissions: ['qa:use', 'knowledge:read', 'document:upload'],
+  roles: ['standard'],
+  username: 'standard',
+}
+
+const reportUser: UserSummary = {
+  ...standardUser,
+  permissions: ['qa:use', 'knowledge:read', 'report:read'],
+}
+
 describe('AppLayout accessibility smoke', () => {
   beforeEach(() => {
     routerMocks.navigate.mockReset()
@@ -104,6 +116,47 @@ describe('AppLayout accessibility smoke', () => {
     await keyboard.tab()
     expect(navLinks[2]).toHaveFocus()
     await keyboard.tab()
+    expect(screen.getByRole('link', { name: '打开个人资料' })).toHaveFocus()
+    await keyboard.tab()
     expect(logoutButton).toHaveFocus()
+  })
+
+  it('does not expose the admin shell to standard users', () => {
+    useAuthStore.setState({
+      accessToken: 'opaque-test-token',
+      error: null,
+      status: 'authenticated',
+      user: standardUser,
+      userName: standardUser.username,
+    })
+
+    renderWithProviders(
+      <AppLayout>
+        <section aria-label="workspace">Workspace</section>
+      </AppLayout>,
+    )
+
+    const nav = screen.getByRole('navigation')
+    expect(within(nav).getByRole('link', { name: '问答' })).toBeVisible()
+    expect(within(nav).queryByRole('link', { name: '管理' })).not.toBeInTheDocument()
+  })
+
+  it('exposes the admin shell to users with admin report routes', () => {
+    useAuthStore.setState({
+      accessToken: 'opaque-test-token',
+      error: null,
+      status: 'authenticated',
+      user: reportUser,
+      userName: reportUser.username,
+    })
+
+    renderWithProviders(
+      <AppLayout>
+        <section aria-label="workspace">Workspace</section>
+      </AppLayout>,
+    )
+
+    const nav = screen.getByRole('navigation')
+    expect(within(nav).getByRole('link', { name: '管理' })).toBeVisible()
   })
 })

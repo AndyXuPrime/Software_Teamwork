@@ -25,7 +25,7 @@ AI Gateway 是内部模型服务，只提供 `/internal/v1/**` 给 `qa`、`knowl
 - 后端实现 endpoint 前，应先更新 OpenAPI。
 - 破坏性字段变更必须同步更新 OpenAPI 和本契约文档。
 - 所有前端到 gateway、gateway 到下游服务的 HTTP API 必须使用 RESTful 资源路径，由 HTTP method 表达动作；健康检查是唯一已允许的非 `/api/v1` 例外。
-- 本轮把 gateway 健康检查、auth、knowledge-owned 知识库/文档上传/文档处理/原文件内容/切片/检索接口、`document` 拥有的报告生成接口、`qa` 拥有的会话/消息/SSE/引用/配置/检索体验测试/统计接口，以及 admin-facing runtime model/parser configuration 接口列为已确定公开契约；`file` 只作为后端内部基础文件能力，不直接拥有前端公开 API。`GET /api/v1/admin/overview` 和 `GET /api/v1/admin/metrics` 均已是 active contract，详见 OpenAPI 顶层 `x-missing-contracts`。
+- 本轮把 gateway 健康检查、auth、自助注册、个人资料、必需改密、管理员用户管理、knowledge-owned 知识库/文档上传/文档处理/原文件内容/切片/检索接口、`document` 拥有的报告生成接口、`qa` 拥有的会话/消息/SSE/引用/配置/检索体验测试/统计接口，以及 admin-facing runtime model/parser configuration 接口列为已确定公开契约；`file` 只作为后端内部基础文件能力，不直接拥有前端公开 API。`GET /api/v1/admin/overview` 和 `GET /api/v1/admin/metrics` 均已是 active contract；逐项 active operation 以 Gateway OpenAPI 和 owner map 为准。
 - AI Gateway 的 chat、Function Calling 透传、embedding 和 rerank 契约已经作为内部服务契约补齐，但不改变前端只能调用 gateway 的约束。
 
 ## 接口文档编写标准
@@ -46,12 +46,20 @@ AI Gateway 是内部模型服务，只提供 `/internal/v1/**` 给 `qa`、`knowl
 ## 认证约定
 
 - 用户创建和会话创建接口不要求认证。
+- `POST /api/v1/users` 是公开自助注册入口。它只收集用户名和密码，
+  创建默认 `standard` 用户并返回会话；自助注册用户不进入首次强制改密。
+- 管理员创建用户使用独立资源 `POST /api/v1/admin/users`。该入口要求
+  管理员认证，不返回被创建用户的会话，并要求被创建用户首次登录后进入
+  `/password/change-required` 完成临时密码修改。
 - 业务接口默认要求认证，OpenAPI 中使用 `bearerAuth` 标记。
 - 用户创建或会话创建成功后，前端从响应的 `data.session.accessToken` 读取访问令牌。该 token 是 opaque Bearer token，不是 JWT，前端不得解析其内容。
 - 前端后续请求使用 `Authorization: Bearer <accessToken>`。
 - 前端只发送认证凭据，不发送 `X-User-Id`、`X-User-Roles`、`X-User-Permissions`。
 - 用户身份、角色和权限由 gateway 从 Redis 会话缓存读取后传递给下游服务。
 - Redis 会话缓存由 gateway 在 auth 返回身份/会话信息后写入；前端不直接访问 Redis 或 auth 内部地址。
+- Auth 返回的当前用户摘要可包含 `mustChangePassword`。前端在普通业务和
+  管理端路由渲染前应先把该用户带到 `/password/change-required`；该页面
+  调用 `POST /api/v1/users/me/password-changes`，提交当前临时密码、新密码和确认值。
 - `401 unauthorized` 表示未登录或认证失效；前端应回到登录流程。
 - `403 forbidden` 表示已登录但权限不足；前端应展示权限不足状态。
 
@@ -144,6 +152,43 @@ AI Gateway 是内部模型服务，只提供 `/internal/v1/**` 给 `qa`、`knowl
   schema 已定义，前端可基于此生成 typed client 并开始 dashboard UI 开发。
   当前路由返回 501 Not Implemented，后端聚合实现由单独 issue 追踪。
   其余知识库、问答、报告生成和 admin runtime configuration 接口以当前 OpenAPI active paths 为准。
+
+## Auth 与用户管理接口
+
+Auth 拥有用户、凭证、角色、权限、会话、个人资料和强制改密状态。
+Gateway 是唯一公开入口，前端不得直连 Auth `/internal/v1/**`。
+
+Auth 公开资源族包括：
+
+- `POST /api/v1/users`：公开自助注册，保持用户名/密码短表单，返回会话，
+  不设置首次强制改密。
+- `POST /api/v1/sessions`、`DELETE /api/v1/sessions/current`、
+  `GET /api/v1/users/me`：会话创建、删除和当前用户。
+- `/api/v1/users/me/profile`：当前用户资料读取和自助编辑。只允许编辑
+  `displayName`、`email`、`phone`；用户名、角色、权限、状态只读。
+- `/api/v1/users/me/password-changes`：当前用户必需的临时密码修改流程。
+  请求必须包含当前临时密码、新密码和确认值。
+- `/api/v1/admin/users`：管理员用户管理。列表必须由 Gateway/Auth 通过
+  `page`、`pageSize`、`username`、`role`、`status` 参数过滤和分页，不允许
+  前端只对单页结果做假过滤。
+
+管理员用户管理权限语义：
+
+- `standard` 用户不能访问用户管理。
+- `admin` 只能看见和管理 `standard` 用户。
+- `super_admin` 或具备 `system:admin` 的调用方可以看见和管理 `standard`
+  与 `admin` 用户。
+- `super_admin` 用户不出现在管理列表中，任何人都不能通过公开 UI/API 创建、
+  授予或移除 `super_admin`。
+- 角色更新是单角色替换，只允许目标角色为 `standard` 或 `admin`。
+- 管理员和超管不能通过用户管理接口禁用自己、重置自己的密码或修改自己的角色。
+
+资料字段规则：
+
+- `displayName`、`email`、`phone` 都是可选资料字段。
+- `email` 和 `phone` 不唯一，不作为登录标识，不参与找回密码、验证码或通知投递。
+- 密码策略为 8 到 1024 个字符；不要求大小写、数字或符号复杂度。该策略适用于
+  自助注册、管理员临时密码、管理员密码重置和强制改密。
 
 ## Knowledge 接口
 

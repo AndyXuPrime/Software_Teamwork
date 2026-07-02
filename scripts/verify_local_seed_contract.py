@@ -25,6 +25,11 @@ GITIGNORE = Path(".gitignore")
 
 REQUIRED_SEED_001_TOKENS = {
     "Auth local admin user": ["usr_local_admin", "cred_local_admin_password", "urole_local_admin_admin"],
+    "Auth local super admin user": [
+        "usr_local_super_admin",
+        "cred_local_super_admin_password",
+        "urole_local_super_admin_super_admin",
+    ],
     "Knowledge sample": ["kb_local_demo", "doc_local_demo_seed", "chunk_local_demo_seed_001"],
     "Document sample": [
         "22222222-2222-4222-8222-222222222201",
@@ -103,7 +108,10 @@ REQUIRED_DOC_TOKENS = [
     "唯一默认配置来源",
     "LOCAL_ADMIN_USERNAME=admin",
     "LOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345",
+    "LOCAL_SUPER_ADMIN_USERNAME=superadmin",
+    "LOCAL_SUPER_ADMIN_PASSWORD=LocalDemoAdmin#12345",
     "admin / LocalDemoAdmin#12345",
+    "superadmin / LocalDemoAdmin#12345",
     "cp deploy/.env.example deploy/.env",
     "./scripts/local/dev-up.sh",
     "./scripts/local/run-backend.sh",
@@ -318,6 +326,7 @@ def validate_cleanup_seed(content: str) -> list[str]:
     issues: list[str] = []
     for token in [
         "usr_local_admin",
+        "usr_local_super_admin",
         "doc_local_demo_seed",
         "22222222-2222-4222-8222-222222222301",
         "33333333-3333-4333-8333-333333333301",

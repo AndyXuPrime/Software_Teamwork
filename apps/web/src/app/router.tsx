@@ -8,7 +8,9 @@ import {
   useSearch,
 } from '@tanstack/react-router'
 
+import { DEFAULT_ADMIN_USERS_SEARCH, normalizeAdminUsersSearch } from '@/features/auth'
 import { AppLayout } from '@/layouts/app-layout'
+import { adminShellAccess } from '@/lib/access'
 import type { PermissionRequirement } from '@/lib/permissions'
 import { canAccess } from '@/lib/permissions'
 import { KnowledgeConfig } from '@/pages/admin/knowledge-config'
@@ -19,13 +21,15 @@ import { ParserConfigsPage } from '@/pages/admin/parser-configs'
 import { QARetrievalTestPage } from '@/pages/admin/qa-retrieval-test'
 import { QASettings } from '@/pages/admin/qa-settings'
 import { StatsOverviewPage } from '@/pages/admin/stats-overview'
-import { StyleManagement } from '@/pages/admin/style-management'
 import { SystemSettings } from '@/pages/admin/system-settings'
+import { AdminUsersPage } from '@/pages/admin/users'
 import { ForbiddenPage } from '@/pages/auth/forbidden'
 import { KnowledgeChunksPage } from '@/pages/knowledge/chunks/page'
 import { KnowledgeDocumentsPage } from '@/pages/knowledge/documents/page'
 import { KnowledgeSearchPage } from '@/pages/knowledge/search/page'
 import { LoginPage } from '@/pages/login/page'
+import { PasswordChangeRequiredPage } from '@/pages/password/change-required'
+import { ProfilePage } from '@/pages/profile/page'
 import { ChatPage } from '@/pages/qa/chat/page'
 import { ReportGeneratePage } from '@/pages/reports/generate/page'
 import { ReportRecordsPage } from '@/pages/reports/records/page'
@@ -42,7 +46,10 @@ async function restoreAuthForRoute() {
   return useAuthStore.getState()
 }
 
-function requireAuth(requirement?: PermissionRequirement) {
+function requireAuth(
+  requirement?: PermissionRequirement,
+  options?: { allowPasswordChange?: boolean },
+) {
   return async () => {
     const store = await restoreAuthForRoute()
 
@@ -54,6 +61,10 @@ function requireAuth(requirement?: PermissionRequirement) {
       return
     }
 
+    if (store.user?.mustChangePassword && !options?.allowPasswordChange) {
+      throw redirect({ to: '/password/change-required' })
+    }
+
     if (!canAccess(store.user, requirement)) {
       throw redirect({ to: '/forbidden' })
     }
@@ -62,6 +73,10 @@ function requireAuth(requirement?: PermissionRequirement) {
 
 async function redirectToReportHome() {
   const store = await restoreAuthForRoute()
+
+  if (store.user?.mustChangePassword) {
+    throw redirect({ to: '/password/change-required' })
+  }
 
   if (canAccess(store.user, reportWriteAccess)) {
     throw redirect({ to: '/reports/generate' })
@@ -77,6 +92,10 @@ async function redirectToReportHome() {
 async function redirectToAppHome() {
   const store = await restoreAuthForRoute()
 
+  if (store.user?.mustChangePassword) {
+    throw redirect({ to: '/password/change-required' })
+  }
+
   if (canAccess(store.user, qaAccess)) {
     throw redirect({ to: '/chat' })
   }
@@ -89,7 +108,7 @@ async function redirectToAppHome() {
     throw redirect({ to: '/reports/records' })
   }
 
-  if (canAccess(store.user, adminAccess)) {
+  if (canAccess(store.user, adminShellAccess)) {
     throw redirect({ to: '/admin' })
   }
 
@@ -99,7 +118,11 @@ async function redirectToAppHome() {
 async function redirectToAdminHome() {
   const store = await restoreAuthForRoute()
 
-  if (canAccess(store.user, { any: ['qa:use', 'system:admin'] })) {
+  if (store.user?.mustChangePassword) {
+    throw redirect({ to: '/password/change-required' })
+  }
+
+  if (canAccess(store.user, { any: ['system:admin'] })) {
     throw redirect({ to: '/admin/stats' })
   }
 
@@ -111,7 +134,7 @@ async function redirectToAdminHome() {
     throw redirect({ to: '/admin/knowledge' })
   }
 
-  if (canAccess(store.user, knowledgeAccess)) {
+  if (canAccess(store.user, { any: ['knowledge:admin', 'knowledge:write', 'system:admin'] })) {
     throw redirect({ to: '/admin/knowledge-config' })
   }
 
@@ -121,6 +144,10 @@ async function redirectToAdminHome() {
 
   if (canAccess(store.user, parserConfigsPerm)) {
     throw redirect({ to: '/admin/parser-configs' })
+  }
+
+  if (canAccess(store.user, adminUsersAccess)) {
+    throw redirect({ to: '/admin/users', search: DEFAULT_ADMIN_USERS_SEARCH })
   }
 
   throw redirect({ to: '/forbidden' })
@@ -134,24 +161,9 @@ const reportAccess: PermissionRequirement = {
   any: ['report:read', 'report:write', 'reports:write'],
 }
 const reportWriteAccess: PermissionRequirement = { any: ['report:write', 'reports:write'] }
-const knowledgeAccess: PermissionRequirement = {
-  any: ['knowledge:read', 'knowledge:write', 'document:upload'],
-}
 const knowledgeWriteAccess: PermissionRequirement = { any: ['knowledge:write'] }
-const adminAccess: PermissionRequirement = {
-  any: [
-    'system:admin',
-    'qa:use',
-    'report:read',
-    'report:write',
-    'reports:write',
-    'knowledge:read',
-    'knowledge:write',
-    'knowledge:admin',
-    'document:upload',
-    'admin:model-profile:write',
-    'admin:parser-config:write',
-  ],
+const adminUsersAccess: PermissionRequirement = {
+  roles: ['admin', 'super_admin'],
 }
 
 const rootRoute = createRootRoute({
@@ -164,10 +176,20 @@ const loginRoute = createRoute({
   beforeLoad: async () => {
     const store = await restoreAuthForRoute()
     if (store.status === 'authenticated') {
+      if (store.user?.mustChangePassword) {
+        throw redirect({ to: '/password/change-required' })
+      }
       await redirectToAppHome()
     }
   },
   component: LoginPage,
+})
+
+const passwordChangeRequiredRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'password/change-required',
+  beforeLoad: requireAuth(undefined, { allowPasswordChange: true }),
+  component: PasswordChangeRequiredPage,
 })
 
 const authenticatedRoute = createRoute({
@@ -191,6 +213,12 @@ const forbiddenRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'forbidden',
   component: ForbiddenPage,
+})
+
+const profileRoute = createRoute({
+  getParentRoute: () => authenticatedRoute,
+  path: 'profile',
+  component: ProfilePage,
 })
 
 const chatRoute = createRoute({
@@ -236,7 +264,7 @@ const reportTemplatesRoute = createRoute({
 const adminRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'admin',
-  beforeLoad: requireAuth(adminAccess),
+  beforeLoad: requireAuth(adminShellAccess),
   component: AdminPage,
 })
 
@@ -244,13 +272,6 @@ const adminIndexRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: '/',
   beforeLoad: redirectToAdminHome,
-})
-
-const adminStylesRoute = createRoute({
-  getParentRoute: () => adminRoute,
-  path: 'styles',
-  beforeLoad: requireAuth(),
-  component: StyleManagement,
 })
 
 const adminKnowledgeRoute = createRoute({
@@ -263,7 +284,7 @@ const adminKnowledgeRoute = createRoute({
 const adminKnowledgeConfigRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'knowledge-config',
-  beforeLoad: requireAuth(knowledgeAccess),
+  beforeLoad: requireAuth({ any: ['knowledge:admin', 'knowledge:write', 'system:admin'] }),
   component: KnowledgeConfig,
 })
 
@@ -293,7 +314,7 @@ function AdminKnowledgeDocumentsPage() {
 const adminKnowledgeDocumentsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'knowledge/documents',
-  beforeLoad: requireAuth(knowledgeAccess),
+  beforeLoad: requireAuth({ any: ['knowledge:write', 'knowledge:admin', 'system:admin'] }),
   component: AdminKnowledgeDocumentsPage,
   validateSearch: (search: Record<string, unknown>): AdminKnowledgeDocumentsSearch => ({
     knowledgeBaseId:
@@ -304,7 +325,7 @@ const adminKnowledgeDocumentsRoute = createRoute({
 const adminKnowledgeSearchRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'knowledge/search',
-  beforeLoad: requireAuth({ any: ['knowledge:read'] }),
+  beforeLoad: requireAuth({ any: ['knowledge:write', 'knowledge:admin', 'system:admin'] }),
   component: KnowledgeSearchPage,
 })
 
@@ -329,7 +350,7 @@ function AdminKnowledgeChunksPage() {
 const adminKnowledgeChunksRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'knowledge/chunks',
-  beforeLoad: requireAuth(knowledgeAccess),
+  beforeLoad: requireAuth({ any: ['knowledge:write', 'knowledge:admin', 'system:admin'] }),
   component: AdminKnowledgeChunksPage,
   validateSearch: (search: Record<string, unknown>): AdminKnowledgeChunksSearch => {
     const documentId = typeof search.documentId === 'string' ? search.documentId : ''
@@ -361,7 +382,7 @@ const adminSettingsRoute = createRoute({
 const adminStatsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'stats',
-  beforeLoad: requireAuth({ any: ['qa:use', 'system:admin'] }),
+  beforeLoad: requireAuth({ any: ['system:admin'] }),
   component: StatsOverviewPage,
 })
 
@@ -386,6 +407,14 @@ const adminParserConfigsRoute = createRoute({
   component: ParserConfigsPage,
 })
 
+const adminUsersRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'users',
+  beforeLoad: requireAuth(adminUsersAccess),
+  component: AdminUsersPage,
+  validateSearch: normalizeAdminUsersSearch,
+})
+
 const adminReportRecordsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'reports/records',
@@ -402,9 +431,11 @@ const adminReportTemplatesRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  passwordChangeRequiredRoute,
   authenticatedRoute.addChildren([
     indexRoute,
     forbiddenRoute,
+    profileRoute,
     chatRoute,
     reportsRoute.addChildren([
       reportsIndexRoute,
@@ -414,7 +445,6 @@ const routeTree = rootRoute.addChildren([
     ]),
     adminRoute.addChildren([
       adminIndexRoute,
-      adminStylesRoute,
       adminKnowledgeRoute,
       adminKnowledgeConfigRoute,
       adminKnowledgeDocumentsRoute,
@@ -424,6 +454,7 @@ const routeTree = rootRoute.addChildren([
       adminQARetrievalTestRoute,
       adminModelProfilesRoute,
       adminParserConfigsRoute,
+      adminUsersRoute,
       adminSettingsRoute,
       adminStatsRoute,
       adminReportRecordsRoute,

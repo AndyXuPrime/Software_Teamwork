@@ -9,7 +9,7 @@
 | 服务 | 负责 | 通过 gateway 暴露 | 不得负责 |
 | --- | --- | --- | --- |
 | `gateway` | 面向前端、管理端、后端模块和工具调用方的公开 API；路由；基于 Redis 的会话缓存；认证上下文透传；响应/错误包裹结构；请求 ID；轻量聚合。 | `/api/v1/**`、`/healthz`、`/readyz`。 | 持久化用户/角色/权限、文档解析、向量检索、LLM 工作流、报告生成业务逻辑。 |
-| `auth` | 用户、凭证、角色、权限、会话或令牌、会话身份签发和撤销。 | 用户创建、会话创建/删除、当前用户、权限检查、供 gateway 缓存的会话身份。 | 文件元数据、知识索引、QA 消息、报告记录。 |
+| `auth` | 用户、凭证、角色、权限、会话或令牌、会话身份签发和撤销、用户资料字段、强制改密状态。 | 用户创建、会话创建/删除、当前用户、当前用户资料、强制改密、管理员用户管理、权限检查、供 gateway 缓存的会话身份。 | 文件元数据、知识索引、QA 消息、报告记录。 |
 | `file` | 基础文件上传/内容 API、原始对象、对象存储协调、最小 file 元数据生命周期、面向后端服务的 MinIO 中间层。 | 不直接拥有前端公开 API；通过内部 `/internal/v1/files/**` 为 `knowledge`、`document` 等 owner service 提供基础文件能力。 | 知识库归属、知识文档状态、知识分块、向量索引、RAG、报告生成、报告材料/模板/报告文件业务状态、QA 会话附件元数据/解析状态/临时 chunk 归属。QA 会话附件原始 bytes 通过内部 file API 保存。 |
 | `knowledge` | 知识库、知识文档上传入口、文档摄取状态、原始文档内容资源、分块、嵌入工作流、检索策略、检索查询、Qdrant 索引归属、文档解析器运行时配置。 | 通过 gateway 暴露知识库 CRUD、文档上传/详情/内容/分块列表、知识查询和管理员解析器配置资源；需要保存或读取原始文件时内部调用 file，需要解析原始 bytes 时内部调用 parser，需要生成嵌入或 rerank 时内部调用 AI Gateway。 | 用户身份、底层对象存储实现、OCR/PaddleOCR 运行时、LLM 答案生成、DOCX 导出、provider API key 存储。 |
 | `parser` | 内部文档解析运行时，把原始文档 bytes 转成规范化 parsed content；首个目标后端为 Python/PaddleOCR。 | 不通过 gateway 暴露；只提供内部 `/internal/v1/parsed-documents`、`/healthz`、`/readyz`。 | 知识库/文档业务状态、processing job、chunk 持久化、embedding、Qdrant 写入、检索、parser admin 配置公开契约、对象存储元数据、QA 会话附件业务状态和临时 chunk 持久化。 |
@@ -24,6 +24,9 @@
 | 用户和会话创建 | 公开入口、响应归一化、写入 Redis 会话缓存。 | `auth` | 密码校验和会话/令牌签发留在 auth；auth 返回供 gateway 缓存的身份/会话 payload。 |
 | 当前会话删除 | 公开入口、响应归一化、删除 Redis 会话缓存。 | `auth` | 会话/令牌失效留在 auth；gateway 删除匹配的 Redis 缓存条目。 |
 | 当前用户 | 读取 Redis 会话缓存并归一化响应。 | `auth` | Auth 负责用户/会话源数据；gateway 负责运行时缓存查询和下游上下文注入。 |
+| 当前用户资料 | 公开入口、认证上下文传递和响应归一化。 | `auth` | Auth 拥有 `displayName`、`email`、`phone` 资料字段；用户只能自助编辑这三个字段，不能自助修改用户名、角色、权限或状态。 |
+| 当前用户必需改密 | 公开入口、认证上下文传递和响应归一化。 | `auth` | Auth 验证当前临时密码、更新密码哈希、清除 `must_change_password` 并记录安全事件。Gateway 不处理明文密码，也不自行清除改密状态。 |
+| 管理员用户管理 | 公开管理员入口、管理员授权、响应归一化、必要的会话缓存刷新/失效协作。 | `auth` | Auth 拥有用户列表过滤、创建、启用/禁用、密码重置、单角色替换、资料字段和 `must_change_password` 状态。管理员只能管理 `standard`；`super_admin` 可管理 `standard` 与 `admin`；`super_admin` 本身不通过公开 UI/API 管理。 |
 | 知识库 CRUD | 公开入口和响应归一化。 | `knowledge` | 已生效的 gateway 契约。Gateway 不得存储知识库业务状态。 |
 | 向知识库上传文档 | 公开文件上传入口。 | `knowledge` | Knowledge 负责创建知识库文档资源、保存内部 file reference 和摄取状态；底层原始文件对象通过内部 file API 保存。Gateway 不得实现解析、索引或直接操作 file。 |
 | 文档处理状态和分块 | 公开读取入口和响应归一化。 | `knowledge` | 文档详情和分块的已生效 gateway 契约。Gateway 不得实现解析、分块、嵌入或 Qdrant 访问。Knowledge 可调用 parser 获取 parsed content，可调用 AI Gateway 生成嵌入，但 job 状态、分块、向量持久化和 hydrate 归 knowledge。 |

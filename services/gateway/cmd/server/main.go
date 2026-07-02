@@ -46,7 +46,7 @@ func main() {
 	}
 	defer sessionStore.Close()
 
-	authClient, err := authclient.New(cfg.AuthBaseURL, cfg.InternalServiceToken, cfg.DownstreamTimeout)
+	authClient, err := authclient.New(cfg.AuthBaseURL, cfg.InternalServiceToken, cfg.AuthAdminServiceToken, cfg.DownstreamTimeout)
 	if err != nil {
 		logger.Error("auth client configuration failed", "service", "gateway", "error", err)
 		os.Exit(1)
@@ -63,23 +63,24 @@ func main() {
 	}
 
 	handler := gatewayhttp.NewServer(gatewayhttp.Config{
-		Logger:               logger,
-		ServiceVersion:       cfg.ServiceVersion,
-		Environment:          cfg.Environment,
-		RequestTimeout:       cfg.RequestTimeout,
-		MaxBodyBytes:         cfg.MaxBodyBytes,
-		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
-		CORSAllowedMethods:   cfg.CORSAllowedMethods,
-		CORSAllowedHeaders:   cfg.CORSAllowedHeaders,
-		CORSAllowCredentials: cfg.CORSAllowCredentials,
-		DownstreamTimeout:    cfg.DownstreamTimeout,
-		InternalServiceToken: cfg.InternalServiceToken,
-		AuthClient:           authClient,
-		SessionStore:         sessionStore,
-		TokenHasher:          tokenHasher,
-		OwnerBaseURLs:        ownerBaseURLs,
-		ReadyCheck:           gatewayReadyCheck(sessionStore, authClient, ownerBaseURLs),
-		MetricsReg:           metricsReg,
+		Logger:                logger,
+		ServiceVersion:        cfg.ServiceVersion,
+		Environment:           cfg.Environment,
+		RequestTimeout:        cfg.RequestTimeout,
+		MaxBodyBytes:          cfg.MaxBodyBytes,
+		CORSAllowedOrigins:    cfg.CORSAllowedOrigins,
+		CORSAllowedMethods:    cfg.CORSAllowedMethods,
+		CORSAllowedHeaders:    cfg.CORSAllowedHeaders,
+		CORSAllowCredentials:  cfg.CORSAllowCredentials,
+		DownstreamTimeout:     cfg.DownstreamTimeout,
+		InternalServiceToken:  cfg.InternalServiceToken,
+		AuthAdminServiceToken: cfg.AuthAdminServiceToken,
+		AuthClient:            authClient,
+		SessionStore:          sessionStore,
+		TokenHasher:           tokenHasher,
+		OwnerBaseURLs:         ownerBaseURLs,
+		ReadyCheck:            gatewayReadyCheck(sessionStore, authClient, ownerBaseURLs),
+		MetricsReg:            metricsReg,
 	})
 
 	server := &http.Server{

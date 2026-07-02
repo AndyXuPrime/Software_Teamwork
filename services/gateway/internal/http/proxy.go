@@ -31,7 +31,7 @@ func (s *Server) handleProxy(route routeSpec) http.HandlerFunc {
 			return
 		}
 
-		if route.requiresAdmin() && !hasAdminRouteAccess(authContext, route.AdminPermissions, strings.HasPrefix(route.Pattern, "/api/v1/admin/")) {
+		if route.requiresAdmin() && !hasAdminRouteAccess(authContext, route.AdminPermissions, route.AdminRoles, strings.HasPrefix(route.Pattern, "/api/v1/admin/")) {
 			response.WriteError(w, http.StatusForbidden, response.ErrorDetail{
 				Code:      response.CodeForbidden,
 				Message:   "forbidden",
@@ -60,7 +60,7 @@ func (s *Server) handleProxy(route routeSpec) http.HandlerFunc {
 			return
 		}
 		proxyReq.Header = cloneProxyHeaders(r.Header)
-		applyGatewayHeaders(proxyReq, r, authContext, s.internalServiceToken)
+		applyGatewayHeaders(proxyReq, r, authContext, s.serviceTokenForRoute(route))
 
 		streaming := route.streamsResponse(r)
 		client := s.httpClient
@@ -91,6 +91,13 @@ func (s *Server) handleProxy(route routeSpec) http.HandlerFunc {
 		w.WriteHeader(res.StatusCode)
 		copyProxyBody(w, res.Body, streaming)
 	}
+}
+
+func (s *Server) serviceTokenForRoute(route routeSpec) string {
+	if route.AuthAdminServiceToken {
+		return s.authAdminServiceToken
+	}
+	return s.internalServiceToken
 }
 
 func (s *Server) writeDownstreamError(w http.ResponseWriter, r *http.Request, route routeSpec, res *http.Response) {

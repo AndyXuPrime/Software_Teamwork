@@ -11,7 +11,17 @@ info:
     This file documents auth-owned internal service-to-service resources used by
     gateway. It is not the frontend-facing contract. Stable frontend paths remain
     owned by docs/services/gateway/api/public.openapi.yaml and are exposed through
-    /api/v1/users, /api/v1/sessions, /api/v1/sessions/current, and /api/v1/users/me.
+    /api/v1/users, /api/v1/sessions, /api/v1/sessions/current, /api/v1/users/me,
+    /api/v1/users/me/profile, /api/v1/users/me/password-changes, and
+    /api/v1/admin/users resources.
+
+    Internal admin user-management routes under /internal/v1/admin/** and
+    current-user write routes for profile/password changes require the
+    Gateway-only service credential configured by
+    AUTH_GATEWAY_ADMIN_SERVICE_TOKEN. They are not authorized by the shared
+    internal service token alone. Auth treats X-User-Roles and
+    X-User-Permissions as forwarded context only; admin-user authorization is
+    recomputed from ActorUserID against Auth-owned role data.
 
     All stable paths are RESTful resource-oriented paths. User registration is
     modeled as user creation, login as session creation, logout as session
@@ -43,6 +53,8 @@ tags:
   description: Auth process and readiness checks.
 - name: users
   description: User identity resources.
+- name: admin-users
+  description: Administrator user management resources.
 - name: sessions
   description: Session and token resources.
 - name: permissions
@@ -178,6 +190,256 @@ paths:
           $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
+  /internal/v1/users/{userId}/profile:
+    parameters:
+    - $ref: '#/components/parameters/RequestIdHeader'
+    - $ref: '#/components/parameters/CallerServiceHeader'
+    - $ref: '#/components/parameters/UserId'
+    patch:
+      tags:
+      - users
+      summary: Update user profile
+      operationId: updateUserProfile
+      x-owner-service: auth
+      description: |
+        Updates current-user editable profile fields for the user identified by
+        the trusted gateway user context. Auth rejects attempts to edit username,
+        status, roles, permissions, or password-change state through this
+        profile resource. This route requires the Gateway-only service token
+        and CallerService=gateway.
+      parameters:
+      - $ref: '#/components/parameters/ActorUserIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserProfileRequest'
+      responses:
+        '200':
+          description: User profile updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRecordResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /internal/v1/users/{userId}/password-changes:
+    parameters:
+    - $ref: '#/components/parameters/RequestIdHeader'
+    - $ref: '#/components/parameters/CallerServiceHeader'
+    - $ref: '#/components/parameters/UserId'
+    post:
+      tags:
+      - users
+      summary: Change required password
+      operationId: createUserPasswordChange
+      x-owner-service: auth
+      description: |
+        Verifies the current temporary password, replaces the password hash,
+        clears must_change_password, records a security event, and refreshes or
+        revokes stale sessions as needed. This route is for the current user's
+        required password-change flow, not administrator password reset. This
+        route requires the Gateway-only service token and CallerService=gateway.
+      parameters:
+      - $ref: '#/components/parameters/ActorUserIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePasswordChangeRequest'
+      responses:
+        '200':
+          description: Password changed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRecordResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /internal/v1/admin/users:
+    parameters:
+    - $ref: '#/components/parameters/RequestIdHeader'
+    - $ref: '#/components/parameters/CallerServiceHeader'
+    - $ref: '#/components/parameters/ActorUserIdHeader'
+    - $ref: '#/components/parameters/ActorRolesHeader'
+    - $ref: '#/components/parameters/ActorPermissionsHeader'
+    get:
+      tags:
+      - admin-users
+      summary: List manageable users
+      operationId: listAdminUsers
+      x-owner-service: auth
+      description: |
+        Lists users in the caller's manageable scope. Administrators see only
+        standard users. Super administrators or system:admin callers see
+        standard and admin users. super_admin rows are excluded.
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: username
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+      - name: role
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/ManagedUserRole'
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/UserStatus'
+      responses:
+        '200':
+          description: Manageable users.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserListResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+    post:
+      tags:
+      - admin-users
+      summary: Create managed user
+      operationId: createAdminUser
+      x-owner-service: auth
+      description: |
+        Creates a managed user without returning a session. The supplied
+        temporary password is hashed and the created credential is marked
+        must_change_password=true. This does not replace public self-service
+        POST /internal/v1/users.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAdminUserRequest'
+      responses:
+        '201':
+          description: Managed user created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /internal/v1/admin/users/{userId}:
+    parameters:
+    - $ref: '#/components/parameters/RequestIdHeader'
+    - $ref: '#/components/parameters/CallerServiceHeader'
+    - $ref: '#/components/parameters/ActorUserIdHeader'
+    - $ref: '#/components/parameters/ActorRolesHeader'
+    - $ref: '#/components/parameters/ActorPermissionsHeader'
+    - $ref: '#/components/parameters/UserId'
+    patch:
+      tags:
+      - admin-users
+      summary: Update managed user
+      operationId: updateAdminUser
+      x-owner-service: auth
+      description: |
+        Updates manageable profile fields, active/disabled status, or the
+        managed role. Role changes are single-role replacement between standard
+        and admin. Auth rejects super_admin targets and self-sensitive admin
+        operations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAdminUserRequest'
+      responses:
+        '200':
+          description: Managed user updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /internal/v1/admin/users/{userId}/password-resets:
+    parameters:
+    - $ref: '#/components/parameters/RequestIdHeader'
+    - $ref: '#/components/parameters/CallerServiceHeader'
+    - $ref: '#/components/parameters/ActorUserIdHeader'
+    - $ref: '#/components/parameters/ActorRolesHeader'
+    - $ref: '#/components/parameters/ActorPermissionsHeader'
+    - $ref: '#/components/parameters/UserId'
+    post:
+      tags:
+      - admin-users
+      summary: Reset managed user password
+      operationId: createAdminUserPasswordReset
+      x-owner-service: auth
+      description: |
+        Replaces the target user's password with an administrator-entered
+        temporary password, sets must_change_password=true, records a security
+        event, and invalidates or refreshes stale sessions. Auth rejects
+        super_admin targets and admin self-reset.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAdminPasswordResetRequest'
+      responses:
+        '200':
+          description: Managed user password reset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
   /internal/v1/sessions:
     parameters:
     - $ref: '#/components/parameters/RequestIdHeader'
@@ -269,7 +531,7 @@ components:
       type: apiKey
       in: header
       name: X-Service-Token
-      description: Internal service credential used by gateway and trusted backend services.
+      description: Internal service credential used by gateway and trusted backend services. Admin user-management routes and current-user profile/password write routes require the Gateway-only credential, not the shared service token.
   parameters:
     RequestIdHeader:
       name: X-Request-Id
@@ -285,6 +547,27 @@ components:
       schema:
         type: string
       description: Name of the internal caller, for audit and rate policy decisions.
+    ActorUserIdHeader:
+      name: X-User-Id
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Authenticated user id resolved by gateway from the bearer session.
+    ActorRolesHeader:
+      name: X-User-Roles
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Comma-separated authenticated role codes resolved by gateway.
+    ActorPermissionsHeader:
+      name: X-User-Permissions
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Comma-separated authenticated permission codes resolved by gateway.
     UserId:
       name: userId
       in: path
@@ -299,6 +582,23 @@ components:
       schema:
         type: string
       description: Auth-issued session id.
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
   responses:
     Error:
       description: Error response.
@@ -409,11 +709,31 @@ components:
           type: object
           additionalProperties:
             type: string
+    PageInfo:
+      type: object
+      required:
+      - page
+      - pageSize
+      - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
     CreateUserRequest:
       type: object
       required:
       - username
       - password
+      description: |
+        Public self-service registration request forwarded by Gateway
+        POST /api/v1/users. Creates a standard user, returns a session, and does
+        not set must_change_password.
       properties:
         username:
           type: string
@@ -423,7 +743,7 @@ components:
         password:
           type: string
           format: password
-          minLength: 1
+          minLength: 8
           maxLength: 1024
           writeOnly: true
           description: Plain password supplied only in the request body. Must never be logged or returned; auth stores an argon2id-v1 hash.
@@ -450,7 +770,13 @@ components:
       - active
       - disabled
       - locked
-      description: Internal user status. Public gateway UserSummary does not currently expose this field.
+      description: Internal user status. Gateway admin/profile resources may expose this field through auth-owned public contracts.
+    ManagedUserRole:
+      type: string
+      enum:
+      - standard
+      - admin
+      description: Role values assignable through admin user management. super_admin is intentionally excluded.
     UserSummary:
       type: object
       required:
@@ -463,6 +789,23 @@ components:
           type: string
         username:
           type: string
+        displayName:
+          type: string
+          description: Optional display name. May be empty; clients may fall back to username.
+        email:
+          type: string
+          format: email
+          nullable: true
+          description: Optional non-unique profile email. Not a login identifier.
+        phone:
+          type: string
+          nullable: true
+          description: Optional non-unique profile phone. Not a login identifier.
+        status:
+          $ref: '#/components/schemas/UserStatus'
+        mustChangePassword:
+          type: boolean
+          description: True when the user must complete required password change before normal app access.
         roles:
           type: array
           items:
@@ -477,17 +820,156 @@ components:
       - type: object
         required:
         - status
+        - mustChangePassword
         - createdAt
         - updatedAt
         properties:
           status:
             $ref: '#/components/schemas/UserStatus'
+          mustChangePassword:
+            type: boolean
           createdAt:
             type: string
             format: date-time
           updatedAt:
             type: string
             format: date-time
+    UpdateUserProfileRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          maxLength: 128
+          description: Optional display name. Empty string is allowed.
+        email:
+          type: string
+          format: email
+          nullable: true
+          maxLength: 320
+          description: Optional non-unique profile email. Blank/null clears the field.
+        phone:
+          type: string
+          nullable: true
+          maxLength: 32
+          description: Optional non-unique profile phone. Blank/null clears the field.
+    CreatePasswordChangeRequest:
+      type: object
+      required:
+      - currentPassword
+      - newPassword
+      - newPasswordConfirmation
+      properties:
+        currentPassword:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 1024
+          writeOnly: true
+          description: Current temporary password that auth verifies before replacing it.
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 1024
+          writeOnly: true
+        newPasswordConfirmation:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 1024
+          writeOnly: true
+    AdminUser:
+      allOf:
+      - $ref: '#/components/schemas/UserRecord'
+      - type: object
+        properties:
+          manageableRoles:
+            type: array
+            items:
+              $ref: '#/components/schemas/ManagedUserRole'
+          actions:
+            type: object
+            required:
+            - canDisable
+            - canEnable
+            - canResetPassword
+            - canChangeRole
+            properties:
+              canDisable:
+                type: boolean
+              canEnable:
+                type: boolean
+              canResetPassword:
+                type: boolean
+              canChangeRole:
+                type: boolean
+    CreateAdminUserRequest:
+      type: object
+      required:
+      - username
+      - temporaryPassword
+      - role
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 128
+        temporaryPassword:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 1024
+          writeOnly: true
+          description: Administrator-entered temporary password. Auth hashes it and sets must_change_password=true.
+        role:
+          $ref: '#/components/schemas/ManagedUserRole'
+        displayName:
+          type: string
+          maxLength: 128
+        email:
+          type: string
+          format: email
+          nullable: true
+          maxLength: 320
+        phone:
+          type: string
+          nullable: true
+          maxLength: 32
+    UpdateAdminUserRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          maxLength: 128
+        email:
+          type: string
+          format: email
+          nullable: true
+          maxLength: 320
+        phone:
+          type: string
+          nullable: true
+          maxLength: 32
+        status:
+          type: string
+          enum:
+          - active
+          - disabled
+        role:
+          $ref: '#/components/schemas/ManagedUserRole'
+      description: Omitted fields are unchanged. Role updates replace the managed role with exactly one target role.
+    CreateAdminPasswordResetRequest:
+      type: object
+      required:
+      - temporaryPassword
+      properties:
+        temporaryPassword:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 1024
+          writeOnly: true
+          description: Administrator-entered temporary password. Auth hashes it and sets must_change_password=true.
     SessionSummary:
       type: object
       required:
@@ -518,6 +1000,7 @@ components:
       - sessionId
       - user
       - tokenType
+      - status
       - expiresAt
       - issuedAt
       properties:
@@ -529,6 +1012,11 @@ components:
           type: string
           enum:
           - Bearer
+        status:
+          type: string
+          enum:
+          - active
+          description: Auth only returns active sessions from this resource; non-active sessions are rejected as unauthorized.
         expiresAt:
           type: string
           format: date-time
@@ -603,6 +1091,31 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/UserRecord'
+        requestId:
+          type: string
+    AdminUserResponse:
+      type: object
+      required:
+      - data
+      - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminUser'
+        requestId:
+          type: string
+    AdminUserListResponse:
+      type: object
+      required:
+      - data
+      - page
+      - requestId
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUser'
+        page:
+          $ref: '#/components/schemas/PageInfo'
         requestId:
           type: string
     UserPermissionsResponse:

@@ -75,6 +75,58 @@ func (q *Queries) AssignRoleByCode(ctx context.Context, arg AssignRoleByCodePara
 	return i, err
 }
 
+const countManagedUsers = `-- name: CountManagedUsers :one
+SELECT count(*)::bigint
+FROM auth_users u
+WHERE u.deleted_at IS NULL
+    AND u.id <> $1
+    AND ($2::text = '' OR u.username ILIKE '%' || $2::text || '%')
+    AND ($3::text = '' OR u.status = $3::text)
+    AND NOT EXISTS (
+        SELECT 1
+        FROM user_roles ur
+        INNER JOIN auth_roles r ON r.id = ur.role_id
+        WHERE ur.user_id = u.id
+            AND r.code = ANY($4::text[])
+            AND NOT (r.code = ANY($5::text[]))
+            AND r.enabled = TRUE
+            AND (ur.expires_at IS NULL OR ur.expires_at > now())
+    )
+    AND EXISTS (
+        SELECT 1
+        FROM user_roles ur
+        INNER JOIN auth_roles r ON r.id = ur.role_id
+        WHERE ur.user_id = u.id
+            AND r.code = ANY($5::text[])
+            AND ($6::text = '' OR r.code = $6::text)
+            AND r.enabled = TRUE
+            AND (ur.expires_at IS NULL OR ur.expires_at > now())
+    )
+`
+
+type CountManagedUsersParams struct {
+	ActorUserID     string   `db:"actor_user_id" json:"actor_user_id"`
+	Username        string   `db:"username" json:"username"`
+	Status          string   `db:"status" json:"status"`
+	ManagedRoles    []string `db:"managed_roles" json:"managed_roles"`
+	ManageableRoles []string `db:"manageable_roles" json:"manageable_roles"`
+	Role            string   `db:"role" json:"role"`
+}
+
+func (q *Queries) CountManagedUsers(ctx context.Context, arg CountManagedUsersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countManagedUsers,
+		arg.ActorUserID,
+		arg.Username,
+		arg.Status,
+		arg.ManagedRoles,
+		arg.ManageableRoles,
+		arg.Role,
+	)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createCredential = `-- name: CreateCredential :one
 INSERT INTO auth_credentials (
     id,
@@ -84,6 +136,7 @@ INSERT INTO auth_credentials (
     password_hash_alg,
     password_hash_params_version,
     password_hash_params_json,
+    must_change_password,
     password_changed_at,
     password_expires_at,
     failed_attempt_count,
@@ -91,7 +144,7 @@ INSERT INTO auth_credentials (
     created_at,
     updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, 0, NULL, $10, $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, 0, NULL, $11, $12)
 RETURNING
     id,
     user_id,
@@ -100,6 +153,7 @@ RETURNING
     password_hash_alg,
     password_hash_params_version,
     password_hash_params_json,
+    must_change_password,
     password_changed_at,
     password_expires_at,
     failed_attempt_count,
@@ -116,13 +170,31 @@ type CreateCredentialParams struct {
 	PasswordHashAlg           string             `db:"password_hash_alg" json:"password_hash_alg"`
 	PasswordHashParamsVersion string             `db:"password_hash_params_version" json:"password_hash_params_version"`
 	Column7                   []byte             `db:"column_7" json:"column_7"`
+	MustChangePassword        bool               `db:"must_change_password" json:"must_change_password"`
 	PasswordChangedAt         pgtype.Timestamptz `db:"password_changed_at" json:"password_changed_at"`
 	PasswordExpiresAt         pgtype.Timestamptz `db:"password_expires_at" json:"password_expires_at"`
 	CreatedAt                 pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	UpdatedAt                 pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }
 
-func (q *Queries) CreateCredential(ctx context.Context, arg CreateCredentialParams) (AuthCredential, error) {
+type CreateCredentialRow struct {
+	ID                        string             `db:"id" json:"id"`
+	UserID                    string             `db:"user_id" json:"user_id"`
+	CredentialType            string             `db:"credential_type" json:"credential_type"`
+	PasswordHash              string             `db:"password_hash" json:"password_hash"`
+	PasswordHashAlg           string             `db:"password_hash_alg" json:"password_hash_alg"`
+	PasswordHashParamsVersion string             `db:"password_hash_params_version" json:"password_hash_params_version"`
+	PasswordHashParamsJson    []byte             `db:"password_hash_params_json" json:"password_hash_params_json"`
+	MustChangePassword        bool               `db:"must_change_password" json:"must_change_password"`
+	PasswordChangedAt         pgtype.Timestamptz `db:"password_changed_at" json:"password_changed_at"`
+	PasswordExpiresAt         pgtype.Timestamptz `db:"password_expires_at" json:"password_expires_at"`
+	FailedAttemptCount        int32              `db:"failed_attempt_count" json:"failed_attempt_count"`
+	LastFailedAt              pgtype.Timestamptz `db:"last_failed_at" json:"last_failed_at"`
+	CreatedAt                 pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt                 pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) CreateCredential(ctx context.Context, arg CreateCredentialParams) (CreateCredentialRow, error) {
 	row := q.db.QueryRow(ctx, createCredential,
 		arg.ID,
 		arg.UserID,
@@ -131,12 +203,13 @@ func (q *Queries) CreateCredential(ctx context.Context, arg CreateCredentialPara
 		arg.PasswordHashAlg,
 		arg.PasswordHashParamsVersion,
 		arg.Column7,
+		arg.MustChangePassword,
 		arg.PasswordChangedAt,
 		arg.PasswordExpiresAt,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
-	var i AuthCredential
+	var i CreateCredentialRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -145,6 +218,7 @@ func (q *Queries) CreateCredential(ctx context.Context, arg CreateCredentialPara
 		&i.PasswordHashAlg,
 		&i.PasswordHashParamsVersion,
 		&i.PasswordHashParamsJson,
+		&i.MustChangePassword,
 		&i.PasswordChangedAt,
 		&i.PasswordExpiresAt,
 		&i.FailedAttemptCount,
@@ -415,6 +489,26 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (AuthUse
 	return i, err
 }
 
+const deleteManagedUserRoles = `-- name: DeleteManagedUserRoles :exec
+DELETE FROM user_roles
+WHERE user_id = $1
+    AND role_id IN (
+        SELECT id
+        FROM auth_roles
+        WHERE code = ANY($2::text[])
+    )
+`
+
+type DeleteManagedUserRolesParams struct {
+	UserID    string   `db:"user_id" json:"user_id"`
+	RoleCodes []string `db:"role_codes" json:"role_codes"`
+}
+
+func (q *Queries) DeleteManagedUserRoles(ctx context.Context, arg DeleteManagedUserRolesParams) error {
+	_, err := q.db.Exec(ctx, deleteManagedUserRoles, arg.UserID, arg.RoleCodes)
+	return err
+}
+
 const getActiveSessionByTokenHash = `-- name: GetActiveSessionByTokenHash :one
 SELECT
     s.id,
@@ -476,6 +570,7 @@ SELECT
     password_hash_alg,
     password_hash_params_version,
     password_hash_params_json,
+    must_change_password,
     password_changed_at,
     password_expires_at,
     failed_attempt_count,
@@ -492,9 +587,26 @@ type GetCredentialByUserIDParams struct {
 	CredentialType string `db:"credential_type" json:"credential_type"`
 }
 
-func (q *Queries) GetCredentialByUserID(ctx context.Context, arg GetCredentialByUserIDParams) (AuthCredential, error) {
+type GetCredentialByUserIDRow struct {
+	ID                        string             `db:"id" json:"id"`
+	UserID                    string             `db:"user_id" json:"user_id"`
+	CredentialType            string             `db:"credential_type" json:"credential_type"`
+	PasswordHash              string             `db:"password_hash" json:"password_hash"`
+	PasswordHashAlg           string             `db:"password_hash_alg" json:"password_hash_alg"`
+	PasswordHashParamsVersion string             `db:"password_hash_params_version" json:"password_hash_params_version"`
+	PasswordHashParamsJson    []byte             `db:"password_hash_params_json" json:"password_hash_params_json"`
+	MustChangePassword        bool               `db:"must_change_password" json:"must_change_password"`
+	PasswordChangedAt         pgtype.Timestamptz `db:"password_changed_at" json:"password_changed_at"`
+	PasswordExpiresAt         pgtype.Timestamptz `db:"password_expires_at" json:"password_expires_at"`
+	FailedAttemptCount        int32              `db:"failed_attempt_count" json:"failed_attempt_count"`
+	LastFailedAt              pgtype.Timestamptz `db:"last_failed_at" json:"last_failed_at"`
+	CreatedAt                 pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt                 pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) GetCredentialByUserID(ctx context.Context, arg GetCredentialByUserIDParams) (GetCredentialByUserIDRow, error) {
 	row := q.db.QueryRow(ctx, getCredentialByUserID, arg.UserID, arg.CredentialType)
-	var i AuthCredential
+	var i GetCredentialByUserIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -503,6 +615,7 @@ func (q *Queries) GetCredentialByUserID(ctx context.Context, arg GetCredentialBy
 		&i.PasswordHashAlg,
 		&i.PasswordHashParamsVersion,
 		&i.PasswordHashParamsJson,
+		&i.MustChangePassword,
 		&i.PasswordChangedAt,
 		&i.PasswordExpiresAt,
 		&i.FailedAttemptCount,
@@ -637,6 +750,101 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (AuthU
 	return i, err
 }
 
+const listManagedUsers = `-- name: ListManagedUsers :many
+SELECT
+    u.id,
+    u.username,
+    u.display_name,
+    u.email,
+    u.phone,
+    u.status,
+    u.locked_until,
+    u.last_login_at,
+    u.created_at,
+    u.updated_at,
+    u.deleted_at
+FROM auth_users u
+WHERE u.deleted_at IS NULL
+    AND u.id <> $1
+    AND ($2::text = '' OR u.username ILIKE '%' || $2::text || '%')
+    AND ($3::text = '' OR u.status = $3::text)
+    AND NOT EXISTS (
+        SELECT 1
+        FROM user_roles ur
+        INNER JOIN auth_roles r ON r.id = ur.role_id
+        WHERE ur.user_id = u.id
+            AND r.code = ANY($4::text[])
+            AND NOT (r.code = ANY($5::text[]))
+            AND r.enabled = TRUE
+            AND (ur.expires_at IS NULL OR ur.expires_at > now())
+    )
+    AND EXISTS (
+        SELECT 1
+        FROM user_roles ur
+        INNER JOIN auth_roles r ON r.id = ur.role_id
+        WHERE ur.user_id = u.id
+            AND r.code = ANY($5::text[])
+            AND ($6::text = '' OR r.code = $6::text)
+            AND r.enabled = TRUE
+            AND (ur.expires_at IS NULL OR ur.expires_at > now())
+    )
+ORDER BY u.created_at DESC, u.id ASC
+LIMIT $8
+OFFSET $7
+`
+
+type ListManagedUsersParams struct {
+	ActorUserID     string   `db:"actor_user_id" json:"actor_user_id"`
+	Username        string   `db:"username" json:"username"`
+	Status          string   `db:"status" json:"status"`
+	ManagedRoles    []string `db:"managed_roles" json:"managed_roles"`
+	ManageableRoles []string `db:"manageable_roles" json:"manageable_roles"`
+	Role            string   `db:"role" json:"role"`
+	OffsetCount     int32    `db:"offset_count" json:"offset_count"`
+	LimitCount      int32    `db:"limit_count" json:"limit_count"`
+}
+
+func (q *Queries) ListManagedUsers(ctx context.Context, arg ListManagedUsersParams) ([]AuthUser, error) {
+	rows, err := q.db.Query(ctx, listManagedUsers,
+		arg.ActorUserID,
+		arg.Username,
+		arg.Status,
+		arg.ManagedRoles,
+		arg.ManageableRoles,
+		arg.Role,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AuthUser
+	for rows.Next() {
+		var i AuthUser
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.DisplayName,
+			&i.Email,
+			&i.Phone,
+			&i.Status,
+			&i.LockedUntil,
+			&i.LastLoginAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPermissionCodesByUserID = `-- name: ListPermissionCodesByUserID :many
 SELECT DISTINCT
     p.code
@@ -699,6 +907,87 @@ func (q *Queries) ListRoleCodesByUserID(ctx context.Context, userID string) ([]s
 			return nil, err
 		}
 		items = append(items, code)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const revokeActiveSessionsForUser = `-- name: RevokeActiveSessionsForUser :many
+UPDATE auth_sessions
+SET status = 'revoked',
+    revoked_at = $2,
+    revoke_reason = $3,
+    revoked_request_id = $4,
+    updated_at = $2
+WHERE user_id = $1
+    AND status = 'active'
+RETURNING
+    id,
+    user_id,
+    access_token_hash,
+    access_token_hash_alg,
+    access_token_hash_key_version,
+    token_type,
+    status,
+    issued_at,
+    expires_at,
+    last_seen_at,
+    revoked_at,
+    revoke_reason,
+    client_ip,
+    user_agent,
+    created_request_id,
+    revoked_request_id,
+    created_at,
+    updated_at
+`
+
+type RevokeActiveSessionsForUserParams struct {
+	UserID           string             `db:"user_id" json:"user_id"`
+	RevokedAt        pgtype.Timestamptz `db:"revoked_at" json:"revoked_at"`
+	RevokeReason     pgtype.Text        `db:"revoke_reason" json:"revoke_reason"`
+	RevokedRequestID pgtype.Text        `db:"revoked_request_id" json:"revoked_request_id"`
+}
+
+func (q *Queries) RevokeActiveSessionsForUser(ctx context.Context, arg RevokeActiveSessionsForUserParams) ([]AuthSession, error) {
+	rows, err := q.db.Query(ctx, revokeActiveSessionsForUser,
+		arg.UserID,
+		arg.RevokedAt,
+		arg.RevokeReason,
+		arg.RevokedRequestID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AuthSession
+	for rows.Next() {
+		var i AuthSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.AccessTokenHash,
+			&i.AccessTokenHashAlg,
+			&i.AccessTokenHashKeyVersion,
+			&i.TokenType,
+			&i.Status,
+			&i.IssuedAt,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.RevokeReason,
+			&i.ClientIp,
+			&i.UserAgent,
+			&i.CreatedRequestID,
+			&i.RevokedRequestID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -774,6 +1063,95 @@ func (q *Queries) RevokeSession(ctx context.Context, arg RevokeSessionParams) (A
 	return i, err
 }
 
+const updateCredentialPassword = `-- name: UpdateCredentialPassword :one
+UPDATE auth_credentials
+SET password_hash = $3,
+    password_hash_alg = $4,
+    password_hash_params_version = $5,
+    password_hash_params_json = $6::jsonb,
+    must_change_password = $7,
+    password_changed_at = $8,
+    failed_attempt_count = 0,
+    last_failed_at = NULL,
+    updated_at = $8
+WHERE user_id = $1
+    AND credential_type = $2
+RETURNING
+    id,
+    user_id,
+    credential_type,
+    password_hash,
+    password_hash_alg,
+    password_hash_params_version,
+    password_hash_params_json,
+    must_change_password,
+    password_changed_at,
+    password_expires_at,
+    failed_attempt_count,
+    last_failed_at,
+    created_at,
+    updated_at
+`
+
+type UpdateCredentialPasswordParams struct {
+	UserID                    string             `db:"user_id" json:"user_id"`
+	CredentialType            string             `db:"credential_type" json:"credential_type"`
+	PasswordHash              string             `db:"password_hash" json:"password_hash"`
+	PasswordHashAlg           string             `db:"password_hash_alg" json:"password_hash_alg"`
+	PasswordHashParamsVersion string             `db:"password_hash_params_version" json:"password_hash_params_version"`
+	Column6                   []byte             `db:"column_6" json:"column_6"`
+	MustChangePassword        bool               `db:"must_change_password" json:"must_change_password"`
+	PasswordChangedAt         pgtype.Timestamptz `db:"password_changed_at" json:"password_changed_at"`
+}
+
+type UpdateCredentialPasswordRow struct {
+	ID                        string             `db:"id" json:"id"`
+	UserID                    string             `db:"user_id" json:"user_id"`
+	CredentialType            string             `db:"credential_type" json:"credential_type"`
+	PasswordHash              string             `db:"password_hash" json:"password_hash"`
+	PasswordHashAlg           string             `db:"password_hash_alg" json:"password_hash_alg"`
+	PasswordHashParamsVersion string             `db:"password_hash_params_version" json:"password_hash_params_version"`
+	PasswordHashParamsJson    []byte             `db:"password_hash_params_json" json:"password_hash_params_json"`
+	MustChangePassword        bool               `db:"must_change_password" json:"must_change_password"`
+	PasswordChangedAt         pgtype.Timestamptz `db:"password_changed_at" json:"password_changed_at"`
+	PasswordExpiresAt         pgtype.Timestamptz `db:"password_expires_at" json:"password_expires_at"`
+	FailedAttemptCount        int32              `db:"failed_attempt_count" json:"failed_attempt_count"`
+	LastFailedAt              pgtype.Timestamptz `db:"last_failed_at" json:"last_failed_at"`
+	CreatedAt                 pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt                 pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) UpdateCredentialPassword(ctx context.Context, arg UpdateCredentialPasswordParams) (UpdateCredentialPasswordRow, error) {
+	row := q.db.QueryRow(ctx, updateCredentialPassword,
+		arg.UserID,
+		arg.CredentialType,
+		arg.PasswordHash,
+		arg.PasswordHashAlg,
+		arg.PasswordHashParamsVersion,
+		arg.Column6,
+		arg.MustChangePassword,
+		arg.PasswordChangedAt,
+	)
+	var i UpdateCredentialPasswordRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.CredentialType,
+		&i.PasswordHash,
+		&i.PasswordHashAlg,
+		&i.PasswordHashParamsVersion,
+		&i.PasswordHashParamsJson,
+		&i.MustChangePassword,
+		&i.PasswordChangedAt,
+		&i.PasswordExpiresAt,
+		&i.FailedAttemptCount,
+		&i.LastFailedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateUserLastLoginAt = `-- name: UpdateUserLastLoginAt :exec
 UPDATE auth_users
 SET last_login_at = $2,
@@ -790,4 +1168,104 @@ type UpdateUserLastLoginAtParams struct {
 func (q *Queries) UpdateUserLastLoginAt(ctx context.Context, arg UpdateUserLastLoginAtParams) error {
 	_, err := q.db.Exec(ctx, updateUserLastLoginAt, arg.ID, arg.LastLoginAt)
 	return err
+}
+
+const updateUserProfile = `-- name: UpdateUserProfile :one
+UPDATE auth_users
+SET display_name = $2,
+    email = $3,
+    phone = $4,
+    updated_at = $5
+WHERE id = $1
+    AND deleted_at IS NULL
+RETURNING
+    id,
+    username,
+    display_name,
+    email,
+    phone,
+    status,
+    locked_until,
+    last_login_at,
+    created_at,
+    updated_at,
+    deleted_at
+`
+
+type UpdateUserProfileParams struct {
+	ID          string             `db:"id" json:"id"`
+	DisplayName string             `db:"display_name" json:"display_name"`
+	Email       pgtype.Text        `db:"email" json:"email"`
+	Phone       pgtype.Text        `db:"phone" json:"phone"`
+	UpdatedAt   pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (AuthUser, error) {
+	row := q.db.QueryRow(ctx, updateUserProfile,
+		arg.ID,
+		arg.DisplayName,
+		arg.Email,
+		arg.Phone,
+		arg.UpdatedAt,
+	)
+	var i AuthUser
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.DisplayName,
+		&i.Email,
+		&i.Phone,
+		&i.Status,
+		&i.LockedUntil,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateUserStatus = `-- name: UpdateUserStatus :one
+UPDATE auth_users
+SET status = $2,
+    updated_at = $3
+WHERE id = $1
+    AND deleted_at IS NULL
+RETURNING
+    id,
+    username,
+    display_name,
+    email,
+    phone,
+    status,
+    locked_until,
+    last_login_at,
+    created_at,
+    updated_at,
+    deleted_at
+`
+
+type UpdateUserStatusParams struct {
+	ID        string             `db:"id" json:"id"`
+	Status    string             `db:"status" json:"status"`
+	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) UpdateUserStatus(ctx context.Context, arg UpdateUserStatusParams) (AuthUser, error) {
+	row := q.db.QueryRow(ctx, updateUserStatus, arg.ID, arg.Status, arg.UpdatedAt)
+	var i AuthUser
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.DisplayName,
+		&i.Email,
+		&i.Phone,
+		&i.Status,
+		&i.LockedUntil,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }

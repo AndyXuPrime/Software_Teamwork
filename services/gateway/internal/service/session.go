@@ -54,18 +54,29 @@ func (h TokenHasher) Hash(accessToken string) (string, error) {
 }
 
 type UserSummary struct {
-	ID          string   `json:"id"`
-	Username    string   `json:"username"`
-	Roles       []string `json:"roles"`
-	Permissions []string `json:"permissions"`
+	ID                 string   `json:"id"`
+	Username           string   `json:"username"`
+	DisplayName        string   `json:"displayName"`
+	Email              *string  `json:"email"`
+	Phone              *string  `json:"phone"`
+	Status             string   `json:"status"`
+	MustChangePassword bool     `json:"mustChangePassword"`
+	Roles              []string `json:"roles"`
+	Permissions        []string `json:"permissions"`
 }
 
 type UserRecord struct {
-	ID          string   `json:"id"`
-	Username    string   `json:"username"`
-	Roles       []string `json:"roles"`
-	Permissions []string `json:"permissions"`
-	Status      string   `json:"status"`
+	ID                 string   `json:"id"`
+	Username           string   `json:"username"`
+	DisplayName        string   `json:"displayName"`
+	Email              *string  `json:"email"`
+	Phone              *string  `json:"phone"`
+	Roles              []string `json:"roles"`
+	Permissions        []string `json:"permissions"`
+	Status             string   `json:"status"`
+	MustChangePassword bool     `json:"mustChangePassword"`
+	CreatedAt          string   `json:"createdAt,omitempty"`
+	UpdatedAt          string   `json:"updatedAt,omitempty"`
 }
 
 type SessionSummary struct {
@@ -79,6 +90,7 @@ type SessionIdentity struct {
 	SessionID    string      `json:"sessionId"`
 	User         UserSummary `json:"user"`
 	TokenType    string      `json:"tokenType"`
+	Status       string      `json:"status"`
 	ExpiresAt    time.Time   `json:"expiresAt"`
 	IssuedAt     time.Time   `json:"issuedAt"`
 	RevokedAt    *time.Time  `json:"revokedAt,omitempty"`
@@ -111,35 +123,48 @@ type SessionIdentityEnvelope struct {
 }
 
 type SessionCacheEntry struct {
-	SessionID       string    `json:"sessionId"`
-	UserID          string    `json:"userId"`
-	Username        string    `json:"username"`
-	Roles           []string  `json:"roles"`
-	Permissions     []string  `json:"permissions"`
-	TokenType       string    `json:"tokenType"`
-	AccessTokenHash string    `json:"accessTokenHash"`
-	ExpiresAt       time.Time `json:"expiresAt"`
-	IssuedAt        time.Time `json:"issuedAt"`
-	CachedAt        time.Time `json:"cachedAt"`
-	RequestID       string    `json:"requestId"`
+	SessionID          string    `json:"sessionId"`
+	UserID             string    `json:"userId"`
+	Username           string    `json:"username"`
+	DisplayName        string    `json:"displayName"`
+	Email              *string   `json:"email"`
+	Phone              *string   `json:"phone"`
+	Status             string    `json:"status"`
+	MustChangePassword bool      `json:"mustChangePassword"`
+	Roles              []string  `json:"roles"`
+	Permissions        []string  `json:"permissions"`
+	TokenType          string    `json:"tokenType"`
+	AccessTokenHash    string    `json:"accessTokenHash"`
+	ExpiresAt          time.Time `json:"expiresAt"`
+	IssuedAt           time.Time `json:"issuedAt"`
+	CachedAt           time.Time `json:"cachedAt"`
+	RequestID          string    `json:"requestId"`
 }
 
 func CacheEntryFromSession(result SessionResponse, accessTokenHash string, requestID string, now time.Time) (SessionCacheEntry, time.Duration, error) {
 	entry := SessionCacheEntry{
-		SessionID:       strings.TrimSpace(result.Session.SessionID),
-		UserID:          strings.TrimSpace(result.User.ID),
-		Username:        strings.TrimSpace(result.User.Username),
-		Roles:           safeStrings(result.User.Roles),
-		Permissions:     safeStrings(result.User.Permissions),
-		TokenType:       strings.TrimSpace(result.Session.TokenType),
-		AccessTokenHash: strings.TrimSpace(accessTokenHash),
-		ExpiresAt:       result.Session.ExpiresAt,
-		IssuedAt:        now,
-		CachedAt:        now,
-		RequestID:       requestID,
+		SessionID:          strings.TrimSpace(result.Session.SessionID),
+		UserID:             strings.TrimSpace(result.User.ID),
+		Username:           strings.TrimSpace(result.User.Username),
+		DisplayName:        strings.TrimSpace(result.User.DisplayName),
+		Email:              cloneStringPtr(result.User.Email),
+		Phone:              cloneStringPtr(result.User.Phone),
+		Status:             strings.TrimSpace(result.User.Status),
+		MustChangePassword: result.User.MustChangePassword,
+		Roles:              safeStrings(result.User.Roles),
+		Permissions:        safeStrings(result.User.Permissions),
+		TokenType:          strings.TrimSpace(result.Session.TokenType),
+		AccessTokenHash:    strings.TrimSpace(accessTokenHash),
+		ExpiresAt:          result.Session.ExpiresAt,
+		IssuedAt:           now,
+		CachedAt:           now,
+		RequestID:          requestID,
 	}
 	if entry.TokenType == "" {
 		entry.TokenType = "Bearer"
+	}
+	if entry.Status == "" {
+		entry.Status = "active"
 	}
 	if err := entry.Validate(accessTokenHash, now); err != nil {
 		return SessionCacheEntry{}, 0, err
@@ -148,24 +173,39 @@ func CacheEntryFromSession(result SessionResponse, accessTokenHash string, reque
 }
 
 func CacheEntryFromIdentity(identity SessionIdentity, user UserRecord, accessTokenHash string, requestID string, now time.Time) (SessionCacheEntry, time.Duration, error) {
-	if identity.RevokedAt != nil || !identity.ExpiresAt.After(now) || !strings.EqualFold(strings.TrimSpace(user.Status), "active") {
+	sessionStatus := strings.TrimSpace(identity.Status)
+	if sessionStatus == "" {
+		sessionStatus = "active"
+	}
+	if !strings.EqualFold(sessionStatus, "active") ||
+		identity.RevokedAt != nil ||
+		!identity.ExpiresAt.After(now) ||
+		!strings.EqualFold(strings.TrimSpace(user.Status), "active") {
 		return SessionCacheEntry{}, 0, ErrSessionInvalid
 	}
 	entry := SessionCacheEntry{
-		SessionID:       strings.TrimSpace(identity.SessionID),
-		UserID:          strings.TrimSpace(user.ID),
-		Username:        strings.TrimSpace(user.Username),
-		Roles:           safeStrings(user.Roles),
-		Permissions:     safeStrings(user.Permissions),
-		TokenType:       strings.TrimSpace(identity.TokenType),
-		AccessTokenHash: strings.TrimSpace(accessTokenHash),
-		ExpiresAt:       identity.ExpiresAt,
-		IssuedAt:        identity.IssuedAt,
-		CachedAt:        now,
-		RequestID:       requestID,
+		SessionID:          strings.TrimSpace(identity.SessionID),
+		UserID:             strings.TrimSpace(user.ID),
+		Username:           strings.TrimSpace(user.Username),
+		DisplayName:        strings.TrimSpace(user.DisplayName),
+		Email:              cloneStringPtr(user.Email),
+		Phone:              cloneStringPtr(user.Phone),
+		Status:             strings.TrimSpace(user.Status),
+		MustChangePassword: user.MustChangePassword,
+		Roles:              safeStrings(user.Roles),
+		Permissions:        safeStrings(user.Permissions),
+		TokenType:          strings.TrimSpace(identity.TokenType),
+		AccessTokenHash:    strings.TrimSpace(accessTokenHash),
+		ExpiresAt:          identity.ExpiresAt,
+		IssuedAt:           identity.IssuedAt,
+		CachedAt:           now,
+		RequestID:          requestID,
 	}
 	if entry.TokenType == "" {
 		entry.TokenType = "Bearer"
+	}
+	if entry.Status == "" {
+		entry.Status = "active"
 	}
 	if entry.UserID == "" {
 		entry.UserID = strings.TrimSpace(identity.User.ID)
@@ -207,10 +247,15 @@ func (e SessionCacheEntry) Validate(accessTokenHash string, now time.Time) error
 
 func (e SessionCacheEntry) UserSummary() UserSummary {
 	return UserSummary{
-		ID:          e.UserID,
-		Username:    e.Username,
-		Roles:       safeStrings(e.Roles),
-		Permissions: safeStrings(e.Permissions),
+		ID:                 e.UserID,
+		Username:           e.Username,
+		DisplayName:        e.DisplayName,
+		Email:              cloneStringPtr(e.Email),
+		Phone:              cloneStringPtr(e.Phone),
+		Status:             e.Status,
+		MustChangePassword: e.MustChangePassword,
+		Roles:              safeStrings(e.Roles),
+		Permissions:        safeStrings(e.Permissions),
 	}
 }
 
@@ -219,4 +264,12 @@ func safeStrings(values []string) []string {
 		return []string{}
 	}
 	return append([]string(nil), values...)
+}
+
+func cloneStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }

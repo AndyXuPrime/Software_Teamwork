@@ -29,6 +29,8 @@ const (
 	SecurityEventSessionCreateFailed = "session.create_failed"
 	SecurityEventSessionRevoked      = "session.revoked"
 	SecurityEventRoleAssigned        = "role.assigned"
+	SecurityEventPasswordReset       = "password.reset"
+	SecurityEventPasswordChanged     = "password.changed"
 
 	SecurityEventStatusSuccess = "success"
 	SecurityEventStatusFailed  = "failed"
@@ -37,6 +39,9 @@ const (
 type RequestContext struct {
 	RequestID      string
 	CallerService  string
+	ActorUserID    string
+	ActorRoles     []string
+	ActorPerms     []string
 	ClientIP       string
 	UserAgent      string
 	ForwardedFor   string
@@ -65,6 +70,7 @@ type Credential struct {
 	PasswordHashAlg           string
 	PasswordHashParamsVersion string
 	PasswordHashParamsJSON    string
+	MustChangePassword        bool
 	PasswordChangedAt         time.Time
 	PasswordExpiresAt         *time.Time
 	FailedAttemptCount        int32
@@ -95,16 +101,22 @@ type Session struct {
 }
 
 type UserSummary struct {
-	ID          string
-	Username    string
-	Roles       []string
-	Permissions []string
+	ID                 string
+	Username           string
+	DisplayName        string
+	Email              *string
+	Phone              *string
+	Status             string
+	MustChangePassword bool
+	Roles              []string
+	Permissions        []string
 }
 
 type UserRecord struct {
 	User
-	Roles       []string
-	Permissions []string
+	MustChangePassword bool
+	Roles              []string
+	Permissions        []string
 }
 
 type SessionIdentity struct {
@@ -155,9 +167,80 @@ type CreateUserParams struct {
 	PasswordHashAlg           string
 	PasswordHashParamsVersion string
 	PasswordHashParamsJSON    string
+	MustChangePassword        bool
 	DefaultRoleCode           string
 	RoleAssignmentID          string
 	AssignedBy                string
+}
+
+type PageInfo struct {
+	Page     int
+	PageSize int
+	Total    int64
+}
+
+type AdminUserActions struct {
+	CanDisable       bool
+	CanEnable        bool
+	CanResetPassword bool
+	CanChangeRole    bool
+}
+
+type AdminUserRecord struct {
+	UserRecord
+	ManageableRoles []string
+	Actions         AdminUserActions
+}
+
+type AdminUserList struct {
+	Users []AdminUserRecord
+	Page  PageInfo
+}
+
+type ListManagedUsersInput struct {
+	Page     int
+	PageSize int
+	Username string
+	Role     string
+	Status   string
+}
+
+type CreateAdminUserInput struct {
+	Username          string
+	TemporaryPassword string
+	Role              string
+	DisplayName       *string
+	Email             *string
+	Phone             *string
+}
+
+type OptionalStringField struct {
+	Set   bool
+	Value *string
+}
+
+type UpdateAdminUserInput struct {
+	DisplayName OptionalStringField
+	Email       OptionalStringField
+	Phone       OptionalStringField
+	Status      OptionalStringField
+	Role        OptionalStringField
+}
+
+type ResetAdminPasswordInput struct {
+	TemporaryPassword string
+}
+
+type UpdateProfileInput struct {
+	DisplayName OptionalStringField
+	Email       OptionalStringField
+	Phone       OptionalStringField
+}
+
+type ChangePasswordInput struct {
+	CurrentPassword         string
+	NewPassword             string
+	NewPasswordConfirmation string
 }
 
 type CreateSessionParams struct {
@@ -175,6 +258,57 @@ type CreateSessionParams struct {
 
 type RevokeSessionParams struct {
 	SessionID string
+	Reason    string
+	RequestID *string
+	RevokedAt time.Time
+}
+
+type ListManagedUsersParams struct {
+	ActorUserID     string
+	ManageableRoles []string
+	ManagedRoles    []string
+	Username        string
+	Role            string
+	Status          string
+	Limit           int
+	Offset          int
+}
+
+type UpdateUserProfileParams struct {
+	UserID      string
+	DisplayName string
+	Email       *string
+	Phone       *string
+	UpdatedAt   time.Time
+}
+
+type UpdateUserStatusParams struct {
+	UserID    string
+	Status    string
+	UpdatedAt time.Time
+}
+
+type ReplaceUserRoleParams struct {
+	UserID           string
+	RoleCode         string
+	ManagedRoleCodes []string
+	AssignmentID     string
+	AssignedBy       string
+	AssignedAt       time.Time
+}
+
+type UpdatePasswordParams struct {
+	UserID                    string
+	PasswordHash              string
+	PasswordHashAlg           string
+	PasswordHashParamsVersion string
+	PasswordHashParamsJSON    string
+	MustChangePassword        bool
+	ChangedAt                 time.Time
+}
+
+type RevokeUserSessionsParams struct {
+	UserID    string
 	Reason    string
 	RequestID *string
 	RevokedAt time.Time
@@ -202,8 +336,14 @@ type Repository interface {
 	FindCredentialByUserID(ctx context.Context, userID string) (Credential, error)
 	FindSessionByID(ctx context.Context, id string) (SessionIdentity, error)
 	FindActiveSessionByTokenHash(ctx context.Context, tokenHash string) (SessionIdentity, error)
+	ListManagedUsers(ctx context.Context, params ListManagedUsersParams) ([]UserRecord, int64, error)
 	CreateUserWithCredential(ctx context.Context, params CreateUserParams) (UserRecord, error)
+	UpdateUserProfile(ctx context.Context, params UpdateUserProfileParams) (UserRecord, error)
+	UpdateUserStatus(ctx context.Context, params UpdateUserStatusParams) (UserRecord, error)
+	ReplaceUserRole(ctx context.Context, params ReplaceUserRoleParams) (UserRecord, error)
+	UpdatePassword(ctx context.Context, params UpdatePasswordParams) (Credential, error)
 	CreateSession(ctx context.Context, params CreateSessionParams) (SessionIdentity, error)
 	RevokeSession(ctx context.Context, params RevokeSessionParams) (Session, error)
+	RevokeUserSessions(ctx context.Context, params RevokeUserSessionsParams) ([]Session, error)
 	RecordSecurityEvent(ctx context.Context, params SecurityEventParams) error
 }

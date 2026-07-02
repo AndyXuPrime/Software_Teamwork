@@ -3,14 +3,16 @@ package httpapi
 import "strings"
 
 type routeSpec struct {
-	Method            string
-	Pattern           string
-	Owner             string
-	OperationID       string
-	DownstreamPattern string
-	NotImplemented    bool
-	StreamResponse    bool
-	AdminPermissions  []string
+	Method                string
+	Pattern               string
+	Owner                 string
+	OperationID           string
+	DownstreamPattern     string
+	NotImplemented        bool
+	StreamResponse        bool
+	AdminPermissions      []string
+	AdminRoles            []string
+	AuthAdminServiceToken bool
 }
 
 var modelProfileAdminPermissions = []string{"system:admin", "admin:model-profile:write"}
@@ -18,6 +20,7 @@ var parserConfigAdminPermissions = []string{"system:admin", "knowledge:admin", "
 var dashboardAdminPermissions = []string{"system:admin"}
 var qaSettingsReadPermissions = []string{"qa:settings:read"}
 var qaSettingsWritePermissions = []string{"qa:settings:write"}
+var userAdminRoles = []string{"admin", "super_admin"}
 
 var activeProxyRoutes = []routeSpec{
 	{Method: "GET", Pattern: "/api/v1/knowledge-bases", Owner: "knowledge", OperationID: "listKnowledgeBases"},
@@ -33,6 +36,10 @@ var activeProxyRoutes = []routeSpec{
 	{Method: "GET", Pattern: "/api/v1/documents/{documentId}/chunks", Owner: "knowledge", OperationID: "listDocumentChunks"},
 	{Method: "GET", Pattern: "/api/v1/documents/{documentId}/content", Owner: "knowledge", OperationID: "getDocumentContent"},
 	{Method: "POST", Pattern: "/api/v1/knowledge-queries", Owner: "knowledge", OperationID: "createKnowledgeQuery", DownstreamPattern: "/internal/v1/knowledge-queries"},
+	{Method: "GET", Pattern: "/api/v1/admin/users", Owner: "auth", OperationID: "listAdminUsers", DownstreamPattern: "/internal/v1/admin/users", AdminRoles: userAdminRoles, AuthAdminServiceToken: true},
+	{Method: "POST", Pattern: "/api/v1/admin/users", Owner: "auth", OperationID: "createAdminUser", DownstreamPattern: "/internal/v1/admin/users", AdminRoles: userAdminRoles, AuthAdminServiceToken: true},
+	{Method: "PATCH", Pattern: "/api/v1/admin/users/{userId}", Owner: "auth", OperationID: "updateAdminUser", DownstreamPattern: "/internal/v1/admin/users/{userId}", AdminRoles: userAdminRoles, AuthAdminServiceToken: true},
+	{Method: "POST", Pattern: "/api/v1/admin/users/{userId}/password-resets", Owner: "auth", OperationID: "createAdminUserPasswordReset", DownstreamPattern: "/internal/v1/admin/users/{userId}/password-resets", AdminRoles: userAdminRoles, AuthAdminServiceToken: true},
 	{Method: "GET", Pattern: "/api/v1/admin/model-profiles", Owner: "ai-gateway", OperationID: "listAdminModelProfiles", DownstreamPattern: "/internal/v1/model-profiles", AdminPermissions: modelProfileAdminPermissions},
 	{Method: "POST", Pattern: "/api/v1/admin/model-profiles", Owner: "ai-gateway", OperationID: "createAdminModelProfile", DownstreamPattern: "/internal/v1/model-profiles", AdminPermissions: modelProfileAdminPermissions},
 	{Method: "GET", Pattern: "/api/v1/admin/model-profiles/{profileId}", Owner: "ai-gateway", OperationID: "getAdminModelProfile", DownstreamPattern: "/internal/v1/model-profiles/{profileId}", AdminPermissions: modelProfileAdminPermissions},
@@ -126,6 +133,9 @@ var activeDirectRoutes = []routeSpec{
 	{Method: "POST", Pattern: "/api/v1/sessions", Owner: "auth", OperationID: "createSession"},
 	{Method: "DELETE", Pattern: "/api/v1/sessions/current", Owner: "auth", OperationID: "deleteCurrentSession"},
 	{Method: "GET", Pattern: "/api/v1/users/me", Owner: "auth", OperationID: "getCurrentUser"},
+	{Method: "GET", Pattern: "/api/v1/users/me/profile", Owner: "auth", OperationID: "getCurrentUserProfile"},
+	{Method: "PATCH", Pattern: "/api/v1/users/me/profile", Owner: "auth", OperationID: "updateCurrentUserProfile"},
+	{Method: "POST", Pattern: "/api/v1/users/me/password-changes", Owner: "auth", OperationID: "createCurrentUserPasswordChange"},
 }
 
 func activeOperationCount() int {
@@ -133,5 +143,5 @@ func activeOperationCount() int {
 }
 
 func (route routeSpec) requiresAdmin() bool {
-	return strings.HasPrefix(route.Pattern, "/api/v1/admin/") || len(route.AdminPermissions) > 0
+	return strings.HasPrefix(route.Pattern, "/api/v1/admin/") || len(route.AdminPermissions) > 0 || len(route.AdminRoles) > 0
 }

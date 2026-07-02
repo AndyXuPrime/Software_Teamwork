@@ -56,13 +56,14 @@ func main() {
 	}
 
 	handler := authhttp.NewServer(authhttp.Config{
-		ServiceVersion:   cfg.ServiceVersion,
-		Environment:      cfg.Environment,
-		ReadinessTimeout: cfg.ReadinessTimeout,
-		ReadinessChecker: readinessChecker,
-		Auth:             authService,
-		ServiceToken:     cfg.ServiceToken,
-		Logger:           logger,
+		ServiceVersion:    cfg.ServiceVersion,
+		Environment:       cfg.Environment,
+		ReadinessTimeout:  cfg.ReadinessTimeout,
+		ReadinessChecker:  readinessChecker,
+		Auth:              authService,
+		ServiceToken:      cfg.ServiceToken,
+		GatewayAdminToken: cfg.GatewayAdminToken,
+		Logger:            logger,
 	})
 
 	server := &http.Server{

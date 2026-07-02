@@ -90,6 +90,7 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | Repository tests | 部分服务有 SQL/repository tests；Knowledge/QA/Document 有 env-gated PostgreSQL integration tests；Knowledge repository lifecycle 已接入 CI PostgreSQL job。 | repository、SQL、transaction、migration 相关改动。 |
 | Migration apply | CI 使用 PostgreSQL 16 和 goose apply。 | 新增或修改 migration。 |
 | Contract tests | Gateway active API verifier、route coverage tests、QA active path schema contract tests。 | OpenAPI、owner map、active path、RESTful path、owner/auth/schema/content type 和 QA internal `$ref` drift。 |
+| Auth/Gateway 用户管理测试 | Auth service tests、Gateway auth/admin route tests、Gateway active API verifier、前端 route guard 和表单测试。 | 自助注册兼容、管理员管理范围、profile 自助编辑、必需改密、密码策略、会话刷新和 stale authorization 防回归。 |
 | Parser runtime tests | OpenAPI schema review、文档一致性检查、FastAPI handler/service tests、fake OCR backend 和可选 env-gated PaddleOCR model smoke。 | Parser API/runtime 变更；真实 PaddleOCR 模型、OCR 质量和部署资源需要具备模型环境后单独记录。 |
 | Knowledge ingestion real deps smoke | `KNOWLEDGE_INGESTION_SMOKE=1` 显式启用；使用真实 File Service、Parser Service、PostgreSQL 和 Qdrant，默认 local hashing embedding。 | 验证 Knowledge 上传 fixture、worker handler、解析、切片、embedding metadata、Qdrant point 写入和状态更新；不替代 retrieval/rerank/MCP/Gateway 总入口。 |
 | Gateway -> Knowledge owner route smoke | `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1` 显式启用；使用真实 Gateway/Auth/session cache、Knowledge、File/Parser ready、PostgreSQL 和 Redis。 | 先验证无 Bearer token 的伪造 `X-User-*` 请求被 Gateway 拒绝，再通过 Gateway 创建/读取 KB 并断言 `createdBy` 是真实 session user；不替代完整 Gateway route matrix。 |
@@ -209,7 +210,7 @@ prompts, document text, embedding payloads, or provider raw bodies.
 | Component/unit tests | 已落地 | `bun run --cwd apps/web test:unit`，使用 Vitest + React Testing Library。 |
 | Browser/E2E tests | 已落地 / smoke | `bun run --cwd apps/web test:e2e`，使用 Playwright 覆盖基础应用 smoke；完整业务 E2E 仍需随页面能力扩展。 |
 
-前端不得直接调用服务内部地址。涉及 QA SSE、上传、报告任务进度或 admin model/parser configuration 的改动，应同时检查 `docs/architecture/frontend-backend-contract.md` 和 Gateway OpenAPI。
+前端不得直接调用服务内部地址。涉及 QA SSE、上传、报告任务进度、admin model/parser configuration、admin users、profile 或 required password-change 的改动，应同时检查 `docs/architecture/frontend-backend-contract.md` 和 Gateway OpenAPI。
 
 ## 契约和文档检查
 

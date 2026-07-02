@@ -11,6 +11,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("AUTH_ENV", "")
 	t.Setenv("AUTH_DATABASE_URL", "")
 	t.Setenv("AUTH_INTERNAL_SERVICE_TOKEN", "")
+	t.Setenv("AUTH_GATEWAY_ADMIN_SERVICE_TOKEN", "")
 	t.Setenv("AUTH_TOKEN_HASH_SECRET", "")
 	t.Setenv("AUTH_TOKEN_HASH_KEY_VERSION", "")
 	t.Setenv("AUTH_SESSION_TTL", "")
@@ -51,6 +52,7 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("AUTH_ENV", "test")
 	t.Setenv("AUTH_DATABASE_URL", "postgres://auth:auth@localhost:5432/auth?sslmode=disable")
 	t.Setenv("AUTH_INTERNAL_SERVICE_TOKEN", "test-service-token")
+	t.Setenv("AUTH_GATEWAY_ADMIN_SERVICE_TOKEN", "gateway-admin-token")
 	t.Setenv("AUTH_TOKEN_HASH_SECRET", "test-token-hash-secret")
 	t.Setenv("AUTH_TOKEN_HASH_KEY_VERSION", "v9")
 	t.Setenv("AUTH_SESSION_TTL", "2h")
@@ -74,7 +76,7 @@ func TestLoadOverrides(t *testing.T) {
 	if cfg.ReadinessTimeout != 3*time.Second {
 		t.Fatalf("ReadinessTimeout = %s", cfg.ReadinessTimeout)
 	}
-	if cfg.ServiceToken != "test-service-token" || cfg.TokenHashSecret != "test-token-hash-secret" || cfg.TokenKeyVersion != "v9" || cfg.DefaultRoleCode != "member" {
+	if cfg.ServiceToken != "test-service-token" || cfg.GatewayAdminToken != "gateway-admin-token" || cfg.TokenHashSecret != "test-token-hash-secret" || cfg.TokenKeyVersion != "v9" || cfg.DefaultRoleCode != "member" {
 		t.Fatalf("auth config = %+v", cfg)
 	}
 	if cfg.SessionTTL != 2*time.Hour {
@@ -85,13 +87,14 @@ func TestLoadOverrides(t *testing.T) {
 func TestLoadUsesSharedTokenEnvironment(t *testing.T) {
 	t.Setenv("AUTH_DATABASE_URL", "postgres://auth:auth@localhost:5432/auth?sslmode=disable")
 	t.Setenv("INTERNAL_SERVICE_TOKEN", "shared-service-token")
+	t.Setenv("AUTH_GATEWAY_ADMIN_SERVICE_TOKEN", "gateway-admin-token")
 	t.Setenv("TOKEN_HASH_SECRET", "shared-token-hash-secret")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.ServiceToken != "shared-service-token" || cfg.TokenHashSecret != "shared-token-hash-secret" {
+	if cfg.ServiceToken != "shared-service-token" || cfg.GatewayAdminToken != "gateway-admin-token" || cfg.TokenHashSecret != "shared-token-hash-secret" {
 		t.Fatalf("shared token config = %+v", cfg)
 	}
 }
@@ -107,6 +110,7 @@ func TestLoadRejectsInvalidDuration(t *testing.T) {
 func TestLoadRequiresTokenSecretWhenDatabaseConfigured(t *testing.T) {
 	t.Setenv("AUTH_DATABASE_URL", "postgres://auth:auth@localhost:5432/auth?sslmode=disable")
 	t.Setenv("AUTH_INTERNAL_SERVICE_TOKEN", "test-service-token")
+	t.Setenv("AUTH_GATEWAY_ADMIN_SERVICE_TOKEN", "gateway-admin-token")
 	t.Setenv("AUTH_TOKEN_HASH_SECRET", "")
 
 	if _, err := Load(); err == nil {
@@ -117,7 +121,30 @@ func TestLoadRequiresTokenSecretWhenDatabaseConfigured(t *testing.T) {
 func TestLoadRequiresServiceTokenWhenDatabaseConfigured(t *testing.T) {
 	t.Setenv("AUTH_DATABASE_URL", "postgres://auth:auth@localhost:5432/auth?sslmode=disable")
 	t.Setenv("AUTH_TOKEN_HASH_SECRET", "test-token-hash-secret")
+	t.Setenv("AUTH_GATEWAY_ADMIN_SERVICE_TOKEN", "gateway-admin-token")
 	t.Setenv("AUTH_INTERNAL_SERVICE_TOKEN", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatalf("Load() error = nil")
+	}
+}
+
+func TestLoadRequiresGatewayAdminTokenWhenDatabaseConfigured(t *testing.T) {
+	t.Setenv("AUTH_DATABASE_URL", "postgres://auth:auth@localhost:5432/auth?sslmode=disable")
+	t.Setenv("AUTH_TOKEN_HASH_SECRET", "test-token-hash-secret")
+	t.Setenv("AUTH_INTERNAL_SERVICE_TOKEN", "test-service-token")
+	t.Setenv("AUTH_GATEWAY_ADMIN_SERVICE_TOKEN", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatalf("Load() error = nil")
+	}
+}
+
+func TestLoadRejectsSharedGatewayAdminToken(t *testing.T) {
+	t.Setenv("AUTH_DATABASE_URL", "postgres://auth:auth@localhost:5432/auth?sslmode=disable")
+	t.Setenv("AUTH_TOKEN_HASH_SECRET", "test-token-hash-secret")
+	t.Setenv("AUTH_INTERNAL_SERVICE_TOKEN", "same-token")
+	t.Setenv("AUTH_GATEWAY_ADMIN_SERVICE_TOKEN", "same-token")
 
 	if _, err := Load(); err == nil {
 		t.Fatalf("Load() error = nil")

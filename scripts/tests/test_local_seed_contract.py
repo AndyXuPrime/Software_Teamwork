@@ -31,6 +31,8 @@ class LocalSeedContractTests(unittest.TestCase):
             (root / "deploy" / ".env.example").write_text(
                 "LOCAL_ADMIN_USERNAME=admin\n"
                 "LOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345\n"
+                "LOCAL_SUPER_ADMIN_USERNAME=superadmin\n"
+                "LOCAL_SUPER_ADMIN_PASSWORD=LocalDemoAdmin#12345\n"
                 "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple\n",
                 encoding="utf-8",
             )
@@ -61,7 +63,10 @@ class LocalSeedContractTests(unittest.TestCase):
                 "./scripts/local/run-backend.sh\n"
                 "LOCAL_ADMIN_USERNAME=admin\n"
                 "LOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345\n"
+                "LOCAL_SUPER_ADMIN_USERNAME=superadmin\n"
+                "LOCAL_SUPER_ADMIN_PASSWORD=LocalDemoAdmin#12345\n"
                 "admin / LocalDemoAdmin#12345\n"
+                "superadmin / LocalDemoAdmin#12345\n"
                 "cleanup with down -v\n",
                 encoding="utf-8",
             )

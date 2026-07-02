@@ -20,32 +20,34 @@ const (
 )
 
 type Config struct {
-	HTTPAddr         string
-	ServiceVersion   string
-	Environment      string
-	DatabaseURL      string
-	ServiceToken     string
-	TokenHashSecret  string
-	TokenKeyVersion  string
-	SessionTTL       time.Duration
-	DefaultRoleCode  string
-	ShutdownTimeout  time.Duration
-	ReadinessTimeout time.Duration
+	HTTPAddr          string
+	ServiceVersion    string
+	Environment       string
+	DatabaseURL       string
+	ServiceToken      string
+	GatewayAdminToken string
+	TokenHashSecret   string
+	TokenKeyVersion   string
+	SessionTTL        time.Duration
+	DefaultRoleCode   string
+	ShutdownTimeout   time.Duration
+	ReadinessTimeout  time.Duration
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr:         stringValue("AUTH_HTTP_ADDR", DefaultHTTPAddr),
-		ServiceVersion:   stringValue("AUTH_SERVICE_VERSION", DefaultServiceVersion),
-		Environment:      stringValue("AUTH_ENV", DefaultEnvironment),
-		DatabaseURL:      strings.TrimSpace(os.Getenv("AUTH_DATABASE_URL")),
-		ServiceToken:     firstNonEmptyEnv("AUTH_INTERNAL_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
-		TokenHashSecret:  firstNonEmptyEnv("AUTH_TOKEN_HASH_SECRET", "TOKEN_HASH_SECRET"),
-		TokenKeyVersion:  stringValue("AUTH_TOKEN_HASH_KEY_VERSION", DefaultTokenKeyVersion),
-		DefaultRoleCode:  stringValue("AUTH_DEFAULT_ROLE_CODE", DefaultRoleCode),
-		SessionTTL:       DefaultSessionTTL,
-		ShutdownTimeout:  DefaultShutdownTimeout,
-		ReadinessTimeout: DefaultReadinessTimeout,
+		HTTPAddr:          stringValue("AUTH_HTTP_ADDR", DefaultHTTPAddr),
+		ServiceVersion:    stringValue("AUTH_SERVICE_VERSION", DefaultServiceVersion),
+		Environment:       stringValue("AUTH_ENV", DefaultEnvironment),
+		DatabaseURL:       strings.TrimSpace(os.Getenv("AUTH_DATABASE_URL")),
+		ServiceToken:      firstNonEmptyEnv("AUTH_INTERNAL_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
+		GatewayAdminToken: strings.TrimSpace(os.Getenv("AUTH_GATEWAY_ADMIN_SERVICE_TOKEN")),
+		TokenHashSecret:   firstNonEmptyEnv("AUTH_TOKEN_HASH_SECRET", "TOKEN_HASH_SECRET"),
+		TokenKeyVersion:   stringValue("AUTH_TOKEN_HASH_KEY_VERSION", DefaultTokenKeyVersion),
+		DefaultRoleCode:   stringValue("AUTH_DEFAULT_ROLE_CODE", DefaultRoleCode),
+		SessionTTL:        DefaultSessionTTL,
+		ShutdownTimeout:   DefaultShutdownTimeout,
+		ReadinessTimeout:  DefaultReadinessTimeout,
 	}
 
 	if raw := os.Getenv("AUTH_SHUTDOWN_TIMEOUT"); raw != "" {
@@ -92,6 +94,12 @@ func Load() (Config, error) {
 	}
 	if cfg.DatabaseURL != "" && strings.TrimSpace(cfg.ServiceToken) == "" {
 		return Config{}, fmt.Errorf("AUTH_INTERNAL_SERVICE_TOKEN is required when AUTH_DATABASE_URL is set")
+	}
+	if cfg.DatabaseURL != "" && strings.TrimSpace(cfg.GatewayAdminToken) == "" {
+		return Config{}, fmt.Errorf("AUTH_GATEWAY_ADMIN_SERVICE_TOKEN is required when AUTH_DATABASE_URL is set")
+	}
+	if cfg.DatabaseURL != "" && strings.TrimSpace(cfg.GatewayAdminToken) == strings.TrimSpace(cfg.ServiceToken) {
+		return Config{}, fmt.Errorf("AUTH_GATEWAY_ADMIN_SERVICE_TOKEN must differ from AUTH_INTERNAL_SERVICE_TOKEN")
 	}
 
 	return cfg, nil

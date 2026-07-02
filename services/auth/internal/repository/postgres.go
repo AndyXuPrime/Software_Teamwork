@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -24,13 +25,19 @@ type queryExecutor interface {
 type userQueries interface {
 	GetUserByID(ctx context.Context, id string) (sqlc.AuthUser, error)
 	GetUserByUsername(ctx context.Context, username string) (sqlc.AuthUser, error)
-	GetCredentialByUserID(ctx context.Context, arg sqlc.GetCredentialByUserIDParams) (sqlc.AuthCredential, error)
+	GetCredentialByUserID(ctx context.Context, arg sqlc.GetCredentialByUserIDParams) (sqlc.GetCredentialByUserIDRow, error)
 	GetSessionByID(ctx context.Context, id string) (sqlc.AuthSession, error)
 	GetActiveSessionByTokenHash(ctx context.Context, accessTokenHash string) (sqlc.AuthSession, error)
 	ListRoleCodesByUserID(ctx context.Context, userID string) ([]string, error)
 	ListPermissionCodesByUserID(ctx context.Context, userID string) ([]string, error)
+	CountManagedUsers(ctx context.Context, arg sqlc.CountManagedUsersParams) (int64, error)
+	ListManagedUsers(ctx context.Context, arg sqlc.ListManagedUsersParams) ([]sqlc.AuthUser, error)
+	UpdateUserProfile(ctx context.Context, arg sqlc.UpdateUserProfileParams) (sqlc.AuthUser, error)
+	UpdateUserStatus(ctx context.Context, arg sqlc.UpdateUserStatusParams) (sqlc.AuthUser, error)
+	UpdateCredentialPassword(ctx context.Context, arg sqlc.UpdateCredentialPasswordParams) (sqlc.UpdateCredentialPasswordRow, error)
 	CreateSession(ctx context.Context, arg sqlc.CreateSessionParams) (sqlc.AuthSession, error)
 	RevokeSession(ctx context.Context, arg sqlc.RevokeSessionParams) (sqlc.AuthSession, error)
+	RevokeActiveSessionsForUser(ctx context.Context, arg sqlc.RevokeActiveSessionsForUserParams) ([]sqlc.AuthSession, error)
 	CreateSecurityEvent(ctx context.Context, arg sqlc.CreateSecurityEventParams) error
 }
 
@@ -147,6 +154,7 @@ func (r *PostgresRepository) CreateUserWithCredential(ctx context.Context, param
 		PasswordHashAlg:           params.PasswordHashAlg,
 		PasswordHashParamsVersion: params.PasswordHashParamsVersion,
 		Column7:                   jsonbFromString(paramsJSON),
+		MustChangePassword:        params.MustChangePassword,
 		PasswordChangedAt:         timestamptzFromTime(now),
 		CreatedAt:                 timestamptzFromTime(now),
 		UpdatedAt:                 timestamptzFromTime(now),
@@ -175,6 +183,149 @@ func (r *PostgresRepository) CreateUserWithCredential(ctx context.Context, param
 	}
 
 	return r.FindUserByID(ctx, user.ID)
+}
+
+func (r *PostgresRepository) ListManagedUsers(ctx context.Context, params service.ListManagedUsersParams) ([]service.UserRecord, int64, error) {
+	if len(params.ManageableRoles) == 0 {
+		return []service.UserRecord{}, 0, nil
+	}
+	if params.Offset < 0 || params.Offset > math.MaxInt32 {
+		return nil, 0, service.ValidationError("request validation failed", map[string]string{"offset": "must fit int32 range"})
+	}
+	if params.Limit < 0 || params.Limit > math.MaxInt32 {
+		return nil, 0, service.ValidationError("request validation failed", map[string]string{"limit": "must fit int32 range"})
+	}
+	offset := int32(params.Offset)
+	limit := int32(params.Limit)
+	count, err := r.queries.CountManagedUsers(ctx, sqlc.CountManagedUsersParams{
+		ActorUserID:     params.ActorUserID,
+		Username:        params.Username,
+		Status:          params.Status,
+		ManageableRoles: params.ManageableRoles,
+		ManagedRoles:    params.ManagedRoles,
+		Role:            params.Role,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("count managed users: %w", err)
+	}
+	users, err := r.queries.ListManagedUsers(ctx, sqlc.ListManagedUsersParams{
+		ActorUserID:     params.ActorUserID,
+		Username:        params.Username,
+		Status:          params.Status,
+		ManageableRoles: params.ManageableRoles,
+		ManagedRoles:    params.ManagedRoles,
+		Role:            params.Role,
+		OffsetCount:     offset,
+		LimitCount:      limit,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("list managed users: %w", err)
+	}
+	records := make([]service.UserRecord, 0, len(users))
+	for _, user := range users {
+		record, err := r.userRecord(ctx, mapUser(user))
+		if err != nil {
+			return nil, 0, err
+		}
+		records = append(records, record)
+	}
+	return records, count, nil
+}
+
+func (r *PostgresRepository) UpdateUserProfile(ctx context.Context, params service.UpdateUserProfileParams) (service.UserRecord, error) {
+	updatedAt := params.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+	user, err := r.queries.UpdateUserProfile(ctx, sqlc.UpdateUserProfileParams{
+		ID:          params.UserID,
+		DisplayName: params.DisplayName,
+		Email:       textFromPtr(params.Email),
+		Phone:       textFromPtr(params.Phone),
+		UpdatedAt:   timestamptzFromTime(updatedAt),
+	})
+	if err != nil {
+		return service.UserRecord{}, classifyNoRows("update user profile", err)
+	}
+	return r.userRecord(ctx, mapUser(user))
+}
+
+func (r *PostgresRepository) UpdateUserStatus(ctx context.Context, params service.UpdateUserStatusParams) (service.UserRecord, error) {
+	updatedAt := params.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+	user, err := r.queries.UpdateUserStatus(ctx, sqlc.UpdateUserStatusParams{
+		ID:        params.UserID,
+		Status:    params.Status,
+		UpdatedAt: timestamptzFromTime(updatedAt),
+	})
+	if err != nil {
+		return service.UserRecord{}, classifyNoRows("update user status", err)
+	}
+	return r.userRecord(ctx, mapUser(user))
+}
+
+func (r *PostgresRepository) ReplaceUserRole(ctx context.Context, params service.ReplaceUserRoleParams) (service.UserRecord, error) {
+	if r.db == nil {
+		return service.UserRecord{}, fmt.Errorf("replace user role: repository is not configured with a database executor")
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return service.UserRecord{}, fmt.Errorf("begin replace user role transaction: %w", err)
+	}
+	defer rollback(ctx, tx)
+
+	q := sqlc.New(tx)
+	if err := q.DeleteManagedUserRoles(ctx, sqlc.DeleteManagedUserRolesParams{
+		UserID:    params.UserID,
+		RoleCodes: params.ManagedRoleCodes,
+	}); err != nil {
+		return service.UserRecord{}, fmt.Errorf("delete managed user roles: %w", err)
+	}
+	assignedAt := params.AssignedAt
+	if assignedAt.IsZero() {
+		assignedAt = time.Now().UTC()
+	}
+	if _, err := q.AssignRoleByCode(ctx, sqlc.AssignRoleByCodeParams{
+		ID:         params.AssignmentID,
+		UserID:     params.UserID,
+		Code:       params.RoleCode,
+		AssignedBy: textFromOptionalString(params.AssignedBy),
+		AssignedAt: timestamptzFromTime(assignedAt),
+		CreatedAt:  timestamptzFromTime(assignedAt),
+	}); err != nil {
+		return service.UserRecord{}, classifyNoRows("assign user role", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return service.UserRecord{}, fmt.Errorf("commit replace user role transaction: %w", err)
+	}
+	return r.FindUserByID(ctx, params.UserID)
+}
+
+func (r *PostgresRepository) UpdatePassword(ctx context.Context, params service.UpdatePasswordParams) (service.Credential, error) {
+	changedAt := params.ChangedAt
+	if changedAt.IsZero() {
+		changedAt = time.Now().UTC()
+	}
+	paramsJSON := params.PasswordHashParamsJSON
+	if paramsJSON == "" {
+		paramsJSON = "{}"
+	}
+	credential, err := r.queries.UpdateCredentialPassword(ctx, sqlc.UpdateCredentialPasswordParams{
+		UserID:                    params.UserID,
+		CredentialType:            service.CredentialTypePassword,
+		PasswordHash:              params.PasswordHash,
+		PasswordHashAlg:           params.PasswordHashAlg,
+		PasswordHashParamsVersion: params.PasswordHashParamsVersion,
+		Column6:                   jsonbFromString(paramsJSON),
+		MustChangePassword:        params.MustChangePassword,
+		PasswordChangedAt:         timestamptzFromTime(changedAt),
+	})
+	if err != nil {
+		return service.Credential{}, classifyNoRows("update credential password", err)
+	}
+	return mapCredential(credential), nil
 }
 
 func (r *PostgresRepository) CreateSession(ctx context.Context, params service.CreateSessionParams) (service.SessionIdentity, error) {
@@ -274,6 +425,66 @@ func (r *PostgresRepository) RevokeSession(ctx context.Context, params service.R
 	return mapSession(session), nil
 }
 
+func (r *PostgresRepository) RevokeUserSessions(ctx context.Context, params service.RevokeUserSessionsParams) ([]service.Session, error) {
+	if r.db != nil {
+		return r.revokeUserSessionsTx(ctx, params)
+	}
+	revokedAt := params.RevokedAt
+	if revokedAt.IsZero() {
+		revokedAt = time.Now().UTC()
+	}
+	sessions, err := r.queries.RevokeActiveSessionsForUser(ctx, sqlc.RevokeActiveSessionsForUserParams{
+		UserID:           params.UserID,
+		RevokedAt:        timestamptzFromTime(revokedAt),
+		RevokeReason:     textFromOptionalString(params.Reason),
+		RevokedRequestID: textFromPtr(params.RequestID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("revoke active user sessions: %w", err)
+	}
+	return mapSessions(sessions), nil
+}
+
+func (r *PostgresRepository) revokeUserSessionsTx(ctx context.Context, params service.RevokeUserSessionsParams) ([]service.Session, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin revoke user sessions transaction: %w", err)
+	}
+	defer rollback(ctx, tx)
+
+	q := sqlc.New(tx)
+	revokedAt := params.RevokedAt
+	if revokedAt.IsZero() {
+		revokedAt = time.Now().UTC()
+	}
+	sessions, err := q.RevokeActiveSessionsForUser(ctx, sqlc.RevokeActiveSessionsForUserParams{
+		UserID:           params.UserID,
+		RevokedAt:        timestamptzFromTime(revokedAt),
+		RevokeReason:     textFromOptionalString(params.Reason),
+		RevokedRequestID: textFromPtr(params.RequestID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("revoke active user sessions: %w", err)
+	}
+	for _, session := range sessions {
+		if err := q.CreateSessionRevocation(ctx, sqlc.CreateSessionRevocationParams{
+			ID:        "rev_" + session.ID,
+			SessionID: session.ID,
+			UserID:    session.UserID,
+			Reason:    params.Reason,
+			RevokedBy: textFromOptionalString(params.UserID),
+			RequestID: textFromPtr(params.RequestID),
+			RevokedAt: timestamptzFromTime(revokedAt),
+		}); err != nil {
+			return nil, fmt.Errorf("create session revocation: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit revoke user sessions transaction: %w", err)
+	}
+	return mapSessions(sessions), nil
+}
+
 func (r *PostgresRepository) revokeSessionTx(ctx context.Context, params service.RevokeSessionParams) (service.Session, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -353,7 +564,11 @@ func (r *PostgresRepository) userRecord(ctx context.Context, user service.User) 
 	if err != nil {
 		return service.UserRecord{}, fmt.Errorf("list user permissions: %w", err)
 	}
-	return service.UserRecord{User: user, Roles: roles, Permissions: permissions}, nil
+	credential, err := r.FindCredentialByUserID(ctx, user.ID)
+	if err != nil && !errors.Is(err, service.ErrNotFound) {
+		return service.UserRecord{}, err
+	}
+	return service.UserRecord{User: user, MustChangePassword: credential.MustChangePassword, Roles: roles, Permissions: permissions}, nil
 }
 
 func (r *PostgresRepository) sessionIdentity(ctx context.Context, session service.Session) (service.SessionIdentity, error) {
@@ -364,10 +579,15 @@ func (r *PostgresRepository) sessionIdentity(ctx context.Context, session servic
 	return service.SessionIdentity{
 		Session: session,
 		User: service.UserSummary{
-			ID:          record.ID,
-			Username:    record.Username,
-			Roles:       record.Roles,
-			Permissions: record.Permissions,
+			ID:                 record.ID,
+			Username:           record.Username,
+			DisplayName:        record.DisplayName,
+			Email:              record.Email,
+			Phone:              record.Phone,
+			Status:             record.Status,
+			MustChangePassword: record.MustChangePassword,
+			Roles:              record.Roles,
+			Permissions:        record.Permissions,
 		},
 		AccessTokenHash: session.AccessTokenHash,
 	}, nil
@@ -389,7 +609,85 @@ func mapUser(user sqlc.AuthUser) service.User {
 	}
 }
 
-func mapCredential(credential sqlc.AuthCredential) service.Credential {
+func mapCredential(row any) service.Credential {
+	var credential struct {
+		ID                        string
+		UserID                    string
+		CredentialType            string
+		PasswordHash              string
+		PasswordHashAlg           string
+		PasswordHashParamsVersion string
+		PasswordHashParamsJson    []byte
+		MustChangePassword        bool
+		PasswordChangedAt         pgtype.Timestamptz
+		PasswordExpiresAt         pgtype.Timestamptz
+		FailedAttemptCount        int32
+		LastFailedAt              pgtype.Timestamptz
+		CreatedAt                 pgtype.Timestamptz
+		UpdatedAt                 pgtype.Timestamptz
+	}
+	switch value := row.(type) {
+	case sqlc.AuthCredential:
+		credential.ID = value.ID
+		credential.UserID = value.UserID
+		credential.CredentialType = value.CredentialType
+		credential.PasswordHash = value.PasswordHash
+		credential.PasswordHashAlg = value.PasswordHashAlg
+		credential.PasswordHashParamsVersion = value.PasswordHashParamsVersion
+		credential.PasswordHashParamsJson = value.PasswordHashParamsJson
+		credential.MustChangePassword = value.MustChangePassword
+		credential.PasswordChangedAt = value.PasswordChangedAt
+		credential.PasswordExpiresAt = value.PasswordExpiresAt
+		credential.FailedAttemptCount = value.FailedAttemptCount
+		credential.LastFailedAt = value.LastFailedAt
+		credential.CreatedAt = value.CreatedAt
+		credential.UpdatedAt = value.UpdatedAt
+	case sqlc.GetCredentialByUserIDRow:
+		credential.ID = value.ID
+		credential.UserID = value.UserID
+		credential.CredentialType = value.CredentialType
+		credential.PasswordHash = value.PasswordHash
+		credential.PasswordHashAlg = value.PasswordHashAlg
+		credential.PasswordHashParamsVersion = value.PasswordHashParamsVersion
+		credential.PasswordHashParamsJson = value.PasswordHashParamsJson
+		credential.MustChangePassword = value.MustChangePassword
+		credential.PasswordChangedAt = value.PasswordChangedAt
+		credential.PasswordExpiresAt = value.PasswordExpiresAt
+		credential.FailedAttemptCount = value.FailedAttemptCount
+		credential.LastFailedAt = value.LastFailedAt
+		credential.CreatedAt = value.CreatedAt
+		credential.UpdatedAt = value.UpdatedAt
+	case sqlc.UpdateCredentialPasswordRow:
+		credential.ID = value.ID
+		credential.UserID = value.UserID
+		credential.CredentialType = value.CredentialType
+		credential.PasswordHash = value.PasswordHash
+		credential.PasswordHashAlg = value.PasswordHashAlg
+		credential.PasswordHashParamsVersion = value.PasswordHashParamsVersion
+		credential.PasswordHashParamsJson = value.PasswordHashParamsJson
+		credential.MustChangePassword = value.MustChangePassword
+		credential.PasswordChangedAt = value.PasswordChangedAt
+		credential.PasswordExpiresAt = value.PasswordExpiresAt
+		credential.FailedAttemptCount = value.FailedAttemptCount
+		credential.LastFailedAt = value.LastFailedAt
+		credential.CreatedAt = value.CreatedAt
+		credential.UpdatedAt = value.UpdatedAt
+	case sqlc.CreateCredentialRow:
+		credential.ID = value.ID
+		credential.UserID = value.UserID
+		credential.CredentialType = value.CredentialType
+		credential.PasswordHash = value.PasswordHash
+		credential.PasswordHashAlg = value.PasswordHashAlg
+		credential.PasswordHashParamsVersion = value.PasswordHashParamsVersion
+		credential.PasswordHashParamsJson = value.PasswordHashParamsJson
+		credential.MustChangePassword = value.MustChangePassword
+		credential.PasswordChangedAt = value.PasswordChangedAt
+		credential.PasswordExpiresAt = value.PasswordExpiresAt
+		credential.FailedAttemptCount = value.FailedAttemptCount
+		credential.LastFailedAt = value.LastFailedAt
+		credential.CreatedAt = value.CreatedAt
+		credential.UpdatedAt = value.UpdatedAt
+	}
 	return service.Credential{
 		ID:                        credential.ID,
 		UserID:                    credential.UserID,
@@ -398,6 +696,7 @@ func mapCredential(credential sqlc.AuthCredential) service.Credential {
 		PasswordHashAlg:           credential.PasswordHashAlg,
 		PasswordHashParamsVersion: credential.PasswordHashParamsVersion,
 		PasswordHashParamsJSON:    normalizeJSONB(credential.PasswordHashParamsJson),
+		MustChangePassword:        credential.MustChangePassword,
 		PasswordChangedAt:         timeFromTimestamptz(credential.PasswordChangedAt),
 		PasswordExpiresAt:         timePtr(credential.PasswordExpiresAt),
 		FailedAttemptCount:        credential.FailedAttemptCount,
@@ -405,6 +704,14 @@ func mapCredential(credential sqlc.AuthCredential) service.Credential {
 		CreatedAt:                 timeFromTimestamptz(credential.CreatedAt),
 		UpdatedAt:                 timeFromTimestamptz(credential.UpdatedAt),
 	}
+}
+
+func mapSessions(sessions []sqlc.AuthSession) []service.Session {
+	mapped := make([]service.Session, 0, len(sessions))
+	for _, session := range sessions {
+		mapped = append(mapped, mapSession(session))
+	}
+	return mapped
 }
 
 func mapSession(session sqlc.AuthSession) service.Session {

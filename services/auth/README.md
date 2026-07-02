@@ -65,7 +65,8 @@ readiness still reflects durable store availability.
 | `AUTH_SERVICE_VERSION` | `0.1.0` | Service version returned by health checks. |
 | `AUTH_ENV` | `local` | Runtime environment label. |
 | `AUTH_DATABASE_URL` | unset | PostgreSQL connection string. Required for readiness. |
-| `AUTH_INTERNAL_SERVICE_TOKEN` | unset | Shared service-to-service token expected in `X-Service-Token`. Required when `AUTH_DATABASE_URL` is set. |
+| `AUTH_INTERNAL_SERVICE_TOKEN` | unset | Shared service-to-service token expected in `X-Service-Token` for general internal routes. Required when `AUTH_DATABASE_URL` is set. |
+| `AUTH_GATEWAY_ADMIN_SERVICE_TOKEN` | unset | Gateway-only credential expected in `X-Service-Token` for `/internal/v1/admin/**`, `PATCH /internal/v1/users/{userId}/profile`, and `POST /internal/v1/users/{userId}/password-changes`; must differ from `AUTH_INTERNAL_SERVICE_TOKEN` and is required when `AUTH_DATABASE_URL` is set. |
 | `AUTH_TOKEN_HASH_SECRET` | unset | HMAC secret for access-token hashes. Required when `AUTH_DATABASE_URL` is set. |
 | `AUTH_TOKEN_HASH_KEY_VERSION` | `v1` | Version label embedded in token hash values. |
 | `AUTH_SESSION_TTL` | `24h` | Access-token session lifetime. Accepts Go duration strings or seconds. |
@@ -73,8 +74,9 @@ readiness still reflects durable store availability.
 | `AUTH_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown timeout. |
 | `AUTH_READINESS_TIMEOUT` | `2s` | PostgreSQL readiness check timeout. |
 
-Do not log `AUTH_DATABASE_URL`, `AUTH_INTERNAL_SERVICE_TOKEN`, or
-`AUTH_TOKEN_HASH_SECRET` because they may contain credentials.
+Do not log `AUTH_DATABASE_URL`, `AUTH_INTERNAL_SERVICE_TOKEN`,
+`AUTH_GATEWAY_ADMIN_SERVICE_TOKEN`, or `AUTH_TOKEN_HASH_SECRET` because they may
+contain credentials.
 
 ## Migration
 

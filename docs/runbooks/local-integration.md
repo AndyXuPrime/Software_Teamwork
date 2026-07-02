@@ -51,6 +51,7 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env down -v
 - Gateway：`http://localhost:8080`
 - 本机 OpenAI-compatible 模型服务默认地址：`http://localhost:11434/v1`
 - 默认 demo 管理员：`admin` / `LocalDemoAdmin#12345`
+- 默认 demo 超管：`superadmin` / `LocalDemoAdmin#12345`
 - 后端日志：`.local/logs/*.log`
 - 后端进程组 PID：`.local/run/*.pid`
 

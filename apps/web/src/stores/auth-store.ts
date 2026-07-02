@@ -70,7 +70,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   logout: async () => {
     try {
-      if (apiClient.getToken()) {
+      if (useAuthStore.getState().accessToken || apiClient.getToken()) {
         await deleteCurrentSession()
       }
     } finally {
@@ -122,6 +122,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         const mockUser: UserSummary = {
           id: 'dev',
           username: '开发者',
+          displayName: '开发者',
+          status: 'active',
+          mustChangePassword: false,
           roles: ['system:admin'],
           permissions: [
             'qa:use',

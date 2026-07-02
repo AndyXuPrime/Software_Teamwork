@@ -10,6 +10,9 @@ RESTful 路径、统一响应和错误 envelope 以 [前后端集成契约](../.
 | 登录 | `POST /sessions` 创建会话资源。 |
 | 登出 | `DELETE /sessions/current` 删除当前会话单例资源。 |
 | 当前用户 | `GET /users/me` 读取当前用户单例资源。 |
+| 当前用户资料 | `GET/PATCH /users/me/profile` 读取或更新当前用户资料资源。 |
+| 必需改密 | `POST /users/me/password-changes` 创建一次密码变更资源。 |
+| 管理员用户管理 | `/admin/users` 作为管理员可管理用户集合。 |
 | 撤销指定会话 | `DELETE /sessions/{sessionId}` 删除会话资源。 |
 
 稳定 path 不使用 `/login`、`/logout`、`/register`、`/revoke` 等动作词。
@@ -28,7 +31,7 @@ RESTful 路径、统一响应和错误 envelope 以 [前后端集成契约](../.
 
 ## 与 Gateway 契约一致性
 
-本 auth 文档只说明 `users`、`sessions`、`sessions/current` 和 `users/me` 资源的身份域语义，不新增或改名任何前端可调用路径。精确 method、path、认证要求、schema、错误 envelope 和 active 状态只在 [Gateway OpenAPI](../gateway/api/public.openapi.yaml) 与 [active API owner map](../gateway/docs/active-api-owner-map.md) 维护。
+本 auth 文档只说明 `users`、`sessions`、`sessions/current`、`users/me`、`users/me/profile`、`users/me/password-changes` 和 `admin/users` 资源的身份域语义，不新增或改名任何前端可调用路径。精确 method、path、认证要求、schema、错误 envelope 和 active 状态只在 [Gateway OpenAPI](../gateway/api/public.openapi.yaml) 与 [active API owner map](../gateway/docs/active-api-owner-map.md) 维护。
 
 响应 envelope、错误 envelope、`CreateUserRequest`、`CreateSessionRequest`、`UserSummary`、`SessionSummary`、`SessionResponse` 和 `UserResponse` 需要与 gateway OpenAPI 的 schema 对齐。本文提到但 gateway OpenAPI 尚未声明的状态码只作为实现建议，不能被前端当作稳定契约依赖。
 
@@ -36,11 +39,13 @@ RESTful 路径、统一响应和错误 envelope 以 [前后端集成契约](../.
 
 | 范围 | Auth 负责 |
 | --- | --- |
-| 用户身份 | 维护用户账号、用户 ID、用户名和用户基础状态。 |
+| 用户身份 | 维护用户账号、用户 ID、用户名、展示资料和用户基础状态。 |
 | 凭证校验 | 校验密码和后续可能的凭证策略；不得泄露账号枚举信息。 |
 | 会话 / 令牌 | 签发、校验、查询和撤销 session 或 token。 |
 | 角色权限 | 维护用户角色和权限集合，并为 gateway 提供可缓存的会话身份。 |
 | 当前用户 | 为 gateway 提供当前用户资料和权限源数据。 |
+| 管理员用户管理 | 校验管理范围，创建受管用户，启用/禁用用户，重置临时密码，执行单角色替换。 |
+| 强制改密 | 管理 `must_change_password` 状态，验证当前临时密码并替换密码哈希。 |
 | 安全事件 | 记录会话创建失败、会话删除、令牌撤销等安全事件。 |
 
 `auth` 不负责文件、知识库、问答、报告生成、模型 provider 或其他业务资源。Gateway 负责公开 API 路由、统一响应 envelope、request id、Redis 会话缓存和错误响应归一化。
@@ -80,6 +85,9 @@ Auth 拥有前端可见的用户与会话资源语义，公开入口仍统一由
 - `sessions`：使用用户名和密码创建会话。
 - `sessions/current`：删除当前登录会话。
 - `users/me`：获取当前用户资料。
+- `users/me/profile`：读取和更新当前用户可编辑资料。
+- `users/me/password-changes`：完成必需的临时密码修改。
+- `admin/users`：管理员管理用户集合、状态、角色和临时密码。
 
 公开路径均相对于 gateway，不是 auth 服务内部地址；精确 method、path、认证要求和 schema 以 [Gateway OpenAPI](../gateway/api/public.openapi.yaml) 为准。
 
@@ -104,6 +112,10 @@ Auth 公开接口通过 gateway 使用统一 envelope；格式、分页、错误
 | `username` | 登录用户名；不得通过错误响应泄露账号是否存在。 |
 | `password` | 只在创建用户或创建会话请求中出现；请求、响应、日志和链路追踪中不得记录明文密码。 |
 | `UserSummary` | 当前认证用户的公开 ID、用户名、角色和权限摘要；gateway 使用角色和权限构造下游认证上下文。 |
+| `displayName` | 可选展示名称；为空时前端可回退显示 `username`。 |
+| `email` | 可选、非唯一资料字段；不作为登录标识、找回密码或通知投递依据。 |
+| `phone` | 可选、非唯一资料字段；不作为登录标识、找回密码或通知投递依据。 |
+| `mustChangePassword` | 用户必须完成临时密码修改后才能进入普通业务或管理端路由。 |
 | `SessionSummary` | Auth 签发的会话摘要，包括会话 ID、opaque Bearer token、token 类型和过期时间。 |
 | `accessToken` | 只允许在创建用户或创建会话成功响应中返回一次；gateway 只能使用不可逆 hash 写入 Redis key 或缓存字段，不能记录原文。 |
 | `SessionResponse` | 创建用户或创建会话成功后返回给 gateway 的用户与会话组合；gateway 必须用它写入 Redis 会话缓存。 |
@@ -115,11 +127,38 @@ Auth 公开接口通过 gateway 使用统一 envelope；格式、分页、错误
 
 用户创建或会话创建成功后，gateway 必须把 `data.user` 与 `data.session` 一起写入 Redis，并只将 `data.session.accessToken` 返回给前端作为后续 Bearer 凭据。会话创建失败响应不得区分“用户名不存在”和“密码错误”，避免泄露账号枚举信息。
 
+公开 `POST /api/v1/users` 是自助注册路径，只收集用户名和密码，创建默认
+`standard` 用户并返回会话，不设置 `mustChangePassword`。管理员创建用户必须走
+`POST /api/v1/admin/users`，由管理员输入临时密码，Auth 创建用户后不向管理员返回
+被创建用户的 session，并设置 `mustChangePassword=true`。
+
 Gateway 应从 Redis 定位当前会话，调用 auth 内部会话删除接口，然后删除 Redis 中的对应会话缓存。Auth 不使用 JWT denylist；会话撤销以 `auth_sessions` 的 token hash、状态、撤销时间和撤销原因为准。首期 access token 不引入 refresh token，过期后由前端重新创建会话。
 
 默认当前用户读取路径是 gateway 从 Redis 会话缓存读取当前用户并返回 `UserResponse`。Auth 仍是用户、角色和权限源数据；当缓存修复、权限变更或安全事件需要回源时，gateway 可以调用 auth 内部会话或用户资源。
 
 如需把 `409 conflict`、`429 rate_limited` 或其他 auth 特有公开错误作为前端稳定契约，必须先同步更新 Gateway OpenAPI。本文中的错误场景说明不能替代 Gateway OpenAPI 的稳定响应声明。
+
+## 管理员用户管理
+
+管理员用户管理的稳定前端路径由 Gateway OpenAPI 维护；Auth 内部资源见
+[`api/internal.openapi.yaml`](api/internal.openapi.yaml)。Auth 是最终权限裁判：
+
+- `standard` 用户不能访问用户管理。
+- `admin` 只能列出和管理 `standard` 用户。
+- `super_admin` 或具备 `system:admin` 权限的调用方可列出和管理 `standard`
+  与 `admin` 用户。
+- `super_admin` 账号不出现在管理列表里，也不能通过公开 UI/API 创建、授予或移除。
+- 管理员创建用户和管理员重置密码都必须使用管理员手动输入的临时密码，并设置
+  `mustChangePassword=true`。
+- 角色编辑是单角色替换，只允许目标角色为 `standard` 或 `admin`。
+- 管理员和超管不能通过用户管理接口禁用自己、重置自己的密码或修改自己的角色。
+- 用户禁用、密码重置和角色变化应撤销或刷新受影响会话，避免 Gateway 继续使用旧的 Redis 权限快照。
+
+资料字段 `displayName`、`email`、`phone` 在管理员创建/更新和个人资料页中都是可选字段。
+`email` 和 `phone` 不唯一，不参与登录、验证、找回密码或通知投递。
+
+密码策略为 8 到 1024 个字符，不要求大小写、数字或符号复杂度。该策略适用于
+自助注册、管理员临时密码、管理员密码重置和必需改密。
 
 ## 会话缓存协作模型
 
@@ -159,6 +198,12 @@ Redis 不是 auth 的持久化数据库。Auth 仍需在自己的 PostgreSQL 中
 | `GET` | `/readyz` | Auth 就绪检查，应覆盖 PostgreSQL 等关键依赖。 |
 | `POST` | `/internal/v1/users` | 创建用户资源，返回用户身份和会话身份。 |
 | `GET` | `/internal/v1/users/{userId}` | 查询用户资源，用于管理、缓存修复或内部审计。 |
+| `PATCH` | `/internal/v1/users/{userId}/profile` | 更新当前用户可编辑资料字段。 |
+| `POST` | `/internal/v1/users/{userId}/password-changes` | 当前用户提交临时密码并完成必需改密。 |
+| `GET` | `/internal/v1/admin/users` | 管理员列出可管理用户，支持分页、用户名、角色和状态过滤。 |
+| `POST` | `/internal/v1/admin/users` | 管理员创建受管用户，不返回 session，并设置必需改密。 |
+| `PATCH` | `/internal/v1/admin/users/{userId}` | 管理员更新受管用户资料、状态或单一管理角色。 |
+| `POST` | `/internal/v1/admin/users/{userId}/password-resets` | 管理员设置临时密码并要求目标用户下次登录改密。 |
 | `POST` | `/internal/v1/sessions` | 创建会话资源，返回用户身份和会话身份。 |
 | `GET` | `/internal/v1/sessions/{sessionId}` | 查询会话资源，用于缓存修复或调试，不作为 gateway 每次请求的默认路径。 |
 | `DELETE` | `/internal/v1/sessions/{sessionId}` | 删除指定会话资源，用于当前会话删除、账号禁用、权限变更或安全事件。 |
@@ -227,10 +272,10 @@ Auth 相关接口使用项目统一错误码：
 | --- | --- | --- |
 | `validation_error` | `400` | 请求体格式错误、必填字段缺失、字段不满足规则。 |
 | `unauthorized` | `401` | 未登录、凭证无效、登录失败、认证过期。 |
-| `forbidden` | `403` | 已认证但缺少访问某能力的权限；当前四个 auth 公开接口暂未定义 `403`。 |
+| `forbidden` | `403` | 已认证但缺少访问某能力的权限；用户管理、资料更新、必需改密和内部管理资源会使用该错误。 |
 | `not_found` | `404` | 内部用户或会话资源不存在；公开登录失败不应用该错误泄露账号存在性。 |
-| `conflict` | `409` | 用户名已存在等状态冲突；作为公开契约前需先补充 gateway OpenAPI。 |
-| `rate_limited` | `429` | 用户创建、会话创建等频率限制；作为公开契约前需先补充 gateway OpenAPI。 |
+| `conflict` | `409` | 用户名已存在、账号状态冲突或必需改密状态冲突。 |
+| `rate_limited` | `429` | 用户创建、会话创建等频率限制；作为公开契约前需同步 gateway OpenAPI。 |
 | `dependency_error` | `502` | auth 依赖数据库、Redis 等基础设施失败并由 gateway 归一化。 |
 | `internal_error` | `500` | 未预期服务端错误。 |
 
