@@ -180,13 +180,18 @@ For environment-based smoke or deployment bootstrap, configure:
 ```powershell
 $env:MCP_TRANSPORT = "streamable_http"
 $env:MCP_SERVER_ALIAS = "document"
-$env:MCP_SERVER_URL = "http://localhost:8087/mcp"
-$env:MCP_SERVER_TOKEN = [Environment]::GetEnvironmentVariable('INTERNAL_SERVICE_TOKEN', 'User')
-$env:MCP_SERVER_TOKEN_HEADER = "X-Service-Token"
+$env:MCP_SERVER_URL = "http://127.0.0.1:8085/mcp"
+$env:MCP_SERVER_TOKEN = "local-dev-internal-service-token-change-me"
+$env:MCP_SERVER_TOKEN_HEADER = "Authorization"
 $env:MCP_TOOL_TIMEOUT = "30s"
 $env:AGENT_MAX_ITERATIONS = "8"
 $env:QA_DOCUMENT_MCP_SMOKE = "1"
 ```
+
+In root Compose, QA uses the container URL `http://document:8085/mcp` and the
+same local `INTERNAL_SERVICE_TOKEN` placeholder by default. Host-run smoke tests
+use `http://127.0.0.1:8085/mcp` because the Document service port is published
+to the host.
 
 `MCP_TOOL_TIMEOUT` bounds each Document tool call. QA does not perform an
 unbounded status-poll loop inside the tool adapter; if the model calls
@@ -194,6 +199,29 @@ unbounded status-poll loop inside the tool adapter; if the model calls
 bounded by `AGENT_MAX_ITERATIONS` and the per-tool timeout. Full QA -> Document
 worker -> Gateway download smoke should stay env-gated with
 `QA_DOCUMENT_MCP_SMOKE=1` so ordinary CI does not require a live Document worker.
+
+Run the env-gated smoke from the QA service after starting the root Compose
+stack with Document, File, Redis, PostgreSQL, Gateway, and the local seed data:
+
+```powershell
+cd D:\软件工称大作业\Software_Teamwork\services\qa
+$env:QA_DOCUMENT_MCP_SMOKE = "1"
+$env:MCP_TRANSPORT = "streamable_http"
+$env:MCP_SERVER_ALIAS = "document"
+$env:MCP_SERVER_URL = "http://127.0.0.1:8085/mcp"
+$env:MCP_SERVER_TOKEN = "local-dev-internal-service-token-change-me"
+$env:MCP_SERVER_TOKEN_HEADER = "Authorization"
+go test ./internal/platform/mcpclient -run '^TestDocumentMCPReportToolsSmoke$' -count=1 -v
+```
+
+The smoke validates `tools/list`, `document__*` prefixing, the default report
+tool whitelist, outline job acceptance, status lookup, DOCX export/result
+artifact mapping, forbidden access summaries, and the rule that unfinished jobs
+do not expose a `downloadPath`. Override
+`QA_DOCUMENT_MCP_SMOKE_REPORT_ID` and `QA_DOCUMENT_MCP_SMOKE_MATERIAL_ID` only
+when the seed data differs. Set `QA_DOCUMENT_MCP_SMOKE_GATEWAY_BASE_URL` plus a
+user `QA_DOCUMENT_MCP_SMOKE_GATEWAY_BEARER` to add the optional public Gateway
+download probe for `/api/v1/report-files/{reportFileId}/content`.
 
 Document MCP results are never forwarded as raw JSON to SSE, logs, or
 `agent_tool_calls.result_summary`. QA maps them into the Gateway

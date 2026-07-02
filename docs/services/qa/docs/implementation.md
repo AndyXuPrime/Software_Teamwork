@@ -27,10 +27,10 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | 文档状态 | active | README、数据模型、公开设计 OpenAPI 和服务内部 OpenAPI 存在。 |
-| 代码状态 | partial | Go service、PostgreSQL repository、QA sessions/messages/SSE heartbeat/replay、资源查询、settings、MCP/model tooling、ResponseRun Agent Loop、function-calling adapter 和 QA -> AI Gateway env-gated smoke 已实现。 |
-| 契约对齐 | partial | Gateway 25 个 QA active operations 均有 proxy route；QA 内部 routes 也注册，模型调用通过 AI Gateway chat completions；Knowledge `knowledge-queries` 已落地，且已有 env-gated Gateway -> Knowledge -> QA RAG 最小 smoke；完整 #125/MCP/前端跨服务闭环仍未证明。 |
+| 代码状态 | partial | Go service、PostgreSQL repository、QA sessions/messages/SSE heartbeat/replay、资源查询、settings、MCP/model tooling、ResponseRun Agent Loop、function-calling adapter、QA -> AI Gateway env-gated smoke，以及 QA -> Document MCP 报告工具 env-gated smoke 已实现。 |
+| 契约对齐 | partial | Gateway 25 个 QA active operations 均有 proxy route；QA 内部 routes 也注册，模型调用通过 AI Gateway chat completions；Knowledge `knowledge-queries` 已落地，已有 env-gated Gateway -> Knowledge -> QA RAG 最小 smoke；Document report tool 产物按 `QAReportArtifact` 映射。完整 #125/MCP/前端跨服务闭环仍由后续任务收口。 |
 | 数据持久化 | postgres | runtime 使用 PostgreSQL；配置 secret 使用本地加密 key。 |
-| 测试状态 | covered / partial | 单元测试覆盖 service、repository mapping、HTTP、MCP/model/local tools、SSE/tool/citation 安全边界；QA -> AI Gateway chat 已有 env-gated smoke，Gateway -> Knowledge -> QA RAG smoke 已覆盖最小 answer/citation 链路；真实 provider 运行证据和完整 #125 E2E 仍需显式环境。 |
+| 测试状态 | covered / partial | 单元测试覆盖 service、repository mapping、HTTP、MCP/model/local tools、SSE/tool/citation 安全边界；QA -> AI Gateway chat、Gateway -> Knowledge -> QA RAG、QA -> Document MCP report tools 均已有 env-gated smoke。真实 provider 运行证据和完整 #125 E2E 仍需显式环境。 |
 | 建议动作 | 补联调 / 回写文档 | 将 #304 opt-in RAG smoke 作为 Knowledge/QA 契约约束保留；继续在受控或真实 provider 环境补 QA + Knowledge 与 Gateway/Auth 完整联调。 |
 
 ## 3. 已实现
@@ -49,6 +49,7 @@
 | AI Gateway chat/function-calling client | `services/qa/internal/platform/modelclient/openai.go`、`internal/modelendpoint`、`internal/service/agent` | #90 / #253 / AI Gateway OpenAPI | modelclient/agent/config tests | 发送 OpenAI-compatible chat request，透传 `X-Caller-Service: qa` 和 request id，支持 `profile_id`、tool calls 和 streamed function-call completions。运行时 endpoint 必须指向受控 AI Gateway `/internal/v1/chat/completions`，不得包含 credentials/query/fragment、公网域名、非 loopback IP 或非标准内部端口；校验后 client 使用 canonical endpoint，避免把用户输入 host/path 直接传入 HTTP sink。 |
 | QA -> AI Gateway env-gated smoke | `services/qa/internal/platform/modelclient/ai_gateway_smoke_test.go`、`services/qa/README.md` | #288 / AI Gateway seed runbook | `QA_AI_GATEWAY_SMOKE=1 go test ./internal/platform/modelclient -run '^TestAIGatewaySmoke$' -count=1 -v` | 默认 skip；显式启用时验证成功模型响应、service token 拒绝和缺失 profile 错误归一化。 |
 | Gateway -> Knowledge -> QA RAG smoke | `services/knowledge/internal/integration/gateway_rag_e2e_smoke_test.go`、`docs/runbooks/local-integration.md` | #304 / QA RAG 主链路 | `GATEWAY_RAG_E2E_SMOKE=1 go test ./internal/integration -run '^TestGatewayRAGE2ESmoke$' -count=1 -v` | 默认 skip；显式启用时通过 Gateway 配置 QA LLM/retrieval 版本，创建 QA session/message，要求模型使用 `search_knowledge` 工具并返回包含 `RAG-E2E-304` 的 answer，同时校验 response citations 和 message citation list 匹配本轮 KB/doc/chunk。需要可用 AI Gateway chat profile/provider；不替代 QA 单服务 smoke 或 #125。 |
+| QA -> Document MCP report tools smoke | `services/qa/internal/platform/mcpclient/document_mcp_smoke_test.go`、`docs/runbooks/local-integration.md` | #451 / B-017 | `QA_DOCUMENT_MCP_SMOKE=1 go test ./internal/platform/mcpclient -run '^TestDocumentMCPReportToolsSmoke$' -count=1 -v` | 默认 skip；显式启用时连接 C-023 的 Document Streamable HTTP MCP endpoint，验证 `tools/list`、`document__*` 前缀、默认白名单、outline job accepted/running、status 查询、DOCX export/get_result 的 `reportArtifact`、无权限摘要和可选 Gateway 下载探针。普通 CI 不依赖真实 Document worker。 |
 | MCP client/tooling | `services/qa/internal/platform/mcpclient`、`localtools` | QA README | platform tests | 支持 runtime Streamable HTTP、测试专用 exact-spec allowlisted stdio、内置工具。runtime 配置拒绝 stdio；包内 stdio 测试只映射代码内批准的 command spec 到固定 executable + argv，不把配置中的 executable/argv 直接传入 `exec.Command`；内置命令工具不再通过 shell 执行用户字符串，只运行 path-free diagnostic command，文件访问必须走 workspace-bounded file tools。 |
 | PostgreSQL schema/repository | `services/qa/migrations/*.sql`、`internal/repository` | QA 数据模型 | repository tests | 有 integration tests，但依赖 `QA_TEST_DATABASE_URL`。分页、事件游标等写入 sqlc `int4` 参数前在 repository 层做 `int32` 范围校验，避免上层绕过时溢出。 |
 
@@ -59,7 +60,7 @@
 | 完整 QA + Knowledge + AI Gateway RAG smoke 为显式 opt-in | `docs/services/gateway/api/public.openapi.yaml`、QA RAG 流程、#304 | QA / Knowledge / frontend | 已提供 env-gated Gateway RAG smoke 和 runbook；需要可用 AI Gateway chat profile/provider，普通 CI 默认 skip，且不覆盖 MCP/前端/#125 完整 E2E。 |
 | 引用快照、引用详情和批量查询仍未完全闭环 | #93 / #325 | QA / frontend | 保留现有脱敏资源摘要，继续补 citation snapshot/detail/batch query 契约与持久化验证。 |
 | QA -> AI Gateway smoke 依赖外部受控环境 | `docs/services/ai-gateway/api/internal.openapi.yaml` | QA / AI Gateway | 已提供 env-gated 入口；普通 CI 不启动 AI Gateway/provider，真实 provider 仍只允许显式手工运行。 |
-| 真实 MCP/Knowledge/Model 端到端测试未证明 | QA README | integration | 补 Compose 或 smoke；在根级联调环境完成前不写成 required。 |
+| 完整 MCP/Knowledge/Model 端到端测试未证明 | QA README / local-integration runbook | integration | QA -> Document MCP 与 Gateway -> Knowledge -> QA RAG 已提供 env-gated 子场景；#125 仍需把 Auth/Gateway/File/Knowledge/QA/Document/AI Gateway/前端组合成完整一键 smoke。 |
 | AI Gateway service-token 配置需联调 | QA config / AI Gateway middleware | QA / AI Gateway / deploy | 验证 `AI_GATEWAY_TOKEN` 缺省复用 `INTERNAL_SERVICE_TOKEN` 与 AI Gateway token hashes 一致，并补 profile seed 说明。 |
 
 ## 5. 文档与实现出入
@@ -69,7 +70,7 @@
 | 模型调用边界 | 文档要求业务服务通过 AI Gateway 调模型 | `services/qa/internal/config/config.go` 默认 `AI_GATEWAY_URL=http://localhost:8086/internal/v1/chat/completions`，token header 默认 `X-Service-Token`，不再要求 `DEEPSEEK_API_KEY` fallback | 与架构方向一致；仍需部署联调 token hash 和 caller header | 补 QA -> AI Gateway smoke。 |
 | Knowledge retrieval dependency | QA 文档将检索作为 RAG 主路径 | Knowledge 已实现 `knowledge-queries`，#304 已新增最小 Gateway RAG smoke 验证 QA answer/citation；真实 provider 和完整 #125 E2E 仍需单独记录 | 单服务测试通过不等于所有用户问答闭环已验收；env-gated smoke 默认不在普通 CI 执行 | 保留 #304 runbook，继续补 #95 retrieval tests、#93/#325 citation snapshot/detail/batch query 和 #125 完整 E2E。 |
 | Gateway active QA paths | Gateway 25 个 QA operations active | QA 内部 routes 全注册 | route 层对齐，但业务结果依赖外部服务 | 增加跨服务 contract smoke。 |
-| MCP 原始信息不得暴露 | 文档要求只返回脱敏摘要；QA 报告生成工具产物按 Gateway OpenAPI `QAReportArtifact` 暴露在 `tool.completed`/`tool.failed` 的 `payload.result.reportArtifact` 和 tool-call `resultSummary.reportArtifact` | B-016 已通过 Document MCP 工具名识别和 `GenerateResultSummary` 映射实现 `reportArtifact`，并覆盖 job pending、export succeeded、forbidden 和 SSE payload 安全测试 | 当前方向一致；QA 通过 MCP ToolClient 消费 Document 安全结果，不 import Document internal 包、不透传 MCP 原始 JSON | 仍需在真实 Document MCP server 与 Gateway/Auth 联调环境补端到端 smoke。 |
+| MCP 原始信息不得暴露 | 文档要求只返回脱敏摘要；QA 报告生成工具产物按 Gateway OpenAPI `QAReportArtifact` 暴露在 `tool.completed`/`tool.failed` 的 `payload.result.reportArtifact` 和 tool-call `resultSummary.reportArtifact` | B-016 已通过 Document MCP 工具名识别和 `GenerateResultSummary` 映射实现 `reportArtifact`，并覆盖 job pending、export succeeded、forbidden 和 SSE payload 安全测试；B-017 补充真实 Document MCP endpoint 的 env-gated smoke | 当前方向一致；QA 通过 MCP ToolClient 消费 Document 安全结果，不 import Document internal 包、不透传 MCP 原始 JSON | #125 仍需把该子场景纳入完整跨服务 smoke。 |
 | Agent Run 状态 | README 描述 Agent Run、termination 和 maxIterations | develop 已包含 ResponseRun、终止原因、模型调用摘要、function-calling adapter 和基础测试 | 容易把 Agent Loop 可用误读为完整 RAG/citation 已完成 | 本文将 Agent Loop 和真实 RAG/citation smoke 分开记录。 |
 | `sqlc` 生成器版本 | 技术基线固定 `sqlc` CLI 推荐版本为 `v1.31.1` | `services/qa/internal/repository/sqlc/*.go` 头部仍记录 `sqlc v1.29.0`；本次版本修复不改非 Docker 生成代码 | 代码生成器版本与文档基线出入，后续 SQL 变更时容易继续沿用旧生成器 | 下次修改 QA SQL 或 repository 生成代码时，使用 `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate` 重新生成并提交。 |
 
@@ -89,7 +90,7 @@
 
 当前状态：B-016 已实现 QA 侧 Document report 工具摘要映射。默认工具白名单包含 `document__generate_report_outline`、`document__generate_report_text`、`document__get_generation_status`、`document__export_report_docx` 和 `document__get_report_result`；当运行时注册 alias 为 `document` 的 MCP server 且 tools/list 返回这些工具时，Agent 可在 `report_generation` 模式选择调用。QA 仅把 Document MCP tool result 映射为 `reportArtifact`，不透传原始 JSON。
 
-运行时配置：数据库 `mcp_servers.alias=document` 是正式配置路径；环境变量 bootstrap 可用 `MCP_TRANSPORT=streamable_http`、`MCP_SERVER_ALIAS=document`、`MCP_SERVER_URL=<document-mcp-endpoint>`、`MCP_SERVER_TOKEN`、`MCP_SERVER_TOKEN_HEADER` 临时接入。`MCP_TOOL_TIMEOUT` 限制单次工具调用；QA 不在工具适配层做无界轮询，模型同一 run 内继续调用 `document__get_generation_status` 时由 `AGENT_MAX_ITERATIONS` 与单次工具超时共同约束。真实 Document worker / Gateway 下载链路 smoke 需要用 `QA_DOCUMENT_MCP_SMOKE=1` 显式开启，普通 CI 仅跑 fake Document MCP / 单服务契约测试。
+运行时配置：数据库 `mcp_servers.alias=document` 是正式配置路径；环境变量 bootstrap 可用 `MCP_TRANSPORT=streamable_http`、`MCP_SERVER_ALIAS=document`、`MCP_SERVER_URL=<document-mcp-endpoint>`、`MCP_SERVER_TOKEN`、`MCP_SERVER_TOKEN_HEADER` 临时接入。根级 Compose 默认把 QA 指向 `http://document:8085/mcp`，并使用与 Document MCP 一致的 `INTERNAL_SERVICE_TOKEN` / `Authorization`。`MCP_TOOL_TIMEOUT` 限制单次工具调用；QA 不在工具适配层做无界轮询，模型同一 run 内继续调用 `document__get_generation_status` 时由 `AGENT_MAX_ITERATIONS` 与单次工具超时共同约束。真实 Document worker / Gateway 下载链路 smoke 需要用 `QA_DOCUMENT_MCP_SMOKE=1` 显式开启，普通 CI 仅跑 fake Document MCP / 单服务契约测试；该 smoke 覆盖 `tools/list`、prefixed tool、job pending、status 查询、export/result artifact、forbidden 摘要和可选 Gateway download probe。
 
 ## 7. MVP / mock / memory backend / 占位
 
@@ -119,6 +120,7 @@
 | 契约测试 | Gateway QA schema contract + QA HTTP/service safety tests | partial / guarded | `cd services/gateway && go test ./internal/http -run QA` 覆盖 25 个 QA-owned Gateway active paths 的 schema/auth/content type 与 internal `$ref` drift；QA service fake-backed SSE 安全测试不依赖 PostgreSQL。 |
 | QA -> AI Gateway smoke | `QA_AI_GATEWAY_SMOKE=1 go test ./internal/platform/modelclient -run '^TestAIGatewaySmoke$' -count=1 -v` | env-gated | 需要运行中的 AI Gateway、有效 service token、显式 chat profile 和受控或真实 provider；默认 CI skip。 |
 | Gateway -> Knowledge -> QA RAG smoke | `GATEWAY_RAG_E2E_SMOKE=1 go test ./internal/integration -run '^TestGatewayRAGE2ESmoke$' -count=1 -v` | available（2026-07-01 新增；默认 skip；本轮只跑默认 skip 编译检查） | 需要 Gateway/Auth/Redis/File/Parser/Knowledge/QA/AI Gateway 和可用 chat profile/provider；覆盖最小 answer/citation，不覆盖 MCP/前端/#125。 |
+| QA -> Document MCP report tools smoke | `QA_DOCUMENT_MCP_SMOKE=1 go test ./internal/platform/mcpclient -run '^TestDocumentMCPReportToolsSmoke$' -count=1 -v` | available（默认 skip） | 需要根级 Compose 中 Document MCP、File、Redis、PostgreSQL、Gateway/seed 可用；覆盖 Document tool discovery、report artifact 和安全摘要，不替代 #125 完整跨服务 smoke 或 F-020 前端 UI。 |
 | 完整手工 smoke | Gateway -> QA session -> message stream | pass（2026-07-01，本地 Compose；知识库 `123`，查询“支持向量机实验的实验目的是什么？”命中 1 条 citation 并生成回答） | 仍需在共享/受控环境复跑并记录真实 provider 证据。 |
 
 ## 10. 建议任务

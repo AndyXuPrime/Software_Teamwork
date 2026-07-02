@@ -183,7 +183,7 @@ Override host ports in `deploy/.env`.
 
 | Variable | Service | Required | Description |
 | --- | --- | --- | --- |
-| `INTERNAL_SERVICE_TOKEN` | gateway/auth/knowledge/qa/ai-gateway | yes | Local service-to-service token placeholder. |
+| `INTERNAL_SERVICE_TOKEN` | gateway/auth/file/parser/knowledge/qa/document/ai-gateway | yes | Local service-to-service token placeholder. |
 | `TOKEN_HASH_SECRET` | gateway/auth | yes | Local HMAC secret for opaque token hashes. |
 | `GATEWAY_AUTH_BASE_URL` | gateway | set in Compose | Internal auth base URL. |
 | `GATEWAY_KNOWLEDGE_BASE_URL` | gateway | set in Compose | Internal knowledge base URL. |
@@ -208,6 +208,9 @@ Override host ports in `deploy/.env`.
 | `AI_GATEWAY_URL` | qa | yes | Internal chat completions URL; QA real model calls require `--profile ai`. |
 | `AI_GATEWAY_PROFILE_ID` / `MODEL_ID` | qa | no | Optional default QA AI Gateway chat profile/model. QA settings versions can override these; model must exactly match the selected AI Gateway profile. |
 | `QA_SETTINGS_OPEN` / `QA_ADMIN_USER_IDS` | qa | no | Local QA settings-write allowance. Keep closed by default; enable only for trusted local smoke or configure explicit admin user ids. |
+| `MCP_TRANSPORT` / `MCP_SERVER_ALIAS` / `MCP_SERVER_URL` | qa | no | Local Compose defaults to `streamable_http` / `document` / `http://document:8085/mcp` so QA can discover Document report tools. |
+| `MCP_SERVER_TOKEN` / `MCP_SERVER_TOKEN_HEADER` | qa | no | Document MCP credential. Defaults to the same `INTERNAL_SERVICE_TOKEN` placeholder and `Authorization` header used by Document MCP. |
+| `MCP_TOOL_TIMEOUT` | qa | no | Per-tool timeout for remote MCP calls; defaults to `30s`. |
 | `DOCUMENT_DATABASE_URL` | document | yes | Document PostgreSQL DSN. |
 | `DOCUMENT_REDIS_ADDR` | document | yes | Redis/asynq endpoint. |
 | `DOCUMENT_FILE_SERVICE_URL` | document | yes | Internal File Service URL. |
@@ -215,6 +218,7 @@ Override host ports in `deploy/.env`.
 | `DOCUMENT_AI_GATEWAY_URL` | document | yes | Internal AI Gateway base URL. |
 | `DOCUMENT_AI_GATEWAY_PROFILE_ID` | document | yes | Seeded placeholder profile id, `default-chat`. |
 | `DOCUMENT_AI_GATEWAY_SERVICE_TOKEN` | document | yes | Local service token for AI Gateway internal profile APIs. |
+| `DOCUMENT_MCP_SERVICE_TOKEN` / `DOCUMENT_MCP_TOKEN_HEADER` | document | yes | Streamable HTTP MCP credential; defaults to `INTERNAL_SERVICE_TOKEN` and `Authorization` in local Compose. |
 | `AI_GATEWAY_DATABASE_URL` | ai-gateway | yes | AI Gateway PostgreSQL DSN. |
 | `AI_GATEWAY_SERVICE_TOKEN_HASHES` | ai-gateway | yes | SHA-256 hashes for allowed service tokens. |
 | `AI_GATEWAY_CREDENTIAL_ENCRYPTION_KEY_REF` | ai-gateway | yes | Local encryption key reference placeholder. |

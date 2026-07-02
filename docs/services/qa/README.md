@@ -267,7 +267,7 @@ user message
 | --- | --- |
 | `knowledge_qa` | 模型可选择 `search_knowledge`，QA 从工具结构化结果生成引用快照。 |
 | `general_chat` | 模型不调用工具，直接返回最终文本。 |
-| `report_generation` | 后续注册 Document MCP 工具后由模型选择对应工具；首期未注册时返回安全的不支持提示。 |
+| `report_generation` | 当 alias=`document` 的 Document MCP server 可达且工具在白名单内时，模型可选择 `document__generate_report_outline`、`document__generate_report_text`、`document__get_generation_status`、`document__export_report_docx`、`document__get_report_result`；未注册、不可达或无权限时返回安全的不支持、`policy_denied` 或依赖错误摘要。 |
 | `data_analysis` | 首期不注册数据分析工具，返回 `unsupported_intent` 或普通回答，不执行未授权工具。 |
 
 终止原因初始值：
