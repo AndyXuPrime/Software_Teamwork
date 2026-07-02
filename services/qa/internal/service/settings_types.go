@@ -277,7 +277,7 @@ type AuditLog struct {
 type SettingsRepository interface {
 	GetActiveQAConfig(context.Context) (RetrievalSettings, []string, error)
 	GetActiveQAConfigVersion(context.Context) (QAConfigVersion, error)
-	CreateQAConfigVersion(context.Context, string, RetrievalSettings, []string, AgentConfig) error
+	CreateQAConfigVersion(context.Context, string, RetrievalSettings, []string, AgentConfig, string) error
 	GetActiveLLMConfig(context.Context) (StoredLLMConfig, error)
 	GetActiveLLMConfigVersion(context.Context) (LLMConfigVersion, error)
 	CreateLLMConfigVersion(context.Context, string, StoredLLMConfig) error

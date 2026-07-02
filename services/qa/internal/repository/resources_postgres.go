@@ -218,7 +218,7 @@ func (r *Postgres) GetActiveQAConfigVersion(ctx context.Context) (service.QAConf
 	return r.getQAConfigVersion(ctx, "", true)
 }
 func (r *Postgres) getQAConfigVersion(ctx context.Context, id string, active bool) (service.QAConfigVersion, error) {
-	query := `SELECT id::text,version_no,top_k,similarity_threshold,use_rerank,COALESCE(rerank_threshold,0),COALESCE(rerank_top_n,0),max_iterations,tool_timeout_seconds,model_timeout_seconds,overall_timeout_seconds,enabled_tool_names,is_active,created_at FROM qa_config_versions WHERE `
+	query := `SELECT id::text,version_no,top_k,similarity_threshold,use_rerank,COALESCE(rerank_threshold,0),COALESCE(rerank_top_n,0),max_iterations,tool_timeout_seconds,model_timeout_seconds,overall_timeout_seconds,enabled_tool_names,COALESCE(system_prompt,''),is_active,created_at FROM qa_config_versions WHERE `
 	args := []any{}
 	if active {
 		query += `is_active=true ORDER BY version_no DESC LIMIT 1`
@@ -228,7 +228,7 @@ func (r *Postgres) getQAConfigVersion(ctx context.Context, id string, active boo
 	}
 	var v service.QAConfigVersion
 	var tools []byte
-	err := r.pool.QueryRow(ctx, query, args...).Scan(&v.ID, &v.VersionNo, &v.Retrieval.TopK, &v.Retrieval.ScoreThreshold, &v.Retrieval.EnableRerank, &v.Retrieval.RerankThreshold, &v.Retrieval.RerankTopN, &v.Agent.MaxIterations, &v.Agent.ToolTimeoutSeconds, &v.Agent.ModelTimeoutSeconds, &v.Agent.OverallTimeoutSeconds, &tools, &v.IsActive, &v.CreatedAt)
+	err := r.pool.QueryRow(ctx, query, args...).Scan(&v.ID, &v.VersionNo, &v.Retrieval.TopK, &v.Retrieval.ScoreThreshold, &v.Retrieval.EnableRerank, &v.Retrieval.RerankThreshold, &v.Retrieval.RerankTopN, &v.Agent.MaxIterations, &v.Agent.ToolTimeoutSeconds, &v.Agent.ModelTimeoutSeconds, &v.Agent.OverallTimeoutSeconds, &tools, &v.SystemPrompt, &v.IsActive, &v.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return service.QAConfigVersion{}, service.NewError(service.CodeNotFound, "QA configuration not found", err)
 	}
@@ -303,6 +303,16 @@ func (r *Postgres) CreateQAConfigVersionResource(ctx context.Context, userID str
 	if _, err = tx.Exec(ctx, `LOCK TABLE qa_config_versions IN EXCLUSIVE MODE`); err != nil {
 		return service.QAConfigVersion{}, err
 	}
+	// Inherit current active prompt before deactivating.
+	systemPrompt := ""
+	if input.SystemPrompt != nil {
+		systemPrompt = *input.SystemPrompt
+	} else {
+		var activePrompt string
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(system_prompt,'') FROM qa_config_versions WHERE is_active=true ORDER BY version_no DESC LIMIT 1`).Scan(&activePrompt); err == nil {
+			systemPrompt = activePrompt
+		}
+	}
 	if activate {
 		if _, err = tx.Exec(ctx, `UPDATE qa_config_versions SET is_active=false WHERE is_active=true`); err != nil {
 			return service.QAConfigVersion{}, err
@@ -310,7 +320,7 @@ func (r *Postgres) CreateQAConfigVersionResource(ctx context.Context, userID str
 	}
 	tools, _ := json.Marshal(agent.EnabledToolNames)
 	var id string
-	err = tx.QueryRow(ctx, `INSERT INTO qa_config_versions(version_no,top_k,similarity_threshold,use_rerank,rerank_threshold,rerank_top_n,max_iterations,tool_timeout_seconds,model_timeout_seconds,overall_timeout_seconds,enabled_tool_names,is_active,created_by_user_id) VALUES((SELECT COALESCE(MAX(version_no),0)+1 FROM qa_config_versions),$1,$2,$3,NULLIF($4,0),NULLIF($5,0),$6,$7,$8,$9,$10,$11,$12) RETURNING id::text`, retrieval.TopK, retrieval.ScoreThreshold, retrieval.EnableRerank, retrieval.RerankThreshold, retrieval.RerankTopN, agent.MaxIterations, agent.ToolTimeoutSeconds, agent.ModelTimeoutSeconds, agent.OverallTimeoutSeconds, tools, activate, userID).Scan(&id)
+	err = tx.QueryRow(ctx, `INSERT INTO qa_config_versions(version_no,top_k,similarity_threshold,use_rerank,rerank_threshold,rerank_top_n,max_iterations,tool_timeout_seconds,model_timeout_seconds,overall_timeout_seconds,enabled_tool_names,system_prompt,is_active,created_by_user_id) VALUES((SELECT COALESCE(MAX(version_no),0)+1 FROM qa_config_versions),$1,$2,$3,NULLIF($4,0),NULLIF($5,0),$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id::text`, retrieval.TopK, retrieval.ScoreThreshold, retrieval.EnableRerank, retrieval.RerankThreshold, retrieval.RerankTopN, agent.MaxIterations, agent.ToolTimeoutSeconds, agent.ModelTimeoutSeconds, agent.OverallTimeoutSeconds, tools, systemPrompt, activate, userID).Scan(&id)
 	if err != nil {
 		return service.QAConfigVersion{}, fmt.Errorf("insert QA config: %w", err)
 	}
