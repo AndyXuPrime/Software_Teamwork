@@ -66,6 +66,7 @@ Issue #125 MCP and cross-service smoke entry point.
 Usage:
   bash scripts/run_issue_125_smoke.sh --list
   bash scripts/run_issue_125_smoke.sh --auth
+  bash scripts/run_issue_125_smoke.sh --auth-full
   bash scripts/run_issue_125_smoke.sh --file-owner
   bash scripts/run_issue_125_smoke.sh --qa-rag
   bash scripts/run_issue_125_smoke.sh --document-rest
@@ -116,6 +117,7 @@ list_smokes() {
   cat <<'SMOKES'
 Available #125 smoke slices:
   --auth           Auth/Gateway/Redis session lifecycle, spoofed header rejection, Redis token-cache safety
+  --auth-full      Issue #352 full Auth/Gateway/Redis smoke: infra, Auth migrations, host-run Auth/Gateway, fake owner header capture
   --file-owner     Gateway -> Knowledge/Document owner-service File access and public-response no-leak checks
   --qa-rag         Gateway -> QA MCP RAG, SSE, tool-call summary, citation snapshot, final-answer checks
   --document-rest  Gateway -> Document REST contract and error/no-leak checks
@@ -140,6 +142,9 @@ for arg in "$@"; do
     --auth)
       run_deploy_smoke AUTH_GATEWAY_REDIS_SMOKE TestAuthGatewayRedisSmoke
       ;;
+    --auth-full)
+      bash "$ROOT_DIR/scripts/run_issue_352_smoke.sh"
+      ;;
     --file-owner)
       run_deploy_smoke FILE_OWNER_E2E_SMOKE TestFileOwnerE2ESmoke
       ;;
@@ -154,6 +159,7 @@ for arg in "$@"; do
       ;;
     --all)
       run_deploy_smoke AUTH_GATEWAY_REDIS_SMOKE TestAuthGatewayRedisSmoke
+      bash "$ROOT_DIR/scripts/run_issue_352_smoke.sh"
       run_deploy_smoke FILE_OWNER_E2E_SMOKE TestFileOwnerE2ESmoke
       run_deploy_smoke QA_MCP_RAG_SMOKE TestQAMCPRAGSmoke
       run_deploy_smoke DOCUMENT_REST_SMOKE TestDocumentRESTContractSmoke

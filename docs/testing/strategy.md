@@ -75,6 +75,7 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | Knowledge repository / SQL | `cd services/knowledge && KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' go test ./internal/repository -count=1`。 |
 | Knowledge ingestion real deps | 启动 PostgreSQL/File/Parser/Qdrant 后执行 `cd services/knowledge && KNOWLEDGE_INGESTION_SMOKE=1 ... go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v`；默认无 env 时跳过，不进入普通 CI required check。 |
 | Gateway -> Knowledge owner route | 启动 Gateway/Auth/Redis/Knowledge/File/Parser/PostgreSQL 后执行 `cd services/knowledge && GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v`；默认无 env 时跳过，不进入普通 CI required check。 |
+| Auth/Gateway/Redis full smoke | `bash scripts/run_issue_352_smoke.sh`；脚本只从 Compose 启动 `postgres` 和 `redis`，随后在宿主机执行 Auth migration、启动 Auth/Gateway、创建用户、登录、`/users/me`、登出、Redis 脱敏检查和 fake owner header capture。 |
 | migration | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up`。 |
 | Parser 契约 / 文档 / runtime | 检查 `docs/services/parser/api/internal.openapi.yaml`、`services/parser/api/openapi.yaml`（实现本地副本）与 `docs/services/parser/README.md`、Knowledge ingestion 文档一致；如改 runtime，执行 `cd services/parser && uv run ruff check . && uv run pytest && uv run python -m compileall src tests`，并说明是否仅覆盖 fake OCR backend。触碰 PaddleOCR runtime 时，在具备模型环境下追加 `PARSER_PADDLEOCR_SMOKE=1 PARSER_PADDLEOCR_ALLOW_DOWNLOAD=1 uv run pytest -m paddleocr_smoke -s`。 |
 | AI Gateway provider adapter | `cd services/ai-gateway && go test ./...`；尽量加 fake provider case 和真实 provider smoke 记录。 |
@@ -92,7 +93,8 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | Parser runtime tests | OpenAPI schema review、文档一致性检查、FastAPI handler/service tests、fake OCR backend 和可选 env-gated PaddleOCR model smoke。 | Parser API/runtime 变更；真实 PaddleOCR 模型、OCR 质量和部署资源需要具备模型环境后单独记录。 |
 | Knowledge ingestion real deps smoke | `KNOWLEDGE_INGESTION_SMOKE=1` 显式启用；使用真实 File Service、Parser Service、PostgreSQL 和 Qdrant，默认 local hashing embedding。 | 验证 Knowledge 上传 fixture、worker handler、解析、切片、embedding metadata、Qdrant point 写入和状态更新；不替代 retrieval/rerank/MCP/Gateway 总入口。 |
 | Gateway -> Knowledge owner route smoke | `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1` 显式启用；使用真实 Gateway/Auth/session cache、Knowledge、File/Parser ready、PostgreSQL 和 Redis。 | 先验证无 Bearer token 的伪造 `X-User-*` 请求被 Gateway 拒绝，再通过 Gateway 创建/读取 KB 并断言 `createdBy` 是真实 session user；不替代完整 Gateway route matrix。 |
-| Cross-service smoke | 当前缺失统一脚本。 | Auth -> Gateway -> Domain、Document -> File/AI Gateway、QA -> Knowledge/AI Gateway 等链路。 |
+| Auth/Gateway/Redis full smoke | `AUTH_GATEWAY_REDIS_FULL_SMOKE=1` 显式启用；`scripts/run_issue_352_smoke.sh` 准备 PostgreSQL/Redis infra 并在宿主机启动 Auth/Gateway。 | 验证 Auth migration apply、Gateway 创建用户/登录/当前用户/登出、Redis session key/value/TTL 脱敏，以及 fake owner 捕获 Gateway 注入认证上下文 header。 |
+| Cross-service smoke | 已有 `scripts/run_issue_125_smoke.sh` 汇总入口；真实依赖仍按 slice 显式启用。 | Auth -> Gateway -> Domain、Document -> File/AI Gateway、QA -> Knowledge/AI Gateway 等链路。 |
 
 env-gated repository tests：
 
@@ -148,6 +150,24 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
 Before running this smoke, start infra from `deploy/` and start Auth, File,
 Parser, Knowledge, and Gateway on the host. Parser must listen on
 `http://127.0.0.1:8087` with the same service token used by Knowledge.
+
+env-gated Auth/Gateway/Redis full smoke for #352:
+
+```bash
+bash scripts/run_issue_352_smoke.sh
+```
+
+The script prints an `AUTH_GATEWAY_REDIS_FULL_SMOKE_RESULT pass ...` line when
+successful. It exits with a `blocked:` message when Docker is unavailable,
+PostgreSQL/Redis cannot become healthy, Auth migration apply fails, Go is
+missing, or host-run Auth/Gateway startup cannot complete.
+
+CI support is optional, not required: `.github/workflows/auth-gateway-redis-smoke.yml`
+is a manual `workflow_dispatch` job that runs the same script on demand.
+Default PR CI still runs the smoke package in skip/compile mode when
+`services/deploy/smoke/**` changes; the real
+`AUTH_GATEWAY_REDIS_FULL_SMOKE=1` path is intentionally not a required PR check
+because it starts Docker infrastructure and host-run service processes.
 
 QA 快速契约和安全边界测试使用 fake repository / fake runner，不依赖 PostgreSQL 或真实模型 provider：
 
