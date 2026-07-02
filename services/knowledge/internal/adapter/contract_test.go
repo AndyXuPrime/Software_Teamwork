@@ -476,6 +476,7 @@ func TestAdapterKnowledgeStatisticsUsesTenantScopedRuntimeTotals(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/internal/v1/knowledge-statistics", nil)
 	req.Header.Set("X-Service-Token", testServiceToken)
 	req.Header.Set("X-User-Id", "usr_stats")
+	req.Header.Set("X-User-Permissions", "knowledge:read")
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -492,6 +493,27 @@ func TestAdapterKnowledgeStatisticsUsesTenantScopedRuntimeTotals(t *testing.T) {
 	}
 	if body.Data.KnowledgeBaseCount != 2 || body.Data.DocumentCount != 3 {
 		t.Fatalf("stats=(%d,%d), want (2,3)", body.Data.KnowledgeBaseCount, body.Data.DocumentCount)
+	}
+}
+
+func TestAdapterKnowledgeStatisticsWithoutReadPermissionReturnsForbidden(t *testing.T) {
+	state := newFakeVendorState()
+	vendor := startFakeVendor(t, state)
+	defer vendor.Close()
+
+	server := NewServer(adapterconfig.Config{
+		ServiceVersion:   "test",
+		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/v1/knowledge-statistics", nil)
+	req.Header.Set("X-Service-Token", testServiceToken)
+	req.Header.Set("X-User-Id", "usr_stats")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

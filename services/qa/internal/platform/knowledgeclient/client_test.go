@@ -127,6 +127,9 @@ func TestGetStatsPropagatesServiceHeadersAndMapsCounts(t *testing.T) {
 		if got := r.Header.Get("X-User-Id"); got != "user-1" {
 			t.Errorf("X-User-Id=%q want user context", got)
 		}
+		if got := r.Header.Get("X-User-Permissions"); got != "knowledge:read" {
+			t.Errorf("X-User-Permissions=%q want knowledge:read", got)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"data":{"knowledgeBaseCount":7,"documentCount":42},"requestId":"req-stats"}`))
 	}))

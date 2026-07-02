@@ -435,12 +435,20 @@ func (s *Server) handleKnowledgeStatistics(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusOK, knowledgeStatisticsSummary{}, requestIDFromContext(r.Context()))
 		return
 	}
-	stats, err := s.collectKnowledgeStatistics(r.Context(), userID)
+	reqCtx, ok := s.gatewayContext(w, r)
+	if !ok {
+		return
+	}
+	if _, err := readScope(reqCtx); err != nil {
+		writeAppError(w, r, err)
+		return
+	}
+	stats, err := s.collectKnowledgeStatistics(r.Context(), reqCtx.UserID)
 	if err != nil {
 		writeAppError(w, r, mapVendorError(err))
 		return
 	}
-	writeJSON(w, http.StatusOK, stats, requestIDFromContext(r.Context()))
+	writeJSON(w, http.StatusOK, stats, reqCtx.RequestID)
 }
 
 func (s *Server) collectKnowledgeStatistics(ctx context.Context, userID string) (knowledgeStatisticsSummary, error) {

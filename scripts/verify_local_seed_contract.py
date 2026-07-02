@@ -181,6 +181,7 @@ FORBIDDEN_STARTUP_DOC_TOKENS = [
     "export AI_GATEWAY_DATABASE_URL",
     "docker compose up --build",
     "docker compose --profile ai",
+    "seed-local",
 ]
 
 FORBIDDEN_PATTERNS = [
