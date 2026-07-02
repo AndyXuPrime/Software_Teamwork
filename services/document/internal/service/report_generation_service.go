@@ -220,7 +220,7 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 			ProfileID: settings.LLM.ProfileID,
 			Messages: []ChatMessage{
 				{Role: "system", Content: sectionSystemPrompt},
-				{Role: "user", Content: buildSectionPrompt(report, section, generationContext)},
+				{Role: "user", Content: buildSectionPrompt(report, section, generationContext, sectionHasChildren(sections, section.ID))},
 			},
 		})
 		if err != nil {
@@ -464,7 +464,9 @@ const sectionSystemPrompt = `你是一名中国电力行业报告撰写专家，
 3. 使用正式中文，专业术语准确。
 4. 严禁使用 XX、N/A、待定、（数字）等任何占位符——必须填写具体的、合理的技术数据或描述；若无精确数据则给出合理估算值并注明"估算"。
 5. 表格数据必须与正文一致，不得与其他章节的数字相矛盾。
-6. 总结/结论章节应综合参考资料中已有的数据得出实质性结论，而非重复列举 XX 项。`
+6. 总结/结论章节应综合参考资料中已有的数据得出实质性结论，而非重复列举 XX 项。
+7. content 开头不得重复章节标题——直接进入正文内容。
+8. 若提示"本节含子章节"，则 content 只需写 1-2 段简短导言（概述该节覆盖的范围），具体数据和分析留给子章节；tables 为空数组。`
 
 func buildOutlinePrompt(report Report, structure ReportTemplateStructure, generationContext reportGenerationContext) string {
 	var b strings.Builder
@@ -486,11 +488,15 @@ func buildOutlinePrompt(report Report, structure ReportTemplateStructure, genera
 	return b.String()
 }
 
-func buildSectionPrompt(report Report, section ReportSection, generationContext reportGenerationContext) string {
+func buildSectionPrompt(report Report, section ReportSection, generationContext reportGenerationContext, hasChildren bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "报告类型：%s\n", report.ReportType)
 	fmt.Fprintf(&b, "报告主题：%s\n", report.Topic)
-	fmt.Fprintf(&b, "当前章节：%s %s\n", section.Numbering, section.Title)
+	sectionLabel := strings.TrimSpace(section.Numbering + " " + section.Title)
+	fmt.Fprintf(&b, "当前章节：%s\n", sectionLabel)
+	if hasChildren {
+		b.WriteString("提示：本节含子章节，content 只需写 1-2 段覆盖范围的导言，tables 为空数组。\n")
+	}
 	if req := compactTextForPrompt(generationContext.Requirements, 1024); req != "" {
 		fmt.Fprintf(&b, "额外要求：%s\n", req)
 	}
@@ -499,6 +505,15 @@ func buildSectionPrompt(report Report, section ReportSection, generationContext 
 	}
 	b.WriteString("请输出该章节的JSON内容，content为正文，tables为表格数组（无表格则为空数组）。")
 	return b.String()
+}
+
+func sectionHasChildren(sections []ReportSection, id string) bool {
+	for _, s := range sections {
+		if s.ParentID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func formatKnowledgeSnippets(snippets []ReportKnowledgeSnippet) string {
