@@ -2681,7 +2681,7 @@ export interface components {
             enabledToolNames?: string[];
             llm?: components["schemas"]["QALLMConfigVersion"];
             agent?: components["schemas"]["QAAgentConfig"];
-            /** @description Global Agent system prompt. Always present with qa:settings:read. Must not appear in ordinary QA responses, SSE, errors, logs, or metrics. */
+            /** @description Global Agent system prompt. Always present with qa:settings:read. Must not appear in ordinary QA responses, SSE, errors, logs, or metrics. Enforced at 20000 bytes via database octet_length check, not OpenAPI maxLength. */
             systemPrompt: string;
             isActive: boolean;
             /** Format: date-time */
@@ -2709,7 +2709,7 @@ export interface components {
             enabledToolNames?: string[];
             llm?: components["schemas"]["CreateQALLMConfigVersionRequest"];
             agent?: components["schemas"]["QAAgentConfig"];
-            /** @description Global Agent system prompt. When provided, must be non-empty after trimming. When omitted, the active prompt is inherited. Requires qa:settings:write. */
+            /** @description Global Agent system prompt. When provided, must be non-empty after trimming. When omitted, the active prompt is inherited. Requires qa:settings:write. Enforced at 20000 bytes via database octet_length check. */
             systemPrompt?: string;
             /** @default true */
             activate: boolean;
