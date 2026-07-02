@@ -12,7 +12,7 @@ func TestBuildCreateDatasetBodyUsesDefaultParserConfigWhenChunkStrategyMissing(t
 		"layout_recognize": ragflowLayoutPaddleOCR,
 		"chunk_token_num":  float64(1024),
 	}
-	body, err := buildCreateDatasetBody(createKnowledgeBaseRequest{Name: "Manuals"}, parserConfig)
+	body, err := buildCreateDatasetBody(createKnowledgeBaseRequest{Name: "Manuals"}, parserConfig, createDatasetOptions{})
 	if err != nil {
 		t.Fatalf("buildCreateDatasetBody: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestBuildCreateDatasetBodyPreservesExplicitChunkStrategy(t *testing.T) {
 	body, err := buildCreateDatasetBody(createKnowledgeBaseRequest{
 		Name:          "Manuals",
 		ChunkStrategy: &explicit,
-	}, map[string]any{"layout_recognize": ragflowLayoutPaddleOCR})
+	}, map[string]any{"layout_recognize": ragflowLayoutPaddleOCR}, createDatasetOptions{})
 	if err != nil {
 		t.Fatalf("buildCreateDatasetBody: %v", err)
 	}
@@ -42,6 +42,21 @@ func TestBuildCreateDatasetBodyPreservesExplicitChunkStrategy(t *testing.T) {
 	}
 	if cfg["layout_recognize"] != ragflowLayoutDeepDOC {
 		t.Fatalf("layout_recognize=%v", cfg["layout_recognize"])
+	}
+}
+
+func TestBuildCreateDatasetBodyIncludesVendorEmbeddingID(t *testing.T) {
+	body, err := buildCreateDatasetBody(
+		createKnowledgeBaseRequest{Name: "Manuals"},
+		nil,
+		createDatasetOptions{VendorEmbeddingID: "BAAI/bge-m3@SILICONFLOW"},
+	)
+	if err != nil {
+		t.Fatalf("buildCreateDatasetBody: %v", err)
+	}
+	payload := decodeMap(t, body)
+	if payload["embedding_model"] != "BAAI/bge-m3@SILICONFLOW" {
+		t.Fatalf("embedding_model=%v", payload["embedding_model"])
 	}
 }
 
@@ -167,7 +182,7 @@ func TestBuildRetrievalBodyForwardsSearchParams(t *testing.T) {
 		MetadataFilter:   map[string]string{"专业": "锅炉"},
 		Rerank:           true,
 		RerankTopN:       &rerankTopN,
-	}, retrievalBuildOptions{VendorRerankID: "BAAI/bge-reranker-v2-m3"})
+	}, retrievalBuildOptions{VendorRerankID: "BAAI/bge-reranker-v2-m3@default@SILICONFLOW"})
 	if err != nil {
 		t.Fatalf("buildRetrievalBody: %v", err)
 	}
@@ -191,7 +206,7 @@ func TestBuildRetrievalBodyForwardsSearchParams(t *testing.T) {
 	if payload["similarity_threshold"].(float64) != 0.4 {
 		t.Fatalf("similarity_threshold=%v", payload["similarity_threshold"])
 	}
-	if payload["rerank_id"] != "BAAI/bge-reranker-v2-m3" {
+	if payload["rerank_id"] != "BAAI/bge-reranker-v2-m3@default@SILICONFLOW" {
 		t.Fatalf("rerank_id=%v", payload["rerank_id"])
 	}
 	if payload["size"].(float64) != 5 {

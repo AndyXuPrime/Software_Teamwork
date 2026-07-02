@@ -40,3 +40,8 @@ user_default_llm:
       factory: Builtin
       api_key: local
       base_url: http://127.0.0.1:6380
+    rerank_model:
+      name: ''
+      factory: ''
+      api_key: ''
+      base_url: ''

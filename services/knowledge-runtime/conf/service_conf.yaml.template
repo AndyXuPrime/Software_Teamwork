@@ -38,7 +38,12 @@ task_executor:
 user_default_llm:
   default_models:
     embedding_model:
-      name: bge-m3
-      factory: Builtin
-      api_key: local
-      base_url: http://127.0.0.1:6380
+      name: '${KNOWLEDGE_RUNTIME_EMBEDDING_MODEL:-bge-m3}'
+      factory: '${KNOWLEDGE_RUNTIME_EMBEDDING_FACTORY:-Builtin}'
+      api_key: '${KNOWLEDGE_RUNTIME_MODEL_API_KEY:-local}'
+      base_url: '${KNOWLEDGE_RUNTIME_EMBEDDING_BASE_URL:-http://127.0.0.1:6380}'
+    rerank_model:
+      name: '${KNOWLEDGE_RUNTIME_RERANK_MODEL:-}'
+      factory: '${KNOWLEDGE_RUNTIME_RERANK_FACTORY:-}'
+      api_key: '${KNOWLEDGE_RUNTIME_MODEL_API_KEY:-}'
+      base_url: '${KNOWLEDGE_RUNTIME_RERANK_BASE_URL:-}'

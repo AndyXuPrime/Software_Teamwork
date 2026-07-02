@@ -107,6 +107,17 @@ func startFakeVendor(t *testing.T, state *fakeVendorState) *httptest.Server {
 			state.documents[docID] = doc
 			writeVendorJSON(w, http.StatusOK, map[string]any{"code": 0, "data": doc})
 			return
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/datasets/") && strings.HasSuffix(r.URL.Path, "/documents"):
+			kbID := strings.TrimPrefix(r.URL.Path, "/api/v1/datasets/")
+			kbID = strings.TrimSuffix(kbID, "/documents")
+			docs := make([]map[string]any, 0)
+			for _, doc := range state.documents {
+				if doc["kb_id"] == kbID || doc["dataset_id"] == kbID {
+					docs = append(docs, doc)
+				}
+			}
+			writeVendorJSON(w, http.StatusOK, map[string]any{"code": 0, "data": map[string]any{"total": len(docs), "docs": docs}})
+			return
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/datasets/search":
 			raw, _ := io.ReadAll(r.Body)
 			state.searchBody = append([]byte(nil), raw...)
@@ -173,8 +184,9 @@ func TestAdapterCreateKnowledgeBaseAppliesDefaultParserConfig(t *testing.T) {
 		UpdatedAt:             now,
 	})
 	server := NewServer(adapterconfig.Config{
-		ServiceVersion:   "test",
-		VendorRuntimeURL: vendor.URL,
+		ServiceVersion:    "test",
+		VendorRuntimeURL:  vendor.URL,
+		VendorEmbeddingID: "BAAI/bge-m3@SILICONFLOW",
 	}, nil, WithParserConfigService(service.New(repo)))
 
 	req := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases", strings.NewReader(`{"name":"Manuals"}`))
@@ -197,12 +209,11 @@ func TestAdapterCreateKnowledgeBaseAppliesDefaultParserConfig(t *testing.T) {
 	if cfg["layout_recognize"] != ragflowLayoutPaddleOCR {
 		t.Fatalf("layout_recognize=%v", cfg["layout_recognize"])
 	}
-	trace, ok := cfg[parserConfigTraceKey].(map[string]any)
-	if !ok {
-		t.Fatalf("%s=%v", parserConfigTraceKey, cfg[parserConfigTraceKey])
+	if createBody["embedding_model"] != "BAAI/bge-m3@SILICONFLOW" {
+		t.Fatalf("embedding_model=%v", createBody["embedding_model"])
 	}
-	if trace["parserConfigId"] != "parser_default_ocr" {
-		t.Fatalf("trace=%v", trace)
+	if _, ok := cfg[parserConfigTraceKey]; ok {
+		t.Fatalf("parser config trace must not be sent to vendor payload: %v", cfg[parserConfigTraceKey])
 	}
 }
 

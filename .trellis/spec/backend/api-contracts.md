@@ -1037,6 +1037,7 @@ knowledge-bases -> /api/v1/datasets
 documents upload  -> /api/v1/datasets/{id}/documents?type=local
 documents parse   -> /api/v1/datasets/{id}/documents/parse  # auto after upload when KNOWLEDGE_AUTO_START_INGESTION=true
 documents CRUD    -> /api/v1/documents/{id}
+document metadata -> /api/v1/datasets/{kb}/documents?page=&page_size=&id={doc}
 chunks            -> /api/v1/datasets/{kb}/documents/{doc}/chunks
 content           -> /api/v1/datasets/{kb}/documents/{doc} (binary)
 knowledge-queries -> /api/v1/datasets/search
@@ -1063,9 +1064,35 @@ knowledge-queries -> /api/v1/datasets/search
 - Vector retrieval uses vendor Elasticsearch or Infinity only; Qdrant is not used.
 - Gateway/Auth service owns identity; adapter forwards `X-User-Id` as vendor tenant
   context. Vendor login/JWT/API-token surfaces remain disabled.
+- The vendored runtime HTTP surface must be registered through an explicit
+  allowlist. Keep only the route modules needed for dataset, document, chunk,
+  model/provider, system, and task workflows used by the adapter. Do not
+  expose upstream RAGFlow MCP, file-management, login/JWT/API-token, or UI-only
+  routes as project runtime APIs.
+- Adapter dataset creation sends the embedding choice with vendor field
+  `embedding_model`. The project env value uses the composite
+  `<model>@<provider>` shape, for example `BAAI/bge-m3@SILICONFLOW`.
+- Adapter retrieval rerank config sends `rerank_id`. The runtime expects the
+  composite `<model>@<tenant>@<provider>` shape, for example
+  `BAAI/bge-reranker-v2-m3@default@SILICONFLOW`; a bare model name can resolve
+  to an empty provider and fail at runtime.
+- Adapter-owned parser config trace fields such as
+  `software_teamwork_parser_config` must not be forwarded into strict vendor
+  runtime request bodies unless the vendor schema explicitly allows them.
+- Document metadata is read from the dataset document-list endpoint. Do not use
+  the binary content route as JSON metadata; `GET /api/v1/datasets/{kb}/documents/{doc}`
+  is the download/content path.
+- Runtime model initialization may upsert the env-selected embedding/rerank
+  provider, model instance, and tenant defaults at startup so new datasets do
+  not silently fall back to the vendor Builtin embedding model.
 - Vendor document `run` maps to Gateway status: `RUNNING` → `parsing`, `DONE` →
   `ready`, `FAIL`/`CANCEL` → `parse_failed`.
 - `GET /documents/{documentId}/content` streams bytes without JSON envelope.
+- Runtime and adapter logs must recursively redact API keys, tokens, secrets,
+  and authorization values before logging config or provider payload metadata.
+- Alpine runtime entrypoints must be POSIX `sh` scripts unless the image
+  explicitly installs `bash`. Compose `command` should pass application args to
+  the entrypoint instead of repeating the entrypoint path.
 
 ### 4. Validation & Error Matrix
 
@@ -1077,6 +1104,60 @@ knowledge-queries -> /api/v1/datasets/search
 | Parser-config admin without admin permissions | `403 forbidden` |
 | Parser-config without `DATABASE_URL` in adapter mode | `502 dependency_error` |
 | Vendor runtime unreachable | `502 dependency_error` |
+| Runtime route module is outside the allowlist | It must not be registered or documented as active. |
+| Dataset creation lacks `KNOWLEDGE_VENDOR_EMBEDDING_ID` in vendor mode | Startup/config error or documented fallback; do not claim external embedding E2E coverage. |
+| Rerank ID is not `<model>@<tenant>@<provider>` | Retrieval may return a sanitized `502 dependency_error`; fix env wiring instead of stripping rerank. |
+| Metadata lookup calls the binary content route and decodes JSON | Treat as an adapter bug; use dataset document-list metadata lookup. |
+| Runtime log input includes API keys/tokens/secrets | Redact before emitting logs; never rely on caller-side masking only. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: `knowledge-v2` Compose wires `VENDOR_RUNTIME_URL`,
+  `KNOWLEDGE_VENDOR_EMBEDDING_ID`, `KNOWLEDGE_VENDOR_RERANK_ID`, and matching
+  `KNOWLEDGE_RUNTIME_*` provider env keys; the runtime starts with an explicit
+  route allowlist and initializes tenant defaults for embedding and rerank.
+- Base: adapter unit tests use fake vendor HTTP servers to assert route paths,
+  field names, metadata lookup, and sanitized vendor errors without starting
+  the Python runtime.
+- Bad: forwarding parser trace fields into vendor JSON, calling the binary
+  content route for metadata, using bare rerank model IDs, exposing upstream
+  RAGFlow MCP, or logging raw `sk-...` provider keys.
+
+### 6. Tests Required
+
+- Runtime Python tests assert the route allowlist registers only supported
+  modules and that config logging redacts nested secret/token/API-key values.
+- Adapter Go contract tests assert dataset creation uses `embedding_model`,
+  retrieval sends the configured `rerank_id`, parser trace fields are filtered,
+  and document metadata is loaded through the dataset document-list endpoint.
+- Docker/Compose checks must include:
+  `python3 scripts/check_docker_policy.py`,
+  `docker compose --env-file deploy/.env.example config --quiet`,
+  `docker compose --env-file deploy/.env.example --profile knowledge-v2 config --quiet`,
+  and any affected profile such as `--profile ai`.
+- For real runtime E2E, upload, parse, chunk, and query `DL_T_673-1999.pdf`
+  when available; report document readiness, chunk count, query hit count, and
+  the fact that no real provider key was committed.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+Compose env: KNOWLEDGE_VENDOR_RERANK_ID=BAAI/bge-reranker-v2-m3
+Adapter: GET /api/v1/datasets/{kb}/documents/{doc} -> decode JSON metadata
+Runtime: auto-import every restful_apis module, including mcp_api and file_api
+Entrypoint: #!/usr/bin/env bash in an Alpine image without bash
+```
+
+#### Correct
+
+```text
+Compose env: KNOWLEDGE_VENDOR_RERANK_ID=BAAI/bge-reranker-v2-m3@default@SILICONFLOW
+Adapter: GET /api/v1/datasets/{kb}/documents?id={doc} -> read metadata
+Runtime: register only the project-required allowlisted route modules
+Entrypoint: #!/bin/sh with command args passed through Compose
+```
 
 ## Scenario: Missing Downstream API Contracts
 

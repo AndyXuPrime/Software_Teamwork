@@ -12,6 +12,7 @@
 | `knowledge-runtime-worker` | n/a | `rag/svr/task_executor.py` | deepdoc 解析、分块、嵌入（Redis 队列） |
 
 共用 PostgreSQL（`knowledge_system`）、MinIO（`software-teamwork-knowledge`）、Elasticsearch、Redis。
+上游 RAGFlow MCP server/client 产品面不属于本运行时；项目自有 Knowledge MCP 桥接在 `services/knowledge`。
 
 ## 已裁剪的产品面
 
@@ -28,6 +29,20 @@
 | `conf/` | 运行时配置（compose 覆盖见 `service_conf.compose.yaml`） |
 | `common/data_source/` | 多源连接器参考代码（默认不启用） |
 | `docs/` | parser/RAG 参考文档 |
+
+## 模型配置
+
+默认 embedding/rerank 模型可通过环境变量注入，不要把真实密钥写入仓库：
+
+| 变量 | 说明 |
+|------|------|
+| `KNOWLEDGE_RUNTIME_MODEL_API_KEY` | embedding/rerank provider API key |
+| `KNOWLEDGE_RUNTIME_EMBEDDING_FACTORY` | embedding provider factory，例如 `SILICONFLOW` |
+| `KNOWLEDGE_RUNTIME_EMBEDDING_MODEL` | embedding model id |
+| `KNOWLEDGE_RUNTIME_EMBEDDING_BASE_URL` | embedding provider OpenAI-compatible base URL |
+| `KNOWLEDGE_RUNTIME_RERANK_FACTORY` | rerank provider factory |
+| `KNOWLEDGE_RUNTIME_RERANK_MODEL` | rerank model id |
+| `KNOWLEDGE_RUNTIME_RERANK_BASE_URL` | rerank provider base URL |
 
 ## 本地验证
 

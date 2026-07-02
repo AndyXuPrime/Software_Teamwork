@@ -74,6 +74,10 @@ type retrievalBuildOptions struct {
 	VendorRerankID string
 }
 
+type createDatasetOptions struct {
+	VendorEmbeddingID string
+}
+
 type knowledgeQuerySummary struct {
 	ID      string                 `json:"id"`
 	Query   string                 `json:"query"`
@@ -338,9 +342,12 @@ func mapRetrievalChunk(raw map[string]interface{}) knowledgeQueryResult {
 	}
 }
 
-func buildCreateDatasetBody(req createKnowledgeBaseRequest, defaultParserConfig map[string]any) ([]byte, error) {
+func buildCreateDatasetBody(req createKnowledgeBaseRequest, defaultParserConfig map[string]any, opts createDatasetOptions) ([]byte, error) {
 	payload := map[string]any{
 		"name": strings.TrimSpace(req.Name),
+	}
+	if embeddingID := strings.TrimSpace(opts.VendorEmbeddingID); embeddingID != "" {
+		payload["embedding_model"] = embeddingID
 	}
 	if req.Description != nil {
 		payload["description"] = strings.TrimSpace(*req.Description)
@@ -354,9 +361,23 @@ func buildCreateDatasetBody(req createKnowledgeBaseRequest, defaultParserConfig 
 			payload["parser_config"] = cfg
 		}
 	} else if len(defaultParserConfig) > 0 {
-		payload["parser_config"] = cloneAnyMap(defaultParserConfig)
+		payload["parser_config"] = vendorParserConfig(defaultParserConfig)
 	}
 	return json.Marshal(payload)
+}
+
+func vendorParserConfig(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		if key == parserConfigTraceKey {
+			continue
+		}
+		out[key] = value
+	}
+	return out
 }
 
 func buildUpdateDatasetBody(req updateKnowledgeBaseRequest) ([]byte, error) {

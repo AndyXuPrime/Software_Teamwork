@@ -204,7 +204,6 @@ COPY conf conf
 COPY deepdoc deepdoc
 COPY rag rag
 COPY pyproject.toml uv.lock ./
-COPY mcp mcp
 COPY common common
 
 # Project overlay: PostgreSQL + compose-friendly env substitution (see conf/service_conf.yaml.template).

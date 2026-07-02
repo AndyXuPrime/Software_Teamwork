@@ -1,0 +1,11 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend pre-development checklist for Knowledge service/runtime work."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Service and package boundary guidance for backend cleanup."}
+{"file": ".trellis/spec/backend/api-contracts.md", "reason": "API behavior preservation and contract expectations."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Database model and migration cleanup constraints."}
+{"file": ".trellis/spec/backend/mcp-agent-runtime.md", "reason": "Project-owned MCP boundary versus upstream RAGFlow MCP."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Required testing and quality expectations."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared project thinking guides index."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Avoid duplicating or preserving dead vendor code unnecessarily."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check Go adapter, Python runtime, Docker, and docs together."}
+{"file": "docs/runbooks/docker-build-environment.md", "reason": "Docker policy, mirror, and build validation rules."}
+{"file": "docs/runbooks/local-integration.md", "reason": "Local Compose integration expectations."}

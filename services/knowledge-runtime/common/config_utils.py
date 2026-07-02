@@ -73,36 +73,36 @@ def read_config(conf_name=SERVICE_CONF):
 
 CONFIGS = read_config()
 
+_SENSITIVE_KEY_PARTS = (
+    "api_key",
+    "access_key",
+    "secret_key",
+    "secret",
+    "password",
+    "token",
+    "credential",
+)
+
+
+def sanitize_for_logging(value):
+    if isinstance(value, dict):
+        sanitized = {}
+        for key, item in value.items():
+            key_lower = str(key).lower()
+            if any(part in key_lower for part in _SENSITIVE_KEY_PARTS):
+                sanitized[key] = "*" * 8 if item else item
+            else:
+                sanitized[key] = sanitize_for_logging(item)
+        return sanitized
+    if isinstance(value, list):
+        return [sanitize_for_logging(item) for item in value]
+    return value
+
 
 def show_configs():
     msg = f"Current configs, from {conf_realpath(SERVICE_CONF)}:"
     for k, v in CONFIGS.items():
-        if isinstance(v, dict):
-            if "password" in v:
-                v = copy.deepcopy(v)
-                v["password"] = "*" * 8
-            if "access_key" in v:
-                v = copy.deepcopy(v)
-                v["access_key"] = "*" * 8
-            if "secret_key" in v:
-                v = copy.deepcopy(v)
-                v["secret_key"] = "*" * 8
-            if "secret" in v:
-                v = copy.deepcopy(v)
-                v["secret"] = "*" * 8
-            if "sas_token" in v:
-                v = copy.deepcopy(v)
-                v["sas_token"] = "*" * 8
-            if "oauth" in k:
-                v = copy.deepcopy(v)
-                for key, val in v.items():
-                    if "client_secret" in val:
-                        val["client_secret"] = "*" * 8
-            if "authentication" in k:
-                v = copy.deepcopy(v)
-                for key, val in v.items():
-                    if isinstance(val, dict) and "http_secret_key" in val:
-                        val["http_secret_key"] = "*" * 8
+        v = sanitize_for_logging(copy.deepcopy(v))
         msg += f"\n\t{k}: {v}"
     logging.info(msg)
 

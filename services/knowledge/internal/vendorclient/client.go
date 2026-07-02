@@ -202,9 +202,9 @@ func (c *Client) StartDocumentParse(ctx context.Context, userID, datasetID strin
 		return fmt.Errorf("document ids are required")
 	}
 	body, err := json.Marshal(map[string]any{
-		"dataset_id":    datasetID,
-		"document_ids":  documentIDs,
-		"documents":     documentIDs,
+		"dataset_id":   datasetID,
+		"document_ids": documentIDs,
+		"documents":    documentIDs,
 	})
 	if err != nil {
 		return err
@@ -246,6 +246,19 @@ func (c *Client) GetDocument(ctx context.Context, userID, documentID string) (ma
 		return nil, &APIError{Code: 404, Message: "document not found"}
 	}
 	return wrapped.Data, nil
+}
+
+func (c *Client) GetDatasetDocument(ctx context.Context, userID, datasetID, documentID string) (map[string]interface{}, error) {
+	items, _, err := c.ListDocuments(ctx, userID, datasetID, 1, 100)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		if strings.TrimSpace(fmt.Sprint(item["id"])) == documentID {
+			return item, nil
+		}
+	}
+	return nil, &APIError{Code: 404, Message: "document not found"}
 }
 
 func (c *Client) UpdateDocument(ctx context.Context, userID, datasetID, documentID string, body []byte) (map[string]interface{}, error) {

@@ -33,6 +33,7 @@ from common import settings
 from api.utils.api_utils import server_error_response, get_json_result, build_error_result
 from api.constants import API_VERSION
 from common.exceptions import ModelException
+from api.route_registry import collect_runtime_page_paths
 
 settings.init_settings()
 
@@ -172,10 +173,7 @@ def login_required(func: Callable[P, Awaitable[T]] = None, auth_types=None) -> C
 
 
 def search_pages_path(page_path):
-    app_path_list = [path for path in page_path.glob("*_app.py") if not path.name.startswith(".")]
-    restful_api_path_list = [path for path in page_path.glob("*restful_apis/*.py") if not path.name.startswith(".")]
-    app_path_list.extend(restful_api_path_list)
-    return app_path_list
+    return collect_runtime_page_paths(page_path)
 
 
 def register_page(page_path):

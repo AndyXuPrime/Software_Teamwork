@@ -22,6 +22,7 @@ type Config struct {
 	ServiceVersion     string
 	Environment        string
 	VendorRuntimeURL   string
+	VendorEmbeddingID  string
 	VendorRerankID     string
 	DatabaseURL        string
 	AutoStartIngestion bool
@@ -37,6 +38,7 @@ func Load() (Config, error) {
 		ShutdownTimeout: DefaultShutdownTimeout,
 	}
 	cfg.VendorRuntimeURL = trimTrailingSlash(stringValue("VENDOR_RUNTIME_URL", DefaultVendorRuntimeURL))
+	cfg.VendorEmbeddingID = strings.TrimSpace(os.Getenv("KNOWLEDGE_VENDOR_EMBEDDING_ID"))
 	cfg.VendorRerankID = strings.TrimSpace(os.Getenv("KNOWLEDGE_VENDOR_RERANK_ID"))
 	cfg.DatabaseURL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	cfg.AutoStartIngestion = boolValue("KNOWLEDGE_AUTO_START_INGESTION", true)

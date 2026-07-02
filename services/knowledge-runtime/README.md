@@ -11,6 +11,9 @@ The Knowledge **contract adapter** lives separately in `services/knowledge/cmd/a
 | `knowledge-runtime-worker` | n/a | `rag/svr/task_executor.py` | deepdoc parse, chunk, embed (Redis queue) |
 
 Both share PostgreSQL (`knowledge_system`), MinIO (`software-teamwork-knowledge`), Elasticsearch, and Redis.
+The upstream RAGFlow MCP server/client product surface is intentionally not part
+of this runtime; the project-owned Knowledge MCP bridge lives in
+`services/knowledge`.
 
 ## Docker (production)
 
@@ -66,6 +69,12 @@ VENDOR_RUNTIME_URL=http://127.0.0.1:9380 go run ./cmd/adapter
 - Compose overlay: `conf/service_conf.compose.yaml` (used by root `deploy/docker-compose.yml`)
 - Container template: `conf/service_conf.yaml.template` (rendered by `docker/entrypoint.sh`)
 - Local dev: copy compose overlay to `conf/service_conf.yaml` and point hosts at localhost
+- Model credentials: set `KNOWLEDGE_RUNTIME_MODEL_API_KEY` in your local shell or
+  untracked env file. Use `KNOWLEDGE_RUNTIME_EMBEDDING_FACTORY`,
+  `KNOWLEDGE_RUNTIME_EMBEDDING_MODEL`, `KNOWLEDGE_RUNTIME_EMBEDDING_BASE_URL`,
+  `KNOWLEDGE_RUNTIME_RERANK_FACTORY`, `KNOWLEDGE_RUNTIME_RERANK_MODEL`, and
+  `KNOWLEDGE_RUNTIME_RERANK_BASE_URL` to select external embedding/rerank
+  providers without editing committed config.
 
 ## Upstream
 

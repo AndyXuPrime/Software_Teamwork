@@ -54,7 +54,7 @@ from rag.utils.raptor_utils import (
     should_skip_raptor,
 )
 from common.log_utils import init_root_logger
-from common.config_utils import show_configs
+from common.config_utils import sanitize_for_logging, show_configs
 from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text, gen_metadata
 import logging
@@ -1678,7 +1678,7 @@ async def main():
     show_configs()
     settings.init_settings()
     settings.check_and_install_torch()
-    logging.info(f"default embedding config: {settings.EMBEDDING_CFG}")
+    logging.info(f"default embedding config: {sanitize_for_logging(settings.EMBEDDING_CFG)}")
     settings.print_rag_settings()
     if sys.platform != "win32":
         signal.signal(signal.SIGUSR1, start_tracemalloc_and_snapshot)

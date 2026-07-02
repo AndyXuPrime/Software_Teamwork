@@ -14,7 +14,6 @@ function usage() {
     echo "  --disable-api-server            Disables the Python API server (ragflow_server)."
     echo "  --disable-webserver             Alias for --disable-api-server."
     echo "  --disable-taskexecutor          Disables task executor workers."
-    echo "  --enable-mcpserver              Enables the MCP server."
     echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
     echo "  --consumer-no-end=<num>         End range for consumers (if using range-based)."
     echo "  --workers=<num>                 Number of task executors to run (if range is not used)."
@@ -24,26 +23,14 @@ function usage() {
     echo "  $0 --disable-taskexecutor"
     echo "  $0 --disable-webserver --consumer-no-beg=0 --consumer-no-end=5"
     echo "  $0 --disable-webserver --workers=2 --host-id=myhost123"
-    echo "  $0 --enable-mcpserver"
     exit 1
 }
 
 ENABLE_API_SERVER=1 # Default to enable API server stack
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
-ENABLE_MCP_SERVER=0
 CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
-
-MCP_HOST="127.0.0.1"
-MCP_PORT=9382
-MCP_BASE_URL="http://127.0.0.1:9380"
-MCP_SCRIPT_PATH="/ragflow/mcp/server/server.py"
-MCP_MODE="self-host"
-MCP_HOST_API_KEY=""
-MCP_TRANSPORT_SSE_FLAG="--transport-sse-enabled"
-MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--transport-streamable-http-enabled"
-MCP_JSON_RESPONSE_FLAG="--json-response"
 
 # -----------------------------------------------------------------------------
 # Host ID logic:
@@ -68,46 +55,6 @@ for arg in "$@"; do
       ;;
     --disable-taskexecutor)
       ENABLE_TASKEXECUTOR=0
-      shift
-      ;;
-    --enable-mcpserver)
-      ENABLE_MCP_SERVER=1
-      shift
-      ;;
-    --mcp-host=*)
-      MCP_HOST="${arg#*=}"
-      shift
-      ;;
-    --mcp-port=*)
-      MCP_PORT="${arg#*=}"
-      shift
-      ;;
-    --mcp-base-url=*)
-      MCP_BASE_URL="${arg#*=}"
-      shift
-      ;;
-    --mcp-mode=*)
-      MCP_MODE="${arg#*=}"
-      shift
-      ;;
-    --mcp-host-api-key=*)
-      MCP_HOST_API_KEY="${arg#*=}"
-      shift
-      ;;
-    --mcp-script-path=*)
-      MCP_SCRIPT_PATH="${arg#*=}"
-      shift
-      ;;
-    --no-transport-sse-enabled)
-      MCP_TRANSPORT_SSE_FLAG="--no-transport-sse-enabled"
-      shift
-      ;;
-    --no-transport-streamable-http-enabled)
-      MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--no-transport-streamable-http-enabled"
-      shift
-      ;;
-    --no-json-response)
-      MCP_JSON_RESPONSE_FLAG="--no-json-response"
       shift
       ;;
     --consumer-no-beg=*)
@@ -140,20 +87,16 @@ TEMPLATE_FILE="${CONF_DIR}/service_conf.yaml.template"
 CONF_FILE="${CONF_DIR}/service_conf.yaml"
 
 rm -f "${CONF_FILE}"
-DEF_ENV_VALUE_PATTERN="\$\{([^:]+):-([^}]+)\}"
 while IFS= read -r line || [[ -n "$line" ]]; do
-    if [[ "$line" =~ DEF_ENV_VALUE_PATTERN ]]; then
+    rendered="${line}"
+    while [[ "${rendered}" =~ \$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\} ]]; do
+        placeholder="${BASH_REMATCH[0]}"
         varname="${BASH_REMATCH[1]}"
-        default="${BASH_REMATCH[2]}"
-
-        if [ -n "${!varname}" ]; then
-            eval "echo \"$line"\" >> "${CONF_FILE}"
-        else
-            echo "$line" | sed -E "s/\\\$\{[^:]+:-([^}]+)\}/\1/g" >> "${CONF_FILE}"
-        fi
-    else
-        eval "echo \"$line\"" >> "${CONF_FILE}"
-    fi
+        default="${BASH_REMATCH[3]:-}"
+        value="${!varname:-${default}}"
+        rendered="${rendered//${placeholder}/${value}}"
+    done
+    printf '%s\n' "${rendered}" >> "${CONF_FILE}"
 done < "${TEMPLATE_FILE}"
 
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
@@ -174,19 +117,6 @@ function task_exe() {
         wait;
         sleep 1;
     done
-}
-
-function start_mcp_server() {
-    echo "Starting MCP Server on ${MCP_HOST}:${MCP_PORT} with base URL ${MCP_BASE_URL}..."
-    "$PY" "${MCP_SCRIPT_PATH}" \
-        --host="${MCP_HOST}" \
-        --port="${MCP_PORT}" \
-        --base-url="${MCP_BASE_URL}" \
-        --mode="${MCP_MODE}" \
-        --api-key="${MCP_HOST_API_KEY}" \
-        "${MCP_TRANSPORT_SSE_FLAG}" \
-        "${MCP_TRANSPORT_STREAMABLE_HTTP_FLAG}" \
-        "${MCP_JSON_RESPONSE_FLAG}" &
 }
 
 function ensure_docling() {
@@ -215,11 +145,6 @@ if [[ "${ENABLE_API_SERVER}" -eq 1 ]]; then
         echo "RAGFlow server exited; restarting in 1s..."
         sleep 1
     done &
-fi
-
-
-if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
-    start_mcp_server
 fi
 
 

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/vendorclient"
 )
 
 func (s *Server) handleListKnowledgeBases(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +64,9 @@ func (s *Server) handleCreateKnowledgeBase(w http.ResponseWriter, r *http.Reques
 		writeAppError(w, r, err)
 		return
 	}
-	payload, err := buildCreateDatasetBody(body, parserConfig)
+	payload, err := buildCreateDatasetBody(body, parserConfig, createDatasetOptions{
+		VendorEmbeddingID: s.cfg.VendorEmbeddingID,
+	})
 	if err != nil {
 		writeAppError(w, r, err)
 		return
@@ -224,7 +227,14 @@ func (s *Server) handleGetDocument(w http.ResponseWriter, r *http.Request) {
 		writeAppError(w, r, err)
 		return
 	}
-	doc, err := s.vendor.GetDocument(r.Context(), reqCtx.UserID, r.PathValue("documentId"))
+	kbID := strings.TrimSpace(r.URL.Query().Get("knowledgeBaseId"))
+	var doc map[string]interface{}
+	var err error
+	if kbID != "" {
+		doc, err = s.vendor.GetDatasetDocument(r.Context(), reqCtx.UserID, kbID, r.PathValue("documentId"))
+	} else {
+		doc, err = s.findDocumentByID(r.Context(), reqCtx.UserID, r.PathValue("documentId"))
+	}
 	if err != nil {
 		writeAppError(w, r, mapVendorError(err))
 		return
@@ -249,7 +259,7 @@ func (s *Server) handleUpdateDocument(w http.ResponseWriter, r *http.Request) {
 		writeAppError(w, r, service.ValidationError("request validation failed", map[string]string{"body": "must include at least one supported field"}))
 		return
 	}
-	doc, err := s.vendor.GetDocument(r.Context(), reqCtx.UserID, r.PathValue("documentId"))
+	doc, err := s.findDocumentByID(r.Context(), reqCtx.UserID, r.PathValue("documentId"))
 	if err != nil {
 		writeAppError(w, r, mapVendorError(err))
 		return
@@ -266,6 +276,28 @@ func (s *Server) handleUpdateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, documentFromVendor(updated), reqCtx.RequestID)
+}
+
+func (s *Server) findDocumentByID(ctx context.Context, userID, documentID string) (map[string]interface{}, error) {
+	datasets, _, err := s.vendor.ListDatasets(ctx, userID, 1, 100)
+	if err != nil {
+		return nil, err
+	}
+	for _, dataset := range datasets {
+		kbID := stringField(dataset, "id")
+		if kbID == "" {
+			continue
+		}
+		doc, err := s.vendor.GetDatasetDocument(ctx, userID, kbID, documentID)
+		if err == nil {
+			return doc, nil
+		}
+		if apiErr, ok := err.(*vendorclient.APIError); ok && apiErr.Code == 404 {
+			continue
+		}
+		return nil, err
+	}
+	return nil, &vendorclient.APIError{Code: 404, Message: "document not found"}
 }
 
 func (s *Server) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
@@ -298,7 +330,7 @@ func (s *Server) handleListDocumentChunks(w http.ResponseWriter, r *http.Request
 		writeAppError(w, r, err)
 		return
 	}
-	doc, err := s.vendor.GetDocument(r.Context(), reqCtx.UserID, r.PathValue("documentId"))
+	doc, err := s.findDocumentByID(r.Context(), reqCtx.UserID, r.PathValue("documentId"))
 	if err != nil {
 		writeAppError(w, r, mapVendorError(err))
 		return
@@ -325,7 +357,7 @@ func (s *Server) handleGetDocumentContent(w http.ResponseWriter, r *http.Request
 		writeAppError(w, r, err)
 		return
 	}
-	doc, err := s.vendor.GetDocument(r.Context(), reqCtx.UserID, r.PathValue("documentId"))
+	doc, err := s.findDocumentByID(r.Context(), reqCtx.UserID, r.PathValue("documentId"))
 	if err != nil {
 		writeAppError(w, r, mapVendorError(err))
 		return
