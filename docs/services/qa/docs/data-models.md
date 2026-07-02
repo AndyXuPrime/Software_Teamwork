@@ -26,7 +26,7 @@ QA 数据库保存 QA 自己拥有的业务状态：
 - 检索体验测试运行和结果快照。
 - 管理员配置变更审计日志。
 
-QA 数据库不得保存用户主数据、角色权限主数据、知识库主数据、文档原文件、向量索引、报告业务数据、provider API key、provider base URL、完整 prompt、私有 chain-of-thought、完整 MCP 参数、完整 MCP 原始结果、内部 URL、MinIO object key 或原始文档全文。
+QA 数据库不得保存用户主数据、角色权限主数据、知识库主数据、文档原文件、向量索引、报告业务数据、provider API key、provider base URL、完整 prompt（例外：`qa_config_versions.system_prompt` 是管理员配置的全局 Agent 系统提示词，可保存完整内容，不在此列）、私有 chain-of-thought、完整 MCP 参数、完整 MCP 原始结果、内部 URL、MinIO object key 或原始文档全文。运行时每次请求拼接的完整模型上下文（system + history + tools + user）仍禁止持久化。
 
 ### 2.2 外部服务标识
 

@@ -5563,6 +5563,7 @@ components:
       required:
       - id
       - versionNo
+      - systemPrompt
       - isActive
       - createdAt
       properties:
