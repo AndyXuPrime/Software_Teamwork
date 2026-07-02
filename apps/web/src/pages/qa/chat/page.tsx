@@ -1254,6 +1254,8 @@ export function ChatPage() {
               <ChatInput
                 onSend={sendMessage}
                 disabled={streaming}
+                streaming={streaming}
+                onStop={() => abortRef.current?.()}
                 value={inputText}
                 onChange={setInputText}
                 size={chatPhase === 'empty' ? 'large' : 'normal'}
