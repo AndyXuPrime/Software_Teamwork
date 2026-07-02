@@ -17,6 +17,8 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
 )
 
+const testServiceToken = "test-service-token"
+
 type fakeVendorState struct {
 	mu          sync.Mutex
 	datasets    map[string]map[string]any
@@ -200,12 +202,14 @@ func TestAdapterCreateKnowledgeBaseAppliesDefaultParserConfig(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:    "test",
 		VendorRuntimeURL:  vendor.URL,
+		ServiceToken:      testServiceToken,
 		VendorEmbeddingID: "BAAI/bge-m3@SILICONFLOW",
 	}, nil, WithParserConfigService(service.New(repo)))
 
 	req := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases", strings.NewReader(`{"name":"Manuals"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-Service-Token", testServiceToken)
 	req.Header.Set("X-User-Permissions", "knowledge:write")
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
@@ -239,12 +243,14 @@ func TestAdapterDocumentUploadStartsVendorIngestion(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:     "test",
 		VendorRuntimeURL:   vendor.URL,
+		ServiceToken:       testServiceToken,
 		AutoStartIngestion: true,
 	}, nil)
 
 	kbReq := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases", strings.NewReader(`{"name":"Manuals"}`))
 	kbReq.Header.Set("Content-Type", "application/json")
 	kbReq.Header.Set("X-User-Id", "usr_test")
+	kbReq.Header.Set("X-Service-Token", testServiceToken)
 	kbReq.Header.Set("X-User-Permissions", "knowledge:write")
 	kbRec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(kbRec, kbReq)
@@ -279,6 +285,7 @@ func TestAdapterDocumentUploadStartsVendorIngestion(t *testing.T) {
 	uploadReq := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases/"+kbID+"/documents", body)
 	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
 	uploadReq.Header.Set("X-User-Id", "usr_test")
+	uploadReq.Header.Set("X-Service-Token", testServiceToken)
 	uploadReq.Header.Set("X-User-Permissions", "knowledge:write")
 	uploadRec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(uploadRec, uploadReq)
@@ -301,6 +308,7 @@ func TestAdapterDocumentUploadSkipsIngestionWhenDisabled(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:     "test",
 		VendorRuntimeURL:   vendor.URL,
+		ServiceToken:       testServiceToken,
 		AutoStartIngestion: false,
 	}, nil)
 
@@ -313,6 +321,7 @@ func TestAdapterDocumentUploadSkipsIngestionWhenDisabled(t *testing.T) {
 	uploadReq := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases/kb_fake_1/documents", body)
 	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
 	uploadReq.Header.Set("X-User-Id", "usr_test")
+	uploadReq.Header.Set("X-Service-Token", testServiceToken)
 	uploadReq.Header.Set("X-User-Permissions", "knowledge:write")
 	uploadRec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(uploadRec, uploadReq)
@@ -332,12 +341,14 @@ func TestAdapterKnowledgeQueryForwardsDocumentIDs(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 		VendorRerankID:   "rerank-model",
 	}, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-queries", strings.NewReader(`{"query":"maintenance","knowledgeBaseIds":["kb_fake_1"],"documentIds":["doc_1"],"tags":["锅炉"],"metadataFilter":{"专业":"锅炉"},"rerank":true,"rerankTopN":5,"topK":8,"scoreThreshold":0.4}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-Service-Token", testServiceToken)
 	req.Header.Set("X-User-Permissions", "knowledge:read")
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
@@ -375,10 +386,12 @@ func TestAdapterDeleteDocumentUsesDatasetScopedRuntimeRoute(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 	}, nil)
 
 	req := httptest.NewRequest(http.MethodDelete, "/internal/v1/documents/doc_fake_1", nil)
 	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-Service-Token", testServiceToken)
 	req.Header.Set("X-User-Permissions", "knowledge:write")
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
@@ -405,6 +418,7 @@ func TestAdapterDocumentUploadRollsBackWhenParseFails(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:     "test",
 		VendorRuntimeURL:   vendor.URL,
+		ServiceToken:       testServiceToken,
 		AutoStartIngestion: true,
 	}, nil)
 
@@ -417,6 +431,7 @@ func TestAdapterDocumentUploadRollsBackWhenParseFails(t *testing.T) {
 	uploadReq := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases/kb_fake_1/documents", body)
 	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
 	uploadReq.Header.Set("X-User-Id", "usr_test")
+	uploadReq.Header.Set("X-Service-Token", testServiceToken)
 	uploadReq.Header.Set("X-User-Permissions", "knowledge:write")
 	uploadRec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(uploadRec, uploadReq)

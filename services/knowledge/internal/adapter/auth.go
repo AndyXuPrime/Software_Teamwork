@@ -1,11 +1,23 @@
 package adapter
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strings"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
 )
+
+func (s *Server) requireServiceToken(w http.ResponseWriter, r *http.Request) bool {
+	if !strings.HasPrefix(r.URL.Path, "/internal/v1/") {
+		return true
+	}
+	if strings.TrimSpace(s.cfg.ServiceToken) == "" || !secureTokenEqual(r.Header.Get("X-Service-Token"), s.cfg.ServiceToken) {
+		writeAppError(w, r, service.NewError(service.CodeUnauthorized, "service authentication required", nil))
+		return false
+	}
+	return true
+}
 
 func (s *Server) gatewayContext(w http.ResponseWriter, r *http.Request) (service.RequestContext, bool) {
 	reqCtx := service.RequestContext{
@@ -76,4 +88,13 @@ func splitCSV(value string) []string {
 		}
 	}
 	return items
+}
+
+func secureTokenEqual(left string, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if len(left) != len(right) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }

@@ -21,6 +21,8 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
 )
 
+const testServiceToken = "test-service-token"
+
 type fakeVendorState struct {
 	mu         sync.Mutex
 	chunks     []map[string]any
@@ -197,6 +199,9 @@ func writeVendorJSON(w http.ResponseWriter, status int, payload map[string]any) 
 
 func connectInMemory(t *testing.T, adapterServer *adapter.Server, caller kmcp.CallerContext, chatClient *aigateway.ChatClient) *sdkmcp.ClientSession {
 	t.Helper()
+	if caller.ServiceToken == "" {
+		caller.ServiceToken = testServiceToken
+	}
 	server := kmcp.NewInMemoryServer(adapterServer, caller, chatClient)
 	transport1, transport2 := sdkmcp.NewInMemoryTransports()
 	if _, err := server.Connect(context.Background(), transport1, nil); err != nil {
@@ -221,6 +226,7 @@ func TestToolsListReturnsV1Catalog(t *testing.T) {
 	adapterServer := adapter.NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 	}, nil)
 	session := connectInMemory(t, adapterServer, kmcp.CallerContext{
 		UserID:      "usr_test",
@@ -275,6 +281,7 @@ func TestSearchKnowledgeReturnsAdapterResults(t *testing.T) {
 	adapterServer := adapter.NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 	}, nil)
 	session := connectInMemory(t, adapterServer, kmcp.CallerContext{
 		UserID:      "usr_test",
@@ -348,6 +355,7 @@ func TestSearchKnowledgeRequiresKnowledgeBaseIDs(t *testing.T) {
 	adapterServer := adapter.NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 	}, nil)
 	session := connectInMemory(t, adapterServer, kmcp.CallerContext{
 		UserID:      "usr_test",
@@ -379,6 +387,7 @@ func TestSearchKnowledgeWithDocumentIDs(t *testing.T) {
 	adapterServer := adapter.NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 	}, nil)
 	session := connectInMemory(t, adapterServer, kmcp.CallerContext{
 		UserID:      "usr_test",
@@ -413,6 +422,7 @@ func TestCreateKnowledgeBaseRequiresWritePermission(t *testing.T) {
 	adapterServer := adapter.NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 	}, nil)
 	session := connectInMemory(t, adapterServer, kmcp.CallerContext{
 		UserID:      "usr_test",
@@ -444,6 +454,7 @@ func TestCreateAndListKnowledgeBases(t *testing.T) {
 	adapterServer := adapter.NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 	}, nil)
 	session := connectInMemory(t, adapterServer, kmcp.CallerContext{
 		UserID:      "usr_test",
@@ -508,6 +519,7 @@ func TestCreateDocumentUpload(t *testing.T) {
 	adapterServer := adapter.NewServer(adapterconfig.Config{
 		ServiceVersion:     "test",
 		VendorRuntimeURL:   vendor.URL,
+		ServiceToken:       testServiceToken,
 		AutoStartIngestion: true,
 	}, nil)
 	session := connectInMemory(t, adapterServer, kmcp.CallerContext{
@@ -606,6 +618,7 @@ func TestAnswerFromKnowledgeReturnsAnswerAndCitations(t *testing.T) {
 	adapterServer := adapter.NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 	}, nil)
 	session := connectInMemory(t, adapterServer, kmcp.CallerContext{
 		UserID:      "usr_test",
@@ -671,6 +684,7 @@ func TestAnswerFromKnowledgeRequiresGatewayClient(t *testing.T) {
 	adapterServer := adapter.NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 	}, nil)
 	session := connectInMemory(t, adapterServer, kmcp.CallerContext{
 		UserID:      "usr_test",
@@ -714,6 +728,7 @@ func TestStreamableHTTPHandlerForwardsCallerHeaders(t *testing.T) {
 	adapterServer := adapter.NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 	}, nil)
 	httpServer := httptest.NewServer(kmcp.NewStreamableHTTPHandler(adapterServer, nil))
 	defer httpServer.Close()
@@ -728,6 +743,7 @@ func TestStreamableHTTPHandlerForwardsCallerHeaders(t *testing.T) {
 			Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 				r.Header.Set("X-User-Id", "usr_http")
 				r.Header.Set("X-Request-Id", "req_http")
+				r.Header.Set("X-Service-Token", testServiceToken)
 				r.Header.Set("X-User-Permissions", service.PermissionKnowledgeRead)
 				return http.DefaultTransport.RoundTrip(r)
 			}),

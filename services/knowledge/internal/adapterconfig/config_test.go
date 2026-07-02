@@ -1,10 +1,17 @@
 package adapterconfig
 
 import (
+	"strings"
 	"testing"
 )
 
+func setRequiredEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-service-token")
+}
+
 func TestLoadDefaults(t *testing.T) {
+	setRequiredEnv(t)
 	t.Setenv("KNOWLEDGE_HTTP_ADDR", "")
 	t.Setenv("VENDOR_RUNTIME_URL", "")
 
@@ -18,9 +25,36 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.VendorRuntimeURL != DefaultVendorRuntimeURL {
 		t.Fatalf("VendorRuntimeURL=%q", cfg.VendorRuntimeURL)
 	}
+	if cfg.ServiceToken != "test-service-token" {
+		t.Fatalf("ServiceToken=%q", cfg.ServiceToken)
+	}
+}
+
+func TestLoadRequiresServiceToken(t *testing.T) {
+	t.Setenv("KNOWLEDGE_SERVICE_TOKEN", "")
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "KNOWLEDGE_SERVICE_TOKEN") {
+		t.Fatalf("Load() error = %v, want service token requirement", err)
+	}
+}
+
+func TestLoadKnowledgeServiceTokenOverridesSharedToken(t *testing.T) {
+	t.Setenv("KNOWLEDGE_SERVICE_TOKEN", "knowledge-token")
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "shared-token")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.ServiceToken != "knowledge-token" {
+		t.Fatalf("ServiceToken=%q", cfg.ServiceToken)
+	}
 }
 
 func TestLoadAutoStartIngestionDefault(t *testing.T) {
+	setRequiredEnv(t)
 	t.Setenv("KNOWLEDGE_AUTO_START_INGESTION", "")
 
 	cfg, err := Load()
@@ -33,6 +67,7 @@ func TestLoadAutoStartIngestionDefault(t *testing.T) {
 }
 
 func TestLoadAutoStartIngestionDisabled(t *testing.T) {
+	setRequiredEnv(t)
 	t.Setenv("KNOWLEDGE_AUTO_START_INGESTION", "false")
 
 	cfg, err := Load()
@@ -45,6 +80,7 @@ func TestLoadAutoStartIngestionDisabled(t *testing.T) {
 }
 
 func TestLoadCustomVendorURL(t *testing.T) {
+	setRequiredEnv(t)
 	t.Setenv("VENDOR_RUNTIME_URL", "http://knowledge-vendor:9380/")
 
 	cfg, err := Load()

@@ -21,6 +21,7 @@ type Config struct {
 	MCPAddr            string
 	ServiceVersion     string
 	Environment        string
+	ServiceToken       string
 	VendorRuntimeURL   string
 	VendorEmbeddingID  string
 	VendorRerankID     string
@@ -41,6 +42,7 @@ func Load() (Config, error) {
 	cfg.VendorEmbeddingID = strings.TrimSpace(os.Getenv("KNOWLEDGE_VENDOR_EMBEDDING_ID"))
 	cfg.VendorRerankID = strings.TrimSpace(os.Getenv("KNOWLEDGE_VENDOR_RERANK_ID"))
 	cfg.DatabaseURL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	cfg.ServiceToken = firstEnv("KNOWLEDGE_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN")
 	cfg.AutoStartIngestion = boolValue("KNOWLEDGE_AUTO_START_INGESTION", true)
 
 	if raw := os.Getenv("KNOWLEDGE_SHUTDOWN_TIMEOUT"); raw != "" {
@@ -54,8 +56,20 @@ func Load() (Config, error) {
 	if strings.TrimSpace(cfg.VendorRuntimeURL) == "" {
 		return Config{}, fmt.Errorf("VENDOR_RUNTIME_URL is required")
 	}
+	if strings.TrimSpace(cfg.ServiceToken) == "" {
+		return Config{}, fmt.Errorf("KNOWLEDGE_SERVICE_TOKEN or INTERNAL_SERVICE_TOKEN is required")
+	}
 
 	return cfg, nil
+}
+
+func firstEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func stringValue(key, fallback string) string {
