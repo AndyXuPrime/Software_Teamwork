@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeInvoker struct {
@@ -352,7 +353,10 @@ func TestCreateEmbeddingsUsesDefaultProfileAndRecordsSafeSummary(t *testing.T) {
 	if invocation.EmbeddingDimensions == nil || *invocation.EmbeddingDimensions != dimensions {
 		t.Fatalf("EmbeddingDimensions = %#v, want %d", invocation.EmbeddingDimensions, dimensions)
 	}
-	body, _ := json.Marshal(invocation)
+	leakCheckInvocation := invocation
+	leakCheckInvocation.CreatedAt = time.Time{}
+	leakCheckInvocation.FinishedAt = time.Time{}
+	body, _ := json.Marshal(leakCheckInvocation)
 	for _, forbidden := range []string{"sensitive transformer text", "sk-secret-value", "0.1", "0.2"} {
 		if bytes.Contains(body, []byte(forbidden)) {
 			t.Fatalf("invocation leaked %q: %s", forbidden, body)
