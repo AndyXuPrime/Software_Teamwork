@@ -12,16 +12,19 @@ ALTER TABLE qa_config_versions
     CHECK (octet_length(system_prompt) <= 20000);
 
 -- Migrate existing system_prompt from qa_runtime_settings into the current
--- active qa_config_versions row. Truncate oversized values to 20000 bytes
--- rather than silently falling back to the bootstrap prompt.
+-- active qa_config_versions row. Only migrate if the old value is within the
+-- 20000-byte limit (octet_length, not char length, to match the CHECK constraint).
+-- Oversized values are left unmigrated; the runtime falls back to the bootstrap
+-- AGENT_SYSTEM_PROMPT, and the admin can recreate the prompt via the API.
 UPDATE qa_config_versions
-SET system_prompt = left(runtime.value, 20000)
+SET system_prompt = runtime.value
 FROM (
     SELECT value FROM qa_runtime_settings WHERE key = 'system_prompt'
 ) AS runtime
 WHERE qa_config_versions.is_active = true
   AND (qa_config_versions.system_prompt = '' OR qa_config_versions.system_prompt IS NULL)
-  AND runtime.value IS NOT NULL;
+  AND runtime.value IS NOT NULL
+  AND octet_length(runtime.value) <= 20000;
 
 -- +goose Down
 ALTER TABLE qa_config_versions
