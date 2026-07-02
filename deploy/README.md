@@ -42,12 +42,27 @@ This overlay uses explicit registry rewrites and package mirrors. It is the
 preferred path for users with no Docker mirror/proxy configured, and it avoids
 depending on daemon-level mirror behavior.
 
-Optional AI Gateway:
+AI/模型功能必需：AI Gateway profile
+
+The default stack starts the core services. Enable the `ai` profile before using
+admin model profiles, QA real model calls, Document AI generation, real
+embedding/rerank paths, or AI Gateway provider smoke.
 
 ```powershell
 cd deploy
 docker compose --profile ai up -d --build
 ```
+
+To start only the AI Gateway profile service on top of an already running core
+stack:
+
+```powershell
+docker compose --env-file .env --profile ai up -d --build ai-gateway
+Invoke-RestMethod http://localhost:8086/readyz
+```
+
+`gateway /readyz` does not prove AI Gateway or provider readiness. Seeded local
+AI profiles are placeholders until replaced with real provider credentials.
 
 Default seeded login:
 
@@ -146,7 +161,7 @@ MinIO server. Update this document and
 | knowledge | 8083 | 8083 | Internal knowledge service |
 | qa | 8084 | 8084 | Internal QA service |
 | document | 8085 | 8085 | Internal document service |
-| ai-gateway | 8086 | 8086 | Optional model/profile service |
+| ai-gateway | 8086 | 8086 | Model/profile service for AI features |
 | parser | 8087 | 8087 | Internal parser service |
 | postgres | 5432 | 5432 | Local relational databases |
 | redis | 6379 | 6379 | Sessions, queues, coordination |
@@ -165,7 +180,7 @@ Override host ports in `deploy/.env`.
 | `GATEWAY_KNOWLEDGE_BASE_URL` | gateway | set in Compose | Internal knowledge base URL. |
 | `GATEWAY_QA_BASE_URL` | gateway | set in Compose | Internal QA base URL. |
 | `GATEWAY_DOCUMENT_BASE_URL` | gateway | set in Compose | Internal document base URL. |
-| `GATEWAY_AI_GATEWAY_BASE_URL` | gateway | set in Compose | Internal AI Gateway base URL; route calls require optional profile to run. |
+| `GATEWAY_AI_GATEWAY_BASE_URL` | gateway | set in Compose | Internal AI Gateway base URL; AI/model routes require the `ai` profile to run. |
 | `AUTH_DATABASE_URL` | auth | yes | Auth PostgreSQL DSN. |
 | `FILE_DATABASE_URL` | file | yes | File metadata PostgreSQL DSN. |
 | `FILE_STORAGE_BACKEND` | file | no | `local` in Compose for durable local smoke tests. |
@@ -176,12 +191,12 @@ Override host ports in `deploy/.env`.
 | `KNOWLEDGE_REDIS_ADDR` | knowledge | yes | Redis/asynq endpoint. |
 | `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL` / `EMBEDDING_DIMENSION` | knowledge | no | Defaults to local hashing embeddings for deterministic local retrieval tests. |
 | `KNOWLEDGE_QDRANT_URL` / `QDRANT_COLLECTION` | knowledge | no | Optional Qdrant REST URL and collection; leave URL empty to use Knowledge's in-memory vector index. |
-| `KNOWLEDGE_AI_GATEWAY_BASE_URL` / `AI_GATEWAY_EMBEDDING_PROFILE_ID` | knowledge | no | Optional AI Gateway embedding profile wiring. Requires `--profile ai` and real provider credentials when `EMBEDDING_PROVIDER=ai_gateway`. |
-| `RERANK_MODEL` / `RERANK_PROFILE_ID` | knowledge | no | Optional AI Gateway rerank wiring. Empty `RERANK_MODEL` keeps rerank requests on the local no-op fallback. |
+| `KNOWLEDGE_AI_GATEWAY_BASE_URL` / `AI_GATEWAY_EMBEDDING_PROFILE_ID` | knowledge | no | AI Gateway embedding profile wiring. Requires `--profile ai` and real provider credentials when `EMBEDDING_PROVIDER=ai_gateway`. |
+| `RERANK_MODEL` / `RERANK_PROFILE_ID` | knowledge | no | AI Gateway rerank wiring. Empty `RERANK_MODEL` keeps rerank requests on the local no-op fallback. |
 | `PARSER_BACKEND` | parser | no | Defaults to `ppstructurev3` for structured PDF/image parsing; set `document` only for local text/Office parsing without OCR dependencies. |
 | `QA_DATABASE_URL` | qa | yes | QA PostgreSQL DSN. |
 | `KNOWLEDGE_SERVICE_URL` | qa | yes | Internal Knowledge Service URL. |
-| `AI_GATEWAY_URL` | qa | yes | Internal chat completions URL; useful when `--profile ai` is running. |
+| `AI_GATEWAY_URL` | qa | yes | Internal chat completions URL; QA real model calls require `--profile ai`. |
 | `DOCUMENT_DATABASE_URL` | document | yes | Document PostgreSQL DSN. |
 | `DOCUMENT_REDIS_ADDR` | document | yes | Redis/asynq endpoint. |
 | `DOCUMENT_FILE_SERVICE_URL` | document | yes | Internal File Service URL. |
@@ -373,7 +388,7 @@ embedding/rerank validation.
 | Knowledge upload returns `502 dependency_error` | File Service, Parser Service, or Redis queue unavailable | `docker compose logs file parser knowledge redis` |
 | Knowledge query returns `502 dependency_error` | Qdrant collection missing, AI Gateway embedding/rerank unavailable, or fake provider credential still configured | `docker compose logs knowledge qdrant ai-gateway` |
 | Document readyz returns dependency error | Document DB migration failed or DB is unreachable | `docker compose logs migrate-document document postgres` |
-| QA message call fails on model invocation | Optional `ai-gateway` profile not running, fake local credential still in use, or host provider is not listening on `host.docker.internal:11434` | `docker compose --profile ai ps`, `docker compose logs ai-gateway qa` |
+| QA message call fails on model invocation | AI Gateway profile is not running, fake local credential is still in use, or host provider is not listening on `host.docker.internal:11434` | `docker compose --profile ai ps`, `docker compose logs ai-gateway qa` |
 | MinIO bucket missing | `minio-init` did not complete | `docker compose logs minio minio-init` |
 | Host port conflict | Another local process uses a default port | Change the matching `*_PORT` in `deploy/.env` |
 

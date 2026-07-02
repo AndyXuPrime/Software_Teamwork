@@ -84,12 +84,14 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-可选 AI Gateway profile：
+AI/模型功能所需 AI Gateway profile：
 
 ```bash
 cd deploy
 docker compose --profile ai up -d --build
 ```
+
+默认根级本地栈可以启动核心服务；管理端模型配置、QA 真实模型调用、Document AI 生成、真实 embedding/rerank 和 provider smoke 需要额外启用该 profile，并检查 `http://localhost:8086/readyz`。本地 seed 的 AI profiles 是 placeholder，不代表真实 provider 已可用。
 
 根级 Compose 详情见 [`deploy/README.md`](../../deploy/README.md)。
 
