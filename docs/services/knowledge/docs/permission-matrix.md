@@ -31,7 +31,7 @@
 | 下游依赖 | Knowledge 调用前必须校验 | 下游只负责 |
 | --- | --- | --- |
 | File Service | 用户是否可上传、读取或删除对应文档资源。 | 原始 file object 读写和基础元数据。 |
-| Parser Runtime | 文档存在、状态允许处理、调用方有处理权限。 | 将 bytes 解析为 normalized parsed content。 |
+| Knowledge RAGFlow runtime | 文档存在、状态允许处理、调用方有处理权限。 | 解析文档、生成 chunks、执行 embedding、写入索引并支持检索。 |
 | AI Gateway embeddings/rerankings | 文档或查询权限、profile 配置可用。 | 模型调用和 provider 错误归一化。 |
 | Qdrant | PostgreSQL 中 chunk/document 权限和状态。 | 向量相似度查询和最小 payload 存储。 |
 

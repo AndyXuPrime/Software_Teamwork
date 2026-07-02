@@ -149,8 +149,8 @@ services:
       KNOWLEDGE_RUNTIME_RERANK_FACTORY: ${KNOWLEDGE_RUNTIME_RERANK_FACTORY:-}
       KNOWLEDGE_RUNTIME_RERANK_MODEL: ${KNOWLEDGE_RUNTIME_RERANK_MODEL:-}
       KNOWLEDGE_RUNTIME_RERANK_BASE_URL: ${KNOWLEDGE_RUNTIME_RERANK_BASE_URL:-}
-    expose:
-      - "9380"
+    ports:
+      - "${KNOWLEDGE_RUNTIME_API_PORT:-9380}:9380"
     depends_on:
       postgres:
         condition: service_healthy

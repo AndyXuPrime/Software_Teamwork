@@ -8,7 +8,7 @@
 
 - `knowledge`：知识库、文档上传公开资源、文档业务元数据、解析/切片/向量化任务、Qdrant 索引、检索协调和原始文档内容入口。
 - `file`：后端内部基础文件对象存储和内容读取能力，由 `knowledge` 在服务边界内复用。
-- `parser`：后端内部文档解析运行时，把 raw bytes 转成规范化 parsed content；默认目标为 Python/PaddleOCR PP-StructureV3，不拥有业务状态。
+- `knowledge-runtime`：Knowledge 的 RAGFlow runtime 实现细节，负责文档解析、切块、embedding、索引和检索支持，不直接暴露给前端。
 - `auth`：用户、角色、权限和认证上下文。
 - `gateway`：外部 API 入口。
 - `ai-gateway`：统一提供 OpenAI-compatible 模型调用入口，供 embedding、rerank 和后续 LLM 能力使用。
@@ -17,7 +17,7 @@
 
 - `knowledge` 是 Qdrant 的唯一业务写入方。
 - `qa`、`document` 只能通过本契约的知识查询资源复用知识能力，不能直接写 Qdrant。
-- 原始文件存储在 File Service 边界；Knowledge 只保存不透明 `file_ref`，不得依赖或暴露 bucket、object key、MinIO URL、签名 URL、存储 backend 或凭据。Parser 返回规范化 parsed content，不保存知识业务状态、`file_ref`、object key、bucket、内部 URL 或持久化解析产物。
+- 原始文件和运行时索引细节留在对应服务/runtime 边界；Knowledge 公开响应不得依赖或暴露 bucket、object key、MinIO URL、签名 URL、存储 backend、runtime 内部 URL 或凭据。
 - Knowledge 负责保存业务元数据、chunks、processing jobs 和 Qdrant 索引事实。
 - Redis 用于异步任务队列、短期任务状态辅助和缓存；PostgreSQL 保存可追溯业务状态，不把 Redis 作为长期业务真相。
 
@@ -25,7 +25,7 @@
 
 - 后端通用技术栈、数据库、迁移、日志、配置、队列和测试规则以 [`docs/architecture/technology-decisions.md`](../../../architecture/technology-decisions.md) 为准。
 - Qdrant 当前使用面较窄，短期以轻量 HTTP client 接入；Knowledge 负责 collection/point 生命周期，但不把 Qdrant 作为业务状态事实来源。
-- 文档解析通过 Parser 内部 HTTP API 接入，契约见 [`docs/services/parser/api/internal.openapi.yaml`](../../parser/api/internal.openapi.yaml)；Knowledge 不引入 PaddleOCR/PaddlePaddle/OpenCV/CUDA 运行时依赖。
+- 文档解析、切块、embedding、索引和检索支持通过 RAGFlow runtime 接入；Knowledge Go 进程不引入 PaddleOCR/PaddlePaddle/OpenCV/CUDA 运行时依赖。
 - embedding、rerank 和后续 LLM 能力通过 AI Gateway profile 调用；Knowledge 不保存 provider API key 明文。
 
 ## 2. 通用约定

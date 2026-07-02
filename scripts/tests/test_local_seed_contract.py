@@ -36,7 +36,7 @@ class LocalSeedContractTests(unittest.TestCase):
                 "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple\n"
                 "DOCKER_IMAGE_REGISTRY_PREFIX=docker.m.daocloud.io/library/\n"
                 "RAGFLOW_DEPS_IMAGE=docker.m.daocloud.io/infiniflow/ragflow_deps:51ce6aab\n"
-                "VENDOR_RUNTIME_URL=http://host.docker.internal:9380\n"
+                "VENDOR_RUNTIME_URL=http://127.0.0.1:9380\n"
                 "KNOWLEDGE_AUTO_START_INGESTION=true\n"
                 "DOC_ENGINE=elasticsearch\n",
                 encoding="utf-8",
@@ -120,7 +120,7 @@ class LocalSeedContractTests(unittest.TestCase):
         issues = verifier.validate_docs(
             deploy_readme="唯一默认配置来源\n",
             runbook="",
-            env_example="VENDOR_RUNTIME_URL=http://host.docker.internal:9380\n",
+            env_example="VENDOR_RUNTIME_URL=http://127.0.0.1:9380\n",
             dev_up_script="",
             run_backend_script="",
             stop_backend_script="",

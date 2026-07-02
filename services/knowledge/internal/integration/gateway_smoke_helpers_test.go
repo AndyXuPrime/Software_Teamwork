@@ -25,7 +25,6 @@ import (
 type gatewayOwnerSmokeConfig struct {
 	gatewayBaseURL          string
 	fileServiceBaseURL      string
-	parserServiceBaseURL    string
 	knowledgeServiceBaseURL string
 	knowledgeDatabaseURL    string
 	redisAddr               string
