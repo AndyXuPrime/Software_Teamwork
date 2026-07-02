@@ -136,7 +136,7 @@ export default function ChatSidebar({
       </div>
 
       {/* ── Session list ── */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1" viewportClassName="overscroll-y-contain">
         <div className="flex flex-col gap-1 p-2">
           {/* Fetch error state — hidden when collapsed */}
           {!collapsed && fetchError && !isLoading && (
