@@ -13,8 +13,6 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/modelendpoint"
 )
 
-const systemPromptKey = "system_prompt"
-
 var mcpAliasPattern = regexp.MustCompile(`^[a-z0-9_]{2,32}$`)
 
 type ConfigService struct {
@@ -64,15 +62,27 @@ func (s *ConfigService) UpdateSettings(ctx context.Context, userID, requestID st
 	if err != nil {
 		return QASettings{}, err
 	}
-	if input.Retrieval != nil || input.DefaultKnowledgeBaseIDs != nil {
-		retrieval := before.Retrieval
-		knowledgeBaseIDs := append([]string(nil), before.DefaultKnowledgeBaseIDs...)
-		if input.Retrieval != nil {
-			retrieval = *input.Retrieval
+	// Merge retrieval, KB and prompt changes into a single QA config version.
+	retrieval := before.Retrieval
+	knowledgeBaseIDs := append([]string(nil), before.DefaultKnowledgeBaseIDs...)
+	prompt := before.SystemPrompt
+	qaChanged := false
+	if input.Retrieval != nil {
+		retrieval = *input.Retrieval
+		qaChanged = true
+	}
+	if input.DefaultKnowledgeBaseIDs != nil {
+		knowledgeBaseIDs = normalizeIDs(*input.DefaultKnowledgeBaseIDs)
+		qaChanged = true
+	}
+	if input.SystemPrompt != nil {
+		prompt = strings.TrimSpace(*input.SystemPrompt)
+		if prompt == "" || len(prompt) > 20000 {
+			return QASettings{}, ValidationError(map[string]string{"systemPrompt": "must be between 1 and 20000 bytes"})
 		}
-		if input.DefaultKnowledgeBaseIDs != nil {
-			knowledgeBaseIDs = normalizeIDs(*input.DefaultKnowledgeBaseIDs)
-		}
+		qaChanged = true
+	}
+	if qaChanged {
 		if err := validateRetrieval(retrieval, knowledgeBaseIDs); err != nil {
 			return QASettings{}, err
 		}
@@ -80,7 +90,7 @@ func (s *ConfigService) UpdateSettings(ctx context.Context, userID, requestID st
 		if err != nil {
 			return QASettings{}, err
 		}
-		if err := s.repository.CreateQAConfigVersion(ctx, userID, retrieval, knowledgeBaseIDs, agentConfig); err != nil {
+		if err := s.repository.CreateQAConfigVersion(ctx, userID, retrieval, knowledgeBaseIDs, agentConfig, prompt); err != nil {
 			return QASettings{}, err
 		}
 	}
@@ -90,15 +100,6 @@ func (s *ConfigService) UpdateSettings(ctx context.Context, userID, requestID st
 			return QASettings{}, err
 		}
 		if err := s.repository.CreateLLMConfigVersion(ctx, userID, stored); err != nil {
-			return QASettings{}, err
-		}
-	}
-	if input.SystemPrompt != nil {
-		prompt := strings.TrimSpace(*input.SystemPrompt)
-		if prompt == "" || len(prompt) > 20000 {
-			return QASettings{}, ValidationError(map[string]string{"systemPrompt": "must be between 1 and 20000 bytes"})
-		}
-		if err := s.repository.UpsertRuntimeSetting(ctx, systemPromptKey, prompt); err != nil {
 			return QASettings{}, err
 		}
 	}
@@ -450,14 +451,16 @@ func (s *ConfigService) runtimeLLM(ctx context.Context) (RuntimeLLMConfig, error
 }
 
 func (s *ConfigService) runtimePrompt(ctx context.Context) (string, error) {
-	prompt, err := s.repository.GetRuntimeSetting(ctx, systemPromptKey)
-	if err == nil {
-		return prompt, nil
+	config, err := s.repository.GetActiveQAConfigVersion(ctx)
+	if err == nil && config.SystemPrompt != "" {
+		return config.SystemPrompt, nil
 	}
-	if appErr, ok := Classify(err); ok && appErr.Code == CodeNotFound {
-		return s.bootstrap.SystemPrompt, nil
+	if err != nil {
+		if appErr, ok := Classify(err); !ok || appErr.Code != CodeNotFound {
+			return "", err
+		}
 	}
-	return "", err
+	return s.bootstrap.SystemPrompt, nil
 }
 
 func (s *ConfigService) buildStoredLLM(ctx context.Context, update LLMUpdate) (StoredLLMConfig, error) {
@@ -707,7 +710,7 @@ func settingsAuditData(settings QASettings) map[string]any {
 			"temperature": settings.LLM.Temperature, "maxTokens": settings.LLM.MaxTokens,
 			"tokenHeader": settings.LLM.TokenHeader, "apiKey": "***",
 		},
-		"systemPrompt": settings.SystemPrompt,
+		"systemPromptLength": len(settings.SystemPrompt),
 	}
 }
 

@@ -1,8 +1,8 @@
 
 # QA 服务实现说明
 
-版本：v0.2
-日期：2026-07-01
+版本：v0.3
+日期：2026-07-02
 范围：`services/qa/` 当前实现、契约对齐、缺口和后续实现约束
 
 ## 1. 文档定位
@@ -50,11 +50,13 @@
 | QA -> AI Gateway env-gated smoke | `services/qa/internal/platform/modelclient/ai_gateway_smoke_test.go`、`services/qa/README.md` | #288 / AI Gateway seed runbook | `QA_AI_GATEWAY_SMOKE=1 go test ./internal/platform/modelclient -run '^TestAIGatewaySmoke$' -count=1 -v` | 默认 skip；显式启用时验证成功模型响应、service token 拒绝和缺失 profile 错误归一化。 |
 | MCP client/tooling | `services/qa/internal/platform/mcpclient`、`localtools` | QA README | platform tests | 支持 runtime Streamable HTTP、测试专用 exact-spec allowlisted stdio、内置工具。runtime 配置拒绝 stdio；包内 stdio 测试只映射代码内批准的 command spec 到固定 executable + argv，不把配置中的 executable/argv 直接传入 `exec.Command`；内置命令工具不再通过 shell 执行用户字符串，只运行 path-free diagnostic command，文件访问必须走 workspace-bounded file tools。 |
 | PostgreSQL schema/repository | `services/qa/migrations/*.sql`、`internal/repository` | QA 数据模型 | repository tests | 有 integration tests，但依赖 `QA_TEST_DATABASE_URL`。分页、事件游标等写入 sqlc `int4` 参数前在 repository 层做 `int32` 范围校验，避免上层绕过时溢出。 |
+| System prompt 版本化 | `services/qa/migrations/0010_versioned_system_prompt.sql`、`internal/service/settings.go`、`internal/repository/settings_postgres.go`、`internal/repository/resources_postgres.go` | [S-048] QA 全局 Agent 系统提示词版本契约与权限边界 #464 / [B-018] | settings/service/repository tests | `system_prompt` 写入 `qa_config_versions`，创建新版本时原子保存；运行时从 active QA 配置版本读取，无 DB 配置回退 `AGENT_SYSTEM_PROMPT`；审计只保存 prompt 长度元数据，不保存完整文本；发布新版本触发热重载。 |
 
 ## 4. 未实现
 
 | 缺口 | 文档来源 | 影响范围 | 建议任务 |
 | --- | --- | --- | --- |
+| `qa_runtime_settings` 表 system_prompt 行仍遗留在 schema，不再被运行时读取 | [B-018] | QA | 后续迁移可考虑移除 `qa_runtime_settings` 的 system_prompt 行；当前保留以支持回滚。 |
 | 完整 QA + Knowledge + AI Gateway RAG smoke 未证明 | `docs/services/gateway/api/public.openapi.yaml`、QA RAG 流程、#304 | QA / Knowledge / frontend | Knowledge `knowledge-queries` 已落地；仍需跨 Gateway/Auth/Knowledge/AI Gateway 的可复现 smoke。 |
 | 引用快照、引用详情和批量查询仍未完全闭环 | #93 / #325 | QA / frontend | 保留现有脱敏资源摘要，继续补 citation snapshot/detail/batch query 契约与持久化验证。 |
 | QA -> AI Gateway smoke 依赖外部受控环境 | `docs/services/ai-gateway/api/internal.openapi.yaml` | QA / AI Gateway | 已提供 env-gated 入口；普通 CI 不启动 AI Gateway/provider，真实 provider 仍只允许显式手工运行。 |
@@ -71,6 +73,8 @@
 | MCP 原始信息不得暴露 | 文档要求只返回脱敏摘要 | 代码有 tool-call summary 和 local tool safety tests | 当前方向一致 | 持续补审计和字段级契约测试。 |
 | Agent Run 状态 | README 描述 Agent Run、termination 和 maxIterations | develop 已包含 ResponseRun、终止原因、模型调用摘要、function-calling adapter 和基础测试 | 容易把 Agent Loop 可用误读为完整 RAG/citation 已完成 | 本文将 Agent Loop 和真实 RAG/citation smoke 分开记录。 |
 | `sqlc` 生成器版本 | 技术基线固定 `sqlc` CLI 推荐版本为 `v1.31.1` | `services/qa/internal/repository/sqlc/*.go` 头部仍记录 `sqlc v1.29.0`；本次版本修复不改非 Docker 生成代码 | 代码生成器版本与文档基线出入，后续 SQL 变更时容易继续沿用旧生成器 | 下次修改 QA SQL 或 repository 生成代码时，使用 `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate` 重新生成并提交。 |
+| System prompt 存储路径 | 数据模型将 system prompt 作为 QA config version 的一部分 | 原实现通过 `qa_runtime_settings` 读写 prompt；[B-018] 已迁入 `qa_config_versions.system_prompt`，运行时不再读取 `qa_runtime_settings` | `qa_runtime_settings` system_prompt 行遗留但不再使用 | 已在 0010 migration 完成迁移；后续迁移可考虑移除旧行。 |
+| 审计日志中完整 prompt | 审计日志不得包含完整 prompt 文本 | [B-018] 前 `settingsAuditData()` 直接保存 `"systemPrompt": settings.SystemPrompt` 完整文本 | 已泄露 prompt 到 `admin_audit_logs`（受管理员权限保护） | [B-018] 改为只保存 `"systemPromptLength"` 元数据。 |
 
 ## 6. MVP / mock / memory backend / 占位
 
@@ -114,6 +118,7 @@
 
 | 日期 | 检查人/工具 | 代码基准 | 结论 |
 | --- | --- | --- | --- |
+| 2026-07-02 | Claude (B-018) | `JerryTeam/feat/qa-versioned-system-prompt` | 全局 system prompt 纳入 `qa_config_versions` 版本化：0010 migration 添加 `system_prompt` 列并迁移现有数据；repository/service/handler 更新；审计脱敏（只存长度）；7 个新增单元测试覆盖 runtimePrompt 回退、prompt 校验、audit 防泄漏和版本创建；HTTP 权限不变（`qa:settings:read`/`qa:settings:write`）。 |
 | 2026-07-01 | Codex #337 security pass | PR #359 | Code Scanning 修复收紧模型出站边界：QA runtime/settings/modelclient 只接受受信 AI Gateway `/internal/v1/chat/completions` endpoint，存量 `direct` 配置不再可作为任意 provider URL 出口；provider base URL 和密钥继续由 AI Gateway profile 承载。 |
 | 2026-07-01 | Codex CodeQL follow-up | working tree | 继续收敛合并后仍 open 的 QA `go/request-forgery` 告警：AI Gateway endpoint 解析后只保留 canonical trusted URL literal，端口固定为 `8086`，单元测试用 transport rewrite 覆盖 httptest 而不放宽生产配置。 |
 | 2026-06-30 | Codex #288 branch | working tree | 新增 QA -> AI Gateway env-gated chat smoke，覆盖成功响应、无效 service token、缺失 profile 和 request id 诊断；普通 CI 保持 skip，不扩展到完整 QA/Knowledge/Gateway 链路。 |
