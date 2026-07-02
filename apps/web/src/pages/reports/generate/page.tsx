@@ -709,9 +709,7 @@ export function ReportGeneratePage() {
                           )}
                           onClick={() => setActiveSectionId(section.id)}
                         >
-                          <span className="min-w-0 truncate">
-                            {section.numbering} {section.title}
-                          </span>
+                          <span className="min-w-0 truncate">{section.title}</span>
                           <span>{statusText[section.generationStatus]}</span>
                         </button>
                       ))}
