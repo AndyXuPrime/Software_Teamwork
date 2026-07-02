@@ -5605,8 +5605,8 @@ components:
             Global Agent system prompt. Only visible to authorized admin clients
             (requires qa:settings:read). Must not appear in SSE events, QA
             responses, logs, metrics, or error messages.
-          minLength: 1
-          maxLength: 20000
+            Server validates 1–20000 bytes (octet_length, not character count);
+            multi-byte UTF-8 characters count toward the byte limit.
         isActive:
           type: boolean
         createdAt:
@@ -5674,9 +5674,10 @@ components:
             Global Agent system prompt. Optional on create; if omitted, the
             current active version's prompt is inherited so that only changing
             retrieval/agent settings does not clear the existing prompt.
-            Must be 1–20000 bytes (octet_length) after trimming.
-          minLength: 1
-          maxLength: 20000
+            Server validates 1–20000 bytes (octet_length, not character count)
+            after trimming; multi-byte UTF-8 characters count toward the byte
+            limit. Clients should apply the same byte-length check before
+            submitting to avoid 400 validation errors.
         activate:
           type: boolean
           default: true
