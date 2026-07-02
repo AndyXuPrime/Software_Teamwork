@@ -491,119 +491,90 @@ non-owner PATCH response run -> 404 not_found
 owned message with no citations -> authorize message -> 200 []
 ```
 
-## Scenario: Parser Runtime Internal API
+## Scenario: Knowledge Runtime Internal API
 
 ### 1. Scope / Trigger
 
-- Trigger: adding or changing the internal parser runtime used by Knowledge
-  ingestion.
-- Applies to `services/parser/`, Knowledge parser clients under
-  `services/knowledge/internal/platform/parser`, parser runtime configuration,
+- Trigger: adding or changing the RAGFlow-based runtime API/worker used by
+  Knowledge ingestion and retrieval.
+- Applies to `services/knowledge-runtime/`, Knowledge vendor runtime clients
+  under `services/knowledge/internal/vendorclient`, runtime parser configuration,
   and docs that describe document parsing ownership.
 
 ### 2. Signatures
 
-- Parser internal route:
-  - `GET /healthz`
-  - `GET /readyz`
-  - `POST /internal/v1/parsed-documents`
+- Runtime operational routes:
+  - `GET /api/v1/system/healthz`
+  - `GET /api/v1/system/ping`
+- Runtime adapter routes:
+  - dataset, document, chunk, retrieval, provider/model, system, and task routes
+    explicitly allowed by `services/knowledge-runtime/api/apps/route_registry.py`
 - Knowledge environment keys:
-  - `PARSER_SERVICE_BASE_URL`
-  - `PARSER_SERVICE_TOKEN`
-  - `PARSER_SERVICE_TIMEOUT`
+  - `VENDOR_RUNTIME_URL`
+  - `KNOWLEDGE_AUTO_START_INGESTION`
+  - runtime/storage/search keys required by host-run Knowledge runtime startup
 
 ### 3. Contracts
 
-Parser request body:
+Knowledge owns knowledge-base and document business state, permissions, public
+response envelopes, parser-config administration, and adapter error mapping.
+`services/knowledge-runtime` owns document parsing, chunking, embedding/index
+work, retrieval support, runtime task execution, and vendor storage/search
+details. Runtime routes must be registered through an explicit allowlist; do not
+expose upstream RAGFlow login/JWT/API-token, UI, file-management, or MCP
+surfaces as product APIs.
 
-```json
-{
-  "documentName": "scan.pdf",
-  "contentType": "application/pdf",
-  "sizeBytes": 12345,
-  "dataBase64": "..."
-}
-```
-
-Parser response body uses the project envelope:
-
-```json
-{
-  "data": {
-    "content": "normalized parsed text",
-    "title": "optional title",
-    "backend": "paddleocr"
-  },
-  "requestId": "req_123"
-}
-```
-
-Parser readiness response uses the same project envelope. `data.status` is
-`ok` for `/healthz`, `ready` for a ready parser backend, and `not_ready` for a
-backend dependency/runtime state that prevents parse requests. A not-ready
-response should include a short sanitized `data.reason`; readiness checks must
-not load PP-StructureV3/PaddleOCR models unless explicit startup warm-up is
-configured.
-
-Knowledge owns ingestion job state, chunking, embedding, Qdrant writes, and
-retrieval. Parser owns document byte parsing and backend adapter details such
-as PaddleOCR model loading and parser concurrency. The Parser runtime target is
-Python/PaddleOCR; Go services should remain HTTP callers and should not embed
-document parsing logic, PaddleOCR, or PaddlePaddle inference dependencies.
-Parser may parse lightweight text and Office OpenXML formats locally before
-routing PDF and image OCR to PaddleOCR, but Knowledge remains responsible for
-ingestion state and chunks.
+The old standalone `services/parser` and `/internal/v1/parsed-documents` API are
+retired. Do not add `PARSER_SERVICE_BASE_URL` or Parser HTTP clients back to
+Knowledge, QA, Gateway, or local integration scripts.
 
 ### 4. Validation & Error Matrix
 
 | Condition | Required handling |
 | --- | --- |
-| Parser returns `400` or `413` | Knowledge treats the document as `parse_failed` and should not retry as an infrastructure outage. |
-| Parser returns `429`, `5xx`, redirect, timeout, or invalid response | Knowledge treats it as `dependency_error` so ingestion retry policy can apply. |
-| Parser returns empty content | Knowledge treats the document as parsing failure. |
-| Parser response includes backend label | Knowledge stores it as `knowledge_documents.parser_backend` when ingestion completes. |
+| Runtime health/ping fails | Knowledge `/readyz` reports runtime dependency failure without leaking internal credentials or raw vendor bodies. |
+| Runtime document parse task fails | Knowledge maps the document to a failed processing state with sanitized error text. |
+| Runtime returns zero chunks for an uploaded document | Treat as ingestion failure; do not mark the document ready. |
+| Runtime retrieval fails or returns invalid shape | Return caller-owned `dependency_error`; do not forward raw vendor `{code, message}` envelopes. |
+| Runtime returns valid retrieval hits | Hydrate and normalize through Knowledge-owned DTOs and permission checks. |
 
 ### 5. Good/Base/Bad Cases
 
-- Good: Knowledge calls parser over HTTP with request/user context headers and
-  no direct PaddleOCR dependency; Parser hosts PaddleOCR in a Python runtime.
-- Base: Knowledge unit tests use fake `service.Parser` implementations, while
-  runtime configuration requires `PARSER_SERVICE_BASE_URL`.
-- Bad: importing parser runtime code into Knowledge, adding PaddleOCR/Python
-  dependencies to the Knowledge Go service, or choosing Go as the PaddleOCR
-  runtime just to match other backend services.
+- Good: Knowledge calls the runtime over HTTP through the vendor client, worker
+  completes parse/chunk/embed/index work, and retrieval returns normalized
+  Knowledge results.
+- Base: Knowledge unit tests use fake vendor runtime clients while runtime E2E
+  is gated by explicit local infrastructure.
+- Bad: restoring `services/parser`, adding a QA/Gateway direct parser client, or
+  exposing upstream RAGFlow auth/UI/MCP surfaces through the product boundary.
 
 ### 6. Tests Required
 
-- Knowledge parser client tests assert path, headers, base64 document payload,
-  sanitized failures, redirect blocking, and error classification.
-- Parser service implementation tests should cover health/readiness,
-  request validation, backend not-ready behavior, and normalized parsed-document
-  response shape.
-- Parser OpenAPI contract tests should assert both the service-local contract
-  and `docs/services/parser/api/internal.openapi.yaml` document `ok`, `ready`,
-  `not_ready`, and the optional not-ready `reason`.
-- Parser service implementation checks are `uv run ruff check .`,
-  `uv run pytest`, and `uv run python -m compileall src tests` from
-  `services/parser`.
-- Ingestion tests should assert parser validation failures become
-  `parse_failed`, while parser infrastructure failures remain retryable
-  dependency errors.
+- Knowledge vendor client/adapter tests assert route paths, propagated tenant
+  headers, redirect blocking, sanitized failures, and error classification.
+- Runtime route registry tests assert only the allowlisted API modules are
+  registered.
+- Targeted runtime tests cover config utilities and changed parser/chunking
+  surfaces.
+- Runtime startup scripts and Docker policy checks must pass when runtime
+  deployment wiring changes.
+- Real PDF E2E should prove upload -> parse/chunk/embed/index -> retrieval when
+  `DL_T_673-1999.pdf` is available.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```text
-knowledge worker -> import PaddleOCR adapter -> parse bytes in Knowledge process
-parser service -> Go+cgo wrapper around stale PaddleOCR bindings
+qa -> parser /internal/v1/parsed-documents
+knowledge -> services/parser -> chunk/embed/index in Knowledge
 ```
 
 #### Correct
 
 ```text
-knowledge worker -> parser /internal/v1/parsed-documents -> chunk/embed/index in Knowledge
-parser service -> Python/PaddleOCR backend behind the HTTP contract
+knowledge adapter -> services/knowledge-runtime API
+knowledge-runtime worker -> parse/chunk/embed/index -> retrieval support
 ```
 
 ## Scenario: Internal Service Contract API
@@ -1005,6 +976,155 @@ the document transaction; if cleanup fails the document stays visible
 DELETE /documents/doc_1 -> transaction sets knowledge_documents.deleted_at and
 creates processing_jobs(job_type='delete_cleanup'); later worker handles
 retryable file/vector cleanup
+```
+
+## Scenario: Knowledge Adapter Runtime Mode
+
+### 1. Scope / Trigger
+
+- Trigger: implementing or changing `KNOWLEDGE_RUNTIME_MODE=adapter`, the
+  contract adapter binary (`cmd/adapter`), or vendor-runtime proxy routes.
+- Applies to `services/knowledge/cmd/adapter/`,
+  `services/knowledge/internal/adapter/`,
+  `services/knowledge/internal/vendorclient/`,
+  `services/knowledge-runtime/`, and Gateway routes owned by Knowledge.
+
+### 2. Signatures
+
+Adapter mode exposes the same internal contract routes as legacy Knowledge:
+
+```text
+GET|POST|PATCH|DELETE /internal/v1/knowledge-bases[/**]
+GET|POST|PATCH|DELETE /internal/v1/documents/{documentId}[/**]
+POST /internal/v1/knowledge-queries
+GET|POST|PATCH|DELETE /internal/v1/parser-configs[/**]  # Phase 3b
+```
+
+Vendor runtime mapping (adapter → RAGFlow):
+
+```text
+knowledge-bases -> /api/v1/datasets
+documents upload  -> /api/v1/datasets/{id}/documents?type=local
+documents parse   -> /api/v1/datasets/{id}/documents/parse  # auto after upload when KNOWLEDGE_AUTO_START_INGESTION=true
+documents CRUD    -> /api/v1/documents/{id}
+document metadata -> /api/v1/datasets/{kb}/documents?page=&page_size=&id={doc}
+chunks            -> /api/v1/datasets/{kb}/documents/{doc}/chunks
+content           -> /api/v1/datasets/{kb}/documents/{doc} (binary)
+knowledge-queries -> /api/v1/datasets/search
+```
+
+### 3. Contracts
+
+- Adapter must preserve Gateway-facing JSON envelopes and error codes; do not
+  leak vendor `{code, message}` shapes to callers.
+- Adapter forwards tenant identity with `X-Tenant-Id` and `X-User-Id` set to
+  Gateway `X-User-Id`; RBAC checks stay in adapter using
+  `knowledge:read` / `knowledge:write` and admin permissions.
+- Parser-config routes delegate to legacy goose PostgreSQL tables when
+  `DATABASE_URL` is configured; without it they return `502 dependency_error`.
+- Document `PATCH` with `tags` maps to vendor dataset-document metadata updates;
+  other fields remain validation errors until explicitly supported.
+- After upload, adapter mode queues vendor deepdoc ingestion via
+  `POST /api/v1/datasets/{id}/documents/parse` when
+  `KNOWLEDGE_AUTO_START_INGESTION` is true (default). Adapter mode does not call
+  `services/parser` or `PARSER_SERVICE_BASE_URL`.
+- Object storage for uploaded documents uses vendor MinIO configuration
+  (`software-teamwork-knowledge` bucket); Knowledge adapter does not call File
+  Service for upload in vendor mode.
+- Vector retrieval uses vendor Elasticsearch or Infinity only; Qdrant is not used.
+- Gateway/Auth service owns identity; adapter forwards `X-User-Id` as vendor tenant
+  context. Vendor login/JWT/API-token surfaces remain disabled.
+- The vendored runtime HTTP surface must be registered through an explicit
+  allowlist. Keep only the route modules needed for dataset, document, chunk,
+  model/provider, system, and task workflows used by the adapter. Do not
+  expose upstream RAGFlow MCP, file-management, login/JWT/API-token, or UI-only
+  routes as project runtime APIs.
+- Adapter dataset creation sends the embedding choice with vendor field
+  `embedding_model`. The project env value uses the composite
+  `<model>@<provider>` shape, for example `BAAI/bge-m3@SILICONFLOW`.
+- Adapter retrieval rerank config sends `rerank_id`. The runtime expects the
+  composite `<model>@<tenant>@<provider>` shape, for example
+  `BAAI/bge-reranker-v2-m3@default@SILICONFLOW`; a bare model name can resolve
+  to an empty provider and fail at runtime.
+- Adapter-owned parser config trace fields such as
+  `software_teamwork_parser_config` must not be forwarded into strict vendor
+  runtime request bodies unless the vendor schema explicitly allows them.
+- Document metadata is read from the dataset document-list endpoint. Do not use
+  the binary content route as JSON metadata; `GET /api/v1/datasets/{kb}/documents/{doc}`
+  is the download/content path.
+- Runtime model initialization may upsert the env-selected embedding/rerank
+  provider, model instance, and tenant defaults at startup so new datasets do
+  not silently fall back to the vendor Builtin embedding model.
+- Vendor document `run` maps to Gateway status: `RUNNING` → `parsing`, `DONE` →
+  `ready`, `FAIL`/`CANCEL` → `parse_failed`.
+- `GET /documents/{documentId}/content` streams bytes without JSON envelope.
+- Runtime and adapter logs must recursively redact API keys, tokens, secrets,
+  and authorization values before logging config or provider payload metadata.
+- Alpine runtime entrypoints must be POSIX `sh` scripts unless the image
+  explicitly installs `bash`. Compose `command` should pass application args to
+  the entrypoint instead of repeating the entrypoint path.
+
+### 4. Validation & Error Matrix
+
+| Condition | Response/error |
+| --- | --- |
+| Missing `X-User-Id` | `401 unauthorized` |
+| Read without `knowledge:read` or write permission | `403 forbidden` |
+| Mutations without `knowledge:write` | `403 forbidden` |
+| Parser-config admin without admin permissions | `403 forbidden` |
+| Parser-config without `DATABASE_URL` in adapter mode | `502 dependency_error` |
+| Vendor runtime unreachable | `502 dependency_error` |
+| Runtime route module is outside the allowlist | It must not be registered or documented as active. |
+| Dataset creation lacks `KNOWLEDGE_VENDOR_EMBEDDING_ID` in vendor mode | Startup/config error or documented fallback; do not claim external embedding E2E coverage. |
+| Rerank ID is not `<model>@<tenant>@<provider>` | Retrieval may return a sanitized `502 dependency_error`; fix env wiring instead of stripping rerank. |
+| Metadata lookup calls the binary content route and decodes JSON | Treat as an adapter bug; use dataset document-list metadata lookup. |
+| Runtime log input includes API keys/tokens/secrets | Redact before emitting logs; never rely on caller-side masking only. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: host-run runtime startup wires `VENDOR_RUNTIME_URL`,
+  `KNOWLEDGE_VENDOR_EMBEDDING_ID`, `KNOWLEDGE_VENDOR_RERANK_ID`, and matching
+  `KNOWLEDGE_RUNTIME_*` provider env keys; the runtime starts with an explicit
+  route allowlist and initializes tenant defaults for embedding and rerank.
+- Base: adapter unit tests use fake vendor HTTP servers to assert route paths,
+  field names, metadata lookup, and sanitized vendor errors without starting
+  the Python runtime.
+- Bad: forwarding parser trace fields into vendor JSON, calling the binary
+  content route for metadata, using bare rerank model IDs, exposing upstream
+  RAGFlow MCP, or logging raw `sk-...` provider keys.
+
+### 6. Tests Required
+
+- Runtime Python tests assert the route allowlist registers only supported
+  modules and that config logging redacts nested secret/token/API-key values.
+- Adapter Go contract tests assert dataset creation uses `embedding_model`,
+  retrieval sends the configured `rerank_id`, parser trace fields are filtered,
+  and document metadata is loaded through the dataset document-list endpoint.
+- Docker/Compose checks must include:
+  `python3 scripts/check_docker_policy.py`,
+  `docker compose --env-file deploy/.env.example config --quiet`.
+- For real runtime E2E, upload, parse, chunk, and query `DL_T_673-1999.pdf`
+  when available; report document readiness, chunk count, query hit count, and
+  the fact that no real provider key was committed.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+Compose env: KNOWLEDGE_VENDOR_RERANK_ID=BAAI/bge-reranker-v2-m3
+Adapter: GET /api/v1/datasets/{kb}/documents/{doc} -> decode JSON metadata
+Runtime: auto-import every restful_apis module, including mcp_api and file_api
+Entrypoint: #!/usr/bin/env bash in an Alpine image without bash
+```
+
+#### Correct
+
+```text
+Compose env: KNOWLEDGE_VENDOR_RERANK_ID=BAAI/bge-reranker-v2-m3@default@SILICONFLOW
+Adapter: GET /api/v1/datasets/{kb}/documents?id={doc} -> read metadata
+Runtime: register only the project-required allowlisted route modules
+Entrypoint: #!/bin/sh with command args passed through Compose
 ```
 
 ## Scenario: Missing Downstream API Contracts

@@ -273,8 +273,8 @@ paths:
   /internal/v1/knowledge-statistics:
     get:
       tags: [knowledge]
-      summary: Get global knowledge base and document counts
-      description: Returns totals across all knowledge bases and documents. Authenticated via X-Service-Token header only; no user-level permissions required.
+      summary: Get knowledge base and document counts
+      description: Returns knowledge base and document totals for the supplied runtime user context. Authenticated via X-Service-Token; when user context is supplied, knowledge:read permission is required. When no user context is supplied, the adapter returns zero counts because the vendored runtime is tenant-scoped.
       operationId: internalGetKnowledgeStatistics
       responses:
         "200":
@@ -284,6 +284,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/KnowledgeStatisticsResponse"
         "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
 components:
   parameters:
     Page:

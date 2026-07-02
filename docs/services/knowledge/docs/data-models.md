@@ -28,7 +28,7 @@
 - PostgreSQL 是知识库元数据、文档状态、任务状态、切片正文和处理错误的事实来源。
 - Qdrant 只保存向量和检索所需的最小 payload，不作为文档状态、任务状态或正文完整性的事实来源。
 - 原始文件二进制、MinIO object key、文件下载权限和底层文件元数据归 File Service；Knowledge Service 只保存内部 `file_ref`，不把 file 服务内部 ID 暴露为公开文档字段。
-- 文档解析运行时归 Parser Service；Knowledge 只消费 Parser 返回的规范化 parsed content，并负责后续切片、embedding、Qdrant 写入和状态推进。
+- 文档解析、切块、embedding、索引和检索支持归 Knowledge 的 RAGFlow runtime 边界；Knowledge adapter 负责项目契约映射、权限上下文和状态推进。
 - `knowledge-queries` 是检索请求资源。当前实现即时执行并返回结果，不持久化查询历史；如后续需要审计或调试留痕，应新增独立表。
 - 删除采用软删除优先：知识库和文档通过 `deleted_at` 从常规列表中隐藏，任务和切片清理由后续 cleanup job 兜底。
 
@@ -114,7 +114,7 @@ parser service
 
 ### 6.2 KnowledgeDocument
 
-知识文档是 Knowledge Service 拥有的可检索文档资源。它引用 File Service 中的原文件，并维护解析协调、切片、embedding 和错误状态；具体 OCR/PaddleOCR 运行时在 Parser Service 内。
+知识文档是 Knowledge Service 拥有的可检索文档资源。它维护解析协调、切片、embedding、索引和错误状态；具体 OCR/PaddleOCR 模型加载和文档解析执行在 Knowledge 的 RAGFlow runtime 边界内。
 
 | 逻辑字段 | HTTP 字段 | PostgreSQL 字段 | 类型 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -266,7 +266,7 @@ fixture 规则：
 - Qdrant hit 找不到对应 `document_chunks` 或 hydrate 后文档不可见时，跳过该 hit，不把内部不一致暴露给前端。
 - 无有效命中时返回 `results: []` 和 `trace.hitCount: 0`，不得返回 500。
 - fake embedding/rerank adapter 可以返回固定向量、固定 score 或固定重排序顺序，但公开响应和 trace 字段必须符合 gateway OpenAPI。
-- 真实 A-11 worker 只负责生产同样形态的数据；不能要求 A-12/A-14 在单元或契约测试中启动 Parser service、真实 embedding provider 或真实 Qdrant。
+- 真实 A-11 worker 只负责生产同样形态的数据；不能要求 A-12/A-14 在单元或契约测试中启动 RAGFlow runtime、真实 embedding provider 或真实 Qdrant。
 
 ## 7. 枚举与状态机
 
@@ -386,7 +386,7 @@ document_chunks
 - `fileId`
 - MinIO bucket、object key、presigned URL
 - `parsedContent`
-- Parser 内部文件路径、OCR debug output、PaddleOCR 原始 provider body
+- runtime 内部文件路径、OCR debug output、PaddleOCR 原始 provider body
 - `idempotencyKey`
 - provider secret 或 secret 明文
 

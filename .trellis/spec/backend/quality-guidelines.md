@@ -17,88 +17,85 @@ go test ./...
 go build ./cmd/server
 ```
 
-`services/parser/` is a Python runtime boundary rather than a Go service. When
-changing Parser, run these checks from `services/parser`:
+`services/knowledge-runtime/` is a Python vendored runtime boundary rather than
+a Go service. When changing the runtime API, route registration, parser/chunking
+configuration, or Docker entrypoints, run targeted runtime tests from
+`services/knowledge-runtime` and the owning Knowledge adapter checks:
 
 ```bash
-uv run ruff check .
-uv run pytest
-uv run python -m compileall src tests
+cd services/knowledge-runtime
+PYTHONPATH=. uv run --no-project --with pytest --with pytest-asyncio python -m pytest <targeted tests> -q
+
+cd ../knowledge
+go test ./...
+go build ./cmd/adapter
 ```
 
-### Parser Real PaddleOCR Smoke
+### Knowledge Runtime PDF E2E
 
 #### 1. Scope / Trigger
 
-- Trigger: changing Parser PaddleOCR runtime code, model loading behavior,
-  deployment resource docs, or local OCR smoke commands.
-- Applies to `services/parser` tests/docs and Parser runbook entries.
+- Trigger: changing Knowledge document upload, runtime API/worker wiring,
+  parser/chunking/embedding/indexing behavior, retrieval contracts, or
+  host-run Knowledge runtime startup.
+- Applies to `services/knowledge`, `services/knowledge-runtime`, `deploy/**`,
+  and Knowledge runbook entries.
 
 #### 2. Signatures
 
 ```bash
-PARSER_PADDLEOCR_SMOKE=1 \
-PARSER_PADDLEOCR_ALLOW_DOWNLOAD=1 \
-uv run pytest -m paddleocr_smoke -s
-```
-
-Offline or deployment-like runs should use:
-
-```bash
-PARSER_PADDLEOCR_SMOKE=1 \
-PARSER_PADDLEOCR_CONFIG_PATH=/absolute/path/to/paddlex.yaml \
-uv run pytest -m paddleocr_smoke -s
+# Exact command may vary by local runtime profile, but the smoke must prove:
+# upload PDF -> runtime parse/chunk/embed/index -> retrieval returns hits.
+DL_T_673-1999.pdf
 ```
 
 #### 3. Contracts
 
-- Without `PARSER_PADDLEOCR_SMOKE=1`, the real model smoke must skip and ordinary
-  Parser CI must rely on fake OCR tests.
-- With `PARSER_PADDLEOCR_SMOKE=1`, missing PaddleOCR/PaddlePaddle runtime or
-  missing model policy must produce an actionable local test failure.
-- The smoke must call the Parser PaddleOCR backend path and assert non-empty OCR
-  output from a small fixture.
+- The old standalone `services/parser` must not be restored.
+- Knowledge owns document business state, permissions, and public responses.
+- `services/knowledge-runtime` owns parse, chunk, embedding, index, and
+  retrieval support as an implementation detail behind the Knowledge adapter.
+- A real PDF E2E must record document readiness, chunk count, query id, hit
+  count, and a short retrieval preview when the fixture is available.
 
 #### 4. Validation & Error Matrix
 
 | Condition | Required handling |
 | --- | --- |
-| Smoke env unset | `pytest.skip`, ordinary CI passes without PaddleOCR. |
-| Runtime modules missing | Fail with install command such as `uv sync --group dev --extra paddleocr`. |
-| No local model config and downloads not allowed | Fail with `PARSER_PADDLEOCR_CONFIG_PATH` or `PARSER_PADDLEOCR_ALLOW_DOWNLOAD` guidance. |
-| OCR returns empty content | Fail with fixture, language/device, and model-completeness guidance. |
+| Runtime API unreachable | Fail with the configured `VENDOR_RUNTIME_URL` and sanitized proxy/network diagnostics. |
+| Worker not consuming tasks | Fail with document status, elapsed polling time, and worker health/log pointer. |
+| Chunk count is zero | Fail with document id, parser configuration, and runtime task status. |
+| Retrieval returns zero hits for the fixture | Fail with query id, chunk count, and retrieval config. |
 
 #### 5. Good/Base/Bad Cases
 
-- Good: default `uv run pytest` skips real model smoke, while an explicit local
-  env run validates model loading and fixture OCR.
-- Base: PR records that only fake OCR checks ran because the local machine lacks
-  PaddleOCR models.
-- Bad: ordinary CI downloads PaddleOCR models, or a smoke failure emits raw
-  provider/debug bodies instead of a short actionable diagnostic.
+- Good: targeted unit/contract tests pass and a real PDF E2E proves upload,
+  parse, chunk, index, and retrieval.
+- Base: PR records that only unit/contract checks ran because local runtime
+  infrastructure is unavailable, with the blocker stated explicitly.
+- Bad: reporting success from adapter unit tests while the real runtime upload
+  or retrieval path was not exercised.
 
 #### 6. Tests Required
 
-- Parser fake OCR suite: `uv run pytest`.
-- Parser lint: `uv run ruff check .`.
-- Parser compile: `uv run python -m compileall src tests`.
-- For PaddleOCR runtime/resource changes, run the env-gated smoke when a real
-  model environment is available; otherwise record why it was skipped.
+- Knowledge adapter: `go test ./...` and `go build ./cmd/adapter`.
+- Runtime route/config tests for changed Python surfaces.
+- Docker policy and Compose config checks when deployment wiring changes.
+- Real PDF E2E when `DL_T_673-1999.pdf` is present.
 
 #### 7. Wrong vs Correct
 
 Wrong:
 
 ```bash
-uv run pytest  # implicitly downloads real OCR models in CI
+go test ./...  # then claim PDF parsing and retrieval were proven
 ```
 
 Correct:
 
 ```bash
-uv run pytest  # fake OCR only; real model smoke skipped
-PARSER_PADDLEOCR_SMOKE=1 PARSER_PADDLEOCR_ALLOW_DOWNLOAD=1 \
-  uv run pytest -m paddleocr_smoke -s
+go test ./...
+# plus an explicit PDF upload -> ready/chunks -> retrieval smoke against runtime
 ```
 
 When lint tooling is introduced, CI should run the selected linter for each
@@ -261,10 +258,10 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 
 ### 3. Contracts
 
-- Root local Compose is infrastructure-only. It must not contain business
-  services, migration jobs, seed jobs, or any `build:` entry.
-- Business services run on the host. Docs must provide host-run commands for
-  Auth, File, Parser, Knowledge, AI Gateway, QA, Document, Gateway, and frontend.
+- The root local Compose path stays infrastructure-only. Business services and
+  the RAGFlow Knowledge runtime API/worker run on the host.
+- Docs must provide host-run commands for Auth, File, Knowledge, AI Gateway,
+  QA, Document, Gateway, and frontend.
 - Frontend and browser-facing documentation must route traffic through gateway;
   internal service ports may be exposed only for local debugging.
 - `.env.example` values must be local placeholders and must not contain real
@@ -272,15 +269,13 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - `deploy/.env.example` is the single default local configuration source.
   Startup scripts may load `deploy/.env`, but must not duplicate service env
   defaults or print long `export` blocks in user-facing docs.
-- `run-backend.sh` prepares Parser with
-  `uv sync --frozen --group dev --extra paddleocr` so the default host-run
-  backend starts with the OCR runtime dependencies required by current features.
+- `run-backend.sh` must not prepare or start the retired standalone Parser.
+  Knowledge parsing runs through the RAGFlow runtime API/worker path.
 - Host-run uv package downloads should use `UV_DEFAULT_INDEX` from
   `deploy/.env.example` for mainland China developer networks. This is separate
   from Docker registry rewrite and should not be handled in Docker policy.
-- Because `run-backend.sh` uses `uv sync --frozen`, `services/parser/uv.lock`
-  must be generated from the same `UV_DEFAULT_INDEX` baseline and must not lock
-  packages to `https://pypi.org/simple` or `https://files.pythonhosted.org`.
+- Runtime Python dependency changes belong under `services/knowledge-runtime`;
+  the default local backend startup path must not depend on `services/parser`.
 - Host-run backend processes should be started in managed process groups and
   stopped by process group so `go run` or `uv run` wrapper processes do not
   leave child service binaries listening on local ports.
@@ -327,12 +322,12 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | Condition | Required handling |
 | --- | --- |
 | Compose YAML or env interpolation is invalid | `docker compose ... config --quiet` must fail before merge. |
-| Compose service list includes anything other than the five infra services | Remove the service or update policy only if the team explicitly changes the Docker boundary. |
+| Default Compose service list includes business services or profile services | Remove the service or update policy only if the team explicitly changes the Docker boundary. |
 | Host migrations or seed run before PostgreSQL/init scripts are ready | Add or restore an infra health wait in `scripts/local/dev-up.sh`; do not rely on plain `docker compose up -d`. |
 | `QDRANT_URL` is set but the default collection is not created | Add or restore Qdrant collection initialization in `scripts/local/dev-up.sh`; do not make users create `knowledge_chunks` manually for the default path. |
 | Compose contains `build:` | Remove it; repository Docker must stay pull-only infra. |
 | Docker policy checker fails | Fix the Compose/docs/script regression or update `scripts/check_docker_policy.py` and the runbook in the same PR when the policy intentionally changes. |
-| Parser uv lock points at official PyPI while `deploy/.env.example` uses a mirror | Regenerate `services/parser/uv.lock` with `UV_DEFAULT_INDEX` before merging; do not rely on the startup script to rewrite locks. |
+| Retired parser paths or env keys reappear in startup scripts | Remove the parser dependency and route document parsing through `services/knowledge-runtime`. |
 | `stop-backend.sh` only kills the wrapper PID | Start host services in a managed process group and stop the whole group; verify the script does not leave `go run` or `uv run` child services bound to ports. |
 | Seeded local AI Gateway profile uses `host.docker.internal` | Replace it with `http://localhost:11434/v1` for the host-run default path. |
 | Required Docker image is unavailable locally | Document `docker compose pull <service>` commands and report Docker runtime validation as skipped. |
@@ -365,7 +360,7 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - Run `python3 scripts/check_docker_policy.py` and the policy/environment unit
   tests when Compose, Docker docs, image tags, or Docker scripts change.
 - Run the local seed contract checker and its unit tests when seed SQL, seed
-  docs, startup scripts, or Parser uv lock sources change.
+  docs, startup scripts, or Knowledge runtime startup defaults change.
 - Search Docker and docs for duplicate image tags such as `redis:7` vs
   `redis:7-alpine`, and MinIO server/client tags before declaring version
   cleanup complete.

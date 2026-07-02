@@ -35,7 +35,7 @@ gateway service
    +--> file service
    +--> 智能问答
    +--> 知识库
-   +--> parser runtime
+   +--> RAGFlow knowledge runtime
    +--> 文档生成
    +--> AI Gateway
 
@@ -52,8 +52,7 @@ postgres + redis + qdrant + minio
 | `auth` | 用户身份、登录认证、权限控制、令牌或会话管理。 |
 | `file` | 文件上传、文件元数据、对象存储协调，以及文件处理流程入口。 |
 | `qa` | 智能问答服务，作为 Agent Host 管理会话、ReAct 循环、MCP 工具调用、引用和回答持久化。 |
-| `knowledge` | 知识导入状态、切分、索引、元数据管理和检索协调。 |
-| `parser` | 内部文档解析运行时，将 raw bytes 转成规范化 parsed content；首期目标为 Python/PaddleOCR，不通过 gateway 暴露。 |
+| `knowledge` | 知识导入状态、RAGFlow runtime 适配、解析/切块/索引状态、元数据管理和检索协调。 |
 | `document` | 报告、材料、知识摘要等文档生成流程。 |
 | `ai-gateway` | 模型 profile、provider credential、chat/embedding/rerank 调用的统一内部入口。 |
 
@@ -80,7 +79,7 @@ Gateway 基础契约文档：
 - Auth 服务接口文档：[docs/services/auth/README.md](docs/services/auth/README.md)
 - File 服务接口文档：[docs/services/file/README.md](docs/services/file/README.md)
 - Knowledge 服务接口文档：[docs/services/knowledge/README.md](docs/services/knowledge/README.md)
-- Parser Runtime 服务文档：[docs/services/parser/README.md](docs/services/parser/README.md)
+- Knowledge 服务接口文档：[docs/services/knowledge/README.md](docs/services/knowledge/README.md)
 - Gateway OpenAPI 契约：[docs/services/gateway/api/public.openapi.yaml](docs/services/gateway/api/public.openapi.yaml)
 - 服务边界矩阵：[docs/architecture/service-boundaries.md](docs/architecture/service-boundaries.md)
 - 前后端集成契约：[docs/architecture/frontend-backend-contract.md](docs/architecture/frontend-backend-contract.md)
@@ -102,9 +101,6 @@ Gateway 基础契约文档：
 │   │   └── go.mod
 │   ├── knowledge/
 │   │   └── go.mod
-│   ├── parser/
-│   │   ├── api/
-│   │   └── src/
 │   └── document/
 │       └── go.mod
 ├── deploy/
@@ -128,7 +124,7 @@ Gateway 基础契约文档：
 
 - Docker Engine 或 Docker Desktop，带 Compose v2。
 - Go `1.25.x`，例如 `1.25.1` 或 `1.25.4` 都可。
-- uv。Parser 的 Python `3.12` 运行时由 uv 按项目配置选择或安装。
+- uv。Knowledge RAGFlow runtime 的 Python 运行时依赖由 uv 按项目配置准备。
 - Bun。
 - `psql` 客户端。PostgreSQL server 由 Docker 启动，本机不用装 PostgreSQL server。
 - `curl`。
@@ -166,15 +162,14 @@ cd apps/web && bun run dev
 脚本不会创建、改写或维护另一套默认变量，只会读取 `deploy/.env` 让宿主机进程拿到配置。
 默认 demo 账号来自 `deploy/.env.example`：`admin` / `LocalDemoAdmin#12345`，
 `superadmin` / `LocalDemoAdmin#12345`。
-`UV_DEFAULT_INDEX` 也在这份文件里，默认使用清华 PyPI 镜像加速 Parser 首次准备
-PaddleOCR 依赖；它影响 uv，不影响 Docker。Parser 的 `uv.lock` 同样锁到清华源，
-`uv sync --frozen` 会按锁文件里的 URL 下载包，不能靠删除 `UV_DEFAULT_INDEX` 切回
-官方 PyPI。第一次启动仍会下载几十个 OCR 依赖包，之后会走 uv 缓存。
+`UV_DEFAULT_INDEX` 也在这份文件里，默认使用清华 PyPI 镜像加速 Python runtime
+依赖准备；它影响 uv，不影响 Docker。第一次启动 RAGFlow runtime 相关 Python
+依赖时仍可能下载较多包，之后会走 uv 缓存。
 
 `./scripts/local/dev-up.sh` 会拉取并启动 `postgres`、`redis`、`qdrant`、`minio`、
 `minio-init`，等待基础设施健康后创建/校验 Knowledge 的 Qdrant collection，
 再执行本机 migration 和 demo seed。
-`./scripts/local/run-backend.sh` 会启动 `auth`、`file`、`parser`、`knowledge`、
+`./scripts/local/run-backend.sh` 会启动 `auth`、`file`、`knowledge`、
 `ai-gateway`、`qa`、`document` 和 `gateway`，日志在 `.local/logs/`。
 
 `ai-gateway /readyz` 在 placeholder credential 下返回 `503 degraded` 是预期行为，

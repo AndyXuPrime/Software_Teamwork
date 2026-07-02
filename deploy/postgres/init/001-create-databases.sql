@@ -1,3 +1,5 @@
+-- Local integration contract: deploy/docker-compose.yml mounts this directory
+-- into the Postgres container to create service databases and app users.
 CREATE USER auth_app WITH PASSWORD 'auth_app_dev';
 CREATE USER file_app WITH PASSWORD 'file_app_dev';
 CREATE USER knowledge_app WITH PASSWORD 'knowledge_app_dev';

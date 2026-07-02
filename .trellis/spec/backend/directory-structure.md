@@ -30,15 +30,15 @@ services/
 ├── knowledge/
 ├── document/
 ├── ai-gateway/
-└── parser/
+└── knowledge-runtime/
 deploy/
 └── docker-compose.yml
 ```
 
 Use the same service-local layout for every Go service unless a service has a
-clear reason to omit a directory. `services/parser/` is the explicit exception:
-it is a Python/FastAPI/PaddleOCR runtime boundary documented under
-`docs/services/parser/` and should not be forced into the Go module layout.
+clear reason to omit a directory. `services/knowledge-runtime/` is the explicit
+non-Go runtime exception: it is the vendored RAGFlow runtime boundary behind the
+Go Knowledge adapter and should not be forced into the Go module layout.
 
 ---
 
@@ -112,11 +112,11 @@ When adding a service:
 6. Add CI path filters for `services/<service>/**`.
 7. Update README and this spec if the service changes architecture.
 
-When adding or changing a non-Go runtime such as Parser, document the runtime
-boundary, package manager, lockfile, host-run command, and service API under
-`docs/services/<service>/` and `docs/architecture/technology-decisions.md`.
-Do not introduce Go wrappers around runtime-specific libraries solely to match
-the Go service template.
+When adding or changing a non-Go runtime such as `services/knowledge-runtime`,
+document the runtime boundary, package manager, lockfile, host-run command, and
+service API under `docs/services/<service>/` or the owning service docs plus
+`docs/architecture/technology-decisions.md`. Do not introduce Go wrappers around
+runtime-specific libraries solely to match the Go service template.
 
 ### Baseline Slice For Service Migration
 

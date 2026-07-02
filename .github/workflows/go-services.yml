@@ -135,7 +135,12 @@ jobs:
         run: go test ./...
 
       - name: Build server
+        if: matrix.service != 'knowledge'
         run: go build ./cmd/server
+
+      - name: Build knowledge adapter
+        if: matrix.service == 'knowledge'
+        run: go build ./cmd/adapter
 
       - name: Build QA agent
         if: matrix.service == 'qa'

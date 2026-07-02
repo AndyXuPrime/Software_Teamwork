@@ -38,9 +38,6 @@
 | [Knowledge 权限矩阵](services/knowledge/docs/permission-matrix.md) | 知识库、文档、检索和 parser config 的角色/权限矩阵。 |
 | [Knowledge 数据模型文档](services/knowledge/docs/data-models.md) | Knowledge 模块知识库、文档、处理任务、切片、Qdrant payload 和运行时配置逻辑模型。 |
 | [Knowledge 实现说明](services/knowledge/docs/implementation.md) | `services/knowledge/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
-| [Parser Runtime 服务文档](services/parser/README.md) | 内部文档解析运行时、Python/PaddleOCR 边界和 `/internal/v1/parsed-documents` 契约入口。 |
-| [Parser Runtime 权限矩阵](services/parser/docs/permission-matrix.md) | Parser 内部服务认证、调用方白名单和 Knowledge 授权责任。 |
-| [Parser Runtime 实现说明](services/parser/docs/implementation.md) | `services/parser/` 当前实现状态、契约对齐、缺口和最近检查记录。 |
 | [QA 服务接口文档](services/qa/README.md) | 智能问答 Agent Host、会话、消息、ReAct 循环、MCP 工具调用、SSE、引用、配置、检索测试和统计接口说明。 |
 | [QA 权限矩阵](services/qa/docs/permission-matrix.md) | QA 会话、消息、回答运行、引用、配置、检索测试、指标和工具调用的权限边界。 |
 | [QA 数据模型文档](services/qa/docs/data-models.md) | QA 模块逻辑数据模型、核心关系、写入流程、索引和安全约束。 |
@@ -59,8 +56,6 @@
 | [Gateway OpenAPI 契约](services/gateway/api/public.openapi.yaml) | 当前稳定的 gateway 公开 API 机器可读契约。 |
 | [Gateway Active API Owner Map](services/gateway/docs/active-api-owner-map.md) | 从 Gateway OpenAPI 审计得到的 active API 清单、owner service、tag、operationId 和认证要求。 |
 | [AI Gateway OpenAPI 契约](services/ai-gateway/api/internal.openapi.yaml) | AI Gateway 内部服务机器可读契约；前端不得直接调用。 |
-| [Parser Runtime 公开契约](services/parser/api/public.openapi.yaml) | Parser 无 Gateway 公开 API 的机器可读声明。 |
-| [Parser Runtime 内部契约](services/parser/api/internal.openapi.yaml) | Parser 内部服务机器可读契约；供 Knowledge ingestion、QA 会话附件解析等后端服务调用。 |
 
 ## 运行与测试
 

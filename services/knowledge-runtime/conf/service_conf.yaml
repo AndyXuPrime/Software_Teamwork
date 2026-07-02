@@ -1,0 +1,43 @@
+# Local host-run overlay for knowledge-runtime (PostgreSQL knowledge_system).
+# Edit hosts and credentials for your local infrastructure before starting the
+# API and worker scripts under deploy/api and deploy/worker.
+
+ragflow:
+  host: 127.0.0.1
+  http_port: 9380
+
+postgres:
+  name: knowledge_system
+  user: knowledge_app
+  password: knowledge_app_dev
+  host: localhost
+  port: 5432
+
+minio:
+  user: minio_local_demo
+  password: minio-local-demo-password
+  host: localhost:9000
+  bucket: software-teamwork-knowledge
+  prefix_path: ragflow
+
+es:
+  hosts: http://localhost:9200
+  username: ''
+  password: ''
+
+redis:
+  db: 1
+  username: ''
+  password: ''
+  host: localhost:6379
+
+task_executor:
+  message_queue_type: redis
+
+user_default_llm:
+  default_models:
+    embedding_model:
+      name: ''
+      factory: ''
+      api_key: ''
+      base_url: ''

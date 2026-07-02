@@ -1,0 +1,224 @@
+#
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
+import json
+import logging
+from datetime import datetime
+from timeit import default_timer as timer
+
+from quart import jsonify
+
+from api.apps import login_required, current_user
+from api.utils.api_utils import get_json_result, get_data_error_result, server_error_response
+from api.utils.health_utils import run_health_checks
+from common.versions import get_ragflow_version
+from api.db.services.knowledgebase_service import KnowledgebaseService
+from common.log_utils import get_log_levels, set_log_level
+from common import settings
+from rag.utils.redis_conn import REDIS_CONN
+
+@manager.route("/system/ping", methods=["GET"])  # noqa: F821
+async def ping():
+    return "pong", 200
+
+@manager.route("/system/version", methods=["GET"])  # noqa: F821
+def version():
+    """
+    Get the current version of the application.
+    ---
+    tags:
+      - System
+    security:
+      - ApiKeyAuth: []
+    responses:
+      200:
+        description: Version retrieved successfully.
+        schema:
+          type: object
+          properties:
+            version:
+              type: string
+              description: Version number.
+    """
+    return get_json_result(data=get_ragflow_version())
+
+
+@manager.route("/system/status", methods=["GET"])  # noqa: F821
+@login_required
+def status():
+    """
+    Get the system status.
+    ---
+    tags:
+      - System
+    security:
+      - ApiKeyAuth: []
+    responses:
+      200:
+        description: System is operational.
+        schema:
+          type: object
+          properties:
+            es:
+              type: object
+              description: Elasticsearch status.
+            storage:
+              type: object
+              description: Storage status.
+            database:
+              type: object
+              description: Database status.
+      503:
+        description: Service unavailable.
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              description: Error message.
+    """
+    res = {}
+    st = timer()
+    try:
+        res["doc_engine"] = settings.docStoreConn.health()
+        res["doc_engine"]["elapsed"] = "{:.1f}".format((timer() - st) * 1000.0)
+    except Exception as e:
+        res["doc_engine"] = {
+            "type": "unknown",
+            "status": "red",
+            "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
+            "error": str(e),
+        }
+
+    st = timer()
+    try:
+        settings.STORAGE_IMPL.health()
+        res["storage"] = {
+            "storage": settings.STORAGE_IMPL_TYPE.lower(),
+            "status": "green",
+            "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
+        }
+    except Exception as e:
+        res["storage"] = {
+            "storage": settings.STORAGE_IMPL_TYPE.lower(),
+            "status": "red",
+            "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
+            "error": str(e),
+        }
+
+    st = timer()
+    try:
+        KnowledgebaseService.get_by_id("x")
+        res["database"] = {
+            "database": settings.DATABASE_TYPE.lower(),
+            "status": "green",
+            "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
+        }
+    except Exception as e:
+        res["database"] = {
+            "database": settings.DATABASE_TYPE.lower(),
+            "status": "red",
+            "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
+            "error": str(e),
+        }
+
+    st = timer()
+    try:
+        if not REDIS_CONN.health():
+            raise Exception("Lost connection!")
+        res["redis"] = {
+            "status": "green",
+            "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
+        }
+    except Exception as e:
+        res["redis"] = {
+            "status": "red",
+            "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
+            "error": str(e),
+        }
+
+    task_executor_heartbeats = {}
+    try:
+        task_executors = REDIS_CONN.smembers("TASKEXE")
+        now = datetime.now().timestamp()
+        for task_executor_id in task_executors:
+            heartbeats = REDIS_CONN.zrangebyscore(task_executor_id, now - 60 * 30, now)
+            heartbeats = [json.loads(heartbeat) for heartbeat in heartbeats]
+            task_executor_heartbeats[task_executor_id] = heartbeats
+    except Exception:
+        logging.exception("get task executor heartbeats failed!")
+    res["task_executor_heartbeats"] = task_executor_heartbeats
+
+    return get_json_result(data=res)
+
+
+@manager.route("/system/healthz", methods=["GET"])  # noqa: F821
+def healthz():
+    result, all_ok = run_health_checks()
+    return jsonify(result), (200 if all_ok else 500)
+
+
+@manager.route("/system/config/log", methods=["GET"])  # noqa: F821
+@login_required
+async def get_logger_levels():
+    """
+    Get current log levels for all packages.
+    ---
+    tags:
+        - System
+    responses:
+        200:
+            description: Return current log levels
+    """
+    return get_json_result(data=get_log_levels())
+
+
+@manager.route("/system/config/log", methods=["PUT"])  # noqa: F821
+@login_required
+async def set_logger_level():
+    """
+    Set log level for a package.
+    ---
+    tags:
+        - System
+    parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            properties:
+                pkg_name:
+                    type: string
+                    description: Package name (e.g., "rag.utils.es_conn")
+                level:
+                    type: string
+                    description: Log level (DEBUG, INFO, WARNING, ERROR)
+    responses:
+        200:
+            description: Log level updated successfully
+    """
+    from quart import request
+    data = await request.get_json()
+    if not data or "pkg_name" not in data or "level" not in data:
+        return get_data_error_result(message="pkg_name and level are required")
+    pkg_name = data["pkg_name"]
+    level = data["level"]
+    success = set_log_level(pkg_name, level)
+    if success:
+        return get_json_result(data={"pkg_name": pkg_name, "level": level})
+    else:
+        return get_data_error_result(message=f"Invalid log level: {level}")

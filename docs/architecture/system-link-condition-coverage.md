@@ -154,43 +154,41 @@
 - `/internal/v1/files/**`、PostgreSQL metadata runtime、memory/local/MinIO adapter 和 service-token 校验已存在。
 - PostgreSQL + MinIO 联合 smoke 默认跳过；跨服务 smoke 仍缺。
 
-## 链路 4：Parser 内部文档解析
+## 链路 4：Knowledge RAGFlow runtime 文档处理
 
-**Owner**：`parser` 拥有解析运行时；`knowledge` 拥有文档业务状态。
-**触发入口**：`knowledge` ingestion worker 调 `POST /internal/v1/parsed-documents`。
-**参与方**：`knowledge`、`file`、`parser`、Parser runtime。
+**Owner**：`knowledge` 拥有文档业务状态和 runtime 适配边界。
+**触发入口**：`knowledge` adapter 上传文档并调用 RAGFlow runtime API/worker。
+**参与方**：`knowledge`、`knowledge-runtime`、PostgreSQL、Redis、MinIO、Elasticsearch/索引后端。
 
 **正常路径**
 
-1. Knowledge worker 从 PostgreSQL 读取待处理文档和 `file_ref`。
-2. Knowledge 调 `file` 读取 raw bytes。
-3. Knowledge 以内部 service token 和 request id 调 Parser。
-4. Parser 解码 base64、检查大小/超时/并发限制。
-5. Parser 解析 TXT/Markdown/OpenXML，或使用 PP-StructureV3/PaddleOCR 路径处理 PDF/image。
-6. Parser 返回 `content`、`title`、`backend` 和页级 `pages[]` 质量字段。
-7. Knowledge 校验 parsed content，继续切片、embedding、索引和状态推进。
+1. Knowledge adapter 创建 RAGFlow dataset，并把项目 parser config 映射为 RAGFlow `parser_config`。
+2. Knowledge adapter 上传文档到 runtime dataset。
+3. 宿主机 runtime worker 读取任务，执行 PDF 解析、版面/OCR、切块、embedding 和索引写入。
+4. Knowledge adapter 轮询 runtime 文档状态和 chunks，并把结果映射成项目内部文档/chunk/检索响应。
+5. Knowledge 保持 gateway-facing 权限、错误 envelope、request id 和敏感信息脱敏规则。
 
 **条件分支**
 
 | 分类 | 分支 |
 | --- | --- |
-| Request | base64 非法、文件过大、content type 不支持、请求超时。 |
-| Dependency | Parser runtime 不可用、模型未下载、内存不足、子进程失败。 |
-| Async | Knowledge worker 任务 pending/running/succeeded/failed/retry。 |
-| Config | Parser config 缺失使用 fallback；管理员 parser config 由 Knowledge 管理。 |
-| Resource | File content 不存在或已删除；Knowledge 文档已删除时不应继续处理。 |
-| Leakage | Parser 不返回 object key、bucket、内部路径、OCR debug output、prompt、provider body 或 secret。 |
+| Request | 文件过大、content type 不支持、请求超时、runtime 返回非成功 code。 |
+| Dependency | Runtime API/worker 不可用、PostgreSQL/Redis/MinIO/Elasticsearch/provider 不可用、模型资源缺失。 |
+| Async | Runtime parse/index 任务 pending/running/succeeded/failed/retry。 |
+| Config | Parser config 缺失使用 fallback；管理员 parser config 由 Knowledge 管理并映射到 RAGFlow。 |
+| Resource | Runtime dataset/document 不存在、文档已删除或 tenant 不匹配。 |
+| Leakage | Knowledge 不返回 object key、bucket、内部路径、OCR debug output、prompt、provider body 或 secret。 |
 
 **输出/状态**
 
-- Parser 不持久化业务状态。
-- Knowledge 保存 processing job、chunks、parser snapshot/质量字段和文档状态。
+- Runtime 保存处理所需的运行时数据和索引数据。
+- Knowledge adapter 输出项目契约中的文档状态、chunks、content 和检索结果。
 
 **当前状态**
 
-- Parser Runtime 为“部分实现”。
-- Python/FastAPI runtime、内部解析 API、service-token auth 和 fake/backend tests 已落地。
-- 真实 PaddleOCR/PP-StructureV3 模型 smoke 和 Knowledge/File/Redis 全链路 smoke 仍需补齐。
+- 旧 `services/parser` 已退役。
+- Knowledge RAGFlow runtime API/worker 已成为当前 PDF 解析、切块、embedding、索引和检索链路。
+- 真实 PDF E2E 需要本地 runtime、对象存储、索引后端和 provider credential。
 
 ## 链路 5：Knowledge 知识库与文档生命周期
 

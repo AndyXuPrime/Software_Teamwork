@@ -33,7 +33,12 @@ class LocalSeedContractTests(unittest.TestCase):
                 "LOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345\n"
                 "LOCAL_SUPER_ADMIN_USERNAME=superadmin\n"
                 "LOCAL_SUPER_ADMIN_PASSWORD=LocalDemoAdmin#12345\n"
-                "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple\n",
+                "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple\n"
+                "DOCKER_IMAGE_REGISTRY_PREFIX=docker.m.daocloud.io/library/\n"
+                "RAGFLOW_DEPS_IMAGE=docker.m.daocloud.io/infiniflow/ragflow_deps:51ce6aab\n"
+                "VENDOR_RUNTIME_URL=http://127.0.0.1:9380\n"
+                "KNOWLEDGE_AUTO_START_INGESTION=false\n"
+                "# DOC_ENGINE=elasticsearch\n",
                 encoding="utf-8",
             )
             (root / ".gitignore").write_text("/.local/\n*.pid\n", encoding="utf-8")
@@ -88,9 +93,7 @@ class LocalSeedContractTests(unittest.TestCase):
             )
             (root / "scripts" / "local" / "run-backend.sh").write_text(
                 "setsid\n"
-                "uv sync --frozen --group dev --extra paddleocr\n"
-                "uv run --frozen parser-service\n"
-                "auth\nfile\nparser\nknowledge\nai-gateway\nqa\ndocument\ngateway\n",
+                "auth\nfile\nknowledge\ngo run ./cmd/adapter\nai-gateway\nqa\ndocument\ngateway\n",
                 encoding="utf-8",
             )
             (root / "scripts" / "local" / "stop-backend.sh").write_text(
@@ -111,16 +114,20 @@ class LocalSeedContractTests(unittest.TestCase):
         self.assertIssueContains(issues, "33333333-3333-4333-8333-333333333301")
         self.assertIssueContains(issues, "AUTH_DATABASE_URL")
 
-    def test_verifier_reports_parser_lock_official_pypi_urls(self) -> None:
+    def test_verifier_reports_missing_runtime_env_defaults(self) -> None:
         verifier = load_verifier()
 
-        issues = verifier.validate_parser_uv_lock(
-            'source = { registry = "https://pypi.org/simple" }\n'
-            "https://files.pythonhosted.org/packages/example.whl\n"
+        issues = verifier.validate_docs(
+            deploy_readme="唯一默认配置来源\n",
+            runbook="",
+            env_example="VENDOR_RUNTIME_URL=http://127.0.0.1:9380\n",
+            dev_up_script="",
+            run_backend_script="",
+            stop_backend_script="",
         )
 
-        self.assertIssueContains(issues, "https://pypi.org/simple")
-        self.assertIssueContains(issues, "https://files.pythonhosted.org")
+        self.assertIssueContains(issues, "# DOC_ENGINE=elasticsearch")
+        self.assertIssueContains(issues, "go run ./cmd/adapter")
 
     def test_verifier_reports_missing_local_runtime_gitignore(self) -> None:
         verifier = load_verifier()

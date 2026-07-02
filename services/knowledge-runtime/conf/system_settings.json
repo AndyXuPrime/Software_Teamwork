@@ -1,0 +1,16 @@
+{
+  "system_settings": [
+    {
+      "name": "enable_whitelist",
+      "source": "variable",
+      "data_type": "bool",
+      "value": "true"
+    },
+    {
+      "name": "default_role",
+      "source": "variable",
+      "data_type": "string",
+      "value": ""
+    }
+  ]
+}

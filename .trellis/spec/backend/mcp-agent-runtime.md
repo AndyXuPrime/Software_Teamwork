@@ -304,3 +304,103 @@ QA Agent -> model Function Calling -> local/MCP tool
 QA emits and persists safe SSE progress + answer delta + tool summaries
 QA persists final message + displayable steps; Gateway preserves envelopes
 ```
+
+## Scenario: Knowledge MCP Server
+
+### 1. Scope / Trigger
+
+- Trigger: changing `services/knowledge/internal/mcp`, MCP tool schemas, adapter bridge, or AI Gateway wiring for Knowledge-owned tools.
+- Knowledge owns the **MCP Server** (tool implementation). QA and other products are **MCP Clients** only.
+- MCP must not call `knowledge-runtime` directly; all tools go through the existing adapter handler layer (in-process `Bridge`).
+
+### 2. Signatures
+
+```text
+MCP server name: knowledge-mcp
+Transport: Streamable HTTP (official go-sdk)
+Listener env: KNOWLEDGE_MCP_ADDR (optional; omit to disable MCP)
+```
+
+v1 tools (14):
+
+```text
+search_knowledge
+answer_from_knowledge
+list_knowledge_bases | get_knowledge_base | create_knowledge_base | update_knowledge_base | delete_knowledge_base
+list_documents | get_document | create_document | update_document | delete_document
+list_document_chunks | get_document_content
+```
+
+Bridge (in-process, no loopback HTTP):
+
+```go
+Bridge.Do(ctx, caller, method, path, body []byte) (status int, body []byte, headers http.Header, err error)
+Bridge.DoJSON / DoGET / DoMultipart
+```
+
+### 3. Contracts
+
+Environment keys:
+
+| Key | Required | Contract |
+| --- | --- | --- |
+| `KNOWLEDGE_MCP_ADDR` | no | e.g. `:8084`; empty disables MCP listener |
+| `KNOWLEDGE_HTTP_ADDR` | yes | Adapter REST, default `:8083` |
+| `KNOWLEDGE_AI_GATEWAY_URL` | for `answer_from_knowledge` | Absolute HTTP(S) base; joins `/internal/v1/chat/completions` |
+| `KNOWLEDGE_AI_GATEWAY_SERVICE_TOKEN` | no | Falls back to `INTERNAL_SERVICE_TOKEN` |
+
+MCP session → adapter headers:
+
+| Header | Source |
+| --- | --- |
+| `X-User-Id` | MCP HTTP request |
+| `X-Request-Id` | MCP HTTP request or generated |
+| `X-User-Roles` / `X-User-Permissions` | optional |
+
+Tool contracts:
+
+- `search_knowledge` → `POST /internal/v1/knowledge-queries` (retrieval only, no LLM).
+- `answer_from_knowledge` → retrieval + AI Gateway chat with numbered citations in prompt; returns `{ answer, citations[], retrieval }`.
+- CRUD tools → matching `/internal/v1/knowledge-bases*` and `/internal/v1/documents*` adapter routes.
+- `create_document` → decode `fileContentBase64`, `Bridge.DoMultipart` to upload route.
+
+Do **not** expose RAGFlow upstream MCP (`--enable-mcpserver`) as the product tool surface.
+
+### 4. Validation & Error Matrix
+
+| Condition | Result |
+| --- | --- |
+| `KNOWLEDGE_MCP_ADDR` unset | MCP listener not started; REST adapter unaffected |
+| `answer_from_knowledge` without AI Gateway URL | Tool error: gateway not configured |
+| Missing `X-User-Id` on MCP HTTP | Defaults to `mcp_anonymous` + read permission (tests); production clients must send real user id |
+| Invalid base64 in `create_document` | Tool validation error |
+| Adapter/vendor failure | Propagate adapter error message to MCP tool result |
+
+### 5. Good/Base/Bad Cases
+
+- Good: QA calls `search_knowledge` via Streamable HTTP; Knowledge forwards to adapter; citations returned for QA snapshot projection.
+- Base: MCP disabled; Gateway REST on `:8083` only.
+- Bad: QA calls RAGFlow runtime MCP on `:9382`; duplicate auth models; bypass adapter contract.
+
+### 6. Tests Required
+
+- `internal/mcp`: `tools/list` returns 14 tools; `search_knowledge` with fake vendor; `answer_from_knowledge` with fake vendor + fake AI Gateway; KB create/list; `create_document` multipart upload.
+- `internal/aigateway`: chat client request headers and response decode.
+- Final: `go test ./...` in `services/knowledge`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+Document service -> knowledge-runtime :9380 /api/v1/datasets/search
+QA -> RAGFlow MCP with API key auth
+```
+
+#### Correct
+
+```text
+QA MCP Client -> KNOWLEDGE_MCP_ADDR (Streamable HTTP)
+Knowledge MCP -> Bridge -> adapter handlers -> vendorclient -> knowledge-runtime
+answer_from_knowledge -> Bridge retrieval -> KNOWLEDGE_AI_GATEWAY_URL chat
+```

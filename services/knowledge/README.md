@@ -1,61 +1,41 @@
 # Knowledge Service
 
-Knowledge owns knowledge-base metadata, knowledge document metadata/status,
-processing trace state, and future chunk/vector lifecycle coordination.
+Knowledge exposes Gateway `/internal/v1/*` contract routes via the **contract
+adapter** (`cmd/adapter`). KB metadata, documents, chunks, queries, and upload
+flow through the RAGFlow runtime at `VENDOR_RUNTIME_URL` (`services/knowledge-runtime/`;
+deepdoc + Elasticsearch + MinIO).
 
-This implementation includes the A-09 foundation slice, the A-10 document
-upload handoff, the A-11 ingestion worker path, A-12 knowledge-query
-retrieval, the A-14 active-operation contract surface, and the document
-delete-cleanup worker loop. Knowledge accepts the document upload, stores raw
-bytes through File Service, creates durable document/job state, enqueues
-ingestion work, then consumes the A10 task payload to read source bytes, parse,
-chunk, embed, index chunks, expose chunk/content reads, and run retrieval over
-hydrated chunks. Document deletion soft-deletes Knowledge-owned rows first,
-then consumes a cleanup task to delete the File reference and document vector
-points.
+Parser-config admin routes (`/internal/v1/parser-configs`) optionally use legacy
+goose PostgreSQL tables when `DATABASE_URL` or `KNOWLEDGE_DATABASE_URL` is set.
 
 ## Runtime
 
 - Go module: `go 1.25.0`
+- Binary: `cmd/adapter` only (legacy `cmd/server` removed in Phase 5)
 - HTTP: standard `net/http` `ServeMux`
 - Logging: `log/slog`
-- PostgreSQL access: `pgx` + generated `sqlc` query package
-- Migrations: `goose`
+- Parser-config storage: `pgx` + `sqlc` (optional)
 
-All landed Go services use the repository Go 1.25 baseline. Knowledge keeps the
-standard `net/http` / `http.ServeMux` service shape while leaving room for later
-RAG MCP server work.
+See `../knowledge-runtime/README.md` for host-run vendor runtime wiring.
 
 ## Configuration
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | yes | - | PostgreSQL connection string. |
-| `FILE_SERVICE_BASE_URL` | yes | - | Internal File Service base URL for `/internal/v1/files`. |
-| `KNOWLEDGE_REDIS_ADDR` | yes | - | Redis/asynq endpoint for ingestion and delete-cleanup task handoff. |
+| `VENDOR_RUNTIME_URL` | yes | `http://127.0.0.1:9380` | RAGFlow vendor HTTP base URL. |
+| `VENDOR_RUNTIME_SERVICE_TOKEN` | yes | - | Token forwarded to the runtime as `X-Service-Token`; must match `KNOWLEDGE_RUNTIME_SERVICE_TOKEN`. |
+| `KNOWLEDGE_SERVICE_TOKEN` / `INTERNAL_SERVICE_TOKEN` | yes | - | Shared service token required on `/internal/v1/**` via `X-Service-Token`. |
+| `DATABASE_URL` / `KNOWLEDGE_DATABASE_URL` | no | - | PostgreSQL for parser-config admin; omit to return `502` on those routes. |
 | `KNOWLEDGE_HTTP_ADDR` | no | `:8083` | HTTP listen address. |
 | `KNOWLEDGE_SERVICE_VERSION` | no | `dev` | Version returned by readiness checks. |
 | `KNOWLEDGE_ENV` | no | `local` | Runtime environment label. |
-| `KNOWLEDGE_MAX_UPLOAD_BYTES` | no | `33554432` | Multipart upload limit in bytes. |
-| `KNOWLEDGE_SERVICE_TOKEN` | yes | - | Internal service token forwarded to File Service. |
+| `KNOWLEDGE_AUTO_START_INGESTION` | no | `true` | Call vendor `/documents/parse` after upload. |
 | `KNOWLEDGE_SHUTDOWN_TIMEOUT` | no | `10s` | Graceful shutdown timeout. |
-| `PARSER_SERVICE_BASE_URL` | yes | - | Internal Parser service base URL for document parsing. |
-| `PARSER_SERVICE_TOKEN` | no | - | Optional Parser service token. |
-| `PARSER_SERVICE_TIMEOUT` | no | `30s` | Parser request timeout. |
-| `EMBEDDING_PROVIDER` | no | `local_hashing` | Embedding provider; `ai_gateway` uses AI Gateway. |
-| `EMBEDDING_MODEL` | no | `local_hashing` | Embedding model/profile label. |
-| `EMBEDDING_DIMENSION` | no | `384` | Embedding vector dimension. |
-| `AI_GATEWAY_BASE_URL` | no | - | AI Gateway base URL when `EMBEDDING_PROVIDER=ai_gateway`. |
-| `AI_GATEWAY_SERVICE_TOKEN` | no | - | Optional AI Gateway service token. |
-| `AI_GATEWAY_EMBEDDING_PROFILE_ID` | no | - | Optional AI Gateway embedding profile ID. |
-| `QDRANT_URL` | no | - | Optional Qdrant REST base URL; unset uses in-memory index. |
-| `QDRANT_BASE_URL` | no | - | Alias for `QDRANT_URL`. |
-| `QDRANT_API_KEY` | no | - | Optional Qdrant API key. |
-| `QDRANT_COLLECTION` | no | `knowledge_chunks` | Qdrant collection name. |
-| `RERANK_MODEL` | rerank | - | Optional AI Gateway rerank model. When unset, rerank requests use the local no-op fallback. |
-| `RERANK_PROFILE_ID` | no | - | Optional AI Gateway rerank profile id. |
 
-When `EMBEDDING_PROVIDER=ai_gateway`, `EMBEDDING_MODEL` must match the resolved AI Gateway embedding profile `model`. If `AI_GATEWAY_EMBEDDING_PROFILE_ID` or `EMBEDDING_PROFILE_ID` is unset, AI Gateway uses its default enabled embedding profile and still validates the `model` value before calling the provider. `RERANK_MODEL` is optional; when unset, query rerank keeps the vector order as a local no-op fallback.
+Upload storage and vector retrieval are configured in the vendor runtime
+(`services/knowledge-runtime/conf/service_conf.yaml`): MinIO bucket
+`software-teamwork-knowledge`, doc engine `elasticsearch`.
+Knowledge does not call File Service, Qdrant, Redis, or `services/parser`.
 
 ## Implemented Routes
 
@@ -66,6 +46,9 @@ Operational routes:
 
 Internal service routes:
 
+All `/internal/v1/**` routes require a matching `X-Service-Token` before
+user identity and permission headers are trusted.
+
 - `GET /internal/v1/knowledge-bases`
 - `POST /internal/v1/knowledge-bases`
 - `GET /internal/v1/knowledge-bases/{knowledgeBaseId}`
@@ -74,217 +57,48 @@ Internal service routes:
 - `GET /internal/v1/knowledge-bases/{knowledgeBaseId}/documents`
 - `POST /internal/v1/knowledge-bases/{knowledgeBaseId}/documents`
 - `GET /internal/v1/documents/{documentId}`
-- `PATCH /internal/v1/documents/{documentId}`
-- `DELETE /internal/v1/documents/{documentId}`
 - `GET /internal/v1/documents/{documentId}/chunks`
 - `GET /internal/v1/documents/{documentId}/content`
+- `PATCH /internal/v1/documents/{documentId}`
+- `DELETE /internal/v1/documents/{documentId}`
 - `POST /internal/v1/knowledge-queries`
+- `GET|POST|PATCH|DELETE /internal/v1/parser-configs[/**]` (requires `DATABASE_URL` or `KNOWLEDGE_DATABASE_URL`)
 
 Public gateway equivalents are documented in
 `docs/services/gateway/api/public.openapi.yaml`.
 
 ## Access Context
 
-Business routes require gateway-injected `X-User-Id`.
+Business routes require gateway-injected `X-User-Id` (from Auth service).
+The adapter forwards this as vendor tenant context; vendor login/JWT is disabled.
 
-Supported permission strings follow the current auth docs:
+Supported permission strings:
 
 - `knowledge:read`
 - `knowledge:write`
+- `knowledge:admin` / `admin:parser-config:write` for parser-config admin
 
 Rules:
 
-- Callers can read resources they created.
-- `knowledge:read`, `knowledge:write`, `admin`, or `super_admin` can read
-  broader resources.
-- Create, update, and delete require `knowledge:write`, `admin`, or
-  `super_admin`.
-- Hidden or deleted resources return `404 not_found`.
-- Authenticated callers without mutation rights receive `403 forbidden`.
+- Read routes require `knowledge:read` or `knowledge:write` (or admin roles).
+- Mutations require `knowledge:write` (or admin roles).
+- Vendor errors map to standard `{error}` envelopes.
 
 ## Data Model
 
-The first migration creates:
-
-- `knowledge_bases`
-- `knowledge_documents`
-- `processing_jobs`
-- `document_chunks`
-
-Document upload stores the File Service object ID only in
-`knowledge_documents.file_ref`. Public document responses expose `jobId` and
-document status, but never `fileRef`, File Service internal IDs, object keys, or
-internal URLs.
-
-`document_chunks` is now written by the ingestion worker. Qdrant payloads are
-limited to `knowledge_base_id`, `document_id`, `chunk_id`, `chunk_index`,
-`chunk_type`, `section_path`, `tags`, `metadata`, `job_id`,
-`job_attempt`, and ingestion attempt markers. Knowledge query retrieval uses the
-configured vector index and PostgreSQL chunk hydration; tests can still inject
-fake embedder/vector adapters without real AI Gateway or Qdrant.
-
-Knowledge base deletion is soft-delete-first:
-
-- mark `knowledge_bases.deleted_at`;
-- mark owned `knowledge_documents.deleted_at` in the same transaction for the
-  PostgreSQL runtime repository;
-- leave chunk/index cleanup for a future lifecycle job instead of hard-deleting
-  chunks or vectors in this metadata route.
-
-Document deletion is also soft-delete-first:
-
-- `DELETE /internal/v1/documents/{documentId}` marks `knowledge_documents.deleted_at`
-  and creates a `processing_jobs.job_type='delete_cleanup'` row in PostgreSQL.
-- The same process registers the asynq task type
-  `knowledge:document:delete_cleanup` alongside `knowledge:document:ingest`.
-- The cleanup payload contains only `requestId`, `jobId`, `documentId`,
-  `knowledgeBaseId`, and `userId`; it never carries `file_ref`, bucket, object
-  key, URL, service token, or vector payload.
-- The worker treats empty `file_ref`, File `404`, missing Qdrant points, and
-  duplicate delivery as idempotent success. File/Qdrant/Redis failures persist a
-  sanitized job error summary and do not restore document visibility. A
-  lightweight reconciler in the Knowledge process periodically scans
-  PostgreSQL for retryable `delete_cleanup` jobs and re-enqueues them after
-  transient Redis/asynq handoff failures.
+Goose migrations under `migrations/` retain legacy tables (`knowledge_bases`,
+`parser_configs`, etc.) for parser-config admin. Vendor metadata uses separate
+RAGFlow tables in the same PostgreSQL database when vendor PG is enabled.
 
 ## Local Integration Notes
 
-The repository local integration path uses PostgreSQL, File Service, Parser
-Service, Redis/asynq, Qdrant, and local hashing embeddings. Run
-`./scripts/local/dev-up.sh` from the repository root before starting Knowledge;
-it starts Qdrant and creates or verifies `QDRANT_COLLECTION` with
-`EMBEDDING_DIMENSION`.
+Root Compose only starts shared infrastructure. Start the vendor Python API
+(:9380) and task executor on the host, then run the adapter with
+`VENDOR_RUNTIME_URL` and `VENDOR_RUNTIME_SERVICE_TOKEN` pointing at that runtime
+as documented in
+`../knowledge-runtime/README.md`.
 
-Single-service debugging may still leave `QDRANT_URL` empty to use the in-memory
-vector index.
-
-AI Gateway integration is optional:
-
-- Leave `EMBEDDING_PROVIDER=local_hashing` for deterministic local runs.
-- Set `EMBEDDING_PROVIDER=ai_gateway`, `AI_GATEWAY_BASE_URL`, and
-  `AI_GATEWAY_SERVICE_TOKEN` only when the optional AI Gateway profile is
-  running with a real provider credential.
-- Set `RERANK_MODEL` only when AI Gateway rerank should be called. Otherwise
-  `rerank=true` requests keep vector order as a local no-op fallback.
-
-### Knowledge Ingestion Real Dependency Smoke
-
-`TestKnowledgeIngestionRealDepsSmoke` is an opt-in integration smoke under
-`internal/integration`. With `KNOWLEDGE_INGESTION_SMOKE` unset it skips before
-reading dependency configuration, so ordinary `go test ./...` remains
-offline-safe. When enabled, it verifies one Markdown fixture through:
-
-- Knowledge PostgreSQL metadata in an isolated `knowledge_smoke_*` schema.
-- File Service upload and content read.
-- Parser Service `/internal/v1/parsed-documents`.
-- Knowledge chunking, embedding, worker handler state transitions, and chunk
-  persistence.
-- Qdrant collection creation, point upsert, payload lookup, and cleanup.
-
-Start infra and the required host-run services first from the repository root:
-
-```bash
-cp deploy/.env.example deploy/.env
-./scripts/local/dev-up.sh
-./scripts/local/run-backend.sh
-```
-
-Then run the smoke from `services/knowledge`:
-
-```bash
-KNOWLEDGE_INGESTION_SMOKE=1 \
-KNOWLEDGE_TEST_DATABASE_URL='postgres://knowledge_app:knowledge_app_dev@127.0.0.1:5432/knowledge_system?sslmode=disable' \
-FILE_SERVICE_BASE_URL='http://127.0.0.1:8082' \
-KNOWLEDGE_SERVICE_TOKEN='local-dev-internal-service-token-change-me' \
-PARSER_SERVICE_BASE_URL='http://127.0.0.1:8087' \
-PARSER_SERVICE_TOKEN='local-dev-internal-service-token-change-me' \
-QDRANT_URL='http://127.0.0.1:6333' \
-EMBEDDING_PROVIDER=local_hashing \
-EMBEDDING_MODEL=local_hashing \
-EMBEDDING_DIMENSION=384 \
-go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v
-```
-
-The test creates a run-scoped Qdrant collection named
-`knowledge_ingestion_smoke_*`, uploads one File Service object, and creates a
-PostgreSQL schema named `knowledge_smoke_*`. Test cleanup deletes all three. If
-the process is interrupted, remove leftover Qdrant collections with the same
-prefix and drop leftover PostgreSQL schemas after checking no other local smoke
-is using them.
-
-Optional AI Gateway embedding can be tested by also starting host-run
-AI Gateway, creating a usable embedding profile/provider credential, and setting
-`EMBEDDING_PROVIDER=ai_gateway`, `AI_GATEWAY_BASE_URL`,
-`AI_GATEWAY_SERVICE_TOKEN`, `AI_GATEWAY_EMBEDDING_PROFILE_ID` or
-`EMBEDDING_PROFILE_ID`, `EMBEDDING_MODEL`, and `EMBEDDING_DIMENSION`.
-
-### Gateway -> Knowledge Owner Route Smoke
-
-`TestGatewayKnowledgeOwnerRouteSmoke` is a separate opt-in smoke for the
-Gateway owner route boundary. With `GATEWAY_KNOWLEDGE_OWNER_SMOKE` unset it
-skips before reading env. When enabled, it prechecks File, Parser, Knowledge,
-PostgreSQL, and Redis readiness, verifies that unauthenticated caller-supplied
-`X-User-*` headers are rejected, then creates a real Gateway session and calls
-`GET /api/v1/knowledge-bases` through Gateway. Knowledge rejects missing trusted
-user context, so the spoofed-header `401` plus authenticated `200` response with
-the supplied request id proves Gateway authenticated through Auth/session cache.
-The positive path also creates and reads a run-scoped knowledge base while
-sending a spoofed `X-User-Id`, then asserts `createdBy` equals the real session
-user rather than the spoofed header value.
-
-Before running the owner smoke, start infra plus host-run Auth, File, Parser,
-Knowledge, and Gateway using `deploy/README.md`:
-
-```bash
-cp deploy/.env.example deploy/.env
-./scripts/local/dev-up.sh
-./scripts/local/run-backend.sh
-```
-
-Parser must listen on `localhost:8087` and use the same service token as
-Knowledge.
-
-Then run:
-
-```bash
-GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 \
-GATEWAY_BASE_URL='http://127.0.0.1:8080' \
-KNOWLEDGE_SERVICE_BASE_URL='http://127.0.0.1:8083' \
-FILE_SERVICE_BASE_URL='http://127.0.0.1:8082' \
-PARSER_SERVICE_BASE_URL='http://127.0.0.1:8087' \
-KNOWLEDGE_TEST_DATABASE_URL='postgres://knowledge_app:knowledge_app_dev@127.0.0.1:5432/knowledge_system?sslmode=disable' \
-KNOWLEDGE_REDIS_ADDR='127.0.0.1:6379' \
-GATEWAY_SMOKE_USERNAME='admin' \
-GATEWAY_SMOKE_PASSWORD='LocalDemoAdmin#12345' \
-go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v
-```
-
-`GET /internal/v1/documents/{documentId}/content` validates the Knowledge-owned
-document first, then reads the raw bytes from File Service internally. It never
-exposes `file_ref`, bucket names, object keys, File Service IDs, or storage URLs in JSON
-responses.
-
-Delete-cleanup troubleshooting starts from PostgreSQL, not Redis. If Redis was
-temporarily unavailable during delete, the Knowledge reconciler will re-enqueue
-retryable `queued`, dependency-failed, or stale-running jobs after Redis
-recovers:
-
-```sql
-SELECT id, document_id, status, current_stage, attempts, max_attempts,
-       error_code, error_message, updated_at
-FROM processing_jobs
-WHERE job_type = 'delete_cleanup'
-ORDER BY updated_at DESC
-LIMIT 20;
-
-SELECT d.id, d.knowledge_base_id, d.current_job_id, j.status, j.error_code,
-       j.error_message
-FROM knowledge_documents d
-JOIN processing_jobs j ON j.id = d.current_job_id
-WHERE d.deleted_at IS NOT NULL
-  AND j.job_type = 'delete_cleanup'
-  AND j.status IN ('queued', 'failed', 'running');
-```
+`services/parser` is retired; document parsing uses vendor deepdoc.
 
 ## Migrations
 
@@ -296,21 +110,15 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 ## Development
 
 ```bash
-go test ./...
-go build ./cmd/server
+go test ./internal/adapter/... ./internal/adapterconfig/... ./internal/service/...
+go build ./cmd/adapter
 ```
 
-Contract tests under `internal/http` use seeded repositories and fake file,
-vector, and embedding adapters, matching the decoupling rule in
-`docs/services/knowledge/docs/api-contract.md` section 2.6. The env-gated
-Knowledge ingestion smoke above covers full upload -> File -> Parser ->
-worker -> embedding -> Qdrant indexing for one fixture document. The Gateway
-owner route smoke covers Auth/Gateway context injection into Knowledge for
-`GET /api/v1/knowledge-bases`; retrieval, rerank, MCP, and frontend end-to-end
-checks remain separate follow-up scopes.
+The Knowledge service runs the contract adapter (`cmd/adapter`) which proxies
+Gateway `/internal/v1/*` routes to the RAGFlow runtime at
+`VENDOR_RUNTIME_URL` (`services/knowledge-runtime/`). Document upload, deepdoc parsing, embedding, and retrieval
+use runtime MinIO + Elasticsearch — not legacy parser, Qdrant, or
+the removed Go ingestion worker.
 
-Regenerate the query package from `sqlc.yaml` after changing SQL files:
-
-```bash
-go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
-```
+Contract tests under `internal/adapter` use a fake vendor HTTP server. Live vendor
+tests require `-tags=integration` and `KNOWLEDGE_VENDOR_INTEGRATION_URL`.

@@ -16,12 +16,11 @@ CLEANUP_SEED = Path("deploy/seeds/099-local-demo-cleanup.sql")
 DEPLOY_README = Path("deploy/README.md")
 LOCAL_RUNBOOK = Path("docs/runbooks/local-integration.md")
 ENV_EXAMPLE = Path("deploy/.env.example")
+GITIGNORE = Path(".gitignore")
 AUTH_MIGRATIONS_DIR = Path("services/auth/migrations")
 DEV_UP_SCRIPT = Path("scripts/local/dev-up.sh")
 RUN_BACKEND_SCRIPT = Path("scripts/local/run-backend.sh")
 STOP_BACKEND_SCRIPT = Path("scripts/local/stop-backend.sh")
-PARSER_UV_LOCK = Path("services/parser/uv.lock")
-GITIGNORE = Path(".gitignore")
 
 REQUIRED_SEED_001_TOKENS = {
     "Auth local admin user": ["usr_local_admin", "cred_local_admin_password", "urole_local_admin_admin"],
@@ -142,12 +141,10 @@ REQUIRED_DEV_UP_TOKENS = [
 
 REQUIRED_RUN_BACKEND_TOKENS = [
     "setsid",
-    "uv sync --frozen --group dev --extra paddleocr",
-    "uv run --frozen parser-service",
     "auth",
     "file",
-    "parser",
     "knowledge",
+    "go run ./cmd/adapter",
     "ai-gateway",
     "qa",
     "document",
@@ -167,20 +164,12 @@ REQUIRED_ENV_TOKENS = [
     "MCP_SERVER_URL=http://localhost:8085/mcp",
     "MCP_SERVER_TOKEN=local-dev-internal-service-token-change-me",
     "MCP_SERVER_TOKEN_HEADER=Authorization",
-]
-
-REQUIRED_PARSER_UV_LOCK_TOKENS = [
-    'source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }',
-    "https://pypi.tuna.tsinghua.edu.cn/packages/",
-]
-
-REQUIRED_GITIGNORE_TOKENS = [
-    "/.local/",
-]
-
-FORBIDDEN_PARSER_UV_LOCK_TOKENS = [
-    "https://pypi.org/simple",
-    "https://files.pythonhosted.org",
+    "DB_TYPE=postgres",
+    "VENDOR_RUNTIME_URL=http://127.0.0.1:9380",
+    "VENDOR_RUNTIME_SERVICE_TOKEN=",
+    "KNOWLEDGE_RUNTIME_SERVICE_TOKEN=",
+    "KNOWLEDGE_AUTO_START_INGESTION=false",
+    "# DOC_ENGINE=elasticsearch",
 ]
 
 FORBIDDEN_STARTUP_DOC_TOKENS = [
@@ -192,6 +181,7 @@ FORBIDDEN_STARTUP_DOC_TOKENS = [
     "export AI_GATEWAY_DATABASE_URL",
     "docker compose up --build",
     "docker compose --profile ai",
+    "seed-local",
 ]
 
 FORBIDDEN_PATTERNS = [
@@ -219,7 +209,6 @@ def verify_local_seed_contract(root: Path) -> list[str]:
     dev_up_script = read_required(root, DEV_UP_SCRIPT, issues)
     run_backend_script = read_required(root, RUN_BACKEND_SCRIPT, issues)
     stop_backend_script = read_required(root, STOP_BACKEND_SCRIPT, issues)
-    parser_uv_lock = read_required(root, PARSER_UV_LOCK, issues)
     gitignore = read_required(root, GITIGNORE, issues)
 
     issues.extend(validate_seed_001(seed_001))
@@ -237,7 +226,6 @@ def verify_local_seed_contract(root: Path) -> list[str]:
             stop_backend_script,
         )
     )
-    issues.extend(validate_parser_uv_lock(parser_uv_lock))
     issues.extend(validate_gitignore(gitignore))
     issues.extend(validate_forbidden_content(root))
     return issues
@@ -382,24 +370,11 @@ def validate_docs(
     return issues
 
 
-def validate_parser_uv_lock(content: str) -> list[str]:
-    if not content:
-        return []
-    issues: list[str] = []
-    for token in REQUIRED_PARSER_UV_LOCK_TOKENS:
-        if token not in content:
-            issues.append(f"{PARSER_UV_LOCK} missing parser uv mirror token `{token}`")
-    for token in FORBIDDEN_PARSER_UV_LOCK_TOKENS:
-        if token in content:
-            issues.append(f"{PARSER_UV_LOCK} must not lock parser packages to `{token}`")
-    return issues
-
-
 def validate_gitignore(content: str) -> list[str]:
     if not content:
         return []
     issues: list[str] = []
-    for token in REQUIRED_GITIGNORE_TOKENS:
+    for token in ["/.local/", "DL_T_673-1999.pdf"]:
         if token not in content:
             issues.append(f"{GITIGNORE} missing local runtime ignore token `{token}`")
     return issues
