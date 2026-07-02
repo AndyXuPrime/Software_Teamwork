@@ -25,7 +25,7 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | 文档状态 | active | Parser README、public/internal OpenAPI 和 runtime README 存在；public OpenAPI 明确无 Gateway 公开路径。 |
-| 代码状态 | partial | Python/FastAPI runtime、`/healthz`、`/readyz`、`POST /internal/v1/parsed-documents`、base64/size/timeout/concurrency guard、TXT/Markdown/OpenXML 直接解析、PP-StructureV3 PDF/image parser、legacy PaddleOCR backend、Dockerfile 和 service-local tests 已落地。 |
+| 代码状态 | partial | Python/FastAPI runtime、`/healthz`、`/readyz`、`POST /internal/v1/parsed-documents`、base64/size/timeout/concurrency guard、TXT/Markdown/OpenXML 直接解析、PP-StructureV3 PDF/image parser、legacy PaddleOCR backend 和 service-local tests 已落地。 |
 | 契约对齐 | aligned / partial | 内部解析响应只暴露 `content`、`title`、`backend` 和页级 `pages[]` 质量字段；readiness contract 已按 #329 对齐。真实跨 Knowledge/File/Parser 依赖 smoke 仍待补齐。 |
 | 数据持久化 | none | Parser 不拥有数据库、对象存储、知识库、chunk、embedding、Qdrant point 或业务权限事实。 |
 | 测试状态 | partial | 默认 pytest 使用 fake OCR/backend，真实 PaddleOCR/PP-StructureV3 smoke 需显式环境变量；普通 CI 不下载模型。 |
@@ -43,7 +43,7 @@
 | PP-StructureV3 PDF/image parser | `services/parser/src/parser_service/backends/ppstructurev3.py` | #323 / Parser README | pytest + env-gated smoke | 默认处理 PDF/image；按页渲染 PDF，使用 PP-StructureV3 输出 Markdown，合并页级 Markdown。 |
 | 内存和子进程隔离 | `ppstructurev3.py`、runtime config | #323 / Parser README | pytest / review | `PARSER_PAGE_BATCH_SIZE=1`、`PARSER_SUBPROCESS_ISOLATION=true`、`PARSER_MEMORY_LIMIT_MB` 等默认值用于降低 16 GB 环境常驻模型风险。 |
 | legacy PaddleOCR backend | `services/parser/src/parser_service/backends/paddleocr` | Parser README | fake/backend tests | 兼容旧行级 OCR 路径，默认仍推荐 PP-StructureV3。 |
-| Docker runtime image | `services/parser/Dockerfile` | deploy baseline | build/runbook | 构建带 PaddleOCR extra 的 parser runtime image。 |
+| Host runtime | `uv run parser-service` | local integration baseline | deploy/runbook | Parser 当前按宿主机 Python/uv 路径启动；仓库不保留 Parser 容器。 |
 | 无公开 Gateway API | `docs/services/parser/api/public.openapi.yaml` | 服务边界 | docs/openapi review | Parser 不直接暴露给前端；管理端 parser runtime config 由 Knowledge owning API 承接。 |
 
 ## 4. 未实现

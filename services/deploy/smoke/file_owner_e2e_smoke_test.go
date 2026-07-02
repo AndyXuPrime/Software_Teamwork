@@ -354,7 +354,7 @@ func extractFirstKnowledgeBaseID(t *testing.T, body []byte) string {
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil || len(envelope.Data) == 0 {
-		t.Skip("no knowledge bases available; seed-local required")
+		t.Skip("no knowledge bases available; local seed required")
 	}
 	return envelope.Data[0].ID
 }

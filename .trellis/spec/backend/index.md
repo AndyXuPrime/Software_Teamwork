@@ -7,8 +7,8 @@
 ## Overview
 
 Backend code is organized as independent Go microservices under `services/`.
-Each service owns its own `go.mod`, HTTP API, configuration, tests, Docker
-build, and CI job. Services communicate through HTTP/REST in the initial
+Each service owns its own `go.mod`, HTTP API, configuration, tests, and CI job.
+Services communicate through HTTP/REST in the initial
 architecture.
 
 Backend services:

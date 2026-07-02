@@ -28,10 +28,20 @@ Out of scope for this MVP:
 
 ## Local Run
 
-```powershell
+完整本地应用从仓库根目录启动：
+
+```bash
+cp deploy/.env.example deploy/.env
+./scripts/local/dev-up.sh
+./scripts/local/run-backend.sh
+```
+
+只调 File 服务代码时，在 `services/file` 内跑服务级检查：
+
+```bash
 go test ./...
 go build ./cmd/server
-$env:FILE_HTTP_ADDR=':8082'; go run ./cmd/server
+go run ./cmd/server
 ```
 
 By default, metadata uses the in-memory repository for tests and local development.
@@ -120,11 +130,12 @@ Service HTTP handler, create an isolated PostgreSQL schema, write the object to
 MinIO, read it back through `/internal/v1/files/{fileId}/content`, then delete
 through the File API so test data is cleaned up.
 
-Start the local dependencies from the repository root:
+Start the root infra baseline from the repository root:
 
 ```bash
-cd deploy
-docker compose --env-file .env.example up -d postgres minio minio-init migrate-file
+cp deploy/.env.example deploy/.env
+./scripts/local/dev-up.sh
+cd services/file
 ```
 
 The root Compose MinIO initializer creates the local bucket
@@ -152,7 +163,13 @@ go test ./internal/integration -run TestFileMinIOPostgresSmoke -count=1 -v
 If the smoke is not enabled, `go test ./...` skips it. If it is enabled but
 PostgreSQL, MinIO, or the bucket is missing, the test fails with the missing
 environment variable or dependency error. Check `docker compose logs postgres
-migrate-file minio minio-init` first. The smoke normally deletes its test file;
+minio minio-init` from the root infra Compose first:
+
+```bash
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs postgres minio minio-init
+```
+
+The smoke normally deletes its test file;
 if it is interrupted, remove the leftover object from the MinIO console or `mc`
 when the file ID is known from the partial run.
 

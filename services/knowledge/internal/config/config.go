@@ -53,7 +53,7 @@ func Load() (Config, error) {
 		HTTPAddr:             stringValue("KNOWLEDGE_HTTP_ADDR", DefaultHTTPAddr),
 		ServiceVersion:       stringValue("KNOWLEDGE_SERVICE_VERSION", DefaultServiceVersion),
 		Environment:          stringValue("KNOWLEDGE_ENV", DefaultEnvironment),
-		DatabaseURL:          strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		DatabaseURL:          firstNonEmptyEnv("KNOWLEDGE_DATABASE_URL", "DATABASE_URL"),
 		FileServiceURL:       trimTrailingSlash(os.Getenv("FILE_SERVICE_BASE_URL")),
 		RedisAddr:            strings.TrimSpace(os.Getenv("KNOWLEDGE_REDIS_ADDR")),
 		ServiceToken:         strings.TrimSpace(os.Getenv("KNOWLEDGE_SERVICE_TOKEN")),

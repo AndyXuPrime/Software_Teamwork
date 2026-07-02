@@ -19,4 +19,5 @@ PaddleOCR is an optional dependency in local development:
 uv sync --group dev --extra paddleocr
 ```
 
-The runtime Dockerfile installs the `paddleocr` extra by default.
+Install the `paddleocr` extra on the host only when running the real OCR backend
+or the env-gated PaddleOCR smoke.

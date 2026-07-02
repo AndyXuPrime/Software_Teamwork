@@ -189,7 +189,7 @@
 **当前状态**
 
 - Parser Runtime 为“部分实现”。
-- Python/FastAPI runtime、内部解析 API、service-token auth、Dockerfile 和 fake/backend tests 已落地。
+- Python/FastAPI runtime、内部解析 API、service-token auth 和 fake/backend tests 已落地。
 - 真实 PaddleOCR/PP-StructureV3 模型 smoke 和 Knowledge/File/Redis 全链路 smoke 仍需补齐。
 
 ## 链路 5：Knowledge 知识库与文档生命周期
@@ -549,14 +549,14 @@
 ## 链路 14：本地联调、ready 和 smoke
 
 **Owner**：各服务负责自己的 ready；跨服务 smoke 仍是当前缺口。
-**触发入口**：`deploy/docker-compose.yml`、服务级 compose、`/readyz`、env-gated tests。
-**参与方**：所有服务、PostgreSQL、Redis、MinIO、Qdrant、Parser、AI Gateway/provider。
+**触发入口**：`deploy/docker-compose.yml`、host-run migrations/seed、`/readyz`、env-gated tests。
+**参与方**：所有 host-run 服务、PostgreSQL、Redis、MinIO、Qdrant、Parser、AI Gateway/provider。
 
 **正常路径**
 
-1. 本地先跑单服务 test/build。
+1. 本地先跑单服务 test 和 host-run 启动命令。
 2. 有 migration 的服务执行 goose apply smoke。
-3. 启动 Auth、Gateway、目标领域服务和该领域服务数据库。
+3. 启动 infra Compose，再启动 Auth、Gateway、目标领域服务和对应数据库连接。
 4. 需要模型调用时启动 AI Gateway 并创建对应 `purpose=chat|embedding|rerank` 的 enabled/default profile。
 5. 需要文件 bytes 时启动 File Service。
 6. 前端可见能力通过 Gateway public `/api/v1/**` 验证；服务间 smoke 才直连 `/internal/v1/**`。
@@ -566,7 +566,7 @@
 | 分类 | 分支 |
 | --- | --- |
 | Dependency | 根级 Compose 可启动依赖基线，但不证明完整 E2E；QA compose 不包含 Knowledge/File/AI Gateway；Document compose 不包含 File/AI Gateway。 |
-| Config | `.env.example`、`.env.china.example`、service token hash、AI profile seed、NO_PROXY/proxy 设置。 |
+| Config | `.env.example`、service token hash、AI profile seed、NO_PROXY/proxy 设置。 |
 | Resource | seed data 只覆盖本地登录、基础报告类型、示例知识库和 AI profile placeholder。 |
 | Current State | File PostgreSQL + MinIO smoke 可显式启用；Parser real OCR smoke env-gated；AI Gateway real provider smoke env-gated。 |
 | Leakage | 本地日志和失败输出不应包含 token、API key、数据库连接串、object key、完整 prompt。 |

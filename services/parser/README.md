@@ -32,7 +32,6 @@ Implemented behavior:
 services/parser/
   pyproject.toml
   uv.lock
-  Dockerfile
   api/
     openapi.yaml
   src/
@@ -101,6 +100,16 @@ this lightweight parser contract.
 
 ## Local Development
 
+Full local app startup is handled from the repository root:
+
+```bash
+cp deploy/.env.example deploy/.env
+./scripts/local/dev-up.sh
+./scripts/local/run-backend.sh
+```
+
+The commands below are for Parser-only development and tests.
+
 Install the non-OCR development dependencies:
 
 ```bash
@@ -154,30 +163,8 @@ uv sync --group dev --extra paddleocr
 uv run parser-service
 ```
 
-Build the runtime image:
-
-```bash
-DOCKER_BUILDKIT=1 \
-docker build -t software-teamwork-parser:local .
-```
-
-The Parser image intentionally stays on `python:3.12-slim` instead of Alpine.
-PaddleOCR/Paddle dependencies rely on native Python wheels and system libraries;
-the optimization target is runnable OCR first, then cached builds and clean
-runtime layers.
-The container entrypoint is `parser-service`; `uv run parser-service` is the
-host development path, not the Docker runtime command.
-
-Optional local mirror example:
-
-```bash
-DOCKER_BUILDKIT=1 docker build \
-  --build-arg APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian \
-  --build-arg APT_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security \
-  --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
-  --build-arg UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \
-  -t software-teamwork-parser:local .
-```
+The repository no longer provides a Parser container path. Parser runs on the
+host with `uv run parser-service`.
 
 ## Configuration
 

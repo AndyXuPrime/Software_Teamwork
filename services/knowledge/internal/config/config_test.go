@@ -31,6 +31,23 @@ func TestLoadValidatesUploadDependencies(t *testing.T) {
 	}
 }
 
+func TestLoadUsesKnowledgeDatabaseURL(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("KNOWLEDGE_DATABASE_URL", "postgres://knowledge:knowledge@localhost:5432/knowledge_system?sslmode=disable")
+	t.Setenv("FILE_SERVICE_BASE_URL", "http://localhost:8082")
+	t.Setenv("KNOWLEDGE_REDIS_ADDR", "localhost:6379")
+	t.Setenv("KNOWLEDGE_SERVICE_TOKEN", "knowledge-token")
+	t.Setenv("PARSER_SERVICE_BASE_URL", "http://localhost:8087")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DatabaseURL != "postgres://knowledge:knowledge@localhost:5432/knowledge_system?sslmode=disable" {
+		t.Fatalf("DatabaseURL = %q", cfg.DatabaseURL)
+	}
+}
+
 func TestLoadRuntimeAdapters(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("DATABASE_URL", "postgres://knowledge:knowledge@localhost:5432/knowledge?sslmode=disable")
@@ -183,6 +200,7 @@ func clearEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
 		"DATABASE_URL",
+		"KNOWLEDGE_DATABASE_URL",
 		"FILE_SERVICE_BASE_URL",
 		"KNOWLEDGE_REDIS_ADDR",
 		"KNOWLEDGE_SERVICE_TOKEN",

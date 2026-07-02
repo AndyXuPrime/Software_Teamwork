@@ -45,7 +45,7 @@
 | local object store | `services/file/internal/platform/storage/local.go` | `docs/services/file/README.md` | `TestLocalStorePutGetDelete` | 可用于本地持久化 smoke；metadata 仍非持久。 |
 | MinIO object store | `services/file/internal/platform/storage/minio.go` | `docs/services/file/README.md`、`docs/architecture/technology-decisions.md` | `TestMinIOStorePutSendsContentTypeChecksumAndSize` 等 adapter tests | 使用官方 `github.com/minio/minio-go/v7@v7.2.1` SDK；隐藏 bucket、object key、内部 URL 和凭据。 |
 | PostgreSQL metadata runtime | `services/file/cmd/server/main.go`、`services/file/internal/repository/postgres.go` | 数据模型 / 技术选型 | `go test ./...`、`FILE_TEST_DATABASE_URL` smoke（可选） | `FILE_DATABASE_URL` 配置后使用 PostgreSQL repository；未配置时保留 memory 模式。 |
-| PostgreSQL + MinIO 联合 smoke | `services/file/internal/integration/minio_postgres_smoke_test.go`、`deploy/docker-compose.yml` | #286 / 本地联调手册 | `FILE_MINIO_POSTGRES_SMOKE=1 ... go test ./internal/integration -run TestFileMinIOPostgresSmoke -count=1 -v` | 默认跳过；显式启用后通过 HTTP API 验证上传、metadata 写入、内容读取、删除和清理。 |
+| PostgreSQL + MinIO 联合 smoke | `services/file/internal/integration/minio_postgres_smoke_test.go`、`deploy/docker-compose.yml`（root local infra baseline） | #286 / 本地联调手册 | `FILE_MINIO_POSTGRES_SMOKE=1 ... go test ./internal/integration -run TestFileMinIOPostgresSmoke -count=1 -v` | 默认跳过；显式启用后通过 HTTP API 验证上传、metadata 写入、内容读取、删除和清理。 |
 | service token 校验 | `services/file/internal/config/config.go`、`services/file/internal/http/server.go` | File README / 内部服务契约 | handler/config tests | DB 模式要求 `FILE_INTERNAL_SERVICE_TOKEN` 或 `INTERNAL_SERVICE_TOKEN`；保护 `/internal/v1/files/**`。 |
 | readyz runtime 状态 | `services/file/internal/http/server.go` | `docs/services/file/api/internal.openapi.yaml` | handler tests | 返回 metadata/storage backend、service token 配置状态和 PostgreSQL dependency 状态。 |
 | legacy knowledge-document 路由移除 | `services/file/internal/http/server.go`、`services/file/internal/http/server_test.go` | File 只保留目标内部 OpenAPI | `TestLegacyKnowledgeDocumentRoutesReturnNotFound` | 旧 `/internal/v1/knowledge-bases/{knowledgeBaseId}/documents` 和 `/internal/v1/documents/{documentId}` 调用面返回 `404 not_found`。 |
@@ -81,7 +81,7 @@
 
 | 项目 | 当前状态 | 缺口 |
 | --- | --- | --- |
-| 启动命令 | `cd services/file && go run ./cmd/server` | 无 Dockerfile / Compose。 |
+| 启动命令 | `cd services/file && go run ./cmd/server` | host-run。 |
 | 环境变量 | `FILE_HTTP_ADDR`、`FILE_MAX_UPLOAD_BYTES`、`FILE_STORAGE_BACKEND`、`FILE_LOCAL_STORAGE_DIR`、`FILE_MINIO_ENDPOINT`、`FILE_MINIO_ACCESS_KEY`、`FILE_MINIO_SECRET_KEY`、`FILE_MINIO_BUCKET`、`FILE_MINIO_USE_SSL`、`FILE_MINIO_REGION`、`FILE_MINIO_TIMEOUT`、`FILE_DATABASE_URL`、`FILE_INTERNAL_SERVICE_TOKEN`、`INTERNAL_SERVICE_TOKEN`、`FILE_SHUTDOWN_TIMEOUT` | Redis 尚未被 runtime 使用。 |
 | PostgreSQL / migration | `migrations/0001_create_file_objects.sql`、`sqlc.yaml`、`queries/file_objects.sql`、runtime repository、`internal/repository/sqlc` | 真实 PostgreSQL smoke 需要本地 DB。 |
 | Redis / queue | 未使用 | 当前 cleanup 在 File delete path 中同步收口；如后续引入独立 async worker，仍需以 PostgreSQL metadata 为最终状态源。 |
