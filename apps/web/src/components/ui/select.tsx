@@ -201,19 +201,20 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
   return (
     <div
       data-slot="select-content"
-      className={cn(
-        'absolute top-full left-0 z-50 w-full overflow-hidden transition-[max-height] duration-300 ease-out',
-        className,
-      )}
-      style={{ maxHeight: open ? contentHeight : 0 }}
+      className={cn('absolute top-full left-0 z-50 w-full', className)}
       role="listbox"
       {...props}
     >
       <div
-        ref={innerRef}
-        className="mt-1 rounded-lg border bg-popover p-1 text-popover-foreground shadow-md"
+        className={cn(
+          'mt-1 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-md transition-all duration-300 ease-out',
+          open ? 'opacity-100' : 'max-h-0 opacity-0 border-0',
+        )}
+        style={open ? { maxHeight: contentHeight } : undefined}
       >
-        <SelectContentInner>{children}</SelectContentInner>
+        <div ref={innerRef} className="p-1">
+          <SelectContentInner>{children}</SelectContentInner>
+        </div>
       </div>
     </div>
   )
@@ -235,11 +236,16 @@ function SelectContentInner({ children }: { children: React.ReactNode }) {
     [setHighlightedIndex],
   )
 
+  const handleMouseLeave = React.useCallback(() => {
+    setHighlightedIndex(-1)
+  }, [setHighlightedIndex])
+
   return (
     <div
       data-slot="select-content-inner"
       className="relative"
       style={{ '--slider-offset': '0px' } as React.CSSProperties}
+      onMouseLeave={handleMouseLeave}
     >
       <div
         className="relative flex flex-col gap-0.5 overflow-auto py-1
