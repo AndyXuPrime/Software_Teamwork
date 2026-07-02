@@ -657,8 +657,14 @@ export function ChatPage() {
                   ...last,
                   artifacts: [
                     ...existing.filter((a) => {
+                      // reportId-based dedup: also removes old jobId-only entry
+                      if (artifact.reportId) {
+                        if (a.reportId === artifact.reportId) return false
+                        if (a.jobId && a.jobId === artifact.jobId) return false
+                        return true
+                      }
                       const aKey = a.reportId ?? a.jobId ?? a.reportName ?? ''
-                      const bKey = artifact.reportId ?? artifact.jobId ?? artifact.reportName ?? ''
+                      const bKey = artifact.jobId ?? artifact.reportName ?? ''
                       return aKey !== bKey
                     }),
                     artifact,
@@ -707,12 +713,13 @@ export function ChatPage() {
                   ...last,
                   artifacts: [
                     ...existing.filter((a) => {
+                      if (failedArtifact.reportId) {
+                        if (a.reportId === failedArtifact.reportId) return false
+                        if (a.jobId && a.jobId === failedArtifact.jobId) return false
+                        return true
+                      }
                       const aKey = a.reportId ?? a.jobId ?? a.reportName ?? ''
-                      const bKey =
-                        failedArtifact.reportId ??
-                        failedArtifact.jobId ??
-                        failedArtifact.reportName ??
-                        ''
+                      const bKey = failedArtifact.jobId ?? failedArtifact.reportName ?? ''
                       return aKey !== bKey
                     }),
                     failedArtifact,

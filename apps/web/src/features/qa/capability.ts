@@ -308,9 +308,13 @@ function parseReportArtifactPreview(raw: unknown): QAReportArtifactPreview | und
   const summary = sanitizeArtifactText(getString(raw, 'summary'))
   if (summary) preview.summary = summary
   const outlineTitles = getStringArray(raw, 'outlineTitles')
-  if (outlineTitles) preview.outlineTitles = outlineTitles
+    ?.map(sanitizeArtifactText)
+    .filter((s): s is string => Boolean(s))
+  if (outlineTitles?.length) preview.outlineTitles = outlineTitles
   const sectionTitles = getStringArray(raw, 'sectionTitles')
-  if (sectionTitles) preview.sectionTitles = sectionTitles
+    ?.map(sanitizeArtifactText)
+    .filter((s): s is string => Boolean(s))
+  if (sectionTitles?.length) preview.sectionTitles = sectionTitles
   const progressPercent = getNumber(raw, 'progressPercent')
   if (progressPercent != null) preview.progressPercent = progressPercent
   const statusText = sanitizeArtifactText(getString(raw, 'statusText'))
