@@ -12,6 +12,17 @@ Host:   auth + file + knowledge + ai-gateway + qa + document + gateway + fronten
 ## 直接启动
 
 先安装 Docker、Go `1.25.x`、Bun、`psql` 客户端和 `curl`。
+Go 必须安装在实际运行这些脚本的宿主机环境中；如果使用 WSL 启动脚本，Windows
+里的 Go 不等于 WSL 里的 Go。
+
+如果本机网络访问 `proxy.golang.org` 不稳定，先在同一个 shell 中配置 Go 模块代理：
+
+```bash
+go version
+go env GOPROXY
+go env -w GOPROXY=https://goproxy.cn,direct
+go env -w GOSUMDB=sum.golang.google.cn
+```
 
 ```bash
 cp deploy/.env.example deploy/.env
@@ -54,6 +65,11 @@ cp deploy/.env.example deploy/.env
 
 脚本不会生成、改写或维护另一套默认变量。它们只读取 `deploy/.env`，让宿主机
 Go 进程拿到同一份本地配置。
+
+Go modules 下载不读取 `deploy/.env`。`dev-up.sh` 执行 goose migration、
+`run-backend.sh` 启动 Go 后端时都会使用当前 shell 的 Go 配置；如果日志里出现
+`proxy.golang.org` 超时，说明后端可能没有真正启动，按上面的 `GOPROXY` 检查后
+重新运行 `./scripts/local/run-backend.sh`。
 
 默认 demo 账号：
 
