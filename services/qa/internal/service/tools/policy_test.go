@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/service/agent"
 )
 
 func TestGenerateResultSummaryPreservesSanitizedToolFailure(t *testing.T) {
@@ -71,6 +73,51 @@ func TestGenerateResultSummaryBuildsSanitizedDocumentFailure(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(fmtSprint(summary)), "token secret") || strings.Contains(strings.ToLower(fmtSprint(summary)), "http://internal") {
 		t.Fatalf("summary leaked raw document failure: %#v", summary)
+	}
+}
+
+func TestDefaultDocumentReportToolsArePolicyVisibleSubset(t *testing.T) {
+	allDocumentTools := []string{
+		ToolGenerateReportOutline,
+		ToolRegenerateReportOutline,
+		ToolGenerateReportText,
+		ToolRegenerateReportText,
+		ToolRegenerateReportSection,
+		ToolGetGenerationStatus,
+		ToolGetTemplateSchema,
+		ToolExportReportDOCX,
+		ToolGetReportResult,
+	}
+	definitions := make([]agent.ToolDefinition, 0, len(allDocumentTools))
+	for _, name := range allDocumentTools {
+		definitions = append(definitions, agent.ToolDefinition{
+			Type: "function",
+			Function: agent.FunctionTool{
+				Name:       defaultDocumentToolAlias + "__" + name,
+				Parameters: map[string]any{"type": "object", "properties": map[string]any{}},
+			},
+		})
+	}
+	policy, err := NewPolicy(PolicyConfig{EnabledToolNames: DefaultDocumentReportToolNames})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	filtered := policy.FilterTools(definitions)
+	if len(filtered) != len(DefaultDocumentReportToolNames) {
+		t.Fatalf("filtered tool count=%d, want %d: %+v", len(filtered), len(DefaultDocumentReportToolNames), filtered)
+	}
+	visible := make(map[string]struct{}, len(filtered))
+	for _, tool := range filtered {
+		visible[tool.Function.Name] = struct{}{}
+	}
+	for _, name := range DefaultDocumentReportToolNames {
+		if _, ok := visible[name]; !ok {
+			t.Fatalf("default document tool %q was filtered out; visible=%v", name, visible)
+		}
+	}
+	if _, ok := visible[defaultDocumentToolAlias+"__"+ToolGetTemplateSchema]; ok {
+		t.Fatalf("template schema tool should not be visible in the default whitelist")
 	}
 }
 

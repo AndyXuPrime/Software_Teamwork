@@ -12,7 +12,7 @@
 | QA 服务 Compose | partial | `services/qa/docker-compose.yml` 会启动 QA PostgreSQL、Auth PostgreSQL、Redis、Auth、QA 和 Gateway；不包含 Knowledge、Document、File、AI Gateway。 |
 | Document 服务 Compose | partial | `services/document/docker-compose.yml` 会启动 Document PostgreSQL、Redis、migration 和 Document；不包含 File、AI Gateway。 |
 | AI Gateway 本地运行 | root profile / host-run | 根级 `docker compose --profile ai` 会启动 AI Gateway、migration 和 placeholder profile seed；单独调试时也可 host-run，真实 provider smoke 仍需配置有效 provider key。 |
-| File / Knowledge 独立运行 | host-run / smoke | 需要手动准备各自依赖；File 已有 env-gated PostgreSQL + MinIO 联合 smoke，Knowledge 已有 env-gated ingestion 真实依赖 smoke，覆盖 File Service、Parser Service、PostgreSQL、local hashing embedding 和 Qdrant 写入。另有 env-gated Gateway -> Knowledge -> QA RAG smoke，可在配置可用 AI Gateway chat profile 后验收上传、入库、`knowledge-queries`、QA answer 和 citations；MCP 和完整 #125 一键跨服务 smoke 仍由后续任务覆盖。 |
+| File / Knowledge / QA-Document 独立运行 | host-run / smoke | 需要手动准备各自依赖；File 已有 env-gated PostgreSQL + MinIO 联合 smoke，Knowledge 已有 env-gated ingestion 真实依赖 smoke，覆盖 File Service、Parser Service、PostgreSQL、local hashing embedding 和 Qdrant 写入。另有 env-gated Gateway -> Knowledge -> QA RAG smoke，以及 QA -> Document MCP report tools smoke，可分别验收 RAG 主链路和 Document MCP 报告工具子场景；完整 #125 一键跨服务 smoke 仍由后续任务覆盖。 |
 | Parser Runtime | partial | `services/parser/` 已提供 Python/FastAPI runtime、内部 HTTP API、Dockerfile、service-token auth、可选 PaddleOCR extra 和 env-gated 真实 PaddleOCR 模型 smoke；CI 仍只用 fake OCR backend 覆盖 lint/test/compile，不要求普通开发者安装模型。 |
 | 前端联调入口 | host-run | 前端只调用 public Gateway `/api/v1/**`；不要直连内部服务。 |
 | 生产/准生产 Compose | baseline docs | `deploy/production-baseline.md`、`deploy/docker-compose.production.yml` 和 `deploy/.env.production.example` 已提供单机 Compose 基线、环境变量模板、持久化卷、secret、健康检查、升级和回滚说明；真实云环境部署、DNS/TLS、受保护发布流水线和 #125 完整跨服务 smoke 仍不在本地联调范围内。 |
@@ -374,6 +374,71 @@ chunks、jobs、documents、knowledge base 的顺序删除本轮 Knowledge Postg
 如果只需要验证 Knowledge ingestion 和 retrieval，不要运行本 RAG smoke；先使用上面的
 `KNOWLEDGE_INGESTION_SMOKE` 或 `GATEWAY_KNOWLEDGE_OWNER_SMOKE` 缩小范围。
 
+### QA -> Document MCP 报告工具 smoke
+
+该 smoke 是 Issue #451 / B-017 交付给 #125 的 Document MCP 子场景。它不替代
+完整 MCP/跨服务一键 smoke，也不包含前端 UI；它只证明 QA mcpclient 能连接
+C-023 的 Document Streamable HTTP MCP endpoint，发现 `document__*` 工具，并把
+B-016 的报告工具结果映射为 S-045 的 `reportArtifact`。
+
+覆盖范围：
+
+| 阶段 | 断言 |
+| --- | --- |
+| MCP discovery | `tools/list` 返回 Document 稳定工具集，QA prefix 后包含默认白名单中的 `document__generate_report_outline`、`document__generate_report_text`、`document__get_generation_status`、`document__export_report_docx`、`document__get_report_result`。 |
+| Job accepted/running | `document__generate_report_outline` 返回 job artifact，未完成时没有 `downloadPath`。 |
+| Status/export/result | `document__get_generation_status`、`document__export_report_docx`、`document__get_report_result` 返回安全 `reportArtifact`；file succeeded 时 `downloadPath=/api/v1/report-files/{reportFileId}/content`。 |
+| 权限与脱敏 | 普通用户读取他人报告返回 `policy_denied` 摘要；测试输出不包含 MCP 原始 JSON、prompt、service token、object key 或内部 URL。 |
+| 可选 Gateway 下载 | 设置 Gateway probe env 后，通过 Gateway public report file content 路径验证下载 2xx。 |
+
+前置要求：
+
+- 根级 Compose 已启动 Document、QA、Gateway、File、Redis、PostgreSQL 和 seed 数据。
+- Document MCP token 与 QA MCP token 一致。`deploy/.env.example` 默认使用
+  `local-dev-internal-service-token-change-me`，header 为 `Authorization`。
+- 默认 seed 中存在 report `22222222-2222-4222-8222-222222222301` 和 material
+  `22222222-2222-4222-8222-222222222201`。如本地 seed 不同，使用
+  `QA_DOCUMENT_MCP_SMOKE_REPORT_ID` / `QA_DOCUMENT_MCP_SMOKE_MATERIAL_ID` 覆盖。
+
+启动本地栈：
+
+```bash
+cd deploy
+cp .env.example .env
+DOCKER_BUILDKIT=1 docker compose --env-file .env --profile ai up -d --build gateway ai-gateway
+```
+
+运行 QA 侧 smoke：
+
+```powershell
+cd ..\services\qa
+$env:QA_DOCUMENT_MCP_SMOKE = "1"
+$env:MCP_TRANSPORT = "streamable_http"
+$env:MCP_SERVER_ALIAS = "document"
+$env:MCP_SERVER_URL = "http://127.0.0.1:8085/mcp"
+$env:MCP_SERVER_TOKEN = "local-dev-internal-service-token-change-me"
+$env:MCP_SERVER_TOKEN_HEADER = "Authorization"
+go test ./internal/platform/mcpclient -run '^TestDocumentMCPReportToolsSmoke$' -count=1 -v
+```
+
+可选 Gateway 下载探针：
+
+```powershell
+$env:QA_DOCUMENT_MCP_SMOKE_GATEWAY_BASE_URL = "http://127.0.0.1:8080"
+$env:QA_DOCUMENT_MCP_SMOKE_GATEWAY_BEARER = "<admin-session-bearer-token>"
+go test ./internal/platform/mcpclient -run '^TestDocumentMCPReportToolsSmoke$' -count=1 -v
+```
+
+常见失败和定位：
+
+| 阶段 | 典型失败 | 排查 |
+| --- | --- | --- |
+| MCP connect | `initialize MCP session` 或 `unauthorized` | 查 `docker compose logs document qa`；确认 Document `/mcp` ready、`MCP_SERVER_TOKEN` 与 `DOCUMENT_MCP_SERVICE_TOKEN` 一致、header 为 `Authorization`。不要打印 token。 |
+| tools/list | 缺少 `generate_report_outline` 等工具 | 确认 C-023 已合入并启动的是新 Document 镜像；查 `services/document/internal/service/mcp_tools.go` 中 9 个工具定义。 |
+| job/export | job 长时间未完成或 fileStatus 非 succeeded | 查 `docker compose logs document file redis postgres`；确认 seed report/material 存在，File Service 可写，Redis/asynq worker 正常。不要粘贴 object key 或内部 URL。 |
+| forbidden | 普通用户未返回 `policy_denied` | 查 Document 权限映射和 QA 传递的 `X-User-Roles` / `X-User-Permissions`；不要通过伪造用户 header 直接绕过 Gateway 做业务验收。 |
+| Gateway probe | 下载路径 401/403/404 | 先确认 `downloadPath` 只在 `fileStatus=succeeded` 时出现，再检查 bearer token、Gateway report-file route 和 File Service。 |
+
 ### QA + Auth + Gateway 局部环境
 
 ```bash
@@ -457,6 +522,7 @@ go run ./cmd/server
 | Knowledge ingestion real deps | `KNOWLEDGE_INGESTION_SMOKE=1 ... go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v` | 只在 PostgreSQL/File/Parser/Qdrant 可用时运行；验证 fixture 上传、解析、切片、embedding、Qdrant point 写入和状态更新。 |
 | Gateway -> Knowledge owner route | `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v` | 只在 Gateway/Auth/Redis/Knowledge/File/Parser/PostgreSQL 可用时运行；验证伪造 `X-User-*` 未认证请求被拒绝，并用 KB `createdBy` 断言 Gateway 注入真实 session user。 |
 | Gateway -> Knowledge -> QA RAG | `GATEWAY_RAG_E2E_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayRAGE2ESmoke$' -count=1 -v` | 只在 Gateway/Auth/Redis/File/Parser/Knowledge/QA/AI Gateway 和可用 chat profile/provider 可用时运行；验证上传、ingestion ready、`knowledge-queries` 命中、QA answer 和 citation 摘要。 |
+| QA -> Document MCP report tools | `QA_DOCUMENT_MCP_SMOKE=1 ... go test ./internal/platform/mcpclient -run '^TestDocumentMCPReportToolsSmoke$' -count=1 -v` | 只在 Document MCP、QA、Gateway、File、Redis、PostgreSQL 和 seed 数据可用时运行；验证 tools/list、`document__*` prefix、reportArtifact、无权限摘要和可选 Gateway 下载探针。 |
 | 前端 Gateway 类型 | `bun run --cwd apps/web api:generate` 后检查 diff | 生成类型应与 Gateway OpenAPI 保持同步。 |
 
 ## 已知缺口
@@ -467,7 +533,7 @@ go run ./cmd/server
 | 跨服务契约测试和 E2E smoke 缺失 | 不能自动证明前端 -> Gateway -> 多服务链路可用。 | #125 |
 | Gateway `/readyz` 非完整依赖诊断 | `/readyz` 不请求所有 owner service `/readyz`，也不执行业务级 smoke；它通过不等于 Knowledge/QA/Document/AI Gateway 全链路可用。 | #353、#125、#352 |
 | Parser 真实 OCR smoke 不在普通 CI 中运行 | Parser 已有 env-gated 真实 PaddleOCR 模型 smoke，但 CI 仍使用 fake OCR backend；真实模型、OCR 质量和部署资源需要在具备模型的本地或部署环境手动记录。 | #125 |
-| Knowledge/QA RAG smoke 仍为显式 opt-in | File 自身 PostgreSQL + MinIO smoke 已有；Knowledge ingestion 真实依赖 smoke 已覆盖 File/Parser/PostgreSQL/Qdrant 写入和状态更新；Gateway -> Knowledge -> QA RAG smoke 已提供最小验收样例，但依赖可用 AI Gateway chat profile/provider，且不覆盖 MCP、前端或 #125 完整一键 E2E。 | #125、#152、#154、#304 |
+| Knowledge/QA RAG 和 QA/Document MCP smoke 仍为显式 opt-in | File 自身 PostgreSQL + MinIO smoke 已有；Knowledge ingestion 真实依赖 smoke 已覆盖 File/Parser/PostgreSQL/Qdrant 写入和状态更新；Gateway -> Knowledge -> QA RAG smoke 与 QA -> Document MCP report tools smoke 已提供最小验收样例，但仍不覆盖前端或 #125 完整一键 E2E。 | #125、#152、#154、#304、#451 |
 | 生产部署基线缺失 | 当前 `deploy/docker-compose.yml` 是本地/演示基线，不能直接当生产部署。 | #150 |
 | Document 真实 AI 生成和富 DOCX 工具链未落地 | 报告 job 状态机和基础 DOCX 导出可用；真实大纲/正文生成、Pandoc/LibreOffice 富 DOCX 转换和跨服务内容读取 smoke 仍需补齐。 | #160、#223 |
 | Document 跨服务 smoke 仍缺失 | settings/statistics/logs 已在服务端落地，但管理端、Gateway、File Service、Document worker 串联 smoke 仍未一键化。 | #159、#221 |

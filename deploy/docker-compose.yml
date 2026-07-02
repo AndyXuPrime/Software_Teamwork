@@ -366,7 +366,12 @@ services:
       MODEL_ID: ${MODEL_ID:-local-placeholder-chat}
       QA_SETTINGS_OPEN: ${QA_SETTINGS_OPEN:-false}
       QA_ADMIN_USER_IDS: ${QA_ADMIN_USER_IDS:-}
-      MCP_TRANSPORT: disabled
+      MCP_TRANSPORT: ${MCP_TRANSPORT:-streamable_http}
+      MCP_SERVER_ALIAS: ${MCP_SERVER_ALIAS:-document}
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://document:8085/mcp}
+      MCP_SERVER_TOKEN: ${MCP_SERVER_TOKEN:-${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}}
+      MCP_SERVER_TOKEN_HEADER: ${MCP_SERVER_TOKEN_HEADER:-Authorization}
+      MCP_TOOL_TIMEOUT: ${MCP_TOOL_TIMEOUT:-30s}
       QA_CONFIG_ENCRYPTION_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
       AGENT_WORKDIR: /workspace
     ports:
@@ -381,6 +386,8 @@ services:
       file:
         condition: service_healthy
       parser:
+        condition: service_healthy
+      document:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8084/readyz"]
