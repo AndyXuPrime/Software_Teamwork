@@ -1,9 +1,21 @@
-import { Ban, Download, FileText, Loader2, PencilLine, Play, RefreshCw, Save } from 'lucide-react'
+import {
+  Ban,
+  Download,
+  FileText,
+  Loader2,
+  PencilLine,
+  Play,
+  RefreshCw,
+  Rocket,
+  Save,
+  Settings2,
+} from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 
 import { InlineNotice, ProgressSummary, StateBlock } from '@/components/common'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useModelProfiles } from '@/features/admin-config'
 import type {
   CreateReportFormValues,
   Report,
@@ -15,8 +27,9 @@ import type {
 } from '@/features/reports'
 import {
   createReportSchema,
-  defaultCreateReportValues,
   formatReportGatewayError,
+  getCreateReportDefaults,
+  isReportTypeDraftDefaultValue,
   useCancelReportJob,
   useCreateReportFileMutation,
   useCreateReportJobMutation,
@@ -26,10 +39,12 @@ import {
   useReportDetailQueries,
   useReportEvents,
   useReportJobQuery,
+  useReportSettingsQuery,
   useRetryReportJobMutation,
   useSectionVersions,
   useUpdateReportOutlineMutation,
   useUpdateReportSectionMutation,
+  useUpdateReportSettingsMutation,
 } from '@/features/reports'
 import { cn } from '@/lib/utils'
 
@@ -70,10 +85,44 @@ function formatDate(value?: string): string {
   })
 }
 
+function shouldApplyReportTypeDefault(
+  field: 'businessObject' | 'extraContextText' | 'name' | 'specialty' | 'topic',
+  form: CreateReportFormValues,
+  force: boolean,
+): boolean {
+  const value = form[field]
+  return force || !value || isReportTypeDraftDefaultValue(field, value)
+}
+
+function applyReportTypeDraftDefaults(
+  form: CreateReportFormValues,
+  reportType: string,
+  options: { force?: boolean } = {},
+): CreateReportFormValues {
+  const force = options.force ?? false
+  const defaults = getCreateReportDefaults(reportType)
+
+  return {
+    ...form,
+    reportType,
+    businessObject: shouldApplyReportTypeDefault('businessObject', form, force)
+      ? defaults.businessObject
+      : form.businessObject,
+    extraContextText: shouldApplyReportTypeDefault('extraContextText', form, force)
+      ? defaults.extraContextText
+      : form.extraContextText,
+    name: shouldApplyReportTypeDefault('name', form, force) ? defaults.name : form.name,
+    specialty: shouldApplyReportTypeDefault('specialty', form, force)
+      ? defaults.specialty
+      : form.specialty,
+    topic: shouldApplyReportTypeDefault('topic', form, force) ? defaults.topic : form.topic,
+  }
+}
+
 export function ReportGeneratePage() {
   const [step, setStep] = useState<StepKey>('draft')
   const [form, setForm] = useState<CreateReportFormValues>({
-    ...defaultCreateReportValues,
+    ...getCreateReportDefaults(''),
     reportType: '',
     templateId: '',
   })
@@ -87,8 +136,13 @@ export function ReportGeneratePage() {
   const [showVersions, setShowVersions] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const [documentProfileId, setDocumentProfileId] = useState('')
+  const [documentProfileTouched, setDocumentProfileTouched] = useState(false)
+  const [documentSettingsNotice, setDocumentSettingsNotice] = useState<string | null>(null)
 
   const { typeQuery, templateQuery, materialQuery } = useReportBootstrapQueries(form.reportType)
+  const reportSettingsQuery = useReportSettingsQuery()
+  const chatProfilesQuery = useModelProfiles('chat', true)
   const { outlinesQuery, sectionsQuery } = useReportDetailQueries(currentReport?.id ?? null)
   const jobQuery = useReportJobQuery(activeJobId)
   const createReportMutation = useCreateReportMutation()
@@ -96,6 +150,7 @@ export function ReportGeneratePage() {
   const saveOutlineMutation = useUpdateReportOutlineMutation(currentReport?.id ?? '')
   const saveSectionMutation = useUpdateReportSectionMutation(currentReport?.id ?? '')
   const createFileMutation = useCreateReportFileMutation()
+  const updateReportSettingsMutation = useUpdateReportSettingsMutation()
   const retryJobMutation = useRetryReportJobMutation()
   const downloadMutation = useDownloadReportFileMutation()
   const cancelJobMutation = useCancelReportJob()
@@ -108,11 +163,23 @@ export function ReportGeneratePage() {
   const reportTypes = useMemo(() => typeQuery.data ?? [], [typeQuery.data])
   const templates = useMemo(() => templateQuery.data?.items ?? [], [templateQuery.data])
   const materials = useMemo(() => materialQuery.data?.items ?? [], [materialQuery.data])
+  const chatProfiles = useMemo(() => chatProfilesQuery.data ?? [], [chatProfilesQuery.data])
   const outline = outlinesQuery.data?.[0]?.sections ?? []
   const sections = useMemo(() => sectionsQuery.data ?? [], [sectionsQuery.data])
   const activeSection = sections.find((item) => item.id === activeSectionId) ?? sections[0]
   const effectiveJob = jobQuery.data ?? lastJob
   const selectedTemplate = templates.find((template) => template.id === form.templateId)
+  const configuredDocumentProfileId = reportSettingsQuery.data?.llm?.profileId ?? ''
+  const configuredDocumentModel = reportSettingsQuery.data?.llm?.model ?? ''
+  const selectedDocumentProfile = chatProfiles.find((profile) => profile.id === documentProfileId)
+  const selectedDocumentModel =
+    selectedDocumentProfile?.model ??
+    (documentProfileId === configuredDocumentProfileId ? configuredDocumentModel : '')
+  const firstChatProfileId = chatProfiles[0]?.id ?? ''
+  const showDocumentProfileFallback =
+    documentProfileId.trim() !== '' &&
+    !selectedDocumentProfile &&
+    documentProfileId === configuredDocumentProfileId
   const hasDraftPendingOutlineJob = Boolean(currentReport && step === 'draft')
 
   const bootstrapErrors = useMemo(
@@ -143,7 +210,11 @@ export function ReportGeneratePage() {
   useEffect(() => {
     if (reportTypes.length === 0) return
     if (reportTypes.some((type) => type.code === form.reportType)) return
-    setForm((prev) => ({ ...prev, reportType: reportTypes[0]?.code ?? '' }))
+    setForm((prev) =>
+      applyReportTypeDraftDefaults(prev, reportTypes[0]?.code ?? '', {
+        force: !prev.reportType,
+      }),
+    )
   }, [form.reportType, reportTypes])
 
   useEffect(() => {
@@ -155,6 +226,13 @@ export function ReportGeneratePage() {
       setForm((prev) => ({ ...prev, templateId: '' }))
     }
   }, [form.templateId, templates])
+
+  useEffect(() => {
+    if (documentProfileTouched) return
+
+    const nextProfileId = configuredDocumentProfileId || firstChatProfileId
+    setDocumentProfileId(nextProfileId)
+  }, [configuredDocumentProfileId, documentProfileTouched, firstChatProfileId])
 
   useEffect(() => {
     if (sections.length === 0) {
@@ -182,6 +260,31 @@ export function ReportGeneratePage() {
 
   const updateForm = (field: keyof CreateReportFormValues, value: string | number) => {
     setForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleSelectDocumentProfile = (profileId: string) => {
+    setDocumentProfileTouched(true)
+    setDocumentProfileId(profileId)
+    setDocumentSettingsNotice(null)
+  }
+
+  const handlePublishDocumentProfile = async () => {
+    const profileId = documentProfileId.trim()
+    setDocumentSettingsNotice(null)
+
+    if (!profileId) {
+      setDocumentSettingsNotice('请选择用于报告生成的文档生成模型。')
+      return
+    }
+
+    try {
+      await updateReportSettingsMutation.mutateAsync({
+        llm: { profileId, provider: 'ai-gateway' },
+      })
+      setDocumentSettingsNotice('文档生成模型配置已发布。')
+    } catch (error) {
+      setDocumentSettingsNotice(formatReportGatewayError(error, '文档生成模型配置发布失败'))
+    }
   }
 
   const toggleMaterial = (id: string) => {
@@ -416,10 +519,6 @@ export function ReportGeneratePage() {
           </div>
         </div>
 
-        <InlineNotice className="mt-4" title="能力边界" variant="warning">
-          真实 AI 大纲/正文生成、Document MCP tools 和富 DOCX 工具链尚未就绪；页面只展示 Gateway
-          返回的数据和错误，不填充本地示例。
-        </InlineNotice>
         {bootstrapErrors.map((item) => (
           <InlineNotice
             className="mt-3"
@@ -475,8 +574,13 @@ export function ReportGeneratePage() {
                     disabled={typeQuery.isLoading || typeQuery.isError || reportTypes.length === 0}
                     value={form.reportType}
                     onChange={(event) => {
-                      updateForm('reportType', event.target.value)
-                      updateForm('templateId', '')
+                      const nextReportType = event.target.value
+                      setForm((prev) => ({
+                        ...(nextReportType
+                          ? applyReportTypeDraftDefaults(prev, nextReportType)
+                          : { ...prev, reportType: nextReportType }),
+                        templateId: '',
+                      }))
                     }}
                   >
                     <option value="">请选择报告类型</option>
@@ -857,6 +961,106 @@ export function ReportGeneratePage() {
         </div>
 
         <aside className="flex flex-col space-y-4">
+          <section className="rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <Settings2 className="size-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold">文档生成模型</h2>
+            </div>
+
+            <div className="mt-3 rounded-lg border border-border bg-background p-3 text-sm">
+              <div className="mb-2 font-medium text-foreground">当前生效引用</div>
+              <dl className="grid gap-2">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">服务</dt>
+                  <dd className="text-foreground">ai-gateway</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Profile ID</dt>
+                  <dd className="break-all text-foreground">
+                    {configuredDocumentProfileId || '-'}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">模型</dt>
+                  <dd className="break-all text-foreground">{configuredDocumentModel || '-'}</dd>
+                </div>
+              </dl>
+            </div>
+
+            <label className="mt-3 block space-y-1.5 text-sm">
+              <span className="font-medium text-foreground">文档生成模型</span>
+              <select
+                aria-label="文档生成模型"
+                value={documentProfileId}
+                onChange={(event) => handleSelectDocumentProfile(event.target.value)}
+                className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+                disabled={chatProfilesQuery.isLoading}
+              >
+                <option value="">请选择聊天模型 Profile</option>
+                {showDocumentProfileFallback && (
+                  <option value={documentProfileId}>
+                    当前配置：{selectedDocumentModel || documentProfileId}
+                  </option>
+                )}
+                {chatProfiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name} / {profile.model}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="mt-3 space-y-2 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">待发布 Profile</span>
+                <code className="break-all">{documentProfileId || '-'}</code>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">待发布模型</span>
+                <span className="break-all">{selectedDocumentModel || '-'}</span>
+              </div>
+            </div>
+
+            {chatProfilesQuery.isError && (
+              <InlineNotice className="mt-3" title="模型列表加载失败" variant="error">
+                {formatReportGatewayError(chatProfilesQuery.error, '模型列表加载失败')}
+              </InlineNotice>
+            )}
+            {reportSettingsQuery.isError && (
+              <InlineNotice className="mt-3" title="报告设置加载失败" variant="error">
+                {formatReportGatewayError(reportSettingsQuery.error, '报告设置加载失败')}
+              </InlineNotice>
+            )}
+            {!chatProfilesQuery.isLoading && chatProfiles.length === 0 && (
+              <InlineNotice className="mt-3" title="暂无可用模型" variant="warning">
+                请先在模型管理中新增并启用用途为 chat 的模型 Profile。
+              </InlineNotice>
+            )}
+            {documentSettingsNotice && (
+              <InlineNotice
+                className="mt-3"
+                title={documentSettingsNotice.includes('失败') ? '发布失败' : undefined}
+                variant={documentSettingsNotice.includes('失败') ? 'error' : 'info'}
+              >
+                {documentSettingsNotice}
+              </InlineNotice>
+            )}
+
+            <Button
+              type="button"
+              className="mt-3 w-full"
+              onClick={() => void handlePublishDocumentProfile()}
+              disabled={!documentProfileId.trim() || updateReportSettingsMutation.isPending}
+            >
+              {updateReportSettingsMutation.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Rocket className="size-4" />
+              )}
+              发布文档模型配置
+            </Button>
+          </section>
+
           <section className="rounded-lg border border-border bg-card p-4">
             <h2 className="text-sm font-semibold">当前报告</h2>
             <div className="mt-3 space-y-2 text-sm">

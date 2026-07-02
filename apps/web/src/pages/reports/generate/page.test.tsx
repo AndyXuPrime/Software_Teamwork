@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { ModelProfile } from '@/lib/types'
 import { renderWithProviders } from '@/test/render'
 
 import { ReportGeneratePage } from './page'
@@ -33,6 +34,14 @@ const reportType = {
   name: '真实巡检报告',
 }
 
+const coalReportType = {
+  code: 'coal_inventory_audit',
+  defaultTemplateId: 'tpl-coal',
+  description: '煤库存审计报告类型',
+  enabled: true,
+  name: '煤库存审计报告',
+}
+
 const reportTemplate = {
   createdAt: '2026-06-30T00:00:00Z',
   enabled: true,
@@ -41,6 +50,13 @@ const reportTemplate = {
   reportType: 'summer_peak_inspection',
   templateName: '真实模板',
   version: 1,
+}
+
+const coalReportTemplate = {
+  ...reportTemplate,
+  id: 'tpl-coal',
+  reportType: 'coal_inventory_audit',
+  templateName: '煤库存审计模板',
 }
 
 const reportMaterial = {
@@ -52,7 +68,79 @@ const reportMaterial = {
   materialType: 'technical_doc',
 }
 
+const chatProfile: ModelProfile = {
+  apiKeyConfigured: true,
+  baseUrl: 'https://api.example.com/v1',
+  createdAt: '2026-07-03T00:00:00Z',
+  defaultParameters: {},
+  enabled: true,
+  id: 'mp-chat-report',
+  isDefault: false,
+  model: 'gpt-report',
+  name: '报告生成模型',
+  provider: 'openai_compatible',
+  purpose: 'chat',
+  supportsStreaming: true,
+  timeoutMs: 60000,
+  updatedAt: '2026-07-03T00:00:00Z',
+}
+
 describe('ReportGeneratePage', () => {
+  it('aligns draft defaults with the selected report type without overwriting custom text', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (url.pathname.endsWith('/report-types')) {
+        return jsonResponse({ data: [coalReportType, reportType], requestId: 'req-types' })
+      }
+      if (url.pathname.endsWith('/report-templates')) {
+        return pageResponse([
+          url.searchParams.get('reportType') === 'summer_peak_inspection'
+            ? reportTemplate
+            : coalReportTemplate,
+        ])
+      }
+      if (url.pathname.endsWith('/report-materials')) {
+        return pageResponse([reportMaterial])
+      }
+      if (request.method === 'GET' && url.pathname.endsWith('/report-settings')) {
+        return jsonResponse({
+          data: { llm: { provider: 'ai-gateway' } },
+          requestId: 'req-settings',
+        })
+      }
+      if (request.method === 'GET' && url.pathname.endsWith('/admin/model-profiles')) {
+        return jsonResponse({ data: [], requestId: 'req-profiles' })
+      }
+
+      return jsonResponse({ data: [], requestId: 'req-empty' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithProviders(<ReportGeneratePage />)
+
+    expect(await screen.findByDisplayValue('2026年煤库存审计报告')).toBeVisible()
+    expect(screen.getByDisplayValue('煤场库存账实与保供风险审计')).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText('报告类型'), {
+      target: { value: 'summer_peak_inspection' },
+    })
+
+    expect(await screen.findByDisplayValue('2026年迎峰度夏检查报告')).toBeVisible()
+    expect(screen.getByDisplayValue('迎峰度夏设备安全检查')).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText('报告名称'), {
+      target: { value: '自定义审计标题' },
+    })
+    fireEvent.change(screen.getByLabelText('报告类型'), {
+      target: { value: 'coal_inventory_audit' },
+    })
+
+    expect(screen.getByDisplayValue('自定义审计标题')).toBeVisible()
+    expect(await screen.findByDisplayValue('煤场库存账实与保供风险审计')).toBeVisible()
+  })
+
   it('does not render local bootstrap fallback data when gateway bootstrap queries fail', async () => {
     vi.stubGlobal(
       'fetch',
@@ -65,10 +153,73 @@ describe('ReportGeneratePage', () => {
 
     renderWithProviders(<ReportGeneratePage />)
 
+    expect(screen.queryByText('能力边界')).not.toBeInTheDocument()
     expect((await screen.findAllByText(/Document dependency down/))[0]).toBeVisible()
     expect(screen.getAllByText(/req-bootstrap/).length).toBeGreaterThan(0)
     expect(screen.queryByRole('option', { name: '煤库存审计报告' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /创建草稿/ })).toBeDisabled()
+  })
+
+  it('publishes the selected document generation model profile through report settings', async () => {
+    const patchBodies: unknown[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (url.pathname.endsWith('/report-types')) {
+        return jsonResponse({ data: [reportType], requestId: 'req-types' })
+      }
+      if (url.pathname.endsWith('/report-templates')) {
+        return pageResponse([reportTemplate])
+      }
+      if (url.pathname.endsWith('/report-materials')) {
+        return pageResponse([reportMaterial])
+      }
+      if (request.method === 'GET' && url.pathname.endsWith('/report-settings')) {
+        return jsonResponse({
+          data: {
+            llm: {
+              model: 'old-report-model',
+              profileId: 'old-report-profile',
+              provider: 'ai-gateway',
+              timeoutSeconds: 60,
+            },
+          },
+          requestId: 'req-report-settings',
+        })
+      }
+      if (request.method === 'GET' && url.pathname.endsWith('/admin/model-profiles')) {
+        expect(url.searchParams.get('purpose')).toBe('chat')
+        expect(url.searchParams.get('enabled')).toBe('true')
+        return jsonResponse({ data: [chatProfile], requestId: 'req-chat-profiles' })
+      }
+      if (request.method === 'PATCH' && url.pathname.endsWith('/report-settings')) {
+        patchBodies.push(await request.clone().json())
+        return jsonResponse({
+          data: { updatedAt: '2026-07-03T08:00:00Z' },
+          requestId: 'req-report-settings-update',
+        })
+      }
+
+      return jsonResponse({ data: [], requestId: 'req-empty' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithProviders(<ReportGeneratePage />)
+
+    const modelSelect = await screen.findByLabelText('文档生成模型')
+    expect(await screen.findByText('old-report-profile')).toBeVisible()
+
+    fireEvent.change(modelSelect, { target: { value: 'mp-chat-report' } })
+    fireEvent.click(screen.getByRole('button', { name: /发布文档模型配置/ }))
+
+    await waitFor(() => expect(patchBodies).toHaveLength(1))
+    expect(patchBodies[0]).toEqual({
+      llm: { profileId: 'mp-chat-report', provider: 'ai-gateway' },
+    })
+    expect(patchBodies[0]).not.toHaveProperty('apiKey')
+    expect(patchBodies[0]).not.toHaveProperty('baseUrl')
+    expect(await screen.findByText(/文档生成模型配置已发布/)).toBeVisible()
   })
 
   it('shows gateway request id and does not create a local report when draft creation is not implemented', async () => {
