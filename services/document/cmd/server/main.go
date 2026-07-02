@@ -70,11 +70,12 @@ func main() {
 	reportFileService := service.NewReportFileService(repo, files, taskClient, service.NewSimpleDOCXGenerator())
 	reportGenerationService := service.NewReportGenerationService(repo, chatClient, knowledgeRetriever)
 	documentMCPTools := service.NewMCPToolService(service.MCPToolServiceConfig{
-		DocumentService: documents,
-		JobService:      jobService,
-		ReportService:   reportService,
-		ReportFileSvc:   reportFileService,
-		Recorder:        repo,
+		DocumentService:       documents,
+		JobService:            jobService,
+		ReportService:         reportService,
+		ReportSettingsService: repo,
+		ReportFileSvc:         reportFileService,
+		Recorder:              repo,
 	})
 	w := worker.New(cfg.RedisAddr, logger, repo, reportFileService, reportGenerationService)
 	go func() {

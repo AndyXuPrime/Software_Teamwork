@@ -8,32 +8,35 @@ import (
 )
 
 const (
-	ToolGenerateReportOutline   = "generate_report_outline"
-	ToolGenerateReportText      = "generate_report_text"
-	ToolGetGenerationStatus     = "get_generation_status"
-	ToolExportReportDOCX        = "export_report_docx"
-	ToolGetReportResult         = "get_report_result"
-	ToolRegenerateReportOutline = "regenerate_report_outline"
-	ToolRegenerateReportText    = "regenerate_report_text"
-	ToolRegenerateReportSection = "regenerate_report_section"
-	ToolGetTemplateSchema       = "get_template_schema"
+	ToolGenerateReportOutline     = "generate_report_outline"
+	ToolGenerateReportFromContent = "generate_report_from_content"
+	ToolGenerateReportText        = "generate_report_text"
+	ToolGetGenerationStatus       = "get_generation_status"
+	ToolExportReportDOCX          = "export_report_docx"
+	ToolGetReportResult           = "get_report_result"
+	ToolRegenerateReportOutline   = "regenerate_report_outline"
+	ToolRegenerateReportText      = "regenerate_report_text"
+	ToolRegenerateReportSection   = "regenerate_report_section"
+	ToolGetTemplateSchema         = "get_template_schema"
 
 	defaultDocumentToolAlias = "document"
 )
 
 var documentReportToolNames = map[string]struct{}{
-	ToolGenerateReportOutline:   {},
-	ToolGenerateReportText:      {},
-	ToolGetGenerationStatus:     {},
-	ToolExportReportDOCX:        {},
-	ToolGetReportResult:         {},
-	ToolRegenerateReportOutline: {},
-	ToolRegenerateReportText:    {},
-	ToolRegenerateReportSection: {},
+	ToolGenerateReportOutline:     {},
+	ToolGenerateReportFromContent: {},
+	ToolGenerateReportText:        {},
+	ToolGetGenerationStatus:       {},
+	ToolExportReportDOCX:          {},
+	ToolGetReportResult:           {},
+	ToolRegenerateReportOutline:   {},
+	ToolRegenerateReportText:      {},
+	ToolRegenerateReportSection:   {},
 }
 
 var DefaultDocumentReportToolNames = []string{
 	defaultDocumentToolAlias + "__" + ToolGenerateReportOutline,
+	defaultDocumentToolAlias + "__" + ToolGenerateReportFromContent,
 	defaultDocumentToolAlias + "__" + ToolGenerateReportText,
 	defaultDocumentToolAlias + "__" + ToolGetGenerationStatus,
 	defaultDocumentToolAlias + "__" + ToolExportReportDOCX,

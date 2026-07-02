@@ -15,6 +15,7 @@ func TestMCPToolServiceListToolsDefinesStableSchemas(t *testing.T) {
 	tools := svc.ListTools(context.Background())
 	want := []string{
 		DocumentMCPToolGenerateReportOutline,
+		DocumentMCPToolGenerateReportFromContent,
 		DocumentMCPToolRegenerateReportOutline,
 		DocumentMCPToolGenerateReportText,
 		DocumentMCPToolRegenerateReportText,
@@ -43,11 +44,204 @@ func TestMCPToolServiceListToolsDefinesStableSchemas(t *testing.T) {
 		}
 	}
 	assertSchemaRequires(t, seen[DocumentMCPToolGenerateReportOutline].InputSchema, "reportId")
+	assertSchemaRequires(t, seen[DocumentMCPToolGenerateReportFromContent].InputSchema, "content")
 	assertSchemaRequires(t, seen[DocumentMCPToolRegenerateReportSection].InputSchema, "reportId", "sectionId")
 	assertSchemaRequires(t, seen[DocumentMCPToolGetGenerationStatus].InputSchema, "jobId")
 	assertSchemaRequires(t, seen[DocumentMCPToolGetTemplateSchema].InputSchema, "templateId")
 	assertSchemaRequires(t, seen[DocumentMCPToolExportReportDOCX].InputSchema, "reportId")
 	assertSchemaRequires(t, seen[DocumentMCPToolGetReportResult].InputSchema, "reportId")
+}
+
+func TestMCPToolServiceGenerateReportFromContentCreatesReportAndOutlineJob(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 7, 1, 9, 10, 0, 0, time.UTC)
+	settings := &fakeMCPReportSettingsService{
+		settings: ReportSettings{DefaultTemplates: map[string]string{"summer_peak_inspection": "tpl-default"}},
+	}
+	reports := &fakeMCPReportService{
+		createReport: Report{
+			ID:         "report-from-content-1",
+			Name:       "Attachment Report",
+			ReportType: "summer_peak_inspection",
+			TemplateID: "tpl-default",
+			Status:     ReportStatusDraft,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}
+	jobs := &fakeMCPJobService{
+		createJob: ReportJob{
+			ID:        "job-outline-1",
+			ReportID:  "report-from-content-1",
+			JobType:   JobTypeOutlineGeneration,
+			Status:    JobStatusPending,
+			CreatedAt: now,
+		},
+	}
+	recorder := &fakeMCPOperationRecorder{}
+	svc := NewMCPToolService(MCPToolServiceConfig{
+		ReportSettingsService: settings,
+		ReportService:         reports,
+		JobService:            jobs,
+		Recorder:              recorder,
+	})
+	svc.now = func() time.Time { return now }
+
+	result := svc.CallTool(ctx, RequestContext{UserID: "user-1", RequestID: "req-content", CallerService: "qa"},
+		DocumentMCPToolGenerateReportFromContent,
+		json.RawMessage(`{
+			"content":"设备 A 在夏峰期间连续过载，附件原文里还有 prompt=secret 和 token=abc123。",
+			"document_name":"Attachment Report",
+			"instructions":"聚焦夏峰巡检风险"
+		}`))
+
+	if result.Status != documentMCPToolResultAccepted || result.Error != nil {
+		t.Fatalf("CallTool() result = %+v, want accepted", result)
+	}
+	if result.Report == nil || result.Report.ID != "report-from-content-1" || result.Report.TemplateID != "tpl-default" {
+		t.Fatalf("report summary = %+v", result.Report)
+	}
+	if result.Job == nil || result.Job.ID != "job-outline-1" || result.Job.Status != documentMCPToolResultAccepted {
+		t.Fatalf("job summary = %+v", result.Job)
+	}
+	if len(reports.createInputs) != 1 {
+		t.Fatalf("CreateReport input count = %d, want 1", len(reports.createInputs))
+	}
+	reportInput := reports.createInputs[0]
+	if reportInput.ReportType != "summer_peak_inspection" || reportInput.TemplateID != "tpl-default" || reportInput.Name != "Attachment Report" || reportInput.Topic != "Attachment Report" || reportInput.Source != documentMCPRequestSource {
+		t.Fatalf("CreateReport input = %+v", reportInput)
+	}
+	if len(jobs.createInputs) != 1 {
+		t.Fatalf("CreateJob input count = %d, want 1", len(jobs.createInputs))
+	}
+	jobInput := jobs.createInputs[0]
+	if jobInput.ReportID != "report-from-content-1" || jobInput.JobType != JobTypeOutlineGeneration || jobInput.Requirements != "聚焦夏峰巡检风险" {
+		t.Fatalf("CreateJob input = %+v", jobInput)
+	}
+	source, ok := jobInput.Options["sourceContent"].(map[string]any)
+	if !ok {
+		t.Fatalf("sourceContent option = %#v, want map", jobInput.Options["sourceContent"])
+	}
+	if source["excerpt"] == "" || source["originalLength"] == 0 || source["truncated"] != false || source["documentName"] != "Attachment Report" {
+		t.Fatalf("sourceContent = %+v", source)
+	}
+	rawPayload, err := json.Marshal(jobInput.Options)
+	if err != nil {
+		t.Fatalf("marshal job options: %v", err)
+	}
+	if strings.Contains(string(rawPayload), "token=abc123") || strings.Contains(string(rawPayload), "prompt=secret") {
+		t.Fatalf("job options leaked sensitive raw content: %s", rawPayload)
+	}
+	log := recorder.lastLog(t)
+	if log.ToolName != DocumentMCPToolGenerateReportFromContent || log.TargetType != "job" || log.TargetID != "job-outline-1" {
+		t.Fatalf("operation log = %+v", log)
+	}
+	summary := log.ParameterSummary
+	if _, ok := summary["content"]; ok {
+		t.Fatalf("operation log leaked content: %+v", summary)
+	}
+	if summary["contentLength"] == 0 || summary["excerptLength"] == 0 || summary["documentNameProvided"] != true || summary["instructionsLength"] == 0 {
+		t.Fatalf("operation log summary = %+v", summary)
+	}
+}
+
+func TestMCPToolServiceGenerateReportFromContentRejectsEmptyContent(t *testing.T) {
+	reports := &fakeMCPReportService{}
+	jobs := &fakeMCPJobService{}
+	result := NewMCPToolService(MCPToolServiceConfig{
+		ReportSettingsService: &fakeMCPReportSettingsService{settings: ReportSettings{DefaultTemplates: map[string]string{"summer_peak_inspection": "tpl-default"}}},
+		ReportService:         reports,
+		JobService:            jobs,
+		Recorder:              &fakeMCPOperationRecorder{},
+	}).CallTool(context.Background(), RequestContext{UserID: "user-1", RequestID: "req-empty"},
+		DocumentMCPToolGenerateReportFromContent, json.RawMessage(`{"content":"   "}`))
+
+	if result.Status != documentMCPToolResultFailed || result.Error == nil || result.Error.Code != string(CodeValidation) {
+		t.Fatalf("CallTool() result = %+v, want validation failure", result)
+	}
+	if result.Error.Fields["content"] == "" {
+		t.Fatalf("validation fields = %+v, want content error", result.Error.Fields)
+	}
+	if len(reports.createInputs) != 0 || len(jobs.createInputs) != 0 {
+		t.Fatalf("empty content should not create report/job, reports=%+v jobs=%+v", reports.createInputs, jobs.createInputs)
+	}
+}
+
+func TestMCPToolServiceGenerateReportFromContentRequiresDefaultTemplate(t *testing.T) {
+	reports := &fakeMCPReportService{}
+	jobs := &fakeMCPJobService{}
+	result := NewMCPToolService(MCPToolServiceConfig{
+		ReportSettingsService: &fakeMCPReportSettingsService{settings: ReportSettings{DefaultTemplates: map[string]string{}}},
+		ReportService:         reports,
+		JobService:            jobs,
+		Recorder:              &fakeMCPOperationRecorder{},
+	}).CallTool(context.Background(), RequestContext{UserID: "user-1", RequestID: "req-template"},
+		DocumentMCPToolGenerateReportFromContent, json.RawMessage(`{"content":"夏峰巡检记录"}`))
+
+	if result.Status != documentMCPToolResultFailed || result.Error == nil || result.Error.Code != string(CodeValidation) {
+		t.Fatalf("CallTool() result = %+v, want validation failure", result)
+	}
+	if result.Error.Fields["defaultTemplates.summer_peak_inspection"] == "" {
+		t.Fatalf("validation fields = %+v, want default template error", result.Error.Fields)
+	}
+	if len(reports.createInputs) != 0 || len(jobs.createInputs) != 0 {
+		t.Fatalf("missing default template should not create report/job, reports=%+v jobs=%+v", reports.createInputs, jobs.createInputs)
+	}
+}
+
+func TestMCPToolServiceGenerateReportFromContentTruncatesLongContent(t *testing.T) {
+	reports := &fakeMCPReportService{createReport: Report{ID: "report-1", Name: "Long", ReportType: "summer_peak_inspection", TemplateID: "tpl-default", Status: ReportStatusDraft}}
+	jobs := &fakeMCPJobService{createJob: ReportJob{ID: "job-1", ReportID: "report-1", JobType: JobTypeOutlineGeneration, Status: JobStatusPending}}
+	recorder := &fakeMCPOperationRecorder{}
+	longContent := strings.Repeat("负荷异常", 8000)
+	rawArgs, err := json.Marshal(map[string]any{"content": longContent, "document_name": "Long"})
+	if err != nil {
+		t.Fatalf("marshal args: %v", err)
+	}
+
+	result := NewMCPToolService(MCPToolServiceConfig{
+		ReportSettingsService: &fakeMCPReportSettingsService{settings: ReportSettings{DefaultTemplates: map[string]string{"summer_peak_inspection": "tpl-default"}}},
+		ReportService:         reports,
+		JobService:            jobs,
+		Recorder:              recorder,
+	}).CallTool(context.Background(), RequestContext{UserID: "user-1", RequestID: "req-long"},
+		DocumentMCPToolGenerateReportFromContent, rawArgs)
+
+	if result.Status != documentMCPToolResultAccepted || len(result.Warnings) != 1 || result.Warnings[0] != "content_truncated" {
+		t.Fatalf("CallTool() result = %+v, want accepted with content_truncated warning", result)
+	}
+	source := jobs.createInputs[0].Options["sourceContent"].(map[string]any)
+	if source["truncated"] != true || source["originalLength"].(int) <= documentMCPMaxSourceContentBytes {
+		t.Fatalf("sourceContent metadata = %+v", source)
+	}
+	if len([]byte(source["excerpt"].(string))) > documentMCPMaxSourceContentBytes {
+		t.Fatalf("source excerpt length = %d, want <= %d", len([]byte(source["excerpt"].(string))), documentMCPMaxSourceContentBytes)
+	}
+	if recorder.lastLog(t).ParameterSummary["truncated"] != true {
+		t.Fatalf("operation log summary = %+v, want truncated", recorder.lastLog(t).ParameterSummary)
+	}
+}
+
+func TestMCPToolServiceGenerateReportFromContentDoesNotAcceptWhenJobCreationFails(t *testing.T) {
+	reports := &fakeMCPReportService{createReport: Report{ID: "report-1", Name: "Report", ReportType: "summer_peak_inspection", TemplateID: "tpl-default", Status: ReportStatusDraft}}
+	jobs := &fakeMCPJobService{createErr: NewError(CodeDependency, "queue unavailable", nil)}
+	result := NewMCPToolService(MCPToolServiceConfig{
+		ReportSettingsService: &fakeMCPReportSettingsService{settings: ReportSettings{DefaultTemplates: map[string]string{"summer_peak_inspection": "tpl-default"}}},
+		ReportService:         reports,
+		JobService:            jobs,
+		Recorder:              &fakeMCPOperationRecorder{},
+	}).CallTool(context.Background(), RequestContext{UserID: "user-1", RequestID: "req-job-fail"},
+		DocumentMCPToolGenerateReportFromContent, json.RawMessage(`{"content":"夏峰巡检记录"}`))
+
+	if result.Status != documentMCPToolResultFailed || result.Error == nil || result.Error.Code != string(CodeDependency) {
+		t.Fatalf("CallTool() result = %+v, want dependency failure", result)
+	}
+	if result.Job != nil {
+		t.Fatalf("failed job creation should not return job summary: %+v", result.Job)
+	}
+	if result.Report == nil || result.Report.ID != "report-1" {
+		t.Fatalf("failed job creation should still return traceable report summary: %+v", result.Report)
+	}
 }
 
 func TestMCPToolServiceCreateGenerationJobMapsInputsAndLogsSafeSummary(t *testing.T) {
@@ -487,8 +681,22 @@ func (f *fakeMCPJobService) GetJob(context.Context, RequestContext, string) (Rep
 }
 
 type fakeMCPReportService struct {
-	report Report
-	err    error
+	report       Report
+	err          error
+	createReport Report
+	createErr    error
+	createInputs []CreateReportInput
+}
+
+func (f *fakeMCPReportService) CreateReport(_ context.Context, _ RequestContext, input CreateReportInput) (Report, error) {
+	f.createInputs = append(f.createInputs, input)
+	if f.createErr != nil {
+		return Report{}, f.createErr
+	}
+	if f.createReport.ID != "" {
+		return f.createReport, nil
+	}
+	return Report{ID: "report-created", Name: input.Name, ReportType: input.ReportType, TemplateID: input.TemplateID, Status: ReportStatusDraft}, nil
 }
 
 func (f *fakeMCPReportService) GetReport(context.Context, RequestContext, string) (Report, error) {
@@ -496,6 +704,18 @@ func (f *fakeMCPReportService) GetReport(context.Context, RequestContext, string
 		return Report{}, f.err
 	}
 	return f.report, nil
+}
+
+type fakeMCPReportSettingsService struct {
+	settings ReportSettings
+	err      error
+}
+
+func (f *fakeMCPReportSettingsService) GetReportSettings(context.Context) (ReportSettings, error) {
+	if f.err != nil {
+		return ReportSettings{}, f.err
+	}
+	return f.settings, nil
 }
 
 type fakeMCPReportFileService struct {
@@ -536,4 +756,12 @@ func (f *fakeMCPOperationRecorder) singleLog(t *testing.T) OperationLog {
 		t.Fatalf("operation log count = %d, want 1: %+v", len(f.logs), f.logs)
 	}
 	return f.logs[0]
+}
+
+func (f *fakeMCPOperationRecorder) lastLog(t *testing.T) OperationLog {
+	t.Helper()
+	if len(f.logs) == 0 {
+		t.Fatal("operation log count = 0, want at least 1")
+	}
+	return f.logs[len(f.logs)-1]
 }

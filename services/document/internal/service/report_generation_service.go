@@ -356,16 +356,18 @@ func (s *ReportGenerationService) safeSettings(ctx context.Context) (ReportSetti
 }
 
 type reportGenerationContext struct {
-	Requirements string
-	MaterialIDs  []string
-	Snippets     []ReportKnowledgeSnippet
+	Requirements         string
+	MaterialIDs          []string
+	SourceContentExcerpt string
+	Snippets             []ReportKnowledgeSnippet
 }
 
 func (s *ReportGenerationService) loadGenerationContext(ctx context.Context, reqCtx RequestContext, report Report, section ReportSection, job ReportJob) (reportGenerationContext, error) {
 	payload := jsonObject(job.RequestPayload)
 	result := reportGenerationContext{
-		Requirements: stringValue(payload["requirements"]),
-		MaterialIDs:  stringSliceValue(payload["materialIds"]),
+		Requirements:         stringValue(payload["requirements"]),
+		MaterialIDs:          stringSliceValue(payload["materialIds"]),
+		SourceContentExcerpt: sourceContentExcerptFromPayload(payload),
 	}
 	retrieval := mergedRetrievalOptions(payload)
 	knowledgeBaseIDs := stringSliceValue(retrieval["knowledgeBaseIds"])
@@ -478,6 +480,9 @@ func buildOutlinePrompt(report Report, structure ReportTemplateStructure, genera
 	if len(generationContext.MaterialIDs) > 0 {
 		fmt.Fprintf(&b, "参考材料ID：%s\n", strings.Join(generationContext.MaterialIDs, ","))
 	}
+	if source := compactTextForPrompt(generationContext.SourceContentExcerpt, 12000); source != "" {
+		fmt.Fprintf(&b, "附件内容摘录：\n%s\n", source)
+	}
 	if snippets := formatKnowledgeSnippets(generationContext.Snippets); snippets != "" {
 		fmt.Fprintf(&b, "参考资料摘录：\n%s\n", snippets)
 	}
@@ -499,6 +504,9 @@ func buildSectionPrompt(report Report, section ReportSection, generationContext 
 	}
 	if req := compactTextForPrompt(generationContext.Requirements, 1024); req != "" {
 		fmt.Fprintf(&b, "额外要求：%s\n", req)
+	}
+	if source := compactTextForPrompt(generationContext.SourceContentExcerpt, 12000); source != "" {
+		fmt.Fprintf(&b, "附件内容摘录（请结合本节主题取用）：\n%s\n", source)
 	}
 	if snippets := formatKnowledgeSnippets(generationContext.Snippets); snippets != "" {
 		fmt.Fprintf(&b, "参考资料（请基于以下资料生成具体内容）：\n%s\n", snippets)
@@ -533,10 +541,11 @@ func formatKnowledgeSnippets(snippets []ReportKnowledgeSnippet) string {
 
 func compactTextForPrompt(text string, limit int) string {
 	text = strings.TrimSpace(text)
-	if limit <= 0 || len(text) <= limit {
+	if limit <= 0 || len([]byte(text)) <= limit {
 		return text
 	}
-	return text[:limit]
+	truncated, _ := truncateUTF8ByBytes(text, limit)
+	return truncated
 }
 
 func compactJSONForPrompt(raw json.RawMessage) string {
@@ -717,6 +726,27 @@ func mergedRetrievalOptions(payload map[string]any) map[string]any {
 		}
 	}
 	return result
+}
+
+func sourceContentExcerptFromPayload(payload map[string]any) string {
+	for _, value := range []any{payload["sourceContent"], mapValue(payload["options"], "sourceContent")} {
+		source, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		if excerpt := stringValue(source["excerpt"]); excerpt != "" {
+			return excerpt
+		}
+	}
+	return ""
+}
+
+func mapValue(value any, key string) any {
+	mapped, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return mapped[key]
 }
 
 func stringValue(value any) string {

@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	ToolSearchSessionAttachments = "search_session_attachments"
-	maxAttachmentResultSize      = 8192
+	ToolSearchSessionAttachments     = "search_session_attachments"
+	maxAttachmentResultSize          = 8192
+	maxAttachmentContentExcerptRunes = 1500
 )
 
 type SessionAttachmentHit struct {
@@ -22,6 +23,7 @@ type SessionAttachmentHit struct {
 	ChunkID        string
 	Filename       string
 	SectionPath    string
+	Content        string
 	ContentPreview string
 	PageNumber     int
 	ChunkIndex     int
@@ -158,14 +160,19 @@ func generateAttachmentSearchSummary(results []SessionAttachmentHit, startCitati
 		"results":   make([]map[string]any, 0, len(results)),
 	}
 	for i, result := range results {
+		content := strings.TrimSpace(result.Content)
+		if content == "" {
+			content = result.ContentPreview
+		}
 		item := map[string]any{
-			"citation_no":   startCitationNo + i,
-			"attachment_id": truncateString(result.AttachmentID, 64),
-			"chunk_id":      truncateString(result.ChunkID, 64),
-			"filename":      truncateString(result.Filename, 100),
-			"section_path":  truncateString(result.SectionPath, 100),
-			"preview":       truncateString(result.ContentPreview, 200),
-			"context":       truncateString(result.ContentPreview, 500),
+			"citation_no":     startCitationNo + i,
+			"attachment_id":   truncateString(result.AttachmentID, 64),
+			"chunk_id":        truncateString(result.ChunkID, 64),
+			"filename":        truncateString(result.Filename, 100),
+			"section_path":    truncateString(result.SectionPath, 100),
+			"preview":         truncateString(result.ContentPreview, 200),
+			"context":         truncateString(content, 500),
+			"content_excerpt": truncateString(content, maxAttachmentContentExcerptRunes),
 		}
 		if result.PageNumber > 0 {
 			item["page_number"] = result.PageNumber

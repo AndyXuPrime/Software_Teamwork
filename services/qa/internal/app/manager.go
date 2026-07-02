@@ -172,6 +172,7 @@ func (a *sessionAttachmentSearcherAdapter) SearchSessionAttachments(ctx context.
 			ChunkID:        chunk.ID,
 			Filename:       chunk.Filename,
 			SectionPath:    chunk.SectionPath,
+			Content:        chunk.Content,
 			ContentPreview: chunk.ContentPreview,
 			PageNumber:     chunk.PageNumber,
 			ChunkIndex:     chunk.ChunkIndex,

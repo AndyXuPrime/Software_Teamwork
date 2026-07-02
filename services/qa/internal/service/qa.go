@@ -29,7 +29,7 @@ const (
 	CodeInternal          Code = "internal_error"
 	CodeUnsupportedMedia  Code = "unsupported_media_type"
 	CodeUnsupportedIntent Code = "unsupported_intent"
-	CodeTooLarge         Code = "too_large"
+	CodeTooLarge          Code = "too_large"
 )
 
 type AppError struct {
@@ -877,7 +877,7 @@ func requestDirective(input AskInput) string {
 		parts = append(parts, "The requested QA mode is "+input.Mode+".")
 	}
 	if input.Mode == "report_generation" {
-		parts = append(parts, "For report generation, use available Document report tools such as document__generate_report_outline, document__generate_report_text, document__get_generation_status, document__export_report_docx, and document__get_report_result. Treat accepted, pending, or running jobs as asynchronous work and avoid long blocking waits.")
+		parts = append(parts, "For report generation, use search_session_attachments when the user uploaded files, then call available Document report tools such as document__generate_report_from_content, document__generate_report_outline, document__generate_report_text, document__get_generation_status, document__export_report_docx, and document__get_report_result. Treat accepted, pending, or running jobs as asynchronous work and avoid long blocking waits.")
 	}
 	if len(input.KnowledgeBaseIDs) > 0 {
 		parts = append(parts, "When a knowledge tool supports knowledge-base filtering, restrict it to: "+strings.Join(input.KnowledgeBaseIDs, ", ")+".")

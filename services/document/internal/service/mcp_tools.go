@@ -4,27 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
 
 const (
-	DocumentMCPToolGenerateReportOutline   = "generate_report_outline"
-	DocumentMCPToolRegenerateReportOutline = "regenerate_report_outline"
-	DocumentMCPToolGenerateReportText      = "generate_report_text"
-	DocumentMCPToolRegenerateReportText    = "regenerate_report_text"
-	DocumentMCPToolRegenerateReportSection = "regenerate_report_section"
-	DocumentMCPToolGetGenerationStatus     = "get_generation_status"
-	DocumentMCPToolGetTemplateSchema       = "get_template_schema"
-	DocumentMCPToolExportReportDOCX        = "export_report_docx"
-	DocumentMCPToolGetReportResult         = "get_report_result"
-	OperationDocumentMCPToolCall           = "document_mcp_tool_call"
-	documentMCPRequestSource               = "mcp"
-	documentMCPToolResultSucceeded         = "succeeded"
-	documentMCPToolResultFailed            = "failed"
-	documentMCPToolResultAccepted          = "accepted"
-	documentMCPDefaultExportFormat         = ReportFileFormatDOCX
-	documentMCPErrorUnsupported            = "unsupported"
+	DocumentMCPToolGenerateReportOutline     = "generate_report_outline"
+	DocumentMCPToolGenerateReportFromContent = "generate_report_from_content"
+	DocumentMCPToolRegenerateReportOutline   = "regenerate_report_outline"
+	DocumentMCPToolGenerateReportText        = "generate_report_text"
+	DocumentMCPToolRegenerateReportText      = "regenerate_report_text"
+	DocumentMCPToolRegenerateReportSection   = "regenerate_report_section"
+	DocumentMCPToolGetGenerationStatus       = "get_generation_status"
+	DocumentMCPToolGetTemplateSchema         = "get_template_schema"
+	DocumentMCPToolExportReportDOCX          = "export_report_docx"
+	DocumentMCPToolGetReportResult           = "get_report_result"
+	OperationDocumentMCPToolCall             = "document_mcp_tool_call"
+	documentMCPRequestSource                 = "mcp"
+	documentMCPToolResultSucceeded           = "succeeded"
+	documentMCPToolResultFailed              = "failed"
+	documentMCPToolResultAccepted            = "accepted"
+	documentMCPDefaultExportFormat           = ReportFileFormatDOCX
+	documentMCPErrorUnsupported              = "unsupported"
+	documentMCPDefaultContentReportType      = "summer_peak_inspection"
+	documentMCPMaxSourceContentBytes         = 20_000
 )
 
 // MCPDocumentService is the subset of the Document metadata service used by
@@ -40,7 +44,12 @@ type MCPJobService interface {
 }
 
 type MCPReportService interface {
+	CreateReport(context.Context, RequestContext, CreateReportInput) (Report, error)
 	GetReport(context.Context, RequestContext, string) (Report, error)
+}
+
+type MCPReportSettingsService interface {
+	GetReportSettings(ctx context.Context) (ReportSettings, error)
 }
 
 type MCPReportFileService interface {
@@ -49,30 +58,33 @@ type MCPReportFileService interface {
 }
 
 type MCPToolService struct {
-	documents   MCPDocumentService
-	jobs        MCPJobService
-	reports     MCPReportService
-	reportFiles MCPReportFileService
-	recorder    OperationLogRecorder
-	now         func() time.Time
+	documents      MCPDocumentService
+	jobs           MCPJobService
+	reports        MCPReportService
+	reportSettings MCPReportSettingsService
+	reportFiles    MCPReportFileService
+	recorder       OperationLogRecorder
+	now            func() time.Time
 }
 
 type MCPToolServiceConfig struct {
-	DocumentService MCPDocumentService
-	JobService      MCPJobService
-	ReportService   MCPReportService
-	ReportFileSvc   MCPReportFileService
-	Recorder        OperationLogRecorder
+	DocumentService       MCPDocumentService
+	JobService            MCPJobService
+	ReportService         MCPReportService
+	ReportSettingsService MCPReportSettingsService
+	ReportFileSvc         MCPReportFileService
+	Recorder              OperationLogRecorder
 }
 
 func NewMCPToolService(cfg MCPToolServiceConfig) *MCPToolService {
 	return &MCPToolService{
-		documents:   cfg.DocumentService,
-		jobs:        cfg.JobService,
-		reports:     cfg.ReportService,
-		reportFiles: cfg.ReportFileSvc,
-		recorder:    cfg.Recorder,
-		now:         func() time.Time { return time.Now().UTC() },
+		documents:      cfg.DocumentService,
+		jobs:           cfg.JobService,
+		reports:        cfg.ReportService,
+		reportSettings: cfg.ReportSettingsService,
+		reportFiles:    cfg.ReportFileSvc,
+		recorder:       cfg.Recorder,
+		now:            func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -146,6 +158,7 @@ type MCPTemplateSchemaSummary struct {
 func (s *MCPToolService) ListTools(context.Context) []MCPToolDefinition {
 	return []MCPToolDefinition{
 		toolDefinition(DocumentMCPToolGenerateReportOutline, "Create an outline generation report job.", jobToolSchema(false)),
+		toolDefinition(DocumentMCPToolGenerateReportFromContent, "Create a report and outline generation job from bounded source content.", reportFromContentSchema()),
 		toolDefinition(DocumentMCPToolRegenerateReportOutline, "Create an outline regeneration report job.", jobToolSchema(false)),
 		toolDefinition(DocumentMCPToolGenerateReportText, "Create a report content generation job.", jobToolSchema(false)),
 		toolDefinition(DocumentMCPToolRegenerateReportText, "Create a report content regeneration job.", jobToolSchema(false)),
@@ -174,6 +187,8 @@ func (s *MCPToolService) CallTool(ctx context.Context, reqCtx RequestContext, na
 	switch result.ToolName {
 	case DocumentMCPToolGenerateReportOutline:
 		result = s.createGenerationJob(ctx, reqCtx, result.ToolName, JobTypeOutlineGeneration, args, false)
+	case DocumentMCPToolGenerateReportFromContent:
+		result = s.generateReportFromContent(ctx, reqCtx, args)
 	case DocumentMCPToolRegenerateReportOutline:
 		result = s.createGenerationJob(ctx, reqCtx, result.ToolName, JobTypeOutlineRegeneration, args, false)
 	case DocumentMCPToolGenerateReportText:
@@ -201,6 +216,87 @@ func (s *MCPToolService) CallTool(ctx context.Context, reqCtx RequestContext, na
 	if result.ToolName == "" {
 		result.ToolName = name
 	}
+	return result
+}
+
+func (s *MCPToolService) generateReportFromContent(ctx context.Context, reqCtx RequestContext, args map[string]any) MCPToolCallResult {
+	result := MCPToolCallResult{RequestID: reqCtx.RequestID, ToolName: DocumentMCPToolGenerateReportFromContent}
+	summary := reportFromContentParameterSummary(args, 0, false)
+	if s.reportSettings == nil || s.reports == nil || s.jobs == nil {
+		result.Status = documentMCPToolResultFailed
+		result.Error = toolErrorFromError(NewError(CodeDependency, "document report services are not configured", nil))
+		s.recordToolCall(ctx, reqCtx, result, summary)
+		return result
+	}
+	content := strings.TrimSpace(stringArgument(args, "content"))
+	if content == "" {
+		result.Status = documentMCPToolResultFailed
+		result.Error = toolErrorFromError(ValidationError(map[string]string{"content": "is required"}))
+		s.recordToolCall(ctx, reqCtx, result, summary)
+		return result
+	}
+	source := buildBoundedSourceContent(content, stringArgument(args, "document_name", "documentName"))
+	summary = reportFromContentParameterSummary(args, len(source.Excerpt), source.Truncated)
+	settings, err := s.reportSettings.GetReportSettings(ctx)
+	if err != nil {
+		result.Status = documentMCPToolResultFailed
+		result.Error = toolErrorFromError(dependencyError("get report settings", err))
+		s.recordToolCall(ctx, reqCtx, result, summary)
+		return result
+	}
+	settings = normalizeReportSettings(settings)
+	templateID := strings.TrimSpace(settings.DefaultTemplates[documentMCPDefaultContentReportType])
+	if templateID == "" {
+		result.Status = documentMCPToolResultFailed
+		result.Error = toolErrorFromError(ValidationError(map[string]string{"defaultTemplates." + documentMCPDefaultContentReportType: "default template is required"}))
+		s.recordToolCall(ctx, reqCtx, result, summary)
+		return result
+	}
+	reportName := source.DocumentName
+	if reportName == "" {
+		reportName = "MCP Content Report"
+	}
+	report, err := s.reports.CreateReport(ctx, reqCtx, CreateReportInput{
+		Name:       reportName,
+		ReportType: documentMCPDefaultContentReportType,
+		TemplateID: templateID,
+		Topic:      reportName,
+		Year:       s.now().Year(),
+		Source:     documentMCPRequestSource,
+	})
+	if err != nil {
+		result.Status = documentMCPToolResultFailed
+		result.Error = toolErrorFromError(err)
+		s.recordToolCall(ctx, reqCtx, result, summary)
+		return result
+	}
+	result.Report = reportSummary(report)
+	options := map[string]any{
+		"sourceContent": source.asPayload(),
+	}
+	job, err := s.jobs.CreateJob(ctx, reqCtx, CreateJobInput{
+		RequestID:    reqCtx.RequestID,
+		UserID:       reqCtx.UserID,
+		ReportID:     report.ID,
+		JobType:      JobTypeOutlineGeneration,
+		Requirements: stringArgument(args, "instructions"),
+		Options:      options,
+	})
+	if err != nil {
+		result.Status = documentMCPToolResultFailed
+		result.Error = toolErrorFromError(err)
+		s.recordToolCall(ctx, reqCtx, result, summary)
+		return result
+	}
+	result.Status = documentMCPToolResultAccepted
+	result.Job = reportJobSummary(job)
+	if result.Job != nil {
+		result.Job.Status = documentMCPToolResultAccepted
+	}
+	if source.Truncated {
+		result.Warnings = append(result.Warnings, "content_truncated")
+	}
+	s.recordToolCall(ctx, reqCtx, result, summary)
 	return result
 }
 
@@ -697,6 +793,79 @@ func exportParameterSummary(args map[string]any) map[string]any {
 	})
 }
 
+func reportFromContentParameterSummary(args map[string]any, excerptLength int, truncated bool) map[string]any {
+	content := strings.TrimSpace(stringArgument(args, "content"))
+	instructions := strings.TrimSpace(stringArgument(args, "instructions"))
+	return safeToolSummary(map[string]any{
+		"contentLength":        len([]byte(content)),
+		"excerptLength":        excerptLength,
+		"truncated":            truncated,
+		"documentNameProvided": stringArgument(args, "document_name", "documentName") != "",
+		"instructionsLength":   len([]byte(instructions)),
+	})
+}
+
+type boundedSourceContent struct {
+	DocumentName   string
+	Excerpt        string
+	OriginalLength int
+	ExcerptLength  int
+	Truncated      bool
+}
+
+func (s boundedSourceContent) asPayload() map[string]any {
+	return map[string]any{
+		"documentName":   s.DocumentName,
+		"excerpt":        s.Excerpt,
+		"originalLength": s.OriginalLength,
+		"excerptLength":  s.ExcerptLength,
+		"truncated":      s.Truncated,
+	}
+}
+
+func buildBoundedSourceContent(content, documentName string) boundedSourceContent {
+	trimmed := strings.TrimSpace(content)
+	excerpt, truncated := truncateUTF8ByBytes(trimmed, documentMCPMaxSourceContentBytes)
+	excerpt = redactSourceContentFragments(excerpt)
+	documentName = redactSourceContentFragments(compactTextForPrompt(documentName, 160))
+	return boundedSourceContent{
+		DocumentName:   strings.TrimSpace(documentName),
+		Excerpt:        strings.TrimSpace(excerpt),
+		OriginalLength: len([]byte(trimmed)),
+		ExcerptLength:  len([]byte(excerpt)),
+		Truncated:      truncated,
+	}
+}
+
+func truncateUTF8ByBytes(text string, limit int) (string, bool) {
+	if limit <= 0 {
+		return "", len(text) > 0
+	}
+	if len([]byte(text)) <= limit {
+		return text, false
+	}
+	var builder strings.Builder
+	builder.Grow(limit)
+	used := 0
+	for _, r := range text {
+		size := len(string(r))
+		if used+size > limit {
+			break
+		}
+		builder.WriteRune(r)
+		used += size
+	}
+	return builder.String(), true
+}
+
+func redactSourceContentFragments(text string) string {
+	text = strings.TrimSpace(text)
+	for _, pattern := range sourceContentRedactionPatterns {
+		text = pattern.ReplaceAllString(text, "[redacted]")
+	}
+	return text
+}
+
 func safeToolSummary(input map[string]any) map[string]any {
 	return sanitizeMap(input)
 }
@@ -749,6 +918,14 @@ func exportDOCXSchema() map[string]any {
 	})
 }
 
+func reportFromContentSchema() map[string]any {
+	return objectSchema([]any{"content"}, map[string]any{
+		"content":       map[string]any{"type": "string", "description": "Source content used to create a bounded report-generation context."},
+		"document_name": map[string]any{"type": "string", "description": "Optional display name for the generated report."},
+		"instructions":  map[string]any{"type": "string", "description": "Optional generation instructions stored only as length summary in logs."},
+	})
+}
+
 func objectSchema(required []any, properties map[string]any) map[string]any {
 	return map[string]any{
 		"type":                 "object",
@@ -756,4 +933,10 @@ func objectSchema(required []any, properties map[string]any) map[string]any {
 		"required":             required,
 		"properties":           properties,
 	}
+}
+
+var sourceContentRedactionPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\b(token|api[_-]?key|secret|password|authorization|prompt)\s*[:=]\s*\S+`),
+	regexp.MustCompile(`(?i)\bbearer\s+\S+`),
+	regexp.MustCompile(`(?i)\b(?:https?|s3)://\S+`),
 }

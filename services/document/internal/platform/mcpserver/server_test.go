@@ -25,15 +25,18 @@ func TestListToolsExposesDocumentSchemas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools() failed: %v", err)
 	}
-	if len(result.Tools) != 9 {
-		t.Fatalf("ListTools returned %d tools, want 9", len(result.Tools))
+	if len(result.Tools) != 10 {
+		t.Fatalf("ListTools returned %d tools, want 10", len(result.Tools))
 	}
 
 	var exportTool *mcp.Tool
+	var contentTool *mcp.Tool
 	for i := range result.Tools {
 		if result.Tools[i].Name == service.DocumentMCPToolExportReportDOCX {
 			exportTool = result.Tools[i]
-			break
+		}
+		if result.Tools[i].Name == service.DocumentMCPToolGenerateReportFromContent {
+			contentTool = result.Tools[i]
 		}
 	}
 	if exportTool == nil {
@@ -53,6 +56,20 @@ func TestListToolsExposesDocumentSchemas(t *testing.T) {
 	properties, ok := schema["properties"].(map[string]any)
 	if !ok || properties["reportId"] == nil || properties["exportOptions"] == nil {
 		t.Fatalf("schema properties = %#v, want reportId and exportOptions", schema["properties"])
+	}
+	if contentTool == nil {
+		t.Fatalf("%s tool not found", service.DocumentMCPToolGenerateReportFromContent)
+	}
+	contentSchema, ok := contentTool.InputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("content tool input schema type = %T, want object", contentTool.InputSchema)
+	}
+	if contentSchema["additionalProperties"] != false {
+		t.Fatalf("content tool schema = %#v, want strict object", contentSchema)
+	}
+	contentRequired, ok := contentSchema["required"].([]any)
+	if !ok || !contains(contentRequired, "content") {
+		t.Fatalf("content schema required = %#v, want content", contentSchema["required"])
 	}
 }
 

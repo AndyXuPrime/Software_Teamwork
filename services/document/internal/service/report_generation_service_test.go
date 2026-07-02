@@ -927,6 +927,55 @@ func TestReportGenerationServiceRetrievesKnowledgeContextForOutline(t *testing.T
 	}
 }
 
+func TestReportGenerationServiceUsesSourceContentExcerptForOutline(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Attachment report",
+		ReportType: "summer_peak_inspection",
+		TemplateID: "template-1",
+		Topic:      "attachment summary",
+		CreatorID:  "user-1",
+		Status:     ReportStatusDraft,
+	}
+	repo.jobs["job-1"] = ReportJob{
+		ID:       "job-1",
+		JobType:  JobTypeOutlineGeneration,
+		ReportID: "report-1",
+		RequestPayload: map[string]any{
+			"options": map[string]any{
+				"sourceContent": map[string]any{
+					"excerpt":        "附件显示主变压器在夏峰负荷下出现温升异常。",
+					"originalLength": float64(50000),
+					"excerptLength":  float64(72),
+					"truncated":      true,
+				},
+			},
+		},
+	}
+	repo.templateStructures["template-1"] = ReportTemplateStructure{OutlineSchema: []byte(`{"sections":["overview"]}`)}
+	chat := &fakeGenerationChatClient{
+		responses: []ChatCompletionResponse{{Content: `{"sections":[{"title":"Overview"}]}`}},
+	}
+	svc := NewReportGenerationService(repo, chat)
+
+	if _, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-outline",
+		JobType:   JobTypeOutlineGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	}); err != nil {
+		t.Fatalf("ExecuteReportGeneration() error = %v", err)
+	}
+	prompt := chat.requests[0].Messages[1].Content
+	if !strings.Contains(prompt, "附件显示主变压器在夏峰负荷下出现温升异常") {
+		t.Fatalf("prompt did not include source content excerpt: %s", prompt)
+	}
+	if strings.Contains(prompt, "50000") || strings.Contains(prompt, "originalLength") {
+		t.Fatalf("prompt leaked source content metadata: %s", prompt)
+	}
+}
+
 func TestReportGenerationServiceHandlesAIMalformedResponse(t *testing.T) {
 	tests := []struct {
 		name    string
