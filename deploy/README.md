@@ -158,7 +158,7 @@ Seeded local resources:
 `LOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345` 对应的 `argon2id` PHC 字符串，
 参数为 `m=65536`、`t=3`、`p=2`、16-byte salt、32-byte key。轮换本地密码时，
 需要一起更新 `deploy/.env.example`、`001-local-demo-seed.sql` 和本文档，然后重新
-运行 `seed-local`。不要把 demo 密码或 hash 用在共享环境或长期环境。
+运行 `./scripts/local/dev-up.sh` 让 host-run seed SQL 生效。不要把 demo 密码或 hash 用在共享环境或长期环境。
 
 ## 排障入口
 
@@ -183,8 +183,10 @@ Gateway 管理路由鉴权正常。
 只清理本地 demo seed 数据：
 
 ```bash
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env run --rm seed-local \
-  sh -c "psql -v ON_ERROR_STOP=1 -h postgres -U postgres -d postgres -f /seeds/099-local-demo-cleanup.sql"
+set -a
+source deploy/.env
+set +a
+psql "$POSTGRES_ADMIN_URL" -v ON_ERROR_STOP=1 -f deploy/seeds/099-local-demo-cleanup.sql
 ```
 
 完整重置本地 infra 数据：

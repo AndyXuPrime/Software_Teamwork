@@ -37,6 +37,7 @@ jobs:
           api
           common
           rag
+          deepdoc
           deploy
 
       - name: Run targeted pytest
@@ -54,4 +55,5 @@ jobs:
           test/routes/test_route_registry.py
           test/routes/test_gateway_auth.py
           test/routes/test_runtime_dependency_check.py
+          test/ci/test_deepdoc_pdf_parser_import.py
           -q

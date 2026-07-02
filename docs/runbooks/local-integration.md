@@ -181,7 +181,7 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
 - `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 requires ...`：缺必填 env；失败只列 key，不列值。
 - `vendor ping failed` 或 Knowledge readiness 返回 `vendor_runtime_ok=false`：
   先确认 `VENDOR_RUNTIME_URL` 指向 `http://127.0.0.1:9380`，runtime API 已在宿主机启动。
-- Gateway session 返回 `401`：确认 `seed-local` 已完成，并使用
+- Gateway session 返回 `401`：确认 `./scripts/local/dev-up.sh` 已完成 seed SQL，并使用
   `.env.example` 中的 `admin` / `LocalDemoAdmin#12345` 或显式
   `GATEWAY_SMOKE_USERNAME` / `GATEWAY_SMOKE_PASSWORD`。
 - Gateway Knowledge route 返回 `401`：Gateway session cache/Redis 可能不可用；查
