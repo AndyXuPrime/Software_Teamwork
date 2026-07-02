@@ -284,21 +284,8 @@ func (c *Client) DeleteDocument(ctx context.Context, userID, datasetID, document
 	if err != nil {
 		return err
 	}
-	req, err := c.newRequest(ctx, userID, http.MethodDelete, path, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= http.StatusBadRequest {
-		raw, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
-		return fmt.Errorf("vendor delete document failed: status=%d body=%s", res.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	return nil
+	var payload envelope
+	return c.doJSON(ctx, userID, http.MethodDelete, path, body, &payload)
 }
 
 func (c *Client) ListChunks(ctx context.Context, userID, datasetID, documentID string, page, pageSize int) ([]map[string]interface{}, int64, error) {

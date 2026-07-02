@@ -3,6 +3,7 @@ package vendorclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -148,6 +149,26 @@ func TestGetDatasetDocumentScansAllPages(t *testing.T) {
 		if requested[i] != want[i] {
 			t.Fatalf("query[%d] = %q, want %q", i, requested[i], want[i])
 		}
+	}
+}
+
+func TestDeleteDocumentRejectsVendorEnvelopeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/api/v1/datasets/kb_1/documents" {
+			t.Fatalf("unexpected vendor request: %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)
+		}
+		writeTestVendorJSON(w, `{"code":102,"message":"document is locked","data":{}}`)
+	}))
+	defer server.Close()
+
+	client := New(server.URL, time.Second, "runtime-token")
+	err := client.DeleteDocument(context.Background(), "tenant_1", "kb_1", "doc_1")
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("DeleteDocument error = %v, want APIError", err)
+	}
+	if apiErr.Code != 102 || apiErr.Message != "document is locked" {
+		t.Fatalf("APIError=(%d,%q), want (102, document is locked)", apiErr.Code, apiErr.Message)
 	}
 }
 

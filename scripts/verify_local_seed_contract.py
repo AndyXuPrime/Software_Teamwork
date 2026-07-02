@@ -164,6 +164,7 @@ REQUIRED_ENV_TOKENS = [
     "MCP_SERVER_URL=http://localhost:8085/mcp",
     "MCP_SERVER_TOKEN=local-dev-internal-service-token-change-me",
     "MCP_SERVER_TOKEN_HEADER=Authorization",
+    "DB_TYPE=postgres",
     "VENDOR_RUNTIME_URL=http://127.0.0.1:9380",
     "VENDOR_RUNTIME_SERVICE_TOKEN=",
     "KNOWLEDGE_RUNTIME_SERVICE_TOKEN=",
@@ -372,7 +373,7 @@ def validate_gitignore(content: str) -> list[str]:
     if not content:
         return []
     issues: list[str] = []
-    for token in ["/.local/"]:
+    for token in ["/.local/", "DL_T_673-1999.pdf"]:
         if token not in content:
             issues.append(f"{GITIGNORE} missing local runtime ignore token `{token}`")
     return issues

@@ -48,7 +48,7 @@ func Load() (Config, error) {
 	cfg.VendorRuntimeURL = trimTrailingSlash(stringValue("VENDOR_RUNTIME_URL", DefaultVendorRuntimeURL))
 	cfg.VendorEmbeddingID = strings.TrimSpace(os.Getenv("KNOWLEDGE_VENDOR_EMBEDDING_ID"))
 	cfg.VendorRerankID = strings.TrimSpace(os.Getenv("KNOWLEDGE_VENDOR_RERANK_ID"))
-	cfg.DatabaseURL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	cfg.DatabaseURL = firstEnv("DATABASE_URL", "KNOWLEDGE_DATABASE_URL")
 	cfg.ServiceToken = firstEnv("KNOWLEDGE_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN")
 	cfg.VendorRuntimeToken = strings.TrimSpace(os.Getenv("VENDOR_RUNTIME_SERVICE_TOKEN"))
 	cfg.AutoStartIngestion = boolValue("KNOWLEDGE_AUTO_START_INGESTION", true)

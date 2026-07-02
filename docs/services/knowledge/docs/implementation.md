@@ -90,7 +90,7 @@
 | 项目 | 当前状态 | 缺口 |
 | --- | --- | --- |
 | 启动命令 | `cd services/knowledge && go run ./cmd/adapter` | 需要可访问的 host-run `services/knowledge-runtime` API。 |
-| 环境变量 | adapter 模式需要 `VENDOR_RUNTIME_URL`、`KNOWLEDGE_SERVICE_TOKEN` 或 `INTERNAL_SERVICE_TOKEN`、`KNOWLEDGE_AUTO_START_INGESTION`；`DATABASE_URL` 仅用于 parser-config admin。runtime 依赖 PostgreSQL、Redis、MinIO、Elasticsearch 和 provider 配置 | 仍需按部署环境补真实依赖连通性检查；所有 `/internal/v1/**` 调用必须带匹配的 `X-Service-Token`。 |
+| 环境变量 | adapter 模式需要 `VENDOR_RUNTIME_URL`、`KNOWLEDGE_SERVICE_TOKEN` 或 `INTERNAL_SERVICE_TOKEN`、`KNOWLEDGE_AUTO_START_INGESTION`；`DATABASE_URL` 或 `KNOWLEDGE_DATABASE_URL` 用于 parser-config admin。runtime 依赖 PostgreSQL、Redis、MinIO、Elasticsearch 和 provider 配置 | 仍需按部署环境补真实依赖连通性检查；所有 `/internal/v1/**` 调用必须带匹配的 `X-Service-Token`。 |
 | PostgreSQL / migration | `migrations/0001_create_knowledge_core_tables.sql`、`0002_create_parser_configs.sql`，runtime `pgx/v5` | goose apply CI 已覆盖 migration；repository lifecycle 由 `KNOWLEDGE_TEST_DATABASE_URL` 集成测试覆盖。 |
 | Redis / queue | 使用 `asynq` client 投递 ingestion 和 delete cleanup；worker 在同进程消费 `knowledge:document:ingest` 与 `knowledge:document:delete_cleanup` | 后续可按部署形态拆分独立 worker 进程。 |
 | Object storage / vector store / AI provider | RAGFlow runtime 通过 MinIO、Elasticsearch/向量索引和 provider 配置完成文档保存、embedding、索引和检索 | 本地 PDF E2E 覆盖上传、解析、切块、索引和查询；仍需完整 Gateway/MCP/QA 联调。 |
@@ -102,7 +102,7 @@
 
 - 任务类型：`knowledge:document:delete_cleanup`。
 - 启动方式：当前和 HTTP server、ingestion worker 共用 `cd services/knowledge && go run ./cmd/server` 进程，asynq mux 同时注册 `knowledge:document:ingest` 和 `knowledge:document:delete_cleanup`。
-- 依赖 env：`DATABASE_URL`、`FILE_SERVICE_BASE_URL`、`KNOWLEDGE_REDIS_ADDR`、`KNOWLEDGE_SERVICE_TOKEN` 必填；`QDRANT_URL` 为空时使用 memory vector index，非空时使用 `QDRANT_COLLECTION` 和可选 `QDRANT_API_KEY`。
+- 依赖 env：`DATABASE_URL` 或 `KNOWLEDGE_DATABASE_URL`、`FILE_SERVICE_BASE_URL`、`KNOWLEDGE_REDIS_ADDR`、`KNOWLEDGE_SERVICE_TOKEN` 必填；`QDRANT_URL` 为空时使用 memory vector index，非空时使用 `QDRANT_COLLECTION` 和可选 `QDRANT_API_KEY`。
 - payload：只允许 `requestId`、`jobId`、`documentId`、`knowledgeBaseId`、`userId`。不得加入 `file_ref`、bucket、object key、MinIO URL、签名 URL、service token 或 Qdrant payload。
 - 重试语义：worker 先 claim PostgreSQL `processing_jobs`，再读已软删 document cleanup 视图；File 404、空 `file_ref`、Qdrant point 不存在和重复投递视为幂等成功。File/Qdrant 失败会把 job 标为 `failed`，保存 `file cleanup failed` 或 `vector cleanup failed` 这类脱敏摘要，并返回错误给 asynq 重试；不会恢复 `knowledge_documents.deleted_at`。同进程 reconciler 每分钟从 PostgreSQL 扫描 retryable `queued`、dependency-failed 和 stale-running `delete_cleanup` job 并重新入队，Redis/asynq 仍不是长期事实源。
 - 状态事实：PostgreSQL 的 `knowledge_documents.deleted_at` 和 `processing_jobs` 是长期事实来源；Redis/asynq 只负责投递和短期重试。

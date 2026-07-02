@@ -42,6 +42,7 @@ from rag.utils.oss_conn import RAGFlowOSS
 from rag.nlp import search
 
 TIMEZONE = os.getenv("TZ", "Asia/Shanghai")
+DEFAULT_DATABASE_TYPE = "postgres"
 
 LLM = None
 LLM_FACTORY = None
@@ -66,7 +67,7 @@ SECRET_KEY = None
 FACTORY_LLM_INFOS = None
 ALLOWED_LLM_FACTORIES = None
 
-DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
+DATABASE_TYPE = os.getenv("DB_TYPE", DEFAULT_DATABASE_TYPE)
 DATABASE = decrypt_database_config(name=DATABASE_TYPE)
 
 DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
@@ -181,7 +182,7 @@ class StorageFactory:
 
 def init_settings():
     global DATABASE_TYPE, DATABASE
-    DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
+    DATABASE_TYPE = os.getenv("DB_TYPE", DEFAULT_DATABASE_TYPE)
     DATABASE = decrypt_database_config(name=DATABASE_TYPE)
     
     global ALLOWED_LLM_FACTORIES, LLM_FACTORY, LLM_BASE_URL

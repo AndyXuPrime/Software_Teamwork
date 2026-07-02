@@ -82,7 +82,7 @@ func (s *Server) requireParserConfigService(w http.ResponseWriter, r *http.Reque
 	if s.parserConfigs != nil {
 		return s.parserConfigs, true
 	}
-	writeAppError(w, r, service.DependencyError("parser config storage is not configured; set DATABASE_URL", nil))
+	writeAppError(w, r, service.DependencyError("parser config storage is not configured; set DATABASE_URL or KNOWLEDGE_DATABASE_URL", nil))
 	return nil, false
 }
 
