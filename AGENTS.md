@@ -39,6 +39,7 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 - 根级 Docker Compose 只允许拉取并启动基础设施：`postgres`、`redis`、`qdrant`、`minio`、`minio-init`。Auth、File、Knowledge、QA、Document、AI Gateway、Gateway、Parser 和前端都必须按文档在宿主机启动。
 - 仓库默认路径不再维护业务服务容器、服务级 Compose、migration 容器或 seed 容器。业务服务必须走宿主机启动。
 - `deploy/.env.example` 是唯一默认配置来源；用户复制成 `deploy/.env`。启动脚本只读取 `deploy/.env` 给宿主机进程使用，不得生成、改写或维护另一套默认变量。
+- `UV_DEFAULT_INDEX` 属于宿主机 uv/Python 包索引配置，默认放在 `deploy/.env.example`；不要把 uv 慢误判成 Docker registry 问题。
 - Docker 镜像源、registry rewrite、daemon mirror、proxy、pull 卡顿和 WSL 内存排障见 `docs/runbooks/docker-image-pull-environment.md`。面向中国大陆网络的默认推荐路径是 `deploy/.env.example` 内置显式 registry rewrite；优先级为 `registry rewrite > daemon mirror > proxy`。
 - 改 Compose、基础设施镜像 tag、镜像源、Docker 环境诊断、Docker 文档或相关 Trellis spec 时，必须运行 `python3 scripts/check_docker_policy.py`、相关单元测试和 `docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config --quiet`。
 - 不要把正常路径改成 `latest` 镜像；遇到镜像源异常时先按 Docker runbook 排查并记录环境阻断。

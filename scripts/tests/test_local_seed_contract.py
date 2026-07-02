@@ -29,7 +29,9 @@ class LocalSeedContractTests(unittest.TestCase):
             (root / "deploy" / "seeds").mkdir(parents=True)
             (root / "docs" / "runbooks").mkdir(parents=True)
             (root / "deploy" / ".env.example").write_text(
-                "LOCAL_ADMIN_USERNAME=admin\nLOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345\n",
+                "LOCAL_ADMIN_USERNAME=admin\n"
+                "LOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345\n"
+                "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple\n",
                 encoding="utf-8",
             )
             (root / "deploy" / "seeds" / "001-local-demo-seed.sql").write_text(

@@ -116,6 +116,10 @@ REQUIRED_RUN_BACKEND_TOKENS = [
     "gateway",
 ]
 
+REQUIRED_ENV_TOKENS = [
+    "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple",
+]
+
 FORBIDDEN_STARTUP_DOC_TOKENS = [
     "export AUTH_DATABASE_URL",
     "export FILE_DATABASE_URL",
@@ -260,6 +264,9 @@ def validate_docs(
     for token in REQUIRED_DOC_TOKENS:
         if token not in combined:
             issues.append(f"seed documentation missing `{token}`")
+    for token in REQUIRED_ENV_TOKENS:
+        if token not in env_example:
+            issues.append(f"{ENV_EXAMPLE} missing local default `{token}`")
     for token in FORBIDDEN_STARTUP_DOC_TOKENS:
         if token in combined:
             issues.append(f"startup documentation must not include `{token}`")
