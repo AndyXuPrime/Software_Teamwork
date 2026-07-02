@@ -70,6 +70,98 @@ func TestReportGenerationServicePersistsAIOutlineAndSectionSkeletons(t *testing.
 	}
 }
 
+func TestReportGenerationServiceSupportsCoalInventoryAuditAIJobs(t *testing.T) {
+	t.Run("outline generation", func(t *testing.T) {
+		repo := newFakeReportGenerationRepository()
+		repo.reports["report-1"] = Report{
+			ID:         "report-1",
+			Name:       "煤库存审计报告",
+			ReportType: "coal_inventory_audit",
+			Topic:      "煤场库存核查",
+			CreatorID:  "user-1",
+			Status:     ReportStatusDraft,
+		}
+		repo.jobs["job-1"] = ReportJob{ID: "job-1", JobType: JobTypeOutlineGeneration, ReportID: "report-1"}
+		chat := &fakeGenerationChatClient{
+			responses: []ChatCompletionResponse{{
+				Content: `{"sections":[{"title":"审计范围与依据"},{"title":"库存账实核查"}]}`,
+			}},
+		}
+		svc := NewReportGenerationService(repo, chat)
+
+		result, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+			RequestID: "req-outline",
+			JobType:   JobTypeOutlineGeneration,
+			JobID:     "job-1",
+			UserID:    "user-1",
+		})
+		if err != nil {
+			t.Fatalf("ExecuteReportGeneration() error = %v", err)
+		}
+		if result.Status != JobStatusSucceeded {
+			t.Fatalf("result status = %q, want succeeded", result.Status)
+		}
+		if len(chat.requests) != 1 {
+			t.Fatalf("chat request count = %d, want 1", len(chat.requests))
+		}
+		systemPrompt := chat.requests[0].Messages[0].Content
+		if !strings.Contains(systemPrompt, "煤库存审计报告") {
+			t.Fatalf("system prompt = %q, want coal inventory report label", systemPrompt)
+		}
+		if strings.Contains(systemPrompt, "迎峰度夏检查报告") {
+			t.Fatalf("system prompt still uses summer inspection label: %q", systemPrompt)
+		}
+	})
+
+	t.Run("content generation", func(t *testing.T) {
+		repo := newFakeReportGenerationRepository()
+		repo.reports["report-1"] = Report{
+			ID:         "report-1",
+			Name:       "煤库存审计报告",
+			ReportType: "coal_inventory_audit",
+			Topic:      "煤场库存核查",
+			CreatorID:  "user-1",
+			Status:     ReportStatusOutlineGenerated,
+		}
+		repo.jobs["job-1"] = ReportJob{ID: "job-1", JobType: JobTypeContentGeneration, ReportID: "report-1"}
+		repo.sections["section-1"] = ReportSection{
+			ID:               "section-1",
+			ReportID:         "report-1",
+			Title:            "库存账实核查",
+			SortOrder:        0,
+			Version:          1,
+			GenerationStatus: JobStatusPending,
+		}
+		chat := &fakeGenerationChatClient{
+			responses: []ChatCompletionResponse{{Content: `{"content":"煤场账实相符率估算为98.2%。","tables":[]}`}},
+		}
+		svc := NewReportGenerationService(repo, chat)
+
+		result, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+			RequestID: "req-content",
+			JobType:   JobTypeContentGeneration,
+			JobID:     "job-1",
+			UserID:    "user-1",
+		})
+		if err != nil {
+			t.Fatalf("ExecuteReportGeneration() error = %v", err)
+		}
+		if result.Status != JobStatusSucceeded {
+			t.Fatalf("result status = %q, want succeeded", result.Status)
+		}
+		if len(chat.requests) != 1 {
+			t.Fatalf("chat request count = %d, want 1", len(chat.requests))
+		}
+		systemPrompt := chat.requests[0].Messages[0].Content
+		if !strings.Contains(systemPrompt, "煤库存审计报告") {
+			t.Fatalf("system prompt = %q, want coal inventory report label", systemPrompt)
+		}
+		if strings.Contains(systemPrompt, "迎峰度夏检查报告") {
+			t.Fatalf("system prompt still uses summer inspection label: %q", systemPrompt)
+		}
+	})
+}
+
 func TestReportGenerationServiceRollsBackOutlineAndSkeletonsWhenSkeletonCreationFails(t *testing.T) {
 	repo := newFakeReportGenerationRepository()
 	repo.reports["report-1"] = Report{
@@ -318,7 +410,7 @@ func TestReportGenerationServiceContentGenerationUsesCurrentOutlineSections(t *t
 	}
 }
 
-func TestReportGenerationServiceRejectsUnsupportedReportTypeForContentJobs(t *testing.T) {
+func TestReportGenerationServiceRejectsUnknownReportTypeForContentJobs(t *testing.T) {
 	tests := []struct {
 		name       string
 		jobType    JobType
@@ -335,9 +427,9 @@ func TestReportGenerationServiceRejectsUnsupportedReportTypeForContentJobs(t *te
 			repo := newFakeReportGenerationRepository()
 			repo.reports["report-1"] = Report{
 				ID:         "report-1",
-				Name:       "Coal inventory audit",
-				ReportType: "coal_inventory_audit",
-				Topic:      "coal storage",
+				Name:       "Custom unsupported report",
+				ReportType: "custom_report",
+				Topic:      "custom topic",
 				CreatorID:  "user-1",
 				Status:     ReportStatusOutlineGenerated,
 			}

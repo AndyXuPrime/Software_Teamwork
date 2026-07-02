@@ -33,6 +33,10 @@ func TestInitialReportDefaultSeedDocumentsPlaceholdersAndAvoidsSensitiveDefaults
 	for _, required := range []string{
 		"summer_peak_inspection",
 		"coal_inventory_audit",
+		"迎峰度夏检查报告",
+		"煤库存审计报告",
+		"供电负荷与设备运行核查",
+		"库存账实核查",
 		"11111111-1111-4111-8111-111111111101",
 		"11111111-1111-4111-8111-111111111102",
 		"first-slice-default-docx",
@@ -65,6 +69,25 @@ func TestInitialReportDefaultSeedDocumentsPlaceholdersAndAvoidsSensitiveDefaults
 	} {
 		if strings.Contains(lower, forbidden) {
 			t.Fatalf("initial report seed contains forbidden sensitive marker %q", forbidden)
+		}
+	}
+}
+
+func TestPlaceholderTemplateStructureFixUsesRealisticOutlines(t *testing.T) {
+	raw, err := os.ReadFile("../../migrations/0004_fix_placeholder_template_structures.sql")
+	if err != nil {
+		t.Fatalf("read placeholder template fix migration: %v", err)
+	}
+	migration := string(raw)
+	for _, required := range []string{
+		"供电负荷与设备运行核查",
+		"隐患问题与整改闭环",
+		"库存账实核查",
+		"煤质与计量抽查",
+		"first-slice-default-docx",
+	} {
+		if !strings.Contains(migration, required) {
+			t.Fatalf("placeholder template fix missing %q", required)
 		}
 	}
 }

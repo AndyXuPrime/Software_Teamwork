@@ -207,8 +207,8 @@ SET knowledge_base_id = EXCLUDED.knowledge_base_id,
 
 INSERT INTO report_types (code, name, description, enabled, updated_at)
 VALUES
-    ('summer_peak_inspection', 'Summer Peak Inspection Report', 'Local demo report type for peak-season inspection workflows.', true, now()),
-    ('coal_inventory_audit', 'Coal Inventory Audit Report', 'Local demo report type for coal inventory audit workflows.', true, now())
+    ('summer_peak_inspection', '迎峰度夏检查报告', '本地演示：迎峰度夏供电保障与风险检查报告类型。', true, now()),
+    ('coal_inventory_audit', '煤库存审计报告', '本地演示：煤场库存账实、煤质计量与保供风险审计报告类型。', true, now())
 ON CONFLICT (code) DO UPDATE
 SET name = EXCLUDED.name,
     description = EXCLUDED.description,
@@ -248,14 +248,14 @@ INSERT INTO report_materials (
 )
 VALUES (
     '22222222-2222-4222-8222-222222222201',
-    'Local Demo Inspection Notes',
+    '本地演示检查记录',
     'text',
     'local-demo',
     null,
     'local-demo-inspection-notes.md',
     0,
-    'Safe local placeholder material for report list/detail inspection.',
-    '["local-demo","seed","no-file-ref"]'::jsonb,
+    '用于本地联调的安全占位素材，不包含真实文件引用或生产内容。',
+    '["本地演示","种子数据","无文件引用"]'::jsonb,
     true,
     'usr_local_admin',
     now(),
@@ -316,17 +316,17 @@ INSERT INTO reports (
 )
 VALUES (
     '22222222-2222-4222-8222-222222222301',
-    'Local Demo Summer Peak Inspection Report',
+    '本地演示迎峰度夏检查报告',
     'summer_peak_inspection',
     '11111111-1111-4111-8111-111111111101',
-    'Local demo summer peak readiness',
-    'power-grid',
-    'Local Demo Plant',
+    '本地演示迎峰度夏保供检查',
+    '电网运行',
+    '本地演示电厂',
     2026,
     'generated',
     '{"seed":"local-demo","privateContent":false,"usesRealProvider":false}'::jsonb,
     'usr_local_admin',
-    'Local Demo Administrator',
+    '本地演示管理员',
     'local_seed',
     null,
     null,

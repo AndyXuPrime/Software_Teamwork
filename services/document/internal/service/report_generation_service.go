@@ -89,7 +89,8 @@ func (s *ReportGenerationService) ExecuteReportGeneration(ctx context.Context, p
 }
 
 func (s *ReportGenerationService) executeOutlineGeneration(ctx context.Context, reqCtx RequestContext, payload ReportGenerationExecutionPayload, job ReportJob, report Report) (ReportGenerationExecutionResult, error) {
-	if err := validateSupportedAIReportType(report.ReportType, "outline"); err != nil {
+	reportKind, err := resolveAIReportType(report.ReportType, "outline")
+	if err != nil {
 		return ReportGenerationExecutionResult{}, err
 	}
 	settings, err := s.safeSettings(ctx)
@@ -113,8 +114,8 @@ func (s *ReportGenerationService) executeOutlineGeneration(ctx context.Context, 
 		Model:     settings.LLM.Model,
 		ProfileID: settings.LLM.ProfileID,
 		Messages: []ChatMessage{
-			{Role: "system", Content: outlineSystemPrompt},
-			{Role: "user", Content: buildOutlinePrompt(report, structure, generationContext)},
+			{Role: "system", Content: buildOutlineSystemPrompt(reportKind.DisplayName)},
+			{Role: "user", Content: buildOutlinePrompt(report, structure, generationContext, reportKind)},
 		},
 	})
 	if err != nil {
@@ -164,7 +165,8 @@ func (s *ReportGenerationService) executeOutlineGeneration(ctx context.Context, 
 }
 
 func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, reqCtx RequestContext, payload ReportGenerationExecutionPayload, job ReportJob, report Report) (ReportGenerationExecutionResult, error) {
-	if err := validateSupportedAIReportType(report.ReportType, "content"); err != nil {
+	reportKind, err := resolveAIReportType(report.ReportType, "content")
+	if err != nil {
 		return ReportGenerationExecutionResult{}, err
 	}
 	settings, err := s.safeSettings(ctx)
@@ -219,8 +221,8 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 			Model:     settings.LLM.Model,
 			ProfileID: settings.LLM.ProfileID,
 			Messages: []ChatMessage{
-				{Role: "system", Content: sectionSystemPrompt},
-				{Role: "user", Content: buildSectionPrompt(report, section, generationContext, sectionHasChildren(sections, section.ID))},
+				{Role: "system", Content: buildSectionSystemPrompt(reportKind.DisplayName)},
+				{Role: "user", Content: buildSectionPrompt(report, section, generationContext, sectionHasChildren(sections, section.ID), reportKind)},
 			},
 		})
 		if err != nil {
@@ -325,11 +327,22 @@ func (s *ReportGenerationService) markSectionGenerationFailed(ctx context.Contex
 	_, _ = s.repo.MarkReportSectionGenerationFailed(ctx, sectionID, jobID, s.clock())
 }
 
-func validateSupportedAIReportType(reportType, generationKind string) error {
-	if reportType != "summer_peak_inspection" {
-		return ValidationError(map[string]string{"reportType": fmt.Sprintf("unsupported report type for AI %s generation", generationKind)})
+type aiReportTypeMetadata struct {
+	DisplayName string
+}
+
+var supportedAIReportTypes = map[string]aiReportTypeMetadata{
+	"summer_peak_inspection": {DisplayName: "迎峰度夏检查报告"},
+	"coal_inventory_audit":   {DisplayName: "煤库存审计报告"},
+}
+
+func resolveAIReportType(reportType, generationKind string) (aiReportTypeMetadata, error) {
+	reportType = strings.TrimSpace(reportType)
+	metadata, ok := supportedAIReportTypes[reportType]
+	if !ok {
+		return aiReportTypeMetadata{}, ValidationError(map[string]string{"reportType": fmt.Sprintf("unsupported report type for AI %s generation", generationKind)})
 	}
-	return nil
+	return metadata, nil
 }
 
 func preserveManualEdits(job ReportJob) bool {
@@ -448,29 +461,32 @@ func (s *ReportGenerationService) recordEvent(ctx context.Context, reportID, job
 	return err
 }
 
-const outlineSystemPrompt = `你是一名中国电力行业报告撰写专家，正在生成迎峰度夏检查报告的章节大纲。
-
+func buildOutlineSystemPrompt(reportDisplayName string) string {
+	return fmt.Sprintf(`你是一名中国电力行业报告撰写专家，正在生成%s的章节大纲。
 输出要求：
 1. 仅输出合法 JSON，不加任何 Markdown 代码块或额外说明。
 2. 格式：{"sections":[{"title":"章节标题","children":[{"title":"子节标题","children":[]}]}]}
 3. 标题使用中文，简洁专业，不含编号（编号由系统自动生成）。
-4. 根据报告主题和参考资料生成真实适用的章节结构，不使用泛泛的占位标题。`
+4. 根据报告主题和参考资料生成真实适用的章节结构，不使用泛泛的占位标题。`, reportDisplayName)
+}
 
-const sectionSystemPrompt = `你是一名中国电力行业报告撰写专家，正在生成迎峰度夏检查报告的某一章节内容。
-
+func buildSectionSystemPrompt(reportDisplayName string) string {
+	return fmt.Sprintf(`你是一名中国电力行业报告撰写专家，正在生成%s的某一章节内容。
 输出要求：
 1. 仅输出合法 JSON，不加任何 Markdown 代码块或额外说明。
-2. 格式：{"content":"正文段落（段落间用\n分隔）","tables":[{"headers":["列名1","列名2"],"rows":[["值1","值2"]],"footnote":"注释（可选，无则省略key）}]}
+2. 格式：{"content":"正文段落（段落间用\n分隔）","tables":[{"headers":["列名1","列名2"],"rows":[["值","值"]],"footnote":"注释（可选，无则省略key）"}]}
 3. 使用正式中文，专业术语准确。
-4. 严禁使用 XX、N/A、待定、（数字）等任何占位符——必须填写具体的、合理的技术数据或描述；若无精确数据则给出合理估算值并注明"估算"。
+4. 严禁使用 XX、N/A、待定、（数字）等任何占位符；必须填写具体的、合理的技术数据或描述，若无精确数据则给出合理估算值并注明"估算"。
 5. 表格数据必须与正文一致，不得与其他章节的数字相矛盾。
 6. 总结/结论章节应综合参考资料中已有的数据得出实质性结论，而非重复列举 XX 项。
-7. content 开头不得重复章节标题——直接进入正文内容。
-8. 若提示"本节含子章节"，则 content 只需写 1-2 段简短导言（概述该节覆盖的范围），具体数据和分析留给子章节；tables 为空数组。`
+7. content 开头不得重复章节标题，直接进入正文内容。
+8. 若提示“本节含子章节”，则 content 只需写 1-2 段简短导言，具体数据和分析留给子章节；tables 为空数组。`, reportDisplayName)
+}
 
-func buildOutlinePrompt(report Report, structure ReportTemplateStructure, generationContext reportGenerationContext) string {
+func buildOutlinePrompt(report Report, structure ReportTemplateStructure, generationContext reportGenerationContext, reportKind aiReportTypeMetadata) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "报告类型：%s\n", report.ReportType)
+	fmt.Fprintf(&b, "报告名称：%s\n", reportKind.DisplayName)
 	fmt.Fprintf(&b, "报告主题：%s\n", report.Topic)
 	if req := compactTextForPrompt(generationContext.Requirements, 1024); req != "" {
 		fmt.Fprintf(&b, "额外要求：%s\n", req)
@@ -488,9 +504,10 @@ func buildOutlinePrompt(report Report, structure ReportTemplateStructure, genera
 	return b.String()
 }
 
-func buildSectionPrompt(report Report, section ReportSection, generationContext reportGenerationContext, hasChildren bool) string {
+func buildSectionPrompt(report Report, section ReportSection, generationContext reportGenerationContext, hasChildren bool, reportKind aiReportTypeMetadata) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "报告类型：%s\n", report.ReportType)
+	fmt.Fprintf(&b, "报告名称：%s\n", reportKind.DisplayName)
 	fmt.Fprintf(&b, "报告主题：%s\n", report.Topic)
 	sectionLabel := strings.TrimSpace(section.Numbering + " " + section.Title)
 	fmt.Fprintf(&b, "当前章节：%s\n", sectionLabel)
