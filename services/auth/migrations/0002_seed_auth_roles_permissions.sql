@@ -53,6 +53,7 @@ FROM (
         ('rperm_admin_qa_use', 'admin', 'qa:use'),
         ('rperm_admin_model_profile_write', 'admin', 'admin:model-profile:write'),
         ('rperm_admin_parser_config_write', 'admin', 'admin:parser-config:write'),
+        ('rperm_admin_system_admin', 'admin', 'system:admin'),
         ('rperm_super_knowledge_read', 'super_admin', 'knowledge:read'),
         ('rperm_super_knowledge_write', 'super_admin', 'knowledge:write'),
         ('rperm_super_document_read', 'super_admin', 'document:read'),
