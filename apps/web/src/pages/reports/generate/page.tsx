@@ -10,6 +10,7 @@ import type {
   ReportFile,
   ReportJob,
   ReportJobStatus,
+  ReportOutlineNode,
   ReportSectionVersion,
 } from '@/features/reports'
 import {
@@ -31,6 +32,10 @@ import {
   useUpdateReportSectionMutation,
 } from '@/features/reports'
 import { cn } from '@/lib/utils'
+
+function flattenOutline(nodes: ReportOutlineNode[]): ReportOutlineNode[] {
+  return nodes.flatMap((node) => [node, ...flattenOutline(node.children ?? [])])
+}
 
 const steps = [
   { key: 'draft', label: '1. 草稿与大纲' },
@@ -638,13 +643,13 @@ export function ReportGeneratePage() {
                 />
               ) : (
                 <div className="space-y-2">
-                  {outline.map((node) => (
+                  {flattenOutline(outline).map((node) => (
                     <div
                       key={node.id ?? node.clientSectionId ?? node.title}
-                      className={cn(
-                        'flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2',
-                        node.level > 1 && 'ml-8',
-                      )}
+                      style={
+                        node.level > 1 ? { marginLeft: `${(node.level - 1) * 2}rem` } : undefined
+                      }
+                      className="flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2"
                     >
                       <span className="w-10 text-xs text-muted-foreground">
                         {node.numbering ?? '-'}
@@ -704,9 +709,7 @@ export function ReportGeneratePage() {
                           )}
                           onClick={() => setActiveSectionId(section.id)}
                         >
-                          <span className="min-w-0 truncate">
-                            {section.numbering} {section.title}
-                          </span>
+                          <span className="min-w-0 truncate">{section.title}</span>
                           <span>{statusText[section.generationStatus]}</span>
                         </button>
                       ))}

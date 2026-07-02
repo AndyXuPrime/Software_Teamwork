@@ -150,6 +150,9 @@ func (w *Worker) handleReportJob(ctx context.Context, t *asynq.Task) error {
 		})
 		if err != nil {
 			w.markFailed(ctx, payload, "execution_failed", err)
+			if appErr, ok := service.Classify(err); ok && appErr.Code == service.CodeValidation {
+				return fmt.Errorf("%w: report validation failed", asynq.SkipRetry)
+			}
 			return fmt.Errorf("report job execution failed")
 		}
 		if result.Status == service.JobStatusPartialSucceeded {

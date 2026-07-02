@@ -113,7 +113,7 @@ func (s *ReportGenerationService) executeOutlineGeneration(ctx context.Context, 
 		Model:     settings.LLM.Model,
 		ProfileID: settings.LLM.ProfileID,
 		Messages: []ChatMessage{
-			{Role: "system", Content: "Return strict JSON for a power-industry report outline. Do not include markdown."},
+			{Role: "system", Content: outlineSystemPrompt},
 			{Role: "user", Content: buildOutlinePrompt(report, structure, generationContext)},
 		},
 	})
@@ -219,8 +219,8 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 			Model:     settings.LLM.Model,
 			ProfileID: settings.LLM.ProfileID,
 			Messages: []ChatMessage{
-				{Role: "system", Content: "Return strict JSON for one report section. Do not include markdown."},
-				{Role: "user", Content: buildSectionPrompt(report, section, generationContext)},
+				{Role: "system", Content: sectionSystemPrompt},
+				{Role: "user", Content: buildSectionPrompt(report, section, generationContext, sectionHasChildren(sections, section.ID))},
 			},
 		})
 		if err != nil {
@@ -448,27 +448,72 @@ func (s *ReportGenerationService) recordEvent(ctx context.Context, reportID, job
 	return err
 }
 
+const outlineSystemPrompt = `你是一名中国电力行业报告撰写专家，正在生成迎峰度夏检查报告的章节大纲。
+
+输出要求：
+1. 仅输出合法 JSON，不加任何 Markdown 代码块或额外说明。
+2. 格式：{"sections":[{"title":"章节标题","children":[{"title":"子节标题","children":[]}]}]}
+3. 标题使用中文，简洁专业，不含编号（编号由系统自动生成）。
+4. 根据报告主题和参考资料生成真实适用的章节结构，不使用泛泛的占位标题。`
+
+const sectionSystemPrompt = `你是一名中国电力行业报告撰写专家，正在生成迎峰度夏检查报告的某一章节内容。
+
+输出要求：
+1. 仅输出合法 JSON，不加任何 Markdown 代码块或额外说明。
+2. 格式：{"content":"正文段落（段落间用\n分隔）","tables":[{"headers":["列名1","列名2"],"rows":[["值1","值2"]],"footnote":"注释（可选，无则省略key）}]}
+3. 使用正式中文，专业术语准确。
+4. 严禁使用 XX、N/A、待定、（数字）等任何占位符——必须填写具体的、合理的技术数据或描述；若无精确数据则给出合理估算值并注明"估算"。
+5. 表格数据必须与正文一致，不得与其他章节的数字相矛盾。
+6. 总结/结论章节应综合参考资料中已有的数据得出实质性结论，而非重复列举 XX 项。
+7. content 开头不得重复章节标题——直接进入正文内容。
+8. 若提示"本节含子章节"，则 content 只需写 1-2 段简短导言（概述该节覆盖的范围），具体数据和分析留给子章节；tables 为空数组。`
+
 func buildOutlinePrompt(report Report, structure ReportTemplateStructure, generationContext reportGenerationContext) string {
-	return fmt.Sprintf("reportType=%s topic=%s requirements=%s materialRefs=%s retrievedContext=%s templateOutlineSchema=%s output={\"sections\":[{\"title\":\"...\",\"children\":[]}]}",
-		report.ReportType,
-		report.Topic,
-		compactTextForPrompt(generationContext.Requirements, 1024),
-		strings.Join(generationContext.MaterialIDs, ","),
-		formatKnowledgeSnippets(generationContext.Snippets),
-		compactJSONForPrompt(structure.OutlineSchema),
-	)
+	var b strings.Builder
+	fmt.Fprintf(&b, "报告类型：%s\n", report.ReportType)
+	fmt.Fprintf(&b, "报告主题：%s\n", report.Topic)
+	if req := compactTextForPrompt(generationContext.Requirements, 1024); req != "" {
+		fmt.Fprintf(&b, "额外要求：%s\n", req)
+	}
+	if len(generationContext.MaterialIDs) > 0 {
+		fmt.Fprintf(&b, "参考材料ID：%s\n", strings.Join(generationContext.MaterialIDs, ","))
+	}
+	if snippets := formatKnowledgeSnippets(generationContext.Snippets); snippets != "" {
+		fmt.Fprintf(&b, "参考资料摘录：\n%s\n", snippets)
+	}
+	if schema := compactJSONForPrompt(structure.OutlineSchema); schema != "{}" {
+		fmt.Fprintf(&b, "大纲模板（仅供参考，可据实调整）：%s\n", schema)
+	}
+	b.WriteString(`请输出JSON大纲，sections数组中每项含title和children（可为空数组）。`)
+	return b.String()
 }
 
-func buildSectionPrompt(report Report, section ReportSection, generationContext reportGenerationContext) string {
-	return fmt.Sprintf("reportType=%s topic=%s sectionNumber=%s sectionTitle=%s requirements=%s materialRefs=%s retrievedContext=%s output={\"content\":\"...\",\"tables\":[]}",
-		report.ReportType,
-		report.Topic,
-		section.Numbering,
-		section.Title,
-		compactTextForPrompt(generationContext.Requirements, 1024),
-		strings.Join(generationContext.MaterialIDs, ","),
-		formatKnowledgeSnippets(generationContext.Snippets),
-	)
+func buildSectionPrompt(report Report, section ReportSection, generationContext reportGenerationContext, hasChildren bool) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "报告类型：%s\n", report.ReportType)
+	fmt.Fprintf(&b, "报告主题：%s\n", report.Topic)
+	sectionLabel := strings.TrimSpace(section.Numbering + " " + section.Title)
+	fmt.Fprintf(&b, "当前章节：%s\n", sectionLabel)
+	if hasChildren {
+		b.WriteString("提示：本节含子章节，content 只需写 1-2 段覆盖范围的导言，tables 为空数组。\n")
+	}
+	if req := compactTextForPrompt(generationContext.Requirements, 1024); req != "" {
+		fmt.Fprintf(&b, "额外要求：%s\n", req)
+	}
+	if snippets := formatKnowledgeSnippets(generationContext.Snippets); snippets != "" {
+		fmt.Fprintf(&b, "参考资料（请基于以下资料生成具体内容）：\n%s\n", snippets)
+	}
+	b.WriteString("请输出该章节的JSON内容，content为正文，tables为表格数组（无表格则为空数组）。")
+	return b.String()
+}
+
+func sectionHasChildren(sections []ReportSection, id string) bool {
+	for _, s := range sections {
+		if s.ParentID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func formatKnowledgeSnippets(snippets []ReportKnowledgeSnippet) string {
