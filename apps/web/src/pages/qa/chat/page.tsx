@@ -3,7 +3,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { replayEvents, streamChat } from '@/api/chat'
 import { gatewayFileRequest } from '@/api/client'
-import { ChatInput, ChatMessages, ChatSidebar } from '@/components/chat'
+import {
+  deleteSessionAttachment,
+  getSessionAttachment,
+  listSessionAttachments,
+} from '@/api/conversations'
+import { AttachmentList, AttachmentUploadStatus } from '@/components/chat'
+import { ChatInput, ChatMessages, ChatSidebar, useAttachmentUpload } from '@/components/chat'
+import { ConfirmDialog } from '@/components/common'
 import {
   useCreateSession,
   useDeleteSession,
@@ -20,6 +27,7 @@ import type {
   QASession,
   QASessionListItem,
   QAThinkingStep,
+  SessionAttachmentSummary,
 } from '@/lib/types'
 import { useChatStore } from '@/stores/chat-store'
 
@@ -256,6 +264,13 @@ export function ChatPage() {
   const updateSessionMessages = useChatStore((s) => s.updateSessionMessages)
   const appendSessionMessages = useChatStore((s) => s.appendSessionMessages)
   const messagesBySession = useChatStore((s) => s.messagesBySession)
+  const attachmentsBySession = useChatStore((s) => s.attachmentsBySession)
+  const excludedAttachmentIds = useChatStore((s) => s.excludedAttachmentIds)
+  const setSessionAttachments = useChatStore((s) => s.setSessionAttachments)
+  const addAttachment = useChatStore((s) => s.addAttachment)
+  const updateAttachment = useChatStore((s) => s.updateAttachment)
+  const removeAttachment = useChatStore((s) => s.removeAttachment)
+  const toggleAttachmentExcluded = useChatStore((s) => s.toggleAttachmentExcluded)
 
   // ── React Query: messages for active session (loaded separately from QASession) ──
   const { data: serverMessages, isError: messagesError } = useSessionMessages(activeId ?? '')
@@ -265,6 +280,44 @@ export function ChatPage() {
 
   // ── Three-phase state machine: empty → transitioning → active ──
   const [chatPhase, setChatPhase] = useState<'empty' | 'active'>('empty')
+
+  // ── Attachment upload hook ──
+  const handleAttachmentReady = useCallback(
+    (attachment: SessionAttachmentSummary) => {
+      const sid = attachment.sessionId || activeId
+      if (!sid) return
+      const current = useChatStore.getState().attachmentsBySession[sid] ?? []
+      const tempIds = current.filter((a) => a.id.startsWith('temp-')).map((a) => a.id)
+      for (const tempId of tempIds) {
+        removeAttachment(sid, tempId)
+      }
+      const exists = current.some((a) => a.id === attachment.id)
+      if (exists) {
+        updateAttachment(sid, attachment.id, attachment)
+      } else {
+        addAttachment(sid, attachment)
+      }
+    },
+    [activeId, updateAttachment, addAttachment, removeAttachment],
+  )
+
+  const handleAttachCleanup = useCallback(
+    (uploadSessionId: string) => {
+      if (!uploadSessionId) return
+      const current = useChatStore.getState().attachmentsBySession[uploadSessionId] ?? []
+      const tempIds = current.filter((a) => a.id.startsWith('temp-')).map((a) => a.id)
+      for (const tempId of tempIds) {
+        removeAttachment(uploadSessionId, tempId)
+      }
+    },
+    [removeAttachment],
+  )
+
+  const { uploadState, uploadFile, dismissUpload } = useAttachmentUpload(
+    activeId,
+    handleAttachmentReady,
+    handleAttachCleanup,
+  )
 
   // ── Mutations ──
   const createSessionMut = useCreateSession()
@@ -361,6 +414,68 @@ export function ChatPage() {
   }, [messagesError, activeId, setError])
 
   // ══════════════════════════════════════════════════════════════════════════
+  // Load attachments when active session changes
+  // ══════════════════════════════════════════════════════════════════════════
+
+  useEffect(() => {
+    if (!activeId) return
+
+    listSessionAttachments(activeId)
+      .then((result) => {
+        // Merge: server list is authoritative for real attachments. Only keep
+        // local items that are temp-* or still in-flight (uploaded/parsing)
+        // and not yet visible in the server response. Stale ready/failed items
+        // missing from server (deleted in another tab, TTL purge, etc.) are
+        // dropped so they won't be included in the next message send.
+        const serverIds = new Set(result.items.map((a) => a.id))
+        const local = useChatStore.getState().attachmentsBySession[activeId] ?? []
+        const localOnly = local.filter(
+          (a) =>
+            !serverIds.has(a.id) &&
+            (a.id.startsWith('temp-') || a.status === 'uploaded' || a.status === 'parsing'),
+        )
+        setSessionAttachments(activeId, [...result.items, ...localOnly])
+      })
+      .catch(() => {
+        // Attachments are optional; don't surface loading errors as critical
+      })
+  }, [activeId, setSessionAttachments])
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Background polling for non-terminal attachments (uploaded / parsing)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  useEffect(() => {
+    if (!activeId) return
+
+    const currentAttachments = attachmentsBySession[activeId] ?? []
+    const pollingIds = currentAttachments
+      .filter(
+        (a) => (a.status === 'uploaded' || a.status === 'parsing') && !a.id.startsWith('temp-'),
+      )
+      .map((a) => a.id)
+
+    if (pollingIds.length === 0) return
+
+    const interval = setInterval(() => {
+      const sessionId = activeId
+      if (!sessionId) return
+
+      for (const id of pollingIds) {
+        getSessionAttachment(sessionId, id)
+          .then((updated) => {
+            updateAttachment(sessionId, id, updated)
+          })
+          .catch(() => {
+            // Silently continue polling
+          })
+      }
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [activeId, attachmentsBySession, updateAttachment])
+
+  // ══════════════════════════════════════════════════════════════════════════
   // Cleanup SSE on unmount
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -382,6 +497,85 @@ export function ChatPage() {
       }),
     [sessions, messagesBySession],
   )
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Attachment handlers
+  // ══════════════════════════════════════════════════════════════════════════
+
+  const handleFileSelect = useCallback(
+    (file: File) => {
+      if (!activeId) return
+
+      // Clean up any stale temp-* items from a previous aborted upload before
+      // adding the new one, so they don't accumulate in the list indefinitely.
+      const current = useChatStore.getState().attachmentsBySession[activeId] ?? []
+      for (const a of current) {
+        if (a.id.startsWith('temp-')) {
+          removeAttachment(activeId, a.id)
+        }
+      }
+
+      // Optimistically add the attachment to the store
+      const tempAttachment: SessionAttachmentSummary = {
+        id: `temp-${Date.now()}`,
+        sessionId: activeId,
+        filename: file.name,
+        contentType: file.type || 'application/octet-stream',
+        sizeBytes: file.size,
+        status: 'uploaded',
+        createdAt: new Date().toISOString(),
+      }
+      addAttachment(activeId, tempAttachment)
+
+      // Start the actual upload + polling flow
+      uploadFile(file)
+    },
+    [activeId, addAttachment, removeAttachment, uploadFile],
+  )
+
+  const [deleteAttachmentTarget, setDeleteAttachmentTarget] = useState<{
+    sessionId: string
+    attachmentId: string
+  } | null>(null)
+
+  const handleDeleteAttachment = useCallback((sessionId: string, attachmentId: string) => {
+    setDeleteAttachmentTarget({ sessionId, attachmentId })
+  }, [])
+
+  const confirmDeleteAttachment = useCallback(async () => {
+    const target = deleteAttachmentTarget
+    setDeleteAttachmentTarget(null)
+    if (!target) return
+    const { sessionId: targetSid, attachmentId: targetAid } = target
+    // temp-* attachments only exist locally — skip backend call and just clean up
+    if (targetAid.startsWith('temp-')) {
+      removeAttachment(targetSid, targetAid)
+      // Only dismiss the upload bar if this temp belongs to the current session
+      if (targetSid === activeId) dismissUpload()
+      return
+    }
+    try {
+      await deleteSessionAttachment(targetSid, targetAid)
+      removeAttachment(targetSid, targetAid)
+    } catch {
+      setError('删除附件失败')
+    }
+  }, [activeId, deleteAttachmentTarget, removeAttachment, setError, dismissUpload])
+
+  const handleToggleAttachmentExcluded = useCallback(
+    (attachmentId: string) => {
+      if (!activeId) return
+      toggleAttachmentExcluded(activeId, attachmentId)
+    },
+    [activeId, toggleAttachmentExcluded],
+  )
+
+  // ── Derived attachment data ──
+  const activeAttachments = activeId ? (attachmentsBySession[activeId] ?? []) : []
+  const activeExcludedIds = activeId ? (excludedAttachmentIds[activeId] ?? []) : []
+  const visibleAttachmentCount = activeAttachments.filter(
+    (a) => a.status !== 'failed' && a.status !== 'purged',
+  ).length
 
   // ══════════════════════════════════════════════════════════════════════════
   // Create session
@@ -875,7 +1069,24 @@ export function ChatPage() {
         },
       }
 
-      const { abort } = streamChat(uid, trimmed, streamHandlers)
+      // Collect ready attachment IDs at call time (latest store state)
+      const currentState = useChatStore.getState()
+      const currentAttachments = currentState.attachmentsBySession[uid] ?? []
+      const currentExcluded = currentState.excludedAttachmentIds[uid] ?? []
+      const attachmentIds = currentAttachments
+        .filter(
+          (a) =>
+            a.status === 'ready' && !currentExcluded.includes(a.id) && !a.id.startsWith('temp-'),
+        )
+        .map((a) => a.id)
+
+      const { abort } = streamChat(
+        uid,
+        trimmed,
+        streamHandlers,
+        undefined,
+        attachmentIds.length > 0 ? attachmentIds : undefined,
+      )
 
       abortRef.current = abort
     },
@@ -982,70 +1193,106 @@ export function ChatPage() {
   // ══════════════════════════════════════════════════════════════════════════
 
   return (
-    <div className="flex h-full">
-      {/* Left: session sidebar */}
-      <ChatSidebar
-        sessions={sidebarItems}
-        activeId={activeId ?? ''}
-        isLoading={sessionsLoading}
-        fetchError={sessionsError ? '加载会话列表失败，请检查网络连接' : null}
-        onRetryFetch={() => refetchSessions()}
-        onSelect={setActiveId}
-        onCreate={handleCreate}
-        onDelete={handleDelete}
-        onRename={handleRename}
-      />
+    <>
+      <div className="flex h-full">
+        {/* Left: session sidebar */}
+        <ChatSidebar
+          sessions={sidebarItems}
+          activeId={activeId ?? ''}
+          isLoading={sessionsLoading}
+          fetchError={sessionsError ? '加载会话列表失败，请检查网络连接' : null}
+          onRetryFetch={() => refetchSessions()}
+          onSelect={setActiveId}
+          onCreate={handleCreate}
+          onDelete={handleDelete}
+          onRename={handleRename}
+        />
 
-      {/* Right: main chat area — single input DOM node with FLIP animation */}
-      <div className="flex min-w-0 flex-1 flex-col relative">
-        {/* Messages — only when active */}
-        {chatPhase === 'active' && (
-          <div className="page-enter-right flex min-h-0 flex-1 flex-col">
-            <ChatMessages
-              messages={activeMessages}
-              streaming={streaming}
-              error={error}
-              onRetry={lastFailedMsg ? handleRetry : undefined}
-              onArtifactDownload={handleArtifactDownload}
-            />
-          </div>
-        )}
-
-        {/* Input area — ALWAYS the same DOM node (stable ref for FLIP).
-            empty: absolutely positioned at center. active/transitioning: static at bottom. */}
-        <div
-          className={
-            chatPhase === 'empty'
-              ? 'absolute inset-0 flex flex-col items-center justify-center gap-4 px-6'
-              : 'shrink-0'
-          }
-        >
-          <div ref={inputAreaRef} className={chatPhase === 'empty' ? 'w-[76%]' : 'w-full'}>
-            <ChatInput
-              onSend={sendMessage}
-              disabled={streaming}
-              value={inputText}
-              onChange={setInputText}
-              size={chatPhase === 'empty' ? 'large' : 'normal'}
-            />
-          </div>
-          {chatPhase === 'empty' && (
-            <div className="flex flex-wrap justify-center gap-2">
-              {SUGGESTED_PROMPTS.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  className="flex items-center rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-primary transition-all hover:bg-primary/10 hover:border-primary/50"
-                  onClick={() => handleSuggested(p)}
-                >
-                  <ArrowUpRight className="mr-1 inline-block size-3.5 shrink-0" />
-                  {p}
-                </button>
-              ))}
+        {/* Right: main chat area — single input DOM node with FLIP animation */}
+        <div className="flex min-w-0 flex-1 flex-col relative">
+          {/* Messages — only when active */}
+          {chatPhase === 'active' && (
+            <div className="page-enter-right flex min-h-0 flex-1 flex-col">
+              <ChatMessages
+                messages={activeMessages}
+                streaming={streaming}
+                error={error}
+                onRetry={lastFailedMsg ? handleRetry : undefined}
+                onArtifactDownload={handleArtifactDownload}
+              />
             </div>
           )}
+
+          {/* Input area — ALWAYS the same DOM node (stable ref for FLIP).
+            empty: absolutely positioned at center. active/transitioning: static at bottom. */}
+          <div
+            className={
+              chatPhase === 'empty'
+                ? 'absolute inset-0 flex flex-col items-center justify-center gap-4 px-6'
+                : 'shrink-0'
+            }
+          >
+            <div ref={inputAreaRef} className={chatPhase === 'empty' ? 'w-[76%]' : 'w-full'}>
+              {/* Attachment upload status indicator */}
+              <div className="mb-2">
+                <AttachmentUploadStatus
+                  sessionId={activeId}
+                  state={uploadState}
+                  onDismiss={dismissUpload}
+                />
+              </div>
+
+              {/* Attachment list */}
+              <AttachmentList
+                attachments={activeAttachments}
+                excludedIds={activeExcludedIds}
+                onToggleExcluded={handleToggleAttachmentExcluded}
+                onDelete={handleDeleteAttachment}
+                sessionId={activeId}
+              />
+
+              <ChatInput
+                onSend={sendMessage}
+                disabled={streaming}
+                value={inputText}
+                onChange={setInputText}
+                size={chatPhase === 'empty' ? 'large' : 'normal'}
+                onFileSelect={handleFileSelect}
+                onAttachError={(msg) => setError(msg)}
+                attachmentCount={visibleAttachmentCount}
+                disableAttach={!activeId}
+              />
+            </div>
+            {chatPhase === 'empty' && (
+              <div className="flex flex-wrap justify-center gap-2">
+                {SUGGESTED_PROMPTS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className="flex items-center rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-primary transition-all hover:bg-primary/10 hover:border-primary/50"
+                    onClick={() => handleSuggested(p)}
+                  >
+                    <ArrowUpRight className="mr-1 inline-block size-3.5 shrink-0" />
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+      <ConfirmDialog
+        cancelLabel="取消"
+        confirmLabel="确认删除"
+        description="附件删除后本次对话将无法引用，确认删除？"
+        onConfirm={() => void confirmDeleteAttachment()}
+        onOpenChange={(open) => {
+          if (!open) setDeleteAttachmentTarget(null)
+        }}
+        open={Boolean(deleteAttachmentTarget)}
+        title="确定删除该附件？"
+        variant="destructive"
+      />
+    </>
   )
 }
