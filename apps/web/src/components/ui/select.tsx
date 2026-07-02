@@ -321,7 +321,7 @@ function SelectItem({
 
   const content =
     typeof children === 'string' ? (
-      <span data-slot="select-item-text" className="truncate">
+      <span data-slot="select-item-text" className="truncate group-hover:overflow-x-auto">
         {children}
       </span>
     ) : (
@@ -346,7 +346,7 @@ function SelectItem({
         }
       }}
       className={cn(
-        'relative flex w-full cursor-default items-center gap-2 rounded-md py-1.5 pr-8 pl-2 text-sm outline-hidden select-none',
+        'group relative flex w-full cursor-default items-center gap-2 overflow-hidden rounded-md py-1.5 pr-8 pl-2 text-sm outline-hidden select-none',
         'data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground',
         disabled && 'pointer-events-none opacity-50',
         '[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*="size-"])]:size-4',
