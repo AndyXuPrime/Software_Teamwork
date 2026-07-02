@@ -165,6 +165,21 @@ func (a *sessionAttachmentSearcherAdapter) SearchSessionAttachments(ctx context.
 	if err != nil {
 		return nil, err
 	}
+	return mapSessionAttachmentHits(chunks), nil
+}
+
+func (a *sessionAttachmentSearcherAdapter) ListSessionAttachmentReportSource(ctx context.Context, userID, sessionID string, attachmentIDs []string, limit int) ([]toolspkg.SessionAttachmentHit, error) {
+	if a.searcher == nil {
+		return nil, errors.New("session attachment searcher is unavailable")
+	}
+	chunks, err := a.searcher.ListSessionAttachmentReportSource(ctx, userID, sessionID, attachmentIDs, limit)
+	if err != nil {
+		return nil, err
+	}
+	return mapSessionAttachmentHits(chunks), nil
+}
+
+func mapSessionAttachmentHits(chunks []service.SessionAttachmentChunk) []toolspkg.SessionAttachmentHit {
 	results := make([]toolspkg.SessionAttachmentHit, 0, len(chunks))
 	for _, chunk := range chunks {
 		results = append(results, toolspkg.SessionAttachmentHit{
@@ -178,7 +193,7 @@ func (a *sessionAttachmentSearcherAdapter) SearchSessionAttachments(ctx context.
 			ChunkIndex:     chunk.ChunkIndex,
 		})
 	}
-	return results, nil
+	return results
 }
 
 type policyToolClient struct {

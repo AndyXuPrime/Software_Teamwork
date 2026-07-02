@@ -14,6 +14,13 @@ import (
 
 type attachmentScanner interface{ Scan(...any) error }
 
+const (
+	defaultAttachmentSearchLimit      = 5
+	maxAttachmentSearchLimit          = 20
+	defaultAttachmentReportChunkLimit = 200
+	maxAttachmentReportChunkLimit     = 200
+)
+
 func (r *Postgres) CreateAttachment(ctx context.Context, a service.SessionAttachment, maxPerSession int, maxSessionBytes int64) (service.SessionAttachment, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -196,9 +203,7 @@ func (r *Postgres) BindMessageAttachments(ctx context.Context, userID, sessionID
 }
 
 func (r *Postgres) SearchSessionAttachmentChunks(ctx context.Context, userID, sessionID string, attachmentIDs []string, query string, limit int) ([]service.SessionAttachmentChunk, error) {
-	if limit <= 0 || limit > 20 {
-		limit = 5
-	}
+	limit = normalizeAttachmentSearchLimit(limit)
 	args := []any{sessionID, userID, "%" + strings.ToLower(strings.TrimSpace(query)) + "%", limit}
 	filter := ""
 	if len(attachmentIDs) > 0 {
@@ -209,6 +214,25 @@ func (r *Postgres) SearchSessionAttachmentChunks(ctx context.Context, userID, se
 	if err != nil {
 		return nil, err
 	}
+	return scanAttachmentChunkRows(rows)
+}
+
+func (r *Postgres) ListSessionAttachmentChunks(ctx context.Context, userID, sessionID string, attachmentIDs []string, limit int) ([]service.SessionAttachmentChunk, error) {
+	limit = normalizeAttachmentReportChunkLimit(limit)
+	args := []any{sessionID, userID, limit}
+	filter := ""
+	if len(attachmentIDs) > 0 {
+		filter = " AND a.id::text = ANY($4)"
+		args = append(args, attachmentIDs)
+	}
+	rows, err := r.pool.Query(ctx, `SELECT ch.id::text, ch.attachment_id::text, ch.conversation_id::text, ch.chunk_index, ch.page_number, COALESCE(ch.section_path,''), ch.content, ch.content_preview, ch.token_count, a.filename FROM session_attachment_chunks ch JOIN session_attachments a ON a.id=ch.attachment_id WHERE ch.conversation_id::text=$1 AND a.external_user_id=$2 AND a.status='ready' AND a.deleted_at IS NULL`+filter+` ORDER BY a.created_at, a.id, ch.chunk_index LIMIT $3`, args...)
+	if err != nil {
+		return nil, err
+	}
+	return scanAttachmentChunkRows(rows)
+}
+
+func scanAttachmentChunkRows(rows pgx.Rows) ([]service.SessionAttachmentChunk, error) {
 	defer rows.Close()
 	var out []service.SessionAttachmentChunk
 	for rows.Next() {
@@ -220,6 +244,27 @@ func (r *Postgres) SearchSessionAttachmentChunks(ctx context.Context, userID, se
 	}
 	return out, rows.Err()
 }
+
+func normalizeAttachmentSearchLimit(limit int) int {
+	if limit <= 0 {
+		return defaultAttachmentSearchLimit
+	}
+	if limit > maxAttachmentSearchLimit {
+		return maxAttachmentSearchLimit
+	}
+	return limit
+}
+
+func normalizeAttachmentReportChunkLimit(limit int) int {
+	if limit <= 0 {
+		return defaultAttachmentReportChunkLimit
+	}
+	if limit > maxAttachmentReportChunkLimit {
+		return maxAttachmentReportChunkLimit
+	}
+	return limit
+}
+
 func (r *Postgres) ListExpiredAttachments(ctx context.Context, now time.Time, limit int) ([]service.SessionAttachment, error) {
 	rows, err := r.pool.Query(ctx, `SELECT id::text, conversation_id::text, external_user_id, file_ref, filename, content_type, size_bytes, status, COALESCE(error_summary,''), page_count, chunk_count, expires_at, deleted_at, created_at, updated_at FROM session_attachments WHERE deleted_at IS NULL AND expires_at <= $1 ORDER BY expires_at LIMIT $2`, now, limit)
 	if err != nil {

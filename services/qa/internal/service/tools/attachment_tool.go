@@ -33,6 +33,7 @@ type SessionAttachmentHit struct {
 
 type SessionAttachmentSearcher interface {
 	SearchSessionAttachments(context.Context, string, string, []string, string, int) ([]SessionAttachmentHit, error)
+	ListSessionAttachmentReportSource(context.Context, string, string, []string, int) ([]SessionAttachmentHit, error)
 }
 
 type AttachmentToolClient struct {
@@ -156,7 +157,7 @@ func (c *AttachmentToolClient) searchSessionAttachments(ctx context.Context, arg
 	}
 	content := generateAttachmentSearchSummary(results, startCitationNo)
 	if input.IncludeReportSource {
-		sourceChunks, err := c.searcher.SearchSessionAttachments(toolCtx, userID, sessionID, targetIDs, "", maxAttachmentReportSourceChunks)
+		sourceChunks, err := c.searcher.ListSessionAttachmentReportSource(toolCtx, userID, sessionID, targetIDs, maxAttachmentReportSourceChunks)
 		if err != nil {
 			return toolFailure("search_failed", "session attachment report source failed"), nil
 		}

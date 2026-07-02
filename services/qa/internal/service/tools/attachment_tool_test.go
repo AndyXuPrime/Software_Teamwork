@@ -10,15 +10,23 @@ import (
 )
 
 type attachmentSearcherStub struct {
-	results       []SessionAttachmentHit
-	reportResults []SessionAttachmentHit
+	results         []SessionAttachmentHit
+	reportResults   []SessionAttachmentHit
+	reportSearchMax int
 }
 
 func (s attachmentSearcherStub) SearchSessionAttachments(_ context.Context, _ string, _ string, _ []string, query string, _ int) ([]SessionAttachmentHit, error) {
 	if strings.TrimSpace(query) == "" && s.reportResults != nil {
+		if s.reportSearchMax > 0 && len(s.reportResults) > s.reportSearchMax {
+			return s.reportResults[:s.reportSearchMax], nil
+		}
 		return s.reportResults, nil
 	}
 	return s.results, nil
+}
+
+func (s attachmentSearcherStub) ListSessionAttachmentReportSource(_ context.Context, _ string, _ string, _ []string, _ int) ([]SessionAttachmentHit, error) {
+	return s.reportResults, nil
 }
 
 func TestAttachmentToolClientReturnsCitationReadyResults(t *testing.T) {
@@ -170,6 +178,50 @@ func TestAttachmentToolClientIncludesReportSourceFromBoundAttachments(t *testing
 	}
 	if decoded.ReportSource.AttachmentCount != 1 || decoded.ReportSource.ChunkCount != 2 || decoded.ReportSource.Truncated {
 		t.Fatalf("report source metadata = %+v", decoded.ReportSource)
+	}
+}
+
+func TestAttachmentToolClientReportSourceUsesDedicatedChunkListing(t *testing.T) {
+	reportChunks := make([]SessionAttachmentHit, 0, 6)
+	for i := 1; i <= 6; i++ {
+		reportChunks = append(reportChunks, SessionAttachmentHit{
+			AttachmentID: "att-1",
+			ChunkID:      "chunk-" + string(rune('0'+i)),
+			Filename:     "inspection.pdf",
+			Content:      "report source chunk " + string(rune('0'+i)),
+			PageNumber:   i,
+			ChunkIndex:   i,
+		})
+	}
+	client, err := NewAttachmentToolClient(AttachmentToolConfig{Searcher: attachmentSearcherStub{
+		results: []SessionAttachmentHit{{
+			AttachmentID: "att-1", ChunkID: "chunk-1", Filename: "inspection.pdf", ContentPreview: "matched", Content: "matched evidence",
+		}},
+		reportResults:   reportChunks,
+		reportSearchMax: 5,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := contextutil.WithUserID(context.Background(), "user-1")
+	ctx = contextutil.WithSessionID(ctx, "sess-1")
+	ctx = contextutil.WithMessageAttachmentIDs(ctx, []string{"att-1"})
+
+	result, err := client.CallTool(ctx, ToolSearchSessionAttachments, json.RawMessage(`{"query":"matched","include_report_source":true}`))
+	if err != nil || result.IsError {
+		t.Fatalf("CallTool() = %+v err=%v", result, err)
+	}
+	var decoded struct {
+		ReportSourceExcerpt string `json:"report_source_excerpt"`
+		ReportSource        struct {
+			ChunkCount int `json:"chunk_count"`
+		} `json:"report_source"`
+	}
+	if err := json.Unmarshal([]byte(result.Content), &decoded); err != nil {
+		t.Fatalf("decode result: %v\n%s", err, result.Content)
+	}
+	if decoded.ReportSource.ChunkCount != 6 || !strings.Contains(decoded.ReportSourceExcerpt, "report source chunk 6") {
+		t.Fatalf("report source should include chunks beyond ordinary search cap: %+v excerpt=%q", decoded.ReportSource, decoded.ReportSourceExcerpt)
 	}
 }
 
