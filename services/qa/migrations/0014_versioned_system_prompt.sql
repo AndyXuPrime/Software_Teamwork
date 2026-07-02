@@ -4,7 +4,7 @@ ALTER TABLE qa_config_versions
     ADD COLUMN IF NOT EXISTS system_prompt TEXT NOT NULL DEFAULT '';
 
 -- Add CHECK constraint for max 20000 bytes
-DO $$
+DO $mig$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
@@ -15,11 +15,11 @@ BEGIN
             ADD CONSTRAINT ck_qa_config_versions_system_prompt_length
             CHECK (octet_length(system_prompt) <= 20000);
     END IF;
-END $$;
+END $mig$;
 
 -- Migrate existing system_prompt from qa_runtime_settings into the current
--- active qa_config_versions row, only if the active row's system_prompt is empty.
-DO $$
+-- active qa_config_versions row.
+DO $mig$
 DECLARE
     v_active_id UUID;
     v_runtime_prompt TEXT;
@@ -37,11 +37,12 @@ BEGIN
     WHERE key = 'system_prompt';
 
     -- If we have both an active config and a runtime prompt, migrate it.
-    -- If the old prompt exceeds 20000 bytes, truncate to fit the CHECK constraint
-    -- rather than silently falling back to the bootstrap prompt.
+    -- If the old prompt exceeds 20000 bytes, truncate to fit the CHECK
+    -- constraint rather than silently falling back to the bootstrap prompt.
     IF v_active_id IS NOT NULL AND v_runtime_prompt IS NOT NULL THEN
         IF octet_length(v_runtime_prompt) > 20000 THEN
-            RAISE NOTICE 'system_prompt exceeds 20000 bytes (%), truncating', octet_length(v_runtime_prompt);
+            RAISE NOTICE 'system_prompt exceeds 20000 bytes (%), truncating',
+                octet_length(v_runtime_prompt);
             v_runtime_prompt := left(v_runtime_prompt, 20000);
         END IF;
         UPDATE qa_config_versions
@@ -49,7 +50,7 @@ BEGIN
         WHERE id = v_active_id
           AND (system_prompt = '' OR system_prompt IS NULL);
     END IF;
-END $$;
+END $mig$;
 
 -- +goose Down
 ALTER TABLE qa_config_versions
