@@ -16,9 +16,9 @@
 - OpenAPI 是协作源；改 Gateway active API 时必须跑契约校验和前端类型同步检查。
 - 数据库 migration 必须能从空库 apply。
 - env-gated integration tests 默认可能跳过；如果本次改动触碰 repository、SQL 或 migration，应尽量提供本地数据库执行记录。
-- 测试组 `T-*` 任务必须实际运行测试并留下可复核证据；纯单元/组件自动化或静态检查可在 issue/PR 中保留轻量执行记录，集成、E2E、权限/安全边界、文件/Parser 边界、migration、环境验收、人工验收、回归或缺陷复现必须按 `docs/testing/templates/test-report-template.md` 生成完整报告并归档到 `docs/testing/reports/YYYY-MM-DD/`。
+- 测试组 `T-*` 任务必须实际运行测试并留下可复核证据；纯单元/组件自动化或静态检查可在 issue/PR 中保留轻量执行记录，集成、E2E、权限/安全边界、文件/Knowledge runtime 边界、migration、环境验收、人工验收、回归或缺陷复现必须按 `docs/testing/templates/test-report-template.md` 生成完整报告并归档到 `docs/testing/reports/YYYY-MM-DD/`。
 - 当前有前端 Playwright 基础 smoke，但没有后端跨服务完整 E2E smoke；不要用单服务测试或前端 mock E2E 替代跨服务验收。
-- Parser runtime 和 Parser Service CI 已落地；当前 CI 使用 fake OCR backend 覆盖 lint/test/compile，并在 PaddleOCR 依赖或锁文件变化时校验 extra lock。真实 PaddleOCR 模型 smoke 已作为 env-gated 本地命令提供，但不属于普通 CI required check。
+- 旧 `services/parser` 已退役；PDF 解析、切块、embedding、索引和检索由 Knowledge 的 RAGFlow runtime API/worker 链路覆盖。相关变更优先运行 Knowledge、knowledge-runtime、Docker policy、Compose config 和真实 PDF E2E。
 - open PR、未合入 issue 和草案不能写成当前 `develop` 已实现；测试记录也不能把未稳定依赖的检查写成 required。
 
 ## 自动化测试分层
@@ -27,7 +27,7 @@
 
 ### 本地自动化
 
-本地自动化用于开发者在 PR 前快速验证改动，优先覆盖确定性强、依赖少、失败后容易定位的问题。前端以 typecheck、lint、format、build、Vitest/React Testing Library 和必要的 Playwright smoke 为主；后端以服务内 `go test ./...`、handler/service unit tests、fake dependency tests、OpenAPI/active route contract checks 和必要的 env-gated repository tests 为主。需要数据库、Redis、Qdrant、MinIO、Parser 或真实模型 provider 的检查可以作为本地命令记录，但必须写清楚依赖环境、跳过条件和残余风险。
+本地自动化用于开发者在 PR 前快速验证改动，优先覆盖确定性强、依赖少、失败后容易定位的问题。前端以 typecheck、lint、format、build、Vitest/React Testing Library 和必要的 Playwright smoke 为主；后端以服务内 `go test ./...`、handler/service unit tests、fake dependency tests、OpenAPI/active route contract checks 和必要的 env-gated repository tests 为主。需要数据库、Redis、Qdrant、MinIO、Knowledge RAGFlow runtime 或真实模型 provider 的检查可以作为本地命令记录，但必须写清楚依赖环境、跳过条件和残余风险。
 
 ### CI 自动化
 
@@ -39,7 +39,7 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 
 ### 暂不纳入默认自动化的内容
 
-真实外部 provider 调用、完整后端跨服务 E2E、真实 PaddleOCR 模型 smoke、大型文档解析质量评测、需要人工凭证或长期运行环境的检查，暂不纳入默认自动化。当前阶段也不引入 Testcontainers for Go 作为默认后端集成测试工具；后端集成测试继续优先使用显式 env-gated 数据库/服务地址和 CI 中已配置的轻量服务容器。若后续要升级为默认工具链，应先更新技术决策、测试策略、CI 资源预算和服务 runbook，再进入实现任务。
+真实外部 provider 调用、完整后端跨服务 E2E、大型文档解析质量评测、需要人工凭证或长期运行环境的检查，暂不纳入默认自动化。当前阶段也不引入 Testcontainers for Go 作为默认后端集成测试工具；后端集成测试继续优先使用显式 env-gated 数据库/服务地址和 CI 中已配置的轻量服务容器。若后续要升级为默认工具链，应先更新技术决策、测试策略、CI 资源预算和服务 runbook，再进入实现任务。
 
 ## 当前 CI 覆盖
 
@@ -48,14 +48,13 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | `frontend.yml` | `apps/web/**`、根前端依赖文件和 workflow | 执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`build`、`test:unit` 和 Playwright E2E smoke。 |
 | `go-services.yml` | `services/{ai-gateway,auth,document,file,gateway,knowledge,qa}` | 根据变更路径只选择受影响服务，执行 `go test ./...`、`go build ./cmd/server`；QA 额外 build `./cmd/agent`；Knowledge 或 workflow 变更时额外用 PostgreSQL 16 和 `KNOWLEDGE_TEST_DATABASE_URL` 执行 repository lifecycle integration test。 |
 | `go-migrations.yml` | 有 SQL migration 的后端服务 | 校验 migration 文件名并用 `goose@v3.27.1` 对 PostgreSQL 16 apply。 |
-| `parser-service.yml` | `services/parser/**` | 执行 `uv sync --frozen --group dev`、`uv run ruff check .`、`uv run pytest` 和 `uv run python -m compileall src tests`；当 `services/parser/pyproject.toml` 或 `uv.lock` 变化时额外执行 PaddleOCR extra lock dry-run；测试使用 fake OCR backend，不下载真实 PaddleOCR 模型。 |
 | `docker-deploy-checks.yml` | `deploy/docker-compose.yml`、Docker infra runbook/spec、Docker policy/environment scripts | 执行 `python3 scripts/check_docker_policy.py`、Docker policy/environment 单元测试、`check_docker_environment.py --skip-network --clean-env`，并对根级 infra-only Compose 执行 `docker compose ... config --quiet`；不处理业务服务容器。 |
 | `gateway-contract.yml` | Gateway OpenAPI active API | 执行 verifier unit tests 和 `python3 scripts/verify_gateway_active_api.py`。 |
 | `check-api-types.yml` | 前端 Gateway 类型漂移 | 在 `apps/web` 执行 `bun run api:generate`，本地等价命令为 `bun run --cwd apps/web api:generate`，并要求 generated diff 干净。 |
 | `commitlint.yml` / `pr-guard.yml` | 协作规则 | 检查提交格式、PR body、issue 关联和 base 更新要求。 |
 
 所有 GitHub Actions workflow 都应显式声明最小 `permissions`。只读取仓库内容的校验类 workflow，例如 API type drift check，应使用 `contents: read`，不得依赖默认 token 权限。
-当前可作为 required checks 的优先候选是 Frontend、Go service tests、goose migration apply、Parser Service、Docker/Compose config、Gateway contract/API drift 和 API type drift。Parser 真实 PaddleOCR 模型 smoke、完整 DB integration jobs 和后端跨服务 E2E smoke 仍未落地；在 CI 提供稳定依赖前只能作为 PR 前建议或缺口登记。
+当前可作为 required checks 的优先候选是 Frontend、Go service tests、goose migration apply、Docker/Compose config、Gateway contract/API drift 和 API type drift。完整 DB integration jobs 和后端跨服务 E2E smoke 仍未落地；在 CI 提供稳定依赖前只能作为 PR 前建议或缺口登记。
 
 ## 本地命令矩阵
 
@@ -69,15 +68,16 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | 单个 Go 服务 | `cd services/<service> && go test ./...`；`go build ./cmd/server`。 |
 | QA 服务 | `cd services/qa && go test ./...`；`go build ./cmd/server`；`go build ./cmd/agent`。 |
 | Docker policy | `python3 scripts/check_docker_policy.py`；验证根级 Compose 只包含 `postgres`、`redis`、`qdrant`、`minio`、`minio-init`，不包含 `build:`，基础设施镜像默认值不使用 `latest`，`deploy/.env.example` 只覆盖 infra image。 |
-| 本地启动脚本 / 文档 | `bash -n scripts/local/dev-up.sh scripts/local/run-backend.sh scripts/local/stop-backend.sh`；`python3 scripts/verify_local_seed_contract.py`；确认 README/deploy/runbook 第一屏仍是 `cp deploy/.env.example deploy/.env`、`./scripts/local/dev-up.sh`、`./scripts/local/run-backend.sh`、`cd apps/web && bun install && bun run dev`，并确认 `dev-up.sh` 在 migration/seed 前等待 infra health、创建或校验 Qdrant collection，Parser `uv.lock` 没有锁回官方 PyPI 文件 URL，AI Gateway 本地 seed 使用 `localhost:11434`，stop 脚本按进程组停止 host-run 服务。 |
+| 本地启动脚本 / 文档 | `bash -n scripts/local/dev-up.sh scripts/local/run-backend.sh scripts/local/stop-backend.sh`；`python3 scripts/verify_local_seed_contract.py`；确认 README/deploy/runbook 第一屏仍是 `cp deploy/.env.example deploy/.env`、`./scripts/local/dev-up.sh`、`./scripts/local/run-backend.sh`、`cd apps/web && bun install && bun run dev`，并确认 `dev-up.sh` 在 migration/seed 前等待 infra health、创建或校验 Qdrant collection，AI Gateway 本地 seed 使用 `localhost:11434`，stop 脚本按进程组停止 host-run 服务。 |
 | Docker environment | `python3 scripts/check_docker_environment.py --profile all --clean-env`；用于区分 registry rewrite、daemon mirror、Docker Hub direct 和 shell proxy 的问题。CI 只跑 `--skip-network`，真实 manifest 探测作为本地/排障检查。 |
 | Compose | `docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config --quiet`；服务清单只能是五个 infra 服务。 |
 | Knowledge repository / SQL | `cd services/knowledge && KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' go test ./internal/repository -count=1`。 |
-| Knowledge ingestion real deps | 启动 PostgreSQL/File/Parser/Qdrant 后执行 `cd services/knowledge && KNOWLEDGE_INGESTION_SMOKE=1 ... go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v`；默认无 env 时跳过，不进入普通 CI required check。 |
-| Gateway -> Knowledge owner route | 启动 Gateway/Auth/Redis/Knowledge/File/Parser/PostgreSQL 后执行 `cd services/knowledge && GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v`；默认无 env 时跳过，不进入普通 CI required check。 |
+| Knowledge ingestion real deps | 启动 PostgreSQL/File/Knowledge runtime/Redis/MinIO/Elasticsearch 后执行 `cd services/knowledge && KNOWLEDGE_INGESTION_SMOKE=1 ... go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v`；默认无 env 时跳过，不进入普通 CI required check。 |
+| Gateway -> Knowledge owner route | 启动 Gateway/Auth/Redis/Knowledge/File/PostgreSQL 和 Knowledge runtime 后执行 `cd services/knowledge && GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v`；默认无 env 时跳过，不进入普通 CI required check。 |
 | Auth/Gateway/Redis full smoke | `bash scripts/run_issue_352_smoke.sh`；脚本只从 Compose 启动 `postgres` 和 `redis`，随后在宿主机执行 Auth migration、启动 Auth/Gateway、创建用户、登录、`/users/me`、登出、Redis 脱敏检查和 fake owner header capture。 |
+| Knowledge RAGFlow runtime / PDF E2E | 启动宿主机 Knowledge runtime API/worker 和 host-run Knowledge adapter 后，使用真实 PDF 走上传、解析、切块、索引、检索链路；默认不进入普通 CI required check。 |
 | migration | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up`。 |
-| Parser 契约 / 文档 / runtime | 检查 `docs/services/parser/api/internal.openapi.yaml`、`services/parser/api/openapi.yaml`（实现本地副本）与 `docs/services/parser/README.md`、Knowledge ingestion 文档一致；如改 runtime，执行 `cd services/parser && uv run ruff check . && uv run pytest && uv run python -m compileall src tests`，并说明是否仅覆盖 fake OCR backend。触碰 PaddleOCR runtime 时，在具备模型环境下追加 `PARSER_PADDLEOCR_SMOKE=1 PARSER_PADDLEOCR_ALLOW_DOWNLOAD=1 uv run pytest -m paddleocr_smoke -s`。 |
+| Knowledge runtime route / contract | `cd services/knowledge-runtime && PYTHONPATH=. uv run --no-project --with pytest --with pytest-asyncio python -m pytest <targeted tests> -q`；配合 `cd services/knowledge && go test ./...` 和 `go build ./cmd/adapter`。 |
 | AI Gateway provider adapter | `cd services/ai-gateway && go test ./...`；尽量加 fake provider case 和真实 provider smoke 记录。 |
 | Document worker/job | `cd services/document && go test ./...`；如改 repository，设置 `DOCUMENT_TEST_DATABASE_URL` 跑 repository integration tests。 |
 | Code Scanning / 安全告警 | 按告警影响范围运行对应服务全量 `go test ./...` 和 `go build ./cmd/server`；QA 额外 `go build ./cmd/agent`。PR body 必须列出 alert 编号、规则 ID、文件位置、验证命令和剩余风险。命令执行、URL trust、allocation upper bound、integer conversion、credential hashing 和 workflow permissions 都需要有 focused unit tests 或静态验证记录。 |
@@ -91,11 +91,12 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | Migration apply | CI 使用 PostgreSQL 16 和 goose apply。 | 新增或修改 migration。 |
 | Contract tests | Gateway active API verifier、route coverage tests、QA active path schema contract tests。 | OpenAPI、owner map、active path、RESTful path、owner/auth/schema/content type 和 QA internal `$ref` drift。 |
 | Auth/Gateway 用户管理测试 | Auth service tests、Gateway auth/admin route tests、Gateway active API verifier、前端 route guard 和表单测试。 | 自助注册兼容、管理员管理范围、profile 自助编辑、必需改密、密码策略、会话刷新和 stale authorization 防回归。 |
-| Parser runtime tests | OpenAPI schema review、文档一致性检查、FastAPI handler/service tests、fake OCR backend 和可选 env-gated PaddleOCR model smoke。 | Parser API/runtime 变更；真实 PaddleOCR 模型、OCR 质量和部署资源需要具备模型环境后单独记录。 |
-| Knowledge ingestion real deps smoke | `KNOWLEDGE_INGESTION_SMOKE=1` 显式启用；使用真实 File Service、Parser Service、PostgreSQL 和 Qdrant，默认 local hashing embedding。 | 验证 Knowledge 上传 fixture、worker handler、解析、切片、embedding metadata、Qdrant point 写入和状态更新；不替代 retrieval/rerank/MCP/Gateway 总入口。 |
-| Gateway -> Knowledge owner route smoke | `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1` 显式启用；使用真实 Gateway/Auth/session cache、Knowledge、File/Parser ready、PostgreSQL 和 Redis。 | 先验证无 Bearer token 的伪造 `X-User-*` 请求被 Gateway 拒绝，再通过 Gateway 创建/读取 KB 并断言 `createdBy` 是真实 session user；不替代完整 Gateway route matrix。 |
+| Knowledge runtime tests | Route allowlist、adapter/runtime contract、配置加载、service token 和 clean DB provisioning 单测。 | Knowledge RAGFlow runtime API/worker 或 adapter contract 变更；真实 provider、OCR 质量和部署资源需要具备环境后单独记录。 |
+| Knowledge ingestion real deps smoke | `KNOWLEDGE_INGESTION_SMOKE=1` 显式启用；使用真实 File Service、Knowledge runtime、PostgreSQL、Redis、MinIO 和 Elasticsearch。 | 验证 Knowledge 上传 fixture、runtime 解析/切片/embedding/索引、状态更新和检索前置数据；不替代 retrieval/rerank/MCP/Gateway 总入口。 |
+| Gateway -> Knowledge owner route smoke | `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1` 显式启用；使用真实 Gateway/Auth/session cache、Knowledge、File、PostgreSQL、Redis 和 Knowledge runtime。 | 先验证无 Bearer token 的伪造 `X-User-*` 请求被 Gateway 拒绝，再通过 Gateway 创建/读取 KB 并断言 `createdBy` 是真实 session user；不替代完整 Gateway route matrix。 |
 | Auth/Gateway/Redis full smoke | `AUTH_GATEWAY_REDIS_FULL_SMOKE=1` 显式启用；`scripts/run_issue_352_smoke.sh` 准备 PostgreSQL/Redis infra 并在宿主机启动 Auth/Gateway。 | 验证 Auth migration apply、Gateway 创建用户/登录/当前用户/登出、Redis session key/value/TTL 脱敏，以及 fake owner 捕获 Gateway 注入认证上下文 header。 |
 | Cross-service smoke | 已有 `scripts/run_issue_125_smoke.sh` 汇总入口；真实依赖仍按 slice 显式启用。 | Auth -> Gateway -> Domain、Document -> File/AI Gateway、QA -> Knowledge/AI Gateway 等链路。 |
+| Knowledge PDF E2E | 显式启用；使用真实 Knowledge adapter、RAGFlow runtime API/worker、PostgreSQL、MinIO、Elasticsearch/向量索引和 provider credential。 | 验证真实 PDF 上传、解析、切块、embedding、索引和检索结果；不替代完整 Gateway/MCP/QA 总入口。 |
 
 env-gated repository tests：
 
@@ -110,47 +111,18 @@ cd services/knowledge
 KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' go test ./internal/repository -count=1
 ```
 
-env-gated Knowledge ingestion real dependency smoke:
+Knowledge RAGFlow runtime PDF E2E is a manual or env-gated verification path:
+start the host-run Knowledge runtime API/worker, run the Knowledge adapter
+with `VENDOR_RUNTIME_URL` pointing at the reachable runtime API, upload
+`DL_T_673-1999.pdf`, wait for document status `ready`, assert non-zero chunks,
+then run `knowledge-queries` and assert retrieval hits. If this check is skipped
+or cannot run, PR verification must state the missing dependency and residual
+risk.
 
-```bash
-cd services/knowledge
-KNOWLEDGE_INGESTION_SMOKE=1 \
-KNOWLEDGE_TEST_DATABASE_URL='postgres://knowledge_app:knowledge_app_dev@127.0.0.1:5432/knowledge_system?sslmode=disable' \
-FILE_SERVICE_BASE_URL='http://127.0.0.1:8082' \
-KNOWLEDGE_SERVICE_TOKEN='local-dev-internal-service-token-change-me' \
-PARSER_SERVICE_BASE_URL='http://127.0.0.1:8087' \
-PARSER_SERVICE_TOKEN='local-dev-internal-service-token-change-me' \
-QDRANT_URL='http://127.0.0.1:6333' \
-EMBEDDING_PROVIDER=local_hashing \
-EMBEDDING_MODEL=local_hashing \
-EMBEDDING_DIMENSION=384 \
-go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v
-```
-
-The smoke creates and deletes `knowledge_smoke_*` PostgreSQL schemas,
-`knowledge_ingestion_smoke_*` Qdrant collections, and one uploaded File Service
-object. If it is skipped or cannot run, PR verification must state the missing
-dependency and residual risk.
-
-env-gated Gateway -> Knowledge owner route smoke:
-
-```bash
-cd services/knowledge
-GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 \
-GATEWAY_BASE_URL='http://127.0.0.1:8080' \
-KNOWLEDGE_SERVICE_BASE_URL='http://127.0.0.1:8083' \
-FILE_SERVICE_BASE_URL='http://127.0.0.1:8082' \
-PARSER_SERVICE_BASE_URL='http://127.0.0.1:8087' \
-KNOWLEDGE_TEST_DATABASE_URL='postgres://knowledge_app:knowledge_app_dev@127.0.0.1:5432/knowledge_system?sslmode=disable' \
-KNOWLEDGE_REDIS_ADDR='127.0.0.1:6379' \
-GATEWAY_SMOKE_USERNAME='admin' \
-GATEWAY_SMOKE_PASSWORD='LocalDemoAdmin#12345' \
-go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v
-```
-
-Before running this smoke, start infra from `deploy/` and start Auth, File,
-Parser, Knowledge, and Gateway on the host. Parser must listen on
-`http://127.0.0.1:8087` with the same service token used by Knowledge.
+Before running Gateway-level smoke, start infra from `deploy/` and start Auth,
+File, Knowledge, QA, AI Gateway, Gateway, and the host-run Knowledge RAGFlow
+runtime required by the scenario. The old standalone Parser service is not part
+of the current startup path.
 
 env-gated Auth/Gateway/Redis full smoke for #352:
 
@@ -220,7 +192,7 @@ prompts, document text, embedding payloads, or provider raw bodies.
 | 服务 implementation 文档 | 改服务能力、stub/501 状态、runtime dependency、migration、worker 或 provider adapter。 |
 | 技术选型基线 | 引入新运行时依赖、镜像、CLI、SDK、队列、数据库或工具链。 |
 | 本地联调手册 | 新增 Compose、env template、seed data、跨服务 smoke 或端口约定。 |
-| Parser 契约一致性 | 改 `docs/services/parser/api/internal.openapi.yaml`、`services/parser/api/openapi.yaml`（实现本地副本）、Parser README、Knowledge ingestion 对 Parser 的调用约定或 parser runtime configuration。 |
+| Knowledge runtime 契约一致性 | 改 `services/knowledge-runtime/**`、Knowledge adapter runtime client、parser config 到 RAGFlow config 映射、host-run runtime API/worker。 |
 | 测试策略 | 新增 CI workflow、测试框架、E2E smoke、路径过滤规则或 required check。 |
 
 文档同步检查：
@@ -231,7 +203,7 @@ prompts, document text, embedding payloads, or provider raw bodies.
 | OpenAPI / Gateway active path / 数据模型变化 | OpenAPI、owner map、README、service boundaries 或相关契约文档；契约语义变化需先交管理组决策。 |
 | runtime dependency / Compose / CI 变化 | `technology-decisions.md`、runbook 或本文。 |
 | Docker infra Compose、基础设施镜像、Docker daemon mirror、registry rewrite 变化 | `docs/runbooks/docker-image-pull-environment.md`、`deploy/README.md`、`deploy/.env.example`、`docs/architecture/technology-decisions.md`、`scripts/check_docker_policy.py`、`scripts/check_docker_environment.py` 和相关 Trellis spec；Compose 基础镜像覆盖变量必须保持 pinned 默认，不得把正常路径改成 `latest`。 |
-| Parser runtime、PaddleOCR、Python packaging 或 HTTP tests 变化 | Parser README、`technology-decisions.md`、runbook 和本文。 |
+| Knowledge RAGFlow runtime、Python packaging 或 HTTP tests 变化 | Knowledge README、`technology-decisions.md`、runbook 和本文。 |
 | open PR 或未合入能力 | 只能写 pending、待合入或 follow-up，不得写成已实现。 |
 
 ## 跨服务 smoke 目标
@@ -241,7 +213,7 @@ prompts, document text, embedding payloads, or provider raw bodies.
 1. Auth 创建会话，Gateway 写入 Redis session cache。
 2. Gateway 使用认证上下文代理一个 Knowledge/QA/Document active path。
 3. File 保存并读取一个基础 file object，业务服务响应不泄露 object key。
-4. Knowledge ingestion 真实依赖 smoke 已验证一个 fixture 文档从 File -> Parser -> Knowledge worker -> Qdrant indexing；Gateway -> Knowledge owner route smoke 已验证 Auth/Gateway session 到 Knowledge owner route 的最小上下文注入；后续统一 E2E 应复用这些信号并补完整 Gateway/MCP/业务断言。
+4. Knowledge ingestion 真实依赖 smoke 已验证一个 fixture 文档从 File -> Knowledge runtime -> indexing；Gateway -> Knowledge owner route smoke 已验证 Auth/Gateway session 到 Knowledge owner route 的最小上下文注入；后续统一 E2E 应复用这些信号并补完整 Gateway/MCP/业务断言。
 5. AI Gateway 创建 chat、embedding、rerank profile，并通过 fake provider 完成三类调用。
 6. QA 创建 session/message，非流式和 SSE 路径都能保存 response run 和事件摘要。
 7. Document 创建 report/job，worker 推进 attempt/event；真实生成落地后再验证 AI Gateway 和 File Service。
@@ -252,7 +224,7 @@ prompts, document text, embedding payloads, or provider raw bodies.
 测试证据是测试任务的必交付物，不是 PR body 中一句“已测试”的替代品。`T-*` 测试任务完成时应按测试类型分层记录：
 
 - 纯单元测试、组件测试和静态检查默认并入自动化；在 issue/PR 中记录命令、环境、结果、失败证据、未运行原因和缺陷处理即可。
-- 集成测试、E2E、权限/安全边界、文件/Parser 边界、migration、环境验收、人工验收、回归测试或缺陷复现必须复制 `docs/testing/templates/test-report-template.md` 生成完整报告。
+- 集成测试、E2E、权限/安全边界、文件/Knowledge runtime 边界、migration、环境验收、人工验收、回归测试或缺陷复现必须复制 `docs/testing/templates/test-report-template.md` 生成完整报告。
 - 完整报告保存到 `docs/testing/reports/YYYY-MM-DD/`，日期使用实际执行日期。
 - 在测试 issue 和 PR 中链接报告路径或轻量执行记录。
 

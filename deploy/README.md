@@ -92,7 +92,7 @@ Knowledge 文档上传、解析、切块、embedding、索引和检索通过 RAG
 本地 Knowledge adapter 读取：
 
 ```text
-VENDOR_RUNTIME_URL=http://host.docker.internal:9380
+VENDOR_RUNTIME_URL=http://127.0.0.1:9380
 KNOWLEDGE_AUTO_START_INGESTION=true
 DOC_ENGINE=elasticsearch
 ```

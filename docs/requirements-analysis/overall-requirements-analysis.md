@@ -63,7 +63,7 @@
 - [Document 权限矩阵](../services/document/docs/permission-matrix.md)
 - [File 权限矩阵](../services/file/docs/permission-matrix.md)
 - [AI Gateway 权限矩阵](../services/ai-gateway/docs/permission-matrix.md)
-- [Parser 权限矩阵](../services/parser/docs/permission-matrix.md)
+- [Knowledge 权限矩阵](../services/knowledge/docs/permission-matrix.md)
 
 权限原则：
 

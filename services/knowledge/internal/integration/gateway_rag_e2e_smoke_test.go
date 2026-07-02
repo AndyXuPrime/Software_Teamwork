@@ -55,7 +55,7 @@ func TestGatewayRAGE2ESmoke(t *testing.T) {
 		t.Fatalf("Knowledge ingestion stage: document chunkCount = %d, want > 0", readyDoc.ChunkCount)
 	}
 	if strings.TrimSpace(readyDoc.ParserBackend) == "" {
-		t.Fatal("Parser stage: ready document did not record parserBackend")
+		t.Fatal("Runtime stage: ready document did not record parserBackend")
 	}
 
 	query := createGatewayKnowledgeQuery(t, ctx, cfg, session, requestID+"_query", knowledgeBaseID)
@@ -92,7 +92,7 @@ func cleanupGatewayRAGSmokeResources(t *testing.T, cfg gatewayRAGSmokeConfig, se
 type gatewayRAGSmokeConfig struct {
 	gatewayBaseURL          string
 	fileServiceBaseURL      string
-	parserServiceBaseURL    string
+	vendorRuntimeURL        string
 	knowledgeServiceBaseURL string
 	qaServiceBaseURL        string
 	aiGatewayBaseURL        string
@@ -110,7 +110,7 @@ func loadGatewayRAGSmokeConfig(t *testing.T) gatewayRAGSmokeConfig {
 	required := map[string]string{
 		"GATEWAY_BASE_URL":                               os.Getenv("GATEWAY_BASE_URL"),
 		"FILE_SERVICE_BASE_URL":                          os.Getenv("FILE_SERVICE_BASE_URL"),
-		"PARSER_SERVICE_BASE_URL":                        os.Getenv("PARSER_SERVICE_BASE_URL"),
+		"VENDOR_RUNTIME_URL":                             os.Getenv("VENDOR_RUNTIME_URL"),
 		"KNOWLEDGE_SERVICE_BASE_URL":                     os.Getenv("KNOWLEDGE_SERVICE_BASE_URL"),
 		"QA_SERVICE_BASE_URL":                            os.Getenv("QA_SERVICE_BASE_URL"),
 		"AI_GATEWAY_BASE_URL":                            os.Getenv("AI_GATEWAY_BASE_URL"),
@@ -142,7 +142,7 @@ func loadGatewayRAGSmokeConfig(t *testing.T) gatewayRAGSmokeConfig {
 	return gatewayRAGSmokeConfig{
 		gatewayBaseURL:          trimHTTPBaseURL(t, "GATEWAY_BASE_URL", required["GATEWAY_BASE_URL"]),
 		fileServiceBaseURL:      trimHTTPBaseURL(t, "FILE_SERVICE_BASE_URL", required["FILE_SERVICE_BASE_URL"]),
-		parserServiceBaseURL:    trimHTTPBaseURL(t, "PARSER_SERVICE_BASE_URL", required["PARSER_SERVICE_BASE_URL"]),
+		vendorRuntimeURL:        trimHTTPBaseURL(t, "VENDOR_RUNTIME_URL", required["VENDOR_RUNTIME_URL"]),
 		knowledgeServiceBaseURL: trimHTTPBaseURL(t, "KNOWLEDGE_SERVICE_BASE_URL", required["KNOWLEDGE_SERVICE_BASE_URL"]),
 		qaServiceBaseURL:        trimHTTPBaseURL(t, "QA_SERVICE_BASE_URL", required["QA_SERVICE_BASE_URL"]),
 		aiGatewayBaseURL:        trimHTTPBaseURL(t, "AI_GATEWAY_BASE_URL", required["AI_GATEWAY_BASE_URL"]),
@@ -160,7 +160,6 @@ func (cfg gatewayRAGSmokeConfig) gatewayOwnerSmokeConfig() gatewayOwnerSmokeConf
 	return gatewayOwnerSmokeConfig{
 		gatewayBaseURL:          cfg.gatewayBaseURL,
 		fileServiceBaseURL:      cfg.fileServiceBaseURL,
-		parserServiceBaseURL:    cfg.parserServiceBaseURL,
 		knowledgeServiceBaseURL: cfg.knowledgeServiceBaseURL,
 		knowledgeDatabaseURL:    cfg.knowledgeDatabaseURL,
 		redisAddr:               cfg.redisAddr,
@@ -172,13 +171,31 @@ func (cfg gatewayRAGSmokeConfig) gatewayOwnerSmokeConfig() gatewayOwnerSmokeConf
 func assertGatewayRAGPrechecks(t *testing.T, ctx context.Context, cfg gatewayRAGSmokeConfig) {
 	t.Helper()
 	assertHTTPReady(t, ctx, "file", cfg.fileServiceBaseURL)
-	assertHTTPReady(t, ctx, "parser", cfg.parserServiceBaseURL)
+	assertRuntimeHealthy(t, ctx, cfg.vendorRuntimeURL)
 	assertPostgresReady(t, ctx, cfg.knowledgeDatabaseURL)
 	assertRedisReady(t, ctx, cfg.redisAddr)
 	assertHTTPReady(t, ctx, "knowledge", cfg.knowledgeServiceBaseURL)
 	assertHTTPReady(t, ctx, "qa", cfg.qaServiceBaseURL)
 	assertHTTPReady(t, ctx, "ai-gateway", cfg.aiGatewayBaseURL)
 	assertHTTPReady(t, ctx, "gateway", cfg.gatewayBaseURL)
+}
+
+func assertRuntimeHealthy(t *testing.T, ctx context.Context, baseURL string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/v1/system/healthz", nil)
+	if err != nil {
+		t.Fatalf("build knowledge runtime health request: %v", err)
+	}
+	req.Header.Set("X-Request-Id", "req_gateway_rag_runtime_precheck")
+	res, err := smokeHTTPClient().Do(req)
+	if err != nil {
+		t.Fatalf("knowledge runtime healthz request failed: %v", err)
+	}
+	defer res.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1024))
+	if res.StatusCode < http.StatusOK || res.StatusCode >= http.StatusMultipleChoices {
+		t.Fatalf("knowledge runtime healthz returned HTTP %d", res.StatusCode)
+	}
 }
 
 func deleteGatewayRAGDocument(ctx context.Context, t *testing.T, cfg gatewayRAGSmokeConfig, session gatewaySmokeSession, requestID string, documentID string) {
