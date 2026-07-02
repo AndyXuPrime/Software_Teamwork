@@ -2180,6 +2180,7 @@ paths:
       summary: Get current QA config version
       operationId: getCurrentQAConfigVersion
       x-owner-service: qa
+      description: Returns the active QA configuration version including the global system prompt. Requires qa:settings:read. The systemPrompt field is the only place where the full prompt is returned to callers; it must not appear in ordinary QA responses, SSE events, errors, logs, or metrics.
       responses:
         '200':
           description: Current QA config version.
@@ -2187,6 +2188,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/QAConfigVersionResponse'
+        '403':
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
   /api/v1/qa-config-versions:
@@ -2196,7 +2199,7 @@ paths:
       summary: Create QA config version
       operationId: createQAConfigVersion
       x-owner-service: qa
-      description: Creates a versioned QA runtime configuration so historical answers remain traceable to the retrieval and Agent settings used at generation time.
+      description: Creates a versioned QA runtime configuration so historical answers remain traceable to the retrieval, Agent settings and system prompt used at generation time. Requires qa:settings:write. The new version becomes active immediately for the next question; in-flight answers continue using their original snapshot.
       requestBody:
         required: true
         content:
@@ -5547,6 +5550,7 @@ components:
       - versionNo
       - isActive
       - createdAt
+      - systemPrompt
       properties:
         id:
           type: string
@@ -5583,6 +5587,10 @@ components:
           $ref: '#/components/schemas/QALLMConfigVersion'
         agent:
           $ref: '#/components/schemas/QAAgentConfig'
+        systemPrompt:
+          type: string
+          x-qa-maxBytes: 20000
+          description: Global Agent system prompt. Always present with qa:settings:read. Must not appear in ordinary QA responses, SSE, errors, logs, or metrics. Enforced at 20000 bytes via database octet_length check, not OpenAPI maxLength.
         isActive:
           type: boolean
         createdAt:
@@ -5644,6 +5652,11 @@ components:
           $ref: '#/components/schemas/CreateQALLMConfigVersionRequest'
         agent:
           $ref: '#/components/schemas/QAAgentConfig'
+        systemPrompt:
+          type: string
+          x-qa-maxBytes: 20000
+          x-qa-nonEmptyAfterTrim: true
+          description: Global Agent system prompt. When provided, must be non-empty after trimming. When omitted, the active prompt is inherited. Requires qa:settings:write. Enforced at 20000 bytes via database octet_length check.
         activate:
           type: boolean
           default: true

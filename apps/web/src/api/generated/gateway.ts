@@ -1136,7 +1136,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get current QA config version */
+        /**
+         * Get current QA config version
+         * @description Returns the active QA configuration version including the global system prompt. Requires qa:settings:read. The systemPrompt field is the only place where the full prompt is returned to callers; it must not appear in ordinary QA responses, SSE events, errors, logs, or metrics.
+         */
         get: operations["getCurrentQAConfigVersion"];
         put?: never;
         post?: never;
@@ -1157,7 +1160,7 @@ export interface paths {
         put?: never;
         /**
          * Create QA config version
-         * @description Creates a versioned QA runtime configuration so historical answers remain traceable to the retrieval and Agent settings used at generation time.
+         * @description Creates a versioned QA runtime configuration so historical answers remain traceable to the retrieval, Agent settings and system prompt used at generation time. Requires qa:settings:write. The new version becomes active immediately for the next question; in-flight answers continue using their original snapshot.
          */
         post: operations["createQAConfigVersion"];
         delete?: never;
@@ -2678,6 +2681,8 @@ export interface components {
             enabledToolNames?: string[];
             llm?: components["schemas"]["QALLMConfigVersion"];
             agent?: components["schemas"]["QAAgentConfig"];
+            /** @description Global Agent system prompt. Always present with qa:settings:read. Must not appear in ordinary QA responses, SSE, errors, logs, or metrics. Enforced at 20000 bytes via database octet_length check, not OpenAPI maxLength. */
+            systemPrompt: string;
             isActive: boolean;
             /** Format: date-time */
             createdAt: string;
@@ -2704,6 +2709,8 @@ export interface components {
             enabledToolNames?: string[];
             llm?: components["schemas"]["CreateQALLMConfigVersionRequest"];
             agent?: components["schemas"]["QAAgentConfig"];
+            /** @description Global Agent system prompt. When provided, must be non-empty after trimming. When omitted, the active prompt is inherited. Requires qa:settings:write. Enforced at 20000 bytes via database octet_length check. */
+            systemPrompt?: string;
             /** @default true */
             activate: boolean;
         };
@@ -3008,7 +3015,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Gateway is ready to serve traffic. */
+            /** @description Gateway lightweight readiness passed. This checks the Gateway session cache dependency, Auth readiness, and owner service base URL configuration; it does not prove owner-service business workflows or external provider calls are available. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5283,6 +5290,7 @@ export interface operations {
                     "application/json": components["schemas"]["QAConfigVersionResponse"];
                 };
             };
+            403: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };

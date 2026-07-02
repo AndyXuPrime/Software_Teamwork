@@ -56,6 +56,7 @@ MCP 原始工具 schema、完整工具参数/结果、内部审计细节、promp
 - 拥有数据库表的服务，也拥有修改该数据的 API。
 - Gateway 可以为前端、管理端、后端模块和工具调用方暴露调用方友好的公开路径，但必须把业务校验委托给归属服务。
 - AI Gateway 可以存储模型 provider 配置，以及加密或由密钥系统托管的 API key 材料，但不得负责领域 prompt、会话、Agent Run、MCP 工具调用、分块、引用、报告、生成文件或面向前端的路由。Gateway 暴露管理员模型 profile 路由，并转发密钥写入，不记录或持久化密钥。
+- QA 服务拥有全局 Agent 系统提示词（`systemPrompt`）。提示词存储在 `qa_config_versions` 中，与检索参数、Agent 终止策略和工具白名单一起版本化。AI Gateway 不得存储、管理或提供领域 prompt；AI Gateway 仅负责模型调用时的 profile 和凭据路由。
 - 跨服务 ID 在公开 API 契约中应使用字符串。各服务可自行决定内部 ID 表示。
 - 公开契约中的时间戳使用 RFC 3339 / OpenAPI `date-time`。
 - 删除操作必须由负责该资源生命周期的服务拥有。
