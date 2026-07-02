@@ -873,7 +873,8 @@ Rules:
 - Docker environment diagnostics belong in `scripts/check_docker_environment.py`.
   CI may run it with `--skip-network`; local investigations may run manifest
   probes with `--profile all --clean-env`.
-- Docker policy docs/spec changes should trigger the lightweight policy checker
+- Docker policy docs/spec changes, including `deploy/README.md` and
+  `deploy/production-baseline.md`, should trigger the lightweight policy checker
   even when no Dockerfile changed. Do not force full image builds for docs-only
   policy edits unless the workflow detection logic itself changed.
 - Build images for changed services on PRs.
@@ -909,7 +910,8 @@ Deployment rules:
 - Store runtime secrets outside the repository.
 - Use `.env.example` for required variable names only.
 - Use named volumes for PostgreSQL, Qdrant, MinIO, and Redis when persistence is required.
-- Expose only frontend and gateway publicly by default.
+- Production/staging Compose should expose only the ingress service publicly by
+  default; frontend, gateway, and internal services stay on the Compose network.
 - Keep internal services on the Compose network.
 - Add health checks for infrastructure and services before relying on automated deployment.
 

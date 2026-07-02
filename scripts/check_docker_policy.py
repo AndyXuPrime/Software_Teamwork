@@ -230,7 +230,7 @@ def validate_compose_file(root: Path, compose_file: Path) -> list[str]:
     if "GOSUMDB:" in content and GO_SUMDB_COMPOSE not in content:
         issues.append(f"{rel}: Go build args must default to `{GO_SUMDB_COMPOSE}`")
 
-    if is_parser_compose_file(content):
+    if "build:" in content and is_parser_compose_file(content):
         for needle in PARSER_COMPOSE_ARGS:
             if needle not in content:
                 issues.append(f"{rel}: Parser Compose build must pass `{needle}`")

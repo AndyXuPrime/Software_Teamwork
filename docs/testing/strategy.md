@@ -68,7 +68,7 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | 前端 API 类型 | `bun run --cwd apps/web api:generate`；确认 generated diff 符合预期。 |
 | 单个 Go 服务 | `cd services/<service> && go test ./...`；`go build ./cmd/server`。 |
 | QA 服务 | `cd services/qa && go test ./...`；`go build ./cmd/server`；`go build ./cmd/agent`。 |
-| Docker policy | `python3 scripts/check_docker_policy.py`；验证 BuildKit、镜像默认值、`GOSUMDB`、`latest`、Parser 容器入口、中国网络 overlay 和 `.dockerignore` 是否回退。 |
+| Docker policy | `python3 scripts/check_docker_policy.py`；验证 BuildKit、镜像默认值、`GOSUMDB`、`latest`、Parser 容器入口、中国网络 overlay 和 `.dockerignore` 是否回退。Image-only production Compose 只验证镜像 tag/config；Parser build mirror args 只在 Compose 实际包含 `build:` 时强制。 |
 | Docker environment | `python3 scripts/check_docker_environment.py --profile all --clean-env`；用于区分 registry rewrite、daemon mirror、Docker Hub direct 和 shell proxy 的问题。CI 只跑 `--skip-network`，真实 manifest 探测作为本地/排障检查。 |
 | Dockerfile | 对变更的可构建 Dockerfile 执行 `DOCKER_BUILDKIT=1 docker build --file <Dockerfile> <context>`；中国网络优先使用 `deploy/.env.china.example` 或等价 build args。不 push 镜像。若本机 Docker daemon mirror 在 base image metadata 阶段返回 401/超时，应先按 Docker runbook 选择 registry rewrite 或修正 mirror，或在 PR 记录为环境阻断。 |
 | Compose | `docker compose -f <compose-file> config --quiet`；根级 Compose 额外跑 `--env-file deploy/.env.example` 和 `--profile ai`。 |

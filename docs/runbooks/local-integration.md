@@ -2,7 +2,7 @@
 
 日期：2026-06-29
 
-本文记录当前仓库可以怎样在本地启动、验证和排查服务。它不是生产部署说明；根级 `deploy/docker-compose.yml` 只作为本地/演示联调基线，不等同于已经具备完整一键 E2E smoke。
+本文记录当前仓库可以怎样在本地启动、验证和排查服务。它不是生产部署说明；根级 `deploy/docker-compose.yml` 只作为本地/演示联调基线，不等同于已经具备完整一键 E2E smoke。生产或准生产单机 Compose 基线见 [`deploy/production-baseline.md`](../../deploy/production-baseline.md)、`deploy/docker-compose.production.yml` 和 `deploy/.env.production.example`。
 
 ## 当前结论
 
@@ -15,6 +15,7 @@
 | File / Knowledge 独立运行 | host-run / smoke | 需要手动准备各自依赖；File 已有 env-gated PostgreSQL + MinIO 联合 smoke，Knowledge 已有 env-gated ingestion 真实依赖 smoke，覆盖 File Service、Parser Service、PostgreSQL、local hashing embedding 和 Qdrant 写入。另有 env-gated Gateway -> Knowledge -> QA RAG smoke，可在配置可用 AI Gateway chat profile 后验收上传、入库、`knowledge-queries`、QA answer 和 citations；MCP 和完整 #125 一键跨服务 smoke 仍由后续任务覆盖。 |
 | Parser Runtime | partial | `services/parser/` 已提供 Python/FastAPI runtime、内部 HTTP API、Dockerfile、service-token auth、可选 PaddleOCR extra 和 env-gated 真实 PaddleOCR 模型 smoke；CI 仍只用 fake OCR backend 覆盖 lint/test/compile，不要求普通开发者安装模型。 |
 | 前端联调入口 | host-run | 前端只调用 public Gateway `/api/v1/**`；不要直连内部服务。 |
+| 生产/准生产 Compose | baseline docs | `deploy/production-baseline.md`、`deploy/docker-compose.production.yml` 和 `deploy/.env.production.example` 已提供单机 Compose 基线、环境变量模板、持久化卷、secret、健康检查、升级和回滚说明；真实云环境部署、DNS/TLS、受保护发布流水线和 #125 完整跨服务 smoke 仍不在本地联调范围内。 |
 
 因此当前本地联调应按“根级依赖基线 + 服务级 smoke + 手动拼接关键链路”的方式执行。除非 #125 等跨服务 smoke 任务落地，不要在 PR 或文档中声称已有完整一键本地 E2E 验收环境。
 

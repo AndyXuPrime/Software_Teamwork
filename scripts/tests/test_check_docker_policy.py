@@ -161,6 +161,21 @@ class DockerPolicyTests(unittest.TestCase):
         self.assertIssueContains(issues, "GOSUMDB=off")
         self.assertIssueContains(issues, "Go build args must default")
 
+    def test_image_only_parser_compose_does_not_require_build_args(self) -> None:
+        compose = textwrap.dedent(
+            """
+            services:
+              parser:
+                image: ${PARSER_IMAGE:-registry.example.com/software-teamwork/parser:REPLACE_WITH_TAG}
+                environment:
+                  PARSER_BACKEND: ${PARSER_BACKEND:-ppstructurev3}
+            """
+        )
+
+        issues = self.verify(files={"deploy/docker-compose.production.yml": compose})
+
+        self.assertEqual([], issues)
+
     def test_parser_recursive_chown_regression_is_reported(self) -> None:
         dockerfile = VALID_PARSER_DOCKERFILE.replace(
             "COPY --from=builder --chown=parser:parser /app /app",
