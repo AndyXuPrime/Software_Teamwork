@@ -2682,7 +2682,7 @@ export interface components {
             llm?: components["schemas"]["QALLMConfigVersion"];
             agent?: components["schemas"]["QAAgentConfig"];
             /** @description Global Agent system prompt. Returned only in admin QA config endpoints (requires qa:settings:read). Must not appear in SSE events, QA chat responses, logs, metrics, tool call summaries, or error messages. Server validates 1–20000 bytes (octet_length, not character count); multi-byte UTF-8 characters count toward the byte limit. */
-            systemPrompt?: string;
+            systemPrompt: string;
             isActive: boolean;
             /** Format: date-time */
             createdAt: string;
