@@ -268,3 +268,36 @@ Added production/staging Compose baseline, env template, deployment runbook, CI/
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Gateway readyz semantics
+
+**Date**: 2026-07-02
+**Task**: Gateway readyz semantics
+**Branch**: `Special/docs/gateway-readyz-semantics`
+
+### Summary
+
+Clarified Gateway /readyz as lightweight readiness, separated owner-service business smoke to #125/#352, and synchronized Gateway docs/OpenAPI/runbooks/spec.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8736b13c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
