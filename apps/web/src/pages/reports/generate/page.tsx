@@ -1,5 +1,4 @@
 import {
-  Ban,
   Download,
   FileText,
   Loader2,
@@ -39,7 +38,6 @@ import {
   formatReportGatewayError,
   getCreateReportDefaults,
   isReportTypeDraftDefaultValue,
-  useCancelReportJob,
   useCreateReportFileMutation,
   useCreateReportJobMutation,
   useCreateReportMutation,
@@ -80,9 +78,97 @@ const statusText: Record<ReportJobStatus, string> = {
   canceled: '已取消',
 }
 
+const outlineProgressMax = 20
+const outlineRunningProgressCap = outlineProgressMax - 2
+
+function clampProgress(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function readProgressNumber(
+  progress: ReportJob['progress'] | undefined,
+  keys: string[],
+): number | null {
+  if (!progress || typeof progress !== 'object') return null
+  for (const key of keys) {
+    const value = progress[key]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value)
+      if (Number.isFinite(parsed)) return parsed
+    }
+  }
+  return null
+}
+
+function getProgressRatio(job?: ReportJob | null): number | null {
+  const completed = readProgressNumber(job?.progress, ['completed', 'completedSections'])
+  const total = readProgressNumber(job?.progress, ['total', 'totalSections'])
+  if (completed === null || total === null || total <= 0) return null
+  return Math.max(0, Math.min(1, completed / total))
+}
+
+function getOutlineRunningProgress(job: ReportJob): number {
+  const startedAt = Date.parse(job.startedAt ?? job.createdAt)
+  if (!Number.isFinite(startedAt)) return 4
+  const elapsedSeconds = Math.max(0, (Date.now() - startedAt) / 1000)
+  return Math.min(outlineRunningProgressCap, 4 + (elapsedSeconds / 60) * outlineRunningProgressCap)
+}
+
+function isContentJob(job?: ReportJob | null): boolean {
+  return (
+    job?.jobType === 'content_generation' ||
+    job?.jobType === 'content_regeneration' ||
+    job?.jobType === 'section_regeneration'
+  )
+}
+
+function isOutlineJob(job?: ReportJob | null): boolean {
+  return job?.jobType === 'outline_generation' || job?.jobType === 'outline_regeneration'
+}
+
 function getProgressPercent(job?: ReportJob | null): number {
-  const value = job?.progress?.percent
-  return typeof value === 'number' ? Math.max(0, Math.min(100, value)) : 0
+  if (!job) return 0
+
+  const ratio = getProgressRatio(job)
+  const explicitPercent = readProgressNumber(job.progress, ['percent'])
+  const fallbackPercent = explicitPercent === null ? null : clampProgress(explicitPercent)
+
+  if (isOutlineJob(job)) {
+    if (ratio === null && fallbackPercent !== null) return fallbackPercent
+    if (job.status === 'succeeded' || job.status === 'partial_succeeded') return outlineProgressMax
+    const ratioProgress = ratio === null ? 0 : ratio * outlineProgressMax
+    if (job.status === 'pending' || job.status === 'running') {
+      return clampProgress(Math.max(ratioProgress, getOutlineRunningProgress(job)))
+    }
+    return clampProgress(ratioProgress)
+  }
+
+  if (isContentJob(job)) {
+    if (ratio === null && fallbackPercent !== null) return fallbackPercent
+    if (job.status === 'succeeded' || job.status === 'partial_succeeded') return 100
+    const ratioProgress =
+      ratio === null ? 0 : outlineProgressMax + ratio * (100 - outlineProgressMax)
+    if (job.status === 'pending' || job.status === 'running') {
+      return clampProgress(Math.max(outlineProgressMax, ratioProgress))
+    }
+    return clampProgress(ratioProgress)
+  }
+
+  if (ratio === null && fallbackPercent !== null) return fallbackPercent
+  if (job.status === 'succeeded' || job.status === 'partial_succeeded') return 100
+  return clampProgress(ratio === null ? 0 : ratio * 100)
+}
+
+function getJobProgressLabel(job?: ReportJob | null): string {
+  if (!job) return '-'
+  if (isOutlineJob(job) && (job.status === 'succeeded' || job.status === 'partial_succeeded')) {
+    return '大纲生成完成'
+  }
+  if (isContentJob(job) && job.status === 'succeeded') return '报告生成完成'
+  if (isContentJob(job) && job.status === 'partial_succeeded') return '章节处理完成，部分失败'
+  return statusText[job.status]
 }
 
 function formatDate(value?: string): string {
@@ -174,7 +260,6 @@ export function ReportGeneratePage() {
   const updateReportSettingsMutation = useUpdateReportSettingsMutation()
   const retryJobMutation = useRetryReportJobMutation()
   const downloadMutation = useDownloadReportFileMutation()
-  const cancelJobMutation = useCancelReportJob()
   const sectionVersionsQuery = useSectionVersions(
     currentReport?.id ?? null,
     showVersions ? activeSectionId : null,
@@ -189,6 +274,15 @@ export function ReportGeneratePage() {
   const activeSection = sections.find((item) => item.id === activeSectionId) ?? sections[0]
   const effectiveJob = jobQuery.data ?? lastJob
   const selectedTemplate = templates.find((template) => template.id === form.templateId)
+  const selectedReportType = reportTypes.find(
+    (type) => type.code === (currentReport?.reportType ?? form.reportType),
+  )
+  const reportTemplateTypeLabel =
+    selectedReportType?.name ??
+    selectedTemplate?.reportType ??
+    currentReport?.reportType ??
+    form.reportType ??
+    '-'
   const configuredDocumentProfileId = reportSettingsQuery.data?.llm?.profileId ?? ''
   const configuredDocumentModel = reportSettingsQuery.data?.llm?.model ?? ''
   const selectedDocumentProfile = chatProfiles.find((profile) => profile.id === documentProfileId)
@@ -385,9 +479,7 @@ export function ReportGeneratePage() {
       setLastJob(job)
       setActiveJobId(job.id)
       setStep('outline')
-      setNotice(
-        '已创建报告草稿，并通过 /api/v1/reports/{reportId}/jobs 创建大纲任务；页面只展示服务端返回的大纲与任务进度。',
-      )
+      setNotice('已创建报告草稿，正在生成大纲。页面会根据服务端返回的大纲和进度自动更新。')
     } catch (error) {
       setActiveJobId(null)
       setNotice(
@@ -439,7 +531,7 @@ export function ReportGeneratePage() {
       setLastJob(job)
       setActiveJobId(job.id)
       setStep('content')
-      setNotice('已创建正文生成任务；真实 AI 生成能力以后端任务和章节接口返回为准。')
+      setNotice('已开始生成正文。每完成一个章节，进度会继续更新。')
     } catch (error) {
       setNotice(formatReportGatewayError(error, '正文生成任务创建失败'))
     }
@@ -471,30 +563,13 @@ export function ReportGeneratePage() {
           jobId: retryJob.id,
           reportId: retryJob.reportId,
         })
-        setNotice(`已创建重试尝试：${attempt.id}，当前状态：${attempt.status}`)
+        setNotice(`已重新提交任务，当前状态：${statusText[attempt.status]}`)
       } catch (error) {
         setNotice(formatReportGatewayError(error, '创建重试尝试失败'))
       }
       return
     }
     setNotice('暂无可重试的服务端任务。')
-  }
-
-  const handleCancel = async () => {
-    if (!effectiveJob?.id) {
-      setNotice('暂无可取消的服务端任务。')
-      return
-    }
-    if (effectiveJob.status !== 'pending' && effectiveJob.status !== 'running') {
-      setNotice('只有等待中或运行中的任务才能取消。')
-      return
-    }
-    try {
-      await cancelJobMutation.mutateAsync(effectiveJob.id)
-      setNotice('已请求取消任务。')
-    } catch (error) {
-      setNotice(formatReportGatewayError(error, '任务取消暂不支持（Gateway 契约待补齐）'))
-    }
   }
 
   const handleExport = async () => {
@@ -512,7 +587,7 @@ export function ReportGeneratePage() {
       })
       setLatestFile(file)
       setStep('export')
-      setNotice('已创建报告文件资源；富 DOCX 工具链是否可用以后端返回状态为准。')
+      setNotice('已创建 DOCX 文件资源，可以在文件就绪后下载。')
     } catch (error) {
       setNotice(formatReportGatewayError(error, '创建 DOCX 文件资源失败'))
     }
@@ -538,7 +613,7 @@ export function ReportGeneratePage() {
   }
 
   const progressPercent = getProgressPercent(effectiveJob)
-  const jobStatusLabel = effectiveJob ? statusText[effectiveJob.status] : '-'
+  const jobStatusLabel = getJobProgressLabel(effectiveJob)
   const jobProgressTone =
     effectiveJob?.status === 'failed'
       ? 'error'
@@ -547,7 +622,6 @@ export function ReportGeneratePage() {
         : effectiveJob?.status === 'succeeded' || effectiveJob?.status === 'partial_succeeded'
           ? 'success'
           : 'default'
-  const canCancelJob = effectiveJob?.status === 'pending' || effectiveJob?.status === 'running'
   const canRetryJob =
     effectiveJob?.status === 'failed' ||
     effectiveJob?.status === 'partial_succeeded' ||
@@ -623,35 +697,10 @@ export function ReportGeneratePage() {
                       重试任务
                     </Button>
                   )}
-                  {canCancelJob && (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={handleCancel}
-                      title="任务取消暂不支持（Gateway 契约待补齐）"
-                      disabled={cancelJobMutation.isPending}
-                    >
-                      {cancelJobMutation.isPending && <Loader2 className="size-3 animate-spin" />}
-                      <Ban className="size-3" />
-                      取消任务
-                    </Button>
-                  )}
                 </div>
               </div>
 
               <div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
-                <div className="flex justify-between gap-4 rounded-lg border border-border bg-background px-3 py-2">
-                  <span className="text-muted-foreground">reportId</span>
-                  <code className="min-w-0 truncate">{currentReport?.id ?? '-'}</code>
-                </div>
-                <div className="flex justify-between gap-4 rounded-lg border border-border bg-background px-3 py-2">
-                  <span className="text-muted-foreground">jobId</span>
-                  <code className="min-w-0 truncate">{effectiveJob?.id ?? '-'}</code>
-                </div>
-                <div className="flex justify-between gap-4 rounded-lg border border-border bg-background px-3 py-2">
-                  <span className="text-muted-foreground">任务类型</span>
-                  <span>{effectiveJob?.jobType ?? '-'}</span>
-                </div>
                 <div className="flex justify-between gap-4 rounded-lg border border-border bg-background px-3 py-2">
                   <span className="text-muted-foreground">状态</span>
                   <span
@@ -659,11 +708,16 @@ export function ReportGeneratePage() {
                       effectiveJob?.status === 'failed' && 'text-destructive',
                       effectiveJob?.status === 'canceled' && 'text-yellow-600',
                       effectiveJob?.status === 'succeeded' && 'text-green-600',
-                      canCancelJob && 'text-primary',
+                      (effectiveJob?.status === 'pending' || effectiveJob?.status === 'running') &&
+                        'text-primary',
                     )}
                   >
                     {jobStatusLabel}
                   </span>
+                </div>
+                <div className="flex justify-between gap-4 rounded-lg border border-border bg-background px-3 py-2">
+                  <span className="text-muted-foreground">报告模板类型</span>
+                  <span className="min-w-0 truncate">{reportTemplateTypeLabel}</span>
                 </div>
               </div>
 
@@ -928,7 +982,7 @@ export function ReportGeneratePage() {
           )}
 
           {step === 'content' && (
-            <section className="grid gap-4 rounded-lg border border-border bg-card p-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+            <section className="grid gap-4 rounded-lg border border-border bg-card p-5 lg:grid-cols-[minmax(220px,320px)_minmax(0,1fr)]">
               {sectionsQuery.isLoading ? (
                 <StateBlock
                   className="lg:col-span-2"
@@ -954,7 +1008,10 @@ export function ReportGeneratePage() {
                 />
               ) : (
                 <>
-                  <div>
+                  <div
+                    aria-label="章节列表"
+                    className="min-h-0 lg:max-h-[620px] lg:overflow-y-auto lg:pr-1"
+                  >
                     <h2 className="mb-3 text-base font-semibold">章节列表</h2>
                     <div className="max-h-64 space-y-2 overflow-y-auto">
                       {sections.map((section) => (
@@ -976,7 +1033,7 @@ export function ReportGeneratePage() {
                     </div>
                   </div>
 
-                  <div className="min-w-0">
+                  <div className="flex min-h-[520px] min-w-0 flex-col">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <h3 className="text-base font-semibold">
@@ -1069,7 +1126,8 @@ export function ReportGeneratePage() {
                     )}
 
                     <textarea
-                      className="min-h-[360px] w-full rounded-lg border border-input bg-background px-4 py-3 text-sm leading-7 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                      aria-label="章节正文"
+                      className="min-h-[420px] flex-1 resize-y rounded-lg border border-input bg-background px-4 py-3 text-sm leading-7 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                       value={sectionDraft}
                       onChange={(event) => setSectionDraft(event.target.value)}
                     />
@@ -1271,24 +1329,6 @@ export function ReportGeneratePage() {
               </Button>
             </section>
           )}
-
-          <section className="rounded-lg border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">当前报告</h2>
-            <div className="mt-3 space-y-2 text-sm">
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">reportId</span>
-                <code className="truncate">{currentReport?.id ?? '-'}</code>
-              </div>
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">模板</span>
-                <span className="truncate">{selectedTemplate?.templateName ?? '-'}</span>
-              </div>
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">状态</span>
-                <span>{currentReport?.status ?? '未创建'}</span>
-              </div>
-            </div>
-          </section>
         </aside>
       </div>
     </div>

@@ -263,6 +263,68 @@ func TestReportGenerationServiceKeepsGeneratedSectionsOnPartialFailure(t *testin
 	}
 }
 
+func TestReportGenerationServiceContinuesContentGenerationAfterSectionFailure(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer peak inspection",
+		ReportType: "summer_peak_inspection",
+		TemplateID: "template-1",
+		Topic:      "summer power supply",
+		CreatorID:  "user-1",
+		Status:     ReportStatusOutlineGenerated,
+	}
+	repo.jobs["job-1"] = ReportJob{ID: "job-1", JobType: JobTypeContentGeneration, ReportID: "report-1"}
+	repo.sections["section-1"] = ReportSection{ID: "section-1", ReportID: "report-1", Title: "Overview", SortOrder: 0, Version: 1, GenerationStatus: JobStatusPending}
+	repo.sections["section-2"] = ReportSection{ID: "section-2", ReportID: "report-1", Title: "Risk inspection", SortOrder: 1, Version: 1, GenerationStatus: JobStatusPending}
+	repo.sections["section-3"] = ReportSection{ID: "section-3", ReportID: "report-1", Title: "Action plan", SortOrder: 2, Version: 1, GenerationStatus: JobStatusPending}
+	chat := &fakeGenerationChatClient{
+		responses: []ChatCompletionResponse{
+			{Content: `{"content":"first section body","tables":[]}`},
+			{},
+			{Content: `{"content":"third section body","tables":[]}`},
+		},
+		errs: []error{nil, errors.New("provider raw error sk-secret https://provider.internal"), nil},
+	}
+	svc := NewReportGenerationService(repo, chat)
+	svc.clock = func() time.Time { return time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC) }
+
+	result, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-content",
+		JobType:   JobTypeContentGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteReportGeneration() error = %v", err)
+	}
+	if result.Status != JobStatusPartialSucceeded {
+		t.Fatalf("result status = %q, want partial_succeeded", result.Status)
+	}
+	if len(chat.requests) != 3 {
+		t.Fatalf("chat request count = %d, want 3", len(chat.requests))
+	}
+	first := repo.sections["section-1"]
+	if first.Content != "first section body" || first.GenerationStatus != JobStatusSucceeded {
+		t.Fatalf("first section not generated: %+v", first)
+	}
+	second := repo.sections["section-2"]
+	if second.GenerationStatus != JobStatusFailed || second.Content != "" {
+		t.Fatalf("second section should be failed without content overwrite: %+v", second)
+	}
+	third := repo.sections["section-3"]
+	if third.Content != "third section body" || third.GenerationStatus != JobStatusSucceeded {
+		t.Fatalf("third section should still be generated after second failed: %+v", third)
+	}
+	lastProgress := repo.progressUpdates[len(repo.progressUpdates)-1]
+	if lastProgress["completed"] != 3 || lastProgress["total"] != 3 {
+		t.Fatalf("last progress = %+v, want 3/3 attempted sections", lastProgress)
+	}
+	if !hasReportEvent(repo.events, "content.partial_succeeded") {
+		t.Fatalf("expected content.partial_succeeded event, got %+v", repo.events)
+	}
+}
+
 func TestReportGenerationServiceFailsWhenSectionRunningMarkerCannotPersist(t *testing.T) {
 	repo := newFakeReportGenerationRepository()
 	repo.reports["report-1"] = Report{

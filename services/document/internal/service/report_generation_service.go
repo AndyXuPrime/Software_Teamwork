@@ -190,11 +190,25 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 	sortSections(sections)
 	_ = s.recordEvent(ctx, report.ID, payload.JobID, "content.started", "content generation started")
 	completed := 0
+	successful := 0
+	failed := 0
 	total := len(sections)
+	var firstSectionErr error
 	preserveManual := preserveManualEdits(job)
+	recordSectionFailure := func(sectionID string, cause error) {
+		if firstSectionErr == nil {
+			firstSectionErr = cause
+		}
+		failed++
+		completed++
+		s.markSectionGenerationFailed(ctx, sectionID, payload.JobID)
+		_ = s.recordEvent(ctx, report.ID, payload.JobID, "section.failed", "section generation failed")
+		_ = s.repo.UpdateReportJobProgress(ctx, payload.JobID, completed, total)
+	}
 	for _, section := range sections {
 		if preserveManual && section.ManualEdited {
 			completed++
+			successful++
 			_ = s.repo.UpdateReportJobProgress(ctx, payload.JobID, completed, total)
 			_ = s.recordEvent(ctx, report.ID, payload.JobID, "section.skipped", "section generation skipped because manual edits are preserved")
 			continue
@@ -208,14 +222,8 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 		}
 		generationContext, err := s.loadGenerationContext(ctx, reqCtx, report, section, job)
 		if err != nil {
-			s.markSectionGenerationFailed(ctx, section.ID, payload.JobID)
-			_ = s.recordEvent(ctx, report.ID, payload.JobID, "section.failed", "section generation failed")
-			_ = s.repo.UpdateReportJobProgress(ctx, payload.JobID, completed, total)
-			if completed > 0 {
-				_ = s.recordEvent(ctx, report.ID, payload.JobID, "content.partial_succeeded", "content generation partially succeeded")
-				return ReportGenerationExecutionResult{Status: JobStatusPartialSucceeded}, nil
-			}
-			return ReportGenerationExecutionResult{}, err
+			recordSectionFailure(section.ID, err)
+			continue
 		}
 		resp, err := s.chat.CreateChatCompletion(ctx, reqCtx, ChatCompletionRequest{
 			Model:     settings.LLM.Model,
@@ -226,25 +234,13 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 			},
 		})
 		if err != nil {
-			s.markSectionGenerationFailed(ctx, section.ID, payload.JobID)
-			_ = s.recordEvent(ctx, report.ID, payload.JobID, "section.failed", "section generation failed")
-			_ = s.repo.UpdateReportJobProgress(ctx, payload.JobID, completed, total)
-			if completed > 0 {
-				_ = s.recordEvent(ctx, report.ID, payload.JobID, "content.partial_succeeded", "content generation partially succeeded")
-				return ReportGenerationExecutionResult{Status: JobStatusPartialSucceeded}, nil
-			}
-			return ReportGenerationExecutionResult{}, dependencyError("generate report section", err)
+			recordSectionFailure(section.ID, dependencyError("generate report section", err))
+			continue
 		}
 		generated, err := parseGeneratedSection(resp.Content)
 		if err != nil {
-			s.markSectionGenerationFailed(ctx, section.ID, payload.JobID)
-			_ = s.recordEvent(ctx, report.ID, payload.JobID, "section.failed", "section generation failed")
-			_ = s.repo.UpdateReportJobProgress(ctx, payload.JobID, completed, total)
-			if completed > 0 {
-				_ = s.recordEvent(ctx, report.ID, payload.JobID, "content.partial_succeeded", "content generation partially succeeded")
-				return ReportGenerationExecutionResult{Status: JobStatusPartialSucceeded}, nil
-			}
-			return ReportGenerationExecutionResult{}, err
+			recordSectionFailure(section.ID, err)
+			continue
 		}
 		now := s.clock()
 		sectionID := section.ID
@@ -299,6 +295,7 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 		}); err != nil {
 			if appErr, ok := Classify(err); ok && appErr.Code == CodeConflict {
 				completed++
+				successful++
 				_ = s.repo.UpdateReportJobProgress(ctx, payload.JobID, completed, total)
 				_ = s.recordEvent(ctx, report.ID, payload.JobID, "section.skipped", "section generation skipped because current section changed during generation")
 				continue
@@ -307,8 +304,18 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 			return ReportGenerationExecutionResult{}, err
 		}
 		completed++
+		successful++
 		_ = s.repo.UpdateReportJobProgress(ctx, payload.JobID, completed, total)
 		_ = s.recordEvent(ctx, report.ID, payload.JobID, "section.succeeded", "section generation succeeded")
+	}
+	if failed > 0 {
+		if successful > 0 {
+			_ = s.recordEvent(ctx, report.ID, payload.JobID, "content.partial_succeeded", "content generation partially succeeded")
+			return ReportGenerationExecutionResult{Status: JobStatusPartialSucceeded}, nil
+		}
+		if firstSectionErr != nil {
+			return ReportGenerationExecutionResult{}, firstSectionErr
+		}
 	}
 	_ = s.recordEvent(ctx, report.ID, payload.JobID, "content.succeeded", "content generation succeeded")
 	return ReportGenerationExecutionResult{Status: JobStatusSucceeded}, nil

@@ -360,8 +360,9 @@ describe('ReportGeneratePage', () => {
 
     await user.click(screen.getByRole('button', { name: /创建草稿/ }))
 
-    await waitFor(() => expect(paths).toContain('POST /api/v1/reports/rpt-writer/jobs'))
-    expect(await screen.findByText('job-writer')).toBeVisible()
+    expect(await screen.findByText('报告模板类型')).toBeVisible()
+    expect(screen.getByText(/20%/)).toBeVisible()
+    expect(screen.queryByText('job-writer')).not.toBeInTheDocument()
     expect(paths.some((path) => path.includes('/report-settings'))).toBe(false)
     expect(paths.some((path) => path.includes('/admin/model-profiles'))).toBe(false)
   })
@@ -431,7 +432,7 @@ describe('ReportGeneratePage', () => {
     })
   })
 
-  it('renders job progress in the current report area without side task or event panels', async () => {
+  it('renders user-facing report progress from completed sections without internal ids', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init)
       const url = new URL(request.url)
@@ -458,15 +459,30 @@ describe('ReportGeneratePage', () => {
         })
       }
       if (request.method === 'POST' && url.pathname.endsWith('/reports/rpt-progress/jobs')) {
+        const body = (await request.clone().json()) as { jobType?: string }
+        if (body.jobType === 'content_generation') {
+          return jsonResponse({
+            data: {
+              createdAt: '2026-07-03T00:00:00Z',
+              id: 'job-content',
+              jobType: 'content_generation',
+              progress: { completed: 2, total: 4 },
+              reportId: 'rpt-progress',
+              resultSummary: '已生成 2 / 4 个章节',
+              status: 'running',
+            },
+            requestId: 'req-content-job',
+          })
+        }
         return jsonResponse({
           data: {
             createdAt: '2026-07-03T00:00:00Z',
             id: 'job-1',
             jobType: 'outline_generation',
-            progress: { completedSections: 1, percent: 50, totalSections: 2 },
+            progress: { completed: 1, total: 1 },
             reportId: 'rpt-progress',
             resultSummary: '已生成大纲初稿',
-            status: 'running',
+            status: 'succeeded',
           },
           requestId: 'req-job',
         })
@@ -477,18 +493,48 @@ describe('ReportGeneratePage', () => {
             createdAt: '2026-07-03T00:00:00Z',
             id: 'job-1',
             jobType: 'outline_generation',
-            progress: { completedSections: 1, percent: 50, totalSections: 2 },
+            progress: { completed: 1, total: 1 },
             reportId: 'rpt-progress',
             resultSummary: '已生成大纲初稿',
-            status: 'running',
+            status: 'succeeded',
           },
           requestId: 'req-job-status',
         })
       }
-      if (
-        url.pathname.endsWith('/reports/rpt-progress/outlines') ||
-        url.pathname.endsWith('/reports/rpt-progress/sections')
-      ) {
+      if (url.pathname.endsWith('/report-jobs/job-content')) {
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:00:00Z',
+            id: 'job-content',
+            jobType: 'content_generation',
+            progress: { completed: 2, total: 4 },
+            reportId: 'rpt-progress',
+            resultSummary: '已生成 2 / 4 个章节',
+            status: 'running',
+          },
+          requestId: 'req-content-job-status',
+        })
+      }
+      if (url.pathname.endsWith('/reports/rpt-progress/outlines')) {
+        return jsonResponse({
+          data: [
+            {
+              createdAt: '2026-07-03T00:00:00Z',
+              id: 'outline-progress',
+              isCurrent: true,
+              reportId: 'rpt-progress',
+              sections: [
+                { id: 'node-1', level: 1, numbering: '1', title: '总述' },
+                { id: 'node-2', level: 1, numbering: '2', title: '风险分析' },
+              ],
+              source: 'ai',
+              version: 1,
+            },
+          ],
+          requestId: 'req-outlines',
+        })
+      }
+      if (url.pathname.endsWith('/reports/rpt-progress/sections')) {
         return jsonResponse({ data: [], requestId: 'req-empty' })
       }
       if (url.pathname.endsWith('/reports/rpt-progress/events')) {
@@ -522,11 +568,23 @@ describe('ReportGeneratePage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: /创建草稿/ }))
 
-    expect(await screen.findByText('job-1')).toBeVisible()
-    expect(screen.getByText(/50%/)).toBeVisible()
-    expect(screen.getByText('已生成大纲初稿')).toBeVisible()
+    expect(await screen.findByText('报告模板类型')).toBeVisible()
+    expect(screen.getByText('真实巡检报告')).toBeVisible()
+    expect(screen.queryByText('reportId')).not.toBeInTheDocument()
+    expect(screen.queryByText('jobId')).not.toBeInTheDocument()
+    expect(screen.queryByText('任务类型')).not.toBeInTheDocument()
+    expect(screen.queryByText('job-1')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /取消任务/ })).not.toBeInTheDocument()
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /生成正文/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /生成正文/ }))
+
+    expect(await screen.findByText(/60%/)).toBeVisible()
+    expect(screen.getByText('已生成 2 / 4 个章节')).toBeVisible()
+    expect(screen.queryByText('job-content')).not.toBeInTheDocument()
     expect(screen.queryByText('任务状态')).not.toBeInTheDocument()
     expect(screen.queryByText('事件日志')).not.toBeInTheDocument()
+    expect(screen.queryByText('当前报告')).not.toBeInTheDocument()
   })
 
   it('shows gateway request id and does not create a local report when draft creation is not implemented', async () => {
