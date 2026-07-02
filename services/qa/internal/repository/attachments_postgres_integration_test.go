@@ -30,6 +30,9 @@ func TestAttachmentCreateQuotaFilterAndPurgeIntegration(t *testing.T) {
 	if !strings.Contains(defaultTools, `"search_session_attachments"`) {
 		t.Fatalf("system default enabled_tool_names=%s", defaultTools)
 	}
+	if !strings.Contains(defaultTools, `"document__generate_report_from_content"`) {
+		t.Fatalf("system default enabled_tool_names=%s, want document content report tool", defaultTools)
+	}
 
 	now := time.Now().UTC()
 	suffix := uint64(now.UnixNano()) & 0xffffffffffff
