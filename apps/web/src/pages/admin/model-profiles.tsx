@@ -86,16 +86,16 @@ const EMPTY_FORM: ModelProfileFormValues = {
 
 function ModelProfilesSkeleton() {
   return (
-    <div className="animate-pulse space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="h-7 w-32 rounded bg-muted" />
-        <div className="h-8 w-32 rounded bg-muted" />
+        <div className="h-7 w-32 rounded skeleton-shimmer" />
+        <div className="h-8 w-32 rounded skeleton-shimmer" />
       </div>
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-4 py-3">
           <div className="grid grid-cols-7 gap-4">
             {Array.from({ length: 7 }).map((_, i) => (
-              <div key={i} className="h-4 rounded bg-muted" />
+              <div key={i} className="h-4 rounded skeleton-shimmer" />
             ))}
           </div>
         </div>
@@ -103,7 +103,7 @@ function ModelProfilesSkeleton() {
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="grid grid-cols-7 gap-4 px-4 py-3">
               {Array.from({ length: 7 }).map((_, j) => (
-                <div key={j} className="h-4 rounded bg-muted" />
+                <div key={j} className="h-4 rounded skeleton-shimmer" />
               ))}
             </div>
           ))}

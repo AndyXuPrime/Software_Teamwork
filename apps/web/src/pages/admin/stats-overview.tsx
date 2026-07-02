@@ -7,7 +7,7 @@ import {
   Timer,
   Users,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { ApiError } from '@/api/client'
 import { Badge } from '@/components/ui/badge'
@@ -112,9 +112,9 @@ function SectionState({ message, tone }: { message: string; tone: 'empty' | 'err
 
 function MetricCardSkeleton() {
   return (
-    <div className="h-28 animate-pulse rounded-lg border border-border bg-card p-4">
-      <div className="mb-4 h-4 w-24 rounded bg-muted" />
-      <div className="h-7 w-20 rounded bg-muted" />
+    <div className="h-28 rounded-lg border border-border bg-card p-4">
+      <div className="mb-4 h-4 w-24 rounded skeleton-shimmer" />
+      <div className="h-7 w-20 rounded skeleton-shimmer" />
     </div>
   )
 }
@@ -147,6 +147,12 @@ function MetricCard({
 }
 
 function TrendChart({ points }: { points: QAMetricsTrendPoint[] }) {
+  const [animated, setAnimated] = useState(false)
+
+  useEffect(() => {
+    setAnimated(true)
+  }, [])
+
   const normalizedPoints = points.map((point) => ({
     date: point.date,
     count: point.count ?? point.questionCount ?? 0,
@@ -159,8 +165,10 @@ function TrendChart({ points }: { points: QAMetricsTrendPoint[] }) {
         {normalizedPoints.map((point) => (
           <div key={point.date} className="flex min-w-0 flex-1 flex-col items-center gap-2">
             <div
-              className="w-full rounded-t bg-primary/70"
-              style={{ height: `${Math.max(4, (point.count / maxCount) * 180)}px` }}
+              className="w-full rounded-t bg-primary/70 transition-[height] duration-700 ease-out"
+              style={{
+                height: animated ? `${Math.max(4, (point.count / maxCount) * 180)}px` : '0px',
+              }}
               title={`${point.date}: ${point.count}`}
             />
           </div>
@@ -213,6 +221,12 @@ function TopQueriesTable({ queries }: { queries: QATopQuery[] }) {
 }
 
 function IntentDistribution({ items }: { items: QAIntentDistributionItem[] }) {
+  const [animated, setAnimated] = useState(false)
+
+  useEffect(() => {
+    setAnimated(true)
+  }, [])
+
   const total = items.reduce((sum, item) => sum + item.count, 0)
 
   return (
@@ -229,8 +243,10 @@ function IntentDistribution({ items }: { items: QAIntentDistributionItem[] }) {
             </div>
             <div className="h-2 overflow-hidden rounded bg-muted">
               <div
-                className="h-full bg-primary/70"
-                style={{ width: `${Math.min(100, percent)}%` }}
+                className="h-full bg-primary/70 transition-[width] duration-500 ease-out"
+                style={{
+                  width: animated ? `${Math.min(100, percent)}%` : '0%',
+                }}
               />
             </div>
           </div>
@@ -343,7 +359,7 @@ export function StatsOverviewPage() {
               message={`趋势加载失败：${getErrorMessage(trendQuery.error)}`}
             />
           ) : trendQuery.isLoading ? (
-            <div className="h-72 animate-pulse rounded-lg bg-muted" />
+            <div className="h-72 skeleton-shimmer rounded-lg" />
           ) : trendPoints.length === 0 ? (
             <SectionState tone="empty" message="当前窗口内暂无趋势数据。" />
           ) : (
@@ -362,7 +378,7 @@ export function StatsOverviewPage() {
               message={`意图分布加载失败：${getErrorMessage(intentDistributionQuery.error)}`}
             />
           ) : intentDistributionQuery.isLoading ? (
-            <div className="h-52 animate-pulse rounded-lg bg-muted" />
+            <div className="h-52 skeleton-shimmer rounded-lg" />
           ) : (intentDistributionQuery.data ?? []).length === 0 ? (
             <SectionState tone="empty" message="当前窗口内暂无意图分布数据。" />
           ) : (
@@ -403,7 +419,7 @@ export function StatsOverviewPage() {
             message={`热门问题加载失败：${getErrorMessage(topQueriesQuery.error)}`}
           />
         ) : topQueriesQuery.isLoading ? (
-          <div className="h-60 animate-pulse rounded-lg bg-muted" />
+          <div className="h-60 skeleton-shimmer rounded-lg" />
         ) : (topQueriesQuery.data ?? []).length === 0 ? (
           <SectionState tone="empty" message="当前窗口内暂无热门问题。" />
         ) : (

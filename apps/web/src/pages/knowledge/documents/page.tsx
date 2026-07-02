@@ -1,4 +1,5 @@
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -193,6 +194,7 @@ export function KnowledgeDocumentsPage({
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploadTags, setUploadTags] = useState('')
   const [dragOver, setDragOver] = useState(false)
+  const [showSuccess, setShowSuccess] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Edit tags state
@@ -272,6 +274,20 @@ export function KnowledgeDocumentsPage({
     return () => clearTimeout(timer)
   }, [notification])
 
+  // ── Upload success auto-dismiss ──
+
+  useEffect(() => {
+    if (!showSuccess) return
+    const timer = setTimeout(() => setShowSuccess(false), 1500)
+    return () => clearTimeout(timer)
+  }, [showSuccess])
+
+  // ── Clear success when upload dialog opens/closes ──
+
+  useEffect(() => {
+    setShowSuccess(false)
+  }, [uploadOpen])
+
   // ── Derived ──
 
   const totalPages = data ? Math.max(1, Math.ceil(data.page.total / PAGE_SIZE)) : 1
@@ -310,6 +326,7 @@ export function KnowledgeDocumentsPage({
         return
       }
       setSelectedFile(file)
+      setShowSuccess(true)
     },
     [validateFile],
   )
@@ -788,11 +805,13 @@ export function KnowledgeDocumentsPage({
           <div className="space-y-4">
             {/* Drag-and-drop zone */}
             <div
-              className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors ${
+              className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-all duration-200 ${
                 dragOver
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-muted-foreground/30'
-              } ${selectedFile ? 'border-emerald-500/50 bg-emerald-50 dark:bg-emerald-950/20' : ''}`}
+                  ? 'border-primary bg-primary/5 scale-[1.02]'
+                  : selectedFile
+                    ? 'border-emerald-500/50 bg-emerald-50 dark:bg-emerald-950/20'
+                    : 'upload-zone border-border hover:border-muted-foreground/30'
+              }`}
               onDragOver={(e) => {
                 e.preventDefault()
                 setDragOver(true)
@@ -801,6 +820,12 @@ export function KnowledgeDocumentsPage({
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
             >
+              {/* Success check overlay */}
+              {showSuccess && (
+                <div className="check-pop absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-emerald-500/10">
+                  <Check className="size-10 text-emerald-500" strokeWidth={2.5} />
+                </div>
+              )}
               {selectedFile ? (
                 <div className="text-center">
                   <FileText aria-hidden="true" className="mx-auto mb-2 size-8 text-emerald-500" />

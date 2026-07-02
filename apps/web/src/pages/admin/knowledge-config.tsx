@@ -7,10 +7,10 @@ import { Badge } from '@/components/ui/badge'
 
 function KnowledgeConfigSkeleton() {
   return (
-    <div className="animate-pulse space-y-6">
+    <div className="space-y-6">
       {/* KB list skeleton */}
       <div className="rounded-lg border border-border bg-card p-6">
-        <div className="mb-4 h-5 w-24 rounded bg-muted" />
+        <div className="mb-4 h-5 w-24 rounded skeleton-shimmer" />
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <div
@@ -18,10 +18,10 @@ function KnowledgeConfigSkeleton() {
               className="flex items-center justify-between rounded-md border border-border p-3"
             >
               <div className="space-y-1">
-                <div className="h-4 w-32 rounded bg-muted" />
-                <div className="h-3 w-20 rounded bg-muted" />
+                <div className="h-4 w-32 rounded skeleton-shimmer" />
+                <div className="h-3 w-20 rounded skeleton-shimmer" />
               </div>
-              <div className="h-5 w-14 rounded bg-muted" />
+              <div className="h-5 w-14 rounded skeleton-shimmer" />
             </div>
           ))}
         </div>
@@ -29,12 +29,12 @@ function KnowledgeConfigSkeleton() {
 
       {/* Defaults skeleton */}
       <div className="rounded-lg border border-border bg-card p-6">
-        <div className="mb-4 h-5 w-32 rounded bg-muted" />
+        <div className="mb-4 h-5 w-32 rounded skeleton-shimmer" />
         <div className="grid grid-cols-2 gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="flex justify-between">
-              <div className="h-4 w-20 rounded bg-muted" />
-              <div className="h-4 w-16 rounded bg-muted" />
+              <div className="h-4 w-20 rounded skeleton-shimmer" />
+              <div className="h-4 w-16 rounded skeleton-shimmer" />
             </div>
           ))}
         </div>

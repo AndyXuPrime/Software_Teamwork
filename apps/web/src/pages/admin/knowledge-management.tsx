@@ -84,17 +84,17 @@ const EMPTY_FORM: FormData = {
 
 function KnowledgeManagementSkeleton() {
   return (
-    <div className="animate-pulse space-y-4">
+    <div className="space-y-4">
       {/* Header skeleton */}
       <div className="flex items-center justify-between">
-        <div className="h-7 w-32 rounded bg-muted" />
-        <div className="h-8 w-28 rounded bg-muted" />
+        <div className="h-7 w-32 rounded skeleton-shimmer" />
+        <div className="h-8 w-28 rounded skeleton-shimmer" />
       </div>
 
       {/* Search skeleton */}
       <div className="flex gap-2">
-        <div className="h-8 flex-1 rounded bg-muted" />
-        <div className="h-8 w-36 rounded bg-muted" />
+        <div className="h-8 flex-1 rounded skeleton-shimmer" />
+        <div className="h-8 w-36 rounded skeleton-shimmer" />
       </div>
 
       {/* Table skeleton */}
@@ -102,7 +102,7 @@ function KnowledgeManagementSkeleton() {
         <div className="border-b border-border px-4 py-3">
           <div className="grid grid-cols-6 gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-4 rounded bg-muted" />
+              <div key={i} className="h-4 rounded skeleton-shimmer" />
             ))}
           </div>
         </div>
@@ -110,7 +110,7 @@ function KnowledgeManagementSkeleton() {
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="grid grid-cols-6 gap-4 px-4 py-3">
               {Array.from({ length: 6 }).map((_, j) => (
-                <div key={j} className="h-4 rounded bg-muted" />
+                <div key={j} className="h-4 rounded skeleton-shimmer" />
               ))}
             </div>
           ))}

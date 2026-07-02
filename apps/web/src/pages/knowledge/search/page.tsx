@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getGatewayCapabilityIssue, useKnowledgeSearch } from '@/features/knowledge'
 import type { KnowledgeBaseSummary, KnowledgeQueryResult } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
 // ── Constants ──
 
@@ -259,7 +260,12 @@ export function KnowledgeSearchPage() {
         </Button>
       </div>
 
-      {showAdvanced && (
+      <div
+        className={cn(
+          'overflow-hidden transition-[max-height,opacity] duration-300 ease-out',
+          showAdvanced ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0',
+        )}
+      >
         <div className="mb-4 space-y-3 rounded-lg border border-border p-4">
           {/* Search mode toggle */}
           <div>
@@ -302,12 +308,14 @@ export function KnowledgeSearchPage() {
 
           {/* Top K */}
           <div>
-            <label
-              htmlFor="search-topk"
-              className="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              返回结果数 (Top K): {topK}
-            </label>
+            <div className="mb-1 flex items-center justify-between">
+              <label htmlFor="search-topk" className="text-xs font-medium text-muted-foreground">
+                返回结果数 (Top K)
+              </label>
+              <span className="text-xs text-muted-foreground min-w-[2rem] text-right font-mono">
+                {topK}
+              </span>
+            </div>
             <input
               id="search-topk"
               type="range"
@@ -315,7 +323,7 @@ export function KnowledgeSearchPage() {
               max={TOP_K_MAX}
               value={topK}
               onChange={(e) => setTopK(Number(e.target.value))}
-              className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-muted accent-primary"
+              className="range-slider w-full accent-primary"
             />
             <div className="mt-0.5 flex justify-between text-[0.65rem] text-muted-foreground">
               <span>{TOP_K_MIN}</span>
@@ -325,12 +333,14 @@ export function KnowledgeSearchPage() {
 
           {/* Score threshold */}
           <div>
-            <label
-              htmlFor="search-score"
-              className="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              相似度阈值: {scoreThreshold.toFixed(2)}
-            </label>
+            <div className="mb-1 flex items-center justify-between">
+              <label htmlFor="search-score" className="text-xs font-medium text-muted-foreground">
+                相似度阈值
+              </label>
+              <span className="text-xs text-muted-foreground min-w-[2rem] text-right font-mono">
+                {scoreThreshold.toFixed(2)}
+              </span>
+            </div>
             <input
               id="search-score"
               type="range"
@@ -339,7 +349,7 @@ export function KnowledgeSearchPage() {
               step={SCORE_THRESHOLD_STEP}
               value={scoreThreshold}
               onChange={(e) => setScoreThreshold(Number(e.target.value))}
-              className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-muted accent-primary"
+              className="range-slider w-full accent-primary"
             />
             <div className="mt-0.5 flex justify-between text-[0.65rem] text-muted-foreground">
               <span>0.00</span>
@@ -364,7 +374,7 @@ export function KnowledgeSearchPage() {
             />
           </div>
         </div>
-      )}
+      </div>
 
       {/* Error */}
       {searchIssue && (

@@ -173,6 +173,22 @@ body {
   animation: slideDown 0.3s ease-out;
 }
 
+/* ===== Toast exit animation ===== */
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+}
+
+.toast-exit {
+  animation: toast-out 0.25s ease-in forwards;
+}
+
 /* ===== Page transition loading circle ===== */
 @keyframes circle_rotate {
   0% {
@@ -199,4 +215,142 @@ body {
 
 .page-enter-right {
   animation: slideInRight 0.35s ease-out;
+}
+
+/* ===== Skeleton shimmer effect ===== */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 0%,
+    hsl(var(--muted-foreground) / 0.08) 40%,
+    hsl(var(--muted)) 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* ===== Range slider custom styling ===== */
+input[type='range'].range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: hsl(var(--muted));
+  outline: none;
+  cursor: pointer;
+}
+input[type='range'].range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+  border: 2px solid hsl(var(--background));
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+  cursor: pointer;
+}
+input[type='range'].range-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 4px hsl(var(--primary) / 0.3);
+}
+input[type='range'].range-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+  border: 2px solid hsl(var(--background));
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+  cursor: pointer;
+}
+
+/* ===== Button click ripple (pure CSS) ===== */
+.btn-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-ripple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, var(--foreground) 10%, transparent 10%);
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition:
+    opacity 0.3s,
+    background-size 0.3s;
+  background-size: 0% 0%;
+}
+
+.btn-ripple:active::after {
+  background-size: 200% 200%;
+  opacity: 0.15;
+  transition: background-size 0s;
+}
+
+/* ===== Message entrance stagger animation ===== */
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.msg-enter {
+  animation: msg-in 0.35s ease-out both;
+}
+
+/* ===== Upload zone pulse border ===== */
+@keyframes upload-pulse {
+  0%,
+  100% {
+    border-color: var(--border);
+  }
+  50% {
+    border-color: color-mix(in oklch, var(--primary) 30%, transparent);
+  }
+}
+
+.upload-zone {
+  animation: upload-pulse 2s ease-in-out infinite;
+}
+
+/* ===== Upload success check overlay ===== */
+@keyframes check-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  60% {
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.check-pop {
+  animation: check-pop 0.35s ease-out both;
 }
