@@ -17,6 +17,22 @@ Auth/Gateway/Redis 的完整本地 smoke 可直接执行：
 
 ## 启动命令
 
+先确认 Go 安装在实际运行脚本的环境中，并能下载 modules。WSL、Git Bash 和
+Windows PowerShell 的 `go env` 互不等价；在哪个 shell 里运行脚本，就在那里检查：
+
+```bash
+go version
+go env GOPROXY
+```
+
+如果 `GOPROXY` 仍是默认 `https://proxy.golang.org,direct`，且所在网络访问它不稳定，
+先配置可访问的 Go module proxy：
+
+```bash
+go env -w GOPROXY=https://goproxy.cn,direct
+go env -w GOSUMDB=sum.golang.google.cn
+```
+
 ```bash
 cp deploy/.env.example deploy/.env
 ./scripts/local/dev-up.sh
@@ -132,6 +148,25 @@ RAGFlow runtime 启动慢：
 - runtime API 和 worker 走宿主机启动，不通过根级 Docker Compose 构建或运行。
 - 不要恢复 `services/parser`；PDF 解析、切块、embedding、索引和检索由 RAGFlow
   runtime worker 完成。
+
+Go modules 下载慢或超时：
+
+- `dev-up.sh` 会用 `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1`
+  执行 migration；`run-backend.sh` 会用 `go run ./cmd/server` 启动各 Go 服务。
+- Go modules 下载走当前 shell 的 `go env GOPROXY`，不走 Docker registry rewrite，
+  也不受 `UV_DEFAULT_INDEX` 影响。
+- 如果 `.local/logs/auth.log`、`.local/logs/gateway.log` 等文件出现
+  `proxy.golang.org`、`i/o timeout` 或 `go: downloading ...` 后退出，Gateway/Auth
+  可能没有监听 `8080`/`8001`，前端登录会表现为 `502 Bad Gateway`。
+- 在运行脚本的同一个环境中执行：
+
+  ```bash
+  go env -w GOPROXY=https://goproxy.cn,direct
+  go env -w GOSUMDB=sum.golang.google.cn
+  ```
+
+- 之后重新运行 `./scripts/local/stop-backend.sh` 和 `./scripts/local/run-backend.sh`，
+  再用 `curl --noproxy '*' -fsS http://localhost:8080/healthz` 验证 Gateway。
 
 后端没起来：
 

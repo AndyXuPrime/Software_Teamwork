@@ -129,6 +129,21 @@ Gateway 基础契约文档：
 - `psql` 客户端。PostgreSQL server 由 Docker 启动，本机不用装 PostgreSQL server。
 - `curl`。
 
+如果所在网络无法稳定访问 `proxy.golang.org`，需要在实际运行脚本的宿主机环境
+配置 Go 模块代理后再启动。WSL、Git Bash 和 Windows PowerShell 是不同环境，
+应在运行 `./scripts/local/dev-up.sh`、`./scripts/local/run-backend.sh` 的同一个
+shell 中检查：
+
+```bash
+go version
+go env GOPROXY
+go env -w GOPROXY=https://goproxy.cn,direct
+go env -w GOSUMDB=sum.golang.google.cn
+```
+
+Go 模块下载只影响 `go run`、migration 和 host-run 后端服务；它不受 Docker
+registry rewrite 或 `UV_DEFAULT_INDEX` 影响。
+
 第一次启动：
 
 ```bash
@@ -162,6 +177,9 @@ cd apps/web && bun run dev
 脚本不会创建、改写或维护另一套默认变量，只会读取 `deploy/.env` 让宿主机进程拿到配置。
 默认 demo 账号来自 `deploy/.env.example`：`admin` / `LocalDemoAdmin#12345`，
 `superadmin` / `LocalDemoAdmin#12345`。
+Go 服务通过宿主机 `go run` 启动，首次运行会下载 Go modules。若 `.local/logs/auth.log`
+或 `.local/logs/gateway.log` 出现 `proxy.golang.org` 超时，先按上面的 `GOPROXY`
+检查和设置后重新执行 `./scripts/local/run-backend.sh`。
 `UV_DEFAULT_INDEX` 也在这份文件里，默认使用清华 PyPI 镜像加速 Python runtime
 依赖准备；它影响 uv，不影响 Docker。第一次启动 RAGFlow runtime 相关 Python
 依赖时仍可能下载较多包，之后会走 uv 缓存。
