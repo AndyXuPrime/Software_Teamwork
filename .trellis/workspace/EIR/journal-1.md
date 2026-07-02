@@ -110,3 +110,36 @@ Standardized Docker build sources and mainland China registry rewrite path, adde
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Docker infra-only local startup
+
+**Date**: 2026-07-02
+**Task**: Docker infra-only local startup
+**Branch**: `Special/chore/docker-infra-only-startup`
+
+### Summary
+
+Rebased onto latest upstream develop, kept infra-only Docker direction, simplified local startup docs and scripts, enforced deploy/.env.example as the single default config source, and validated Docker policy, seed contract, Compose config, service config tests, Parser settings, and workflow syntax.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d69d75d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
