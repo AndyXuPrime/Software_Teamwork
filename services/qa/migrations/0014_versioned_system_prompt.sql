@@ -3,54 +3,25 @@
 ALTER TABLE qa_config_versions
     ADD COLUMN IF NOT EXISTS system_prompt TEXT NOT NULL DEFAULT '';
 
--- Add CHECK constraint for max 20000 bytes
-DO $mig$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'ck_qa_config_versions_system_prompt_length'
-          AND conrelid = 'qa_config_versions'::regclass
-    ) THEN
-        ALTER TABLE qa_config_versions
-            ADD CONSTRAINT ck_qa_config_versions_system_prompt_length
-            CHECK (octet_length(system_prompt) <= 20000);
-    END IF;
-END $mig$;
+-- Add CHECK constraint for max 20000 bytes (drop first for idempotency)
+ALTER TABLE qa_config_versions
+    DROP CONSTRAINT IF EXISTS ck_qa_config_versions_system_prompt_length;
+
+ALTER TABLE qa_config_versions
+    ADD CONSTRAINT ck_qa_config_versions_system_prompt_length
+    CHECK (octet_length(system_prompt) <= 20000);
 
 -- Migrate existing system_prompt from qa_runtime_settings into the current
--- active qa_config_versions row.
-DO $mig$
-DECLARE
-    v_active_id UUID;
-    v_runtime_prompt TEXT;
-BEGIN
-    -- Get the active QA config version ID
-    SELECT id INTO v_active_id
-    FROM qa_config_versions
-    WHERE is_active = true
-    ORDER BY version_no DESC
-    LIMIT 1;
-
-    -- Get the runtime system_prompt value
-    SELECT value INTO v_runtime_prompt
-    FROM qa_runtime_settings
-    WHERE key = 'system_prompt';
-
-    -- If we have both an active config and a runtime prompt, migrate it.
-    -- If the old prompt exceeds 20000 bytes, truncate to fit the CHECK
-    -- constraint rather than silently falling back to the bootstrap prompt.
-    IF v_active_id IS NOT NULL AND v_runtime_prompt IS NOT NULL THEN
-        IF octet_length(v_runtime_prompt) > 20000 THEN
-            RAISE NOTICE 'system_prompt exceeds 20000 bytes (%), truncating',
-                octet_length(v_runtime_prompt);
-            v_runtime_prompt := left(v_runtime_prompt, 20000);
-        END IF;
-        UPDATE qa_config_versions
-        SET system_prompt = v_runtime_prompt
-        WHERE id = v_active_id
-          AND (system_prompt = '' OR system_prompt IS NULL);
-    END IF;
-END $mig$;
+-- active qa_config_versions row. Truncate oversized values to 20000 bytes
+-- rather than silently falling back to the bootstrap prompt.
+UPDATE qa_config_versions
+SET system_prompt = left(runtime.value, 20000)
+FROM (
+    SELECT value FROM qa_runtime_settings WHERE key = 'system_prompt'
+) AS runtime
+WHERE qa_config_versions.is_active = true
+  AND (qa_config_versions.system_prompt = '' OR qa_config_versions.system_prompt IS NULL)
+  AND runtime.value IS NOT NULL;
 
 -- +goose Down
 ALTER TABLE qa_config_versions
