@@ -1,0 +1,1 @@
+{"file": "apps/web/src/api/conversations.ts", "reason": "Fix deleteSession to use the no-content Gateway helper for 204 responses"}
