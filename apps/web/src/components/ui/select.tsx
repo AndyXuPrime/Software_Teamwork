@@ -47,32 +47,30 @@ function SelectContent({
 }: SelectPrimitive.Popup.Props &
   Pick<SelectPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'sideOffset'>) {
   return (
-    <SelectPrimitive.Portal>
-      <SelectPrimitive.Positioner
-        align={align}
-        alignOffset={alignOffset}
-        side={side}
-        sideOffset={sideOffset}
-        className="isolate z-50"
+    <SelectPrimitive.Positioner
+      align={align}
+      alignOffset={alignOffset}
+      side={side}
+      sideOffset={sideOffset}
+      className="z-50"
+    >
+      <SelectPrimitive.Popup
+        data-slot="select-content"
+        className={cn(
+          'z-50 flex max-h-96 min-w-[8rem] flex-col overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-md outline-hidden',
+          className,
+        )}
+        {...props}
       >
-        <SelectPrimitive.Popup
-          data-slot="select-content"
-          className={cn(
-            'z-50 flex max-h-96 min-w-[8rem] flex-col overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-md outline-hidden',
-            className,
-          )}
-          {...props}
-        >
-          <SelectPrimitive.ScrollUpArrow className="flex justify-center py-1">
-            <ChevronUp className="size-3 text-muted-foreground" />
-          </SelectPrimitive.ScrollUpArrow>
-          <SelectContentInner>{children}</SelectContentInner>
-          <SelectPrimitive.ScrollDownArrow className="flex justify-center py-1">
-            <ChevronDown className="size-3 text-muted-foreground" />
-          </SelectPrimitive.ScrollDownArrow>
-        </SelectPrimitive.Popup>
-      </SelectPrimitive.Positioner>
-    </SelectPrimitive.Portal>
+        <SelectPrimitive.ScrollUpArrow className="flex justify-center py-1">
+          <ChevronUp className="size-3 text-muted-foreground" />
+        </SelectPrimitive.ScrollUpArrow>
+        <SelectContentInner>{children}</SelectContentInner>
+        <SelectPrimitive.ScrollDownArrow className="flex justify-center py-1">
+          <ChevronDown className="size-3 text-muted-foreground" />
+        </SelectPrimitive.ScrollDownArrow>
+      </SelectPrimitive.Popup>
+    </SelectPrimitive.Positioner>
   )
 }
 
