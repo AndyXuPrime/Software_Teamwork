@@ -45,12 +45,13 @@
 | Document MCP tools | 缺失 | README/requirements 保留 Document MCP 工具目标，当前 implementation 已单列缺口。 | QA/Document 工具边界设计。 | 工具注册、权限校验、脱敏输出和调用链路未落地。 | #151、#158 |
 | 前端 App shell、登录态和 RBAC 导航 | 已实现 | `apps/web` auth shell、read-only report navigation 修正。 | 只调用 Gateway `/api/v1/**`。 | 管理端配置、Knowledge 页面和测试基线仍在推进。 | #109、#212、#222、#110、#111、#163 |
 | 前端 Gateway 类型和 typed client | 已实现 / 需持续校验 | `openapi-typescript` 已进入前端依赖，`api:generate` 脚本存在。 | Gateway OpenAPI -> `apps/web/src/api/generated/`。 | 类型漂移需 CI 和 PR 前检查持续约束。 | #108、#161、#162 |
-| 本地联调环境 | 部分实现 | 根 `deploy/docker-compose.yml` 已提供本地/演示基线，包含 PostgreSQL、Redis、Parser、服务串联和 `seed-local` / `seed-local-ai` 基础 seed；Compose 会启动 Qdrant/MinIO 容器，但默认 Knowledge 走 in-memory vector index、File 走 local storage；QA 和 Document 也有服务级 Compose；Issue #304 已提供 env-gated 最小 RAG smoke runbook。 | 本地运行手册见 `deploy/README.md` 和 `docs/runbooks/local-integration.md`。 | 现有 seed data 覆盖本地登录、基础报告类型、示例知识库和 AI profile placeholder；真实 provider/Qdrant 运行证据、生产部署基线、统一跨服务 smoke 和一键 E2E 验收脚本仍缺。 | #125、#150、#304 |
+| 本地联调环境 | 部分实现 | 根 `deploy/docker-compose.yml` 已提供本地/演示基线，包含 PostgreSQL、Redis、Parser、服务串联和 `seed-local` / `seed-local-ai` 基础 seed；Compose 会启动 Qdrant/MinIO 容器，但默认 Knowledge 走 in-memory vector index、File 走 local storage；QA 和 Document 也有服务级 Compose；Issue #304 已提供 env-gated 最小 RAG smoke runbook。 | 本地运行手册见 `deploy/README.md` 和 `docs/runbooks/local-integration.md`。 | 现有 seed data 覆盖本地登录、基础报告类型、示例知识库和 AI profile placeholder；真实 provider/Qdrant 运行证据、统一跨服务 smoke 和一键 E2E 验收脚本仍缺。 | #125、#150、#304 |
+| 生产/准生产 Compose 基线 | 部分实现 | `deploy/production-baseline.md`、`deploy/docker-compose.production.yml`、`deploy/.env.production.example` 和 `deploy/postgres/init-production/` 已提供单机 Compose skeleton、发布镜像变量、生产 env 模板、持久化卷、secret 注入、健康检查、升级和回滚说明。 | 生产部署入口见 `deploy/production-baseline.md`。 | 真实云环境部署、DNS/TLS、frontend 镜像发布流程、受保护部署流水线、真实 provider/Qdrant 运行证据和 #125 完整跨服务 smoke 仍需后续补齐。 | #306、#125 |
 | 测试策略和 CI | 部分实现 | Frontend check/build/unit/E2E smoke workflow、Go services path-filtered workflow、goose migration workflow、Parser Service workflow、Docker/Compose config checks、Gateway contract workflow、API type drift workflow。 | 测试策略见 `docs/testing/strategy.md`。 | Parser 真实 PaddleOCR 模型 smoke、完整 DB integration jobs 和后端跨服务 E2E smoke 待补。 | #117、#123、#125、#163 |
 
 ## 当前最重要的文档缺口
 
-1. 本地联调要明确根级 Compose 是本地/演示基线而非生产部署基线，也不是完整一键 E2E smoke，避免团队把基础设施启动误认为全链路验收。
+1. 本地联调要继续明确根级 Compose 是本地/演示基线而非生产部署基线，也不是完整一键 E2E smoke；生产/准生产基线已经单独落在 `deploy/production-baseline.md`，但真实部署流水线和 #125 完整 smoke 仍需后续收口。
 2. AI Gateway provider adapter 要记录 model exact-match、embedding/rerank 响应校验、脱敏和 usage aggregate，避免 Knowledge/QA/Document 接入时绕过 profile 边界。
 3. QA B-03 已有 ResponseRun / Agent Loop MVP（本分支），Issue #304 已补最小 RAG smoke；真实 provider/Qdrant 运行证据和 #125 完整跨服务 smoke 仍要单独追踪，避免把 env-gated 样例误判成完整 RAG 闭环。
 4. Document 生成工作流要区分“job 状态机已实现”和“真实生成未实现”，避免前端或部署方误判 DOCX 已可用。

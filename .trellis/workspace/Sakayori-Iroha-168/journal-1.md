@@ -235,3 +235,36 @@ Added env-gated Gateway to Knowledge to QA RAG smoke for issue #304, documented 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: S-031 production compose baseline
+
+**Date**: 2026-07-02
+**Task**: S-031 production compose baseline
+**Branch**: `Special/docs/production-compose-baseline`
+
+### Summary
+
+Added production/staging Compose baseline, env template, deployment runbook, CI/policy coverage, and documentation links for issue #306.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9cbc6e38` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
