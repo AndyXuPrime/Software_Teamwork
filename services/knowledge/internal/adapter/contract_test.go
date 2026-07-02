@@ -10,18 +10,22 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/adapterconfig"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/repository"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
 )
 
 type fakeVendorState struct {
-	mu         sync.Mutex
-	datasets   map[string]map[string]any
-	documents  map[string]map[string]any
-	parseCalls []string
+	mu          sync.Mutex
+	datasets    map[string]map[string]any
+	documents   map[string]map[string]any
+	parseCalls  []string
 	deleteCalls []string
-	failParse  bool
-	searchBody []byte
+	failParse   bool
+	searchBody  []byte
+	createBody  []byte
 }
 
 func newFakeVendorState() *fakeVendorState {
@@ -51,12 +55,17 @@ func startFakeVendor(t *testing.T, state *fakeVendorState) *httptest.Server {
 			return
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/datasets":
 			var body map[string]any
-			_ = json.NewDecoder(r.Body).Decode(&body)
+			raw, _ := io.ReadAll(r.Body)
+			state.createBody = append([]byte(nil), raw...)
+			_ = json.Unmarshal(raw, &body)
 			id := "kb_fake_1"
 			item := map[string]any{
 				"id": id, "name": body["name"], "description": body["description"],
 				"chunk_method": "naive", "document_count": 0, "chunk_count": 0,
 				"create_time": float64(1700000000000),
+			}
+			if cfg := body["parser_config"]; cfg != nil {
+				item["parser_config"] = cfg
 			}
 			state.datasets[id] = item
 			writeVendorJSON(w, http.StatusOK, map[string]any{"code": 0, "data": item})
@@ -142,6 +151,59 @@ func anyStrings(values []any) []string {
 		}
 	}
 	return out
+}
+
+func TestAdapterCreateKnowledgeBaseAppliesDefaultParserConfig(t *testing.T) {
+	state := newFakeVendorState()
+	vendor := startFakeVendor(t, state)
+	defer vendor.Close()
+
+	repo := repository.NewMemoryRepository()
+	now := time.Date(2026, 7, 2, 0, 0, 0, 0, time.UTC)
+	repo.SeedParserConfig(service.ParserConfig{
+		ID:                    "parser_default_ocr",
+		Name:                  "Default OCR",
+		Backend:               service.ParserBackendLocalOCR,
+		Enabled:               true,
+		IsDefault:             true,
+		Concurrency:           2,
+		SupportedContentTypes: []string{"application/pdf"},
+		DefaultParameters:     json.RawMessage(`{"chunk_token_num":768}`),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	})
+	server := NewServer(adapterconfig.Config{
+		ServiceVersion:   "test",
+		VendorRuntimeURL: vendor.URL,
+	}, nil, WithParserConfigService(service.New(repo)))
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases", strings.NewReader(`{"name":"Manuals"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-User-Permissions", "knowledge:write")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	createBody := decodeMap(t, state.createBody)
+	cfg, ok := createBody["parser_config"].(map[string]any)
+	if !ok {
+		t.Fatalf("parser_config=%v", createBody["parser_config"])
+	}
+	if cfg["layout_recognize"] != ragflowLayoutPaddleOCR {
+		t.Fatalf("layout_recognize=%v", cfg["layout_recognize"])
+	}
+	trace, ok := cfg[parserConfigTraceKey].(map[string]any)
+	if !ok {
+		t.Fatalf("%s=%v", parserConfigTraceKey, cfg[parserConfigTraceKey])
+	}
+	if trace["parserConfigId"] != "parser_default_ocr" {
+		t.Fatalf("trace=%v", trace)
+	}
 }
 
 func TestAdapterDocumentUploadStartsVendorIngestion(t *testing.T) {
