@@ -1,4 +1,5 @@
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { renderWithProviders } from '@/test/render'
@@ -26,6 +27,16 @@ function pageResponse(data: unknown[]) {
   })
 }
 
+function getButtonByText(pattern: RegExp) {
+  const button = screen.getAllByRole('button').find((item) => pattern.test(item.textContent ?? ''))
+
+  if (!button) {
+    throw new Error(`Unable to find button matching ${pattern}`)
+  }
+
+  return button
+}
+
 describe('ReportTemplatesPage', () => {
   it('shows gateway errors instead of local fallback templates or materials', async () => {
     vi.stubGlobal(
@@ -43,6 +54,66 @@ describe('ReportTemplatesPage', () => {
     expect(screen.getAllByText(/req-templates/).length).toBeGreaterThan(0)
     expect(screen.queryByText('迎峰度夏默认模板')).not.toBeInTheDocument()
     expect(screen.queryByText('设备运行台账与缺陷闭环记录')).not.toBeInTheDocument()
+  })
+
+  it('opens the template structure dialog with Enter and closes it with Escape', async () => {
+    const keyboard = userEvent.setup()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (url.pathname.endsWith('/report-types')) {
+        return jsonResponse({ data: [], requestId: 'req-types' })
+      }
+      if (url.pathname.endsWith('/report-templates/tpl-a11y/structure')) {
+        return jsonResponse({
+          data: { outlineSchema: [], styleConfig: { density: 'compact' } },
+          requestId: 'req-structure',
+        })
+      }
+      if (url.pathname.endsWith('/report-templates')) {
+        return pageResponse([
+          {
+            createdAt: '2026-07-02T09:00:00Z',
+            enabled: true,
+            filename: 'a11y-template.docx',
+            id: 'tpl-a11y',
+            reportType: 'summer_peak_inspection',
+            templateName: 'A11y template',
+            version: 1,
+          },
+        ])
+      }
+      if (url.pathname.endsWith('/report-materials')) {
+        return pageResponse([])
+      }
+      if (url.pathname.endsWith('/report-statistics/overview')) {
+        return jsonResponse({
+          data: { materialCount: 0, reportCount: 1, templateCount: 1 },
+          requestId: 'req-overview',
+        })
+      }
+      if (url.pathname.endsWith('/report-statistics/daily')) {
+        return jsonResponse({ data: [], requestId: 'req-daily' })
+      }
+
+      return jsonResponse({ data: [], requestId: 'req-default' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithProviders(<ReportTemplatesPage />)
+
+    expect(await screen.findByText('A11y template')).toBeVisible()
+    const openStructureButton = getButtonByText(/结构|缁撴瀯/)
+    openStructureButton.focus()
+    expect(openStructureButton).toHaveFocus()
+    await keyboard.keyboard('{Enter}')
+
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveAccessibleName(/A11y template/)
+
+    await keyboard.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
   it('keeps delete context visible and shows request id when template deletion fails', async () => {

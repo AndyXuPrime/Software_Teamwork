@@ -166,7 +166,10 @@ export function AppLayout({ children }: PropsWithChildren) {
           <span className="truncate text-sm font-semibold">{currentLabel}</span>
         </div>
 
-        <nav className="relative flex items-center gap-1 rounded-lg bg-muted/50 p-1 text-sm">
+        <nav
+          aria-label="主导航"
+          className="relative flex items-center gap-1 rounded-lg bg-muted/50 p-1 text-sm"
+        >
           {/* Sliding pill */}
           <div
             aria-hidden
