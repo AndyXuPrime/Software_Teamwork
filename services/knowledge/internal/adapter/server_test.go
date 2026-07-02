@@ -20,6 +20,7 @@ func TestHealthz(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 	}, nil)
 
 	rec := httptest.NewRecorder()
@@ -45,6 +46,7 @@ func TestReadyzVendorUnavailable(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: "http://127.0.0.1:1",
+		ServiceToken:     testServiceToken,
 	}, nil)
 
 	rec := httptest.NewRecorder()
@@ -58,12 +60,42 @@ func TestListKnowledgeBasesRequiresAuth(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: "http://127.0.0.1:1",
+		ServiceToken:     testServiceToken,
 	}, nil)
 
 	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/internal/v1/knowledge-bases", nil))
+	req := httptest.NewRequest(http.MethodGet, "/internal/v1/knowledge-bases", nil)
+	req.Header.Set("X-Service-Token", testServiceToken)
+	server.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestInternalRoutesRequireServiceToken(t *testing.T) {
+	server := NewServer(adapterconfig.Config{
+		ServiceVersion:   "test",
+		VendorRuntimeURL: "http://127.0.0.1:1",
+		ServiceToken:     testServiceToken,
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/v1/knowledge-bases", nil)
+	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-User-Permissions", "knowledge:read")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("missing token status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/internal/v1/knowledge-bases", nil)
+	req.Header.Set("X-Service-Token", "wrong-token")
+	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-User-Permissions", "knowledge:read")
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong token status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -83,10 +115,12 @@ func TestListKnowledgeBasesMapsVendorResponse(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 	}, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/v1/knowledge-bases", nil)
 	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-Service-Token", testServiceToken)
 	req.Header.Set("X-User-Permissions", "knowledge:read")
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
@@ -124,11 +158,13 @@ func TestCreateKnowledgeQueryMapsRetrieval(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
 	}, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-queries", strings.NewReader(`{"query":"hello","knowledgeBaseIds":["kb_1"]}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-Service-Token", testServiceToken)
 	req.Header.Set("X-User-Permissions", "knowledge:read")
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
@@ -156,10 +192,13 @@ func TestNotFoundRoute(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: "http://127.0.0.1:1",
+		ServiceToken:     testServiceToken,
 	}, nil)
 
 	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/internal/v1/unknown", nil))
+	req := httptest.NewRequest(http.MethodGet, "/internal/v1/unknown", nil)
+	req.Header.Set("X-Service-Token", testServiceToken)
+	server.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -169,10 +208,12 @@ func TestListParserConfigsRequiresDatabase(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:   "test",
 		VendorRuntimeURL: "http://127.0.0.1:1",
+		ServiceToken:     testServiceToken,
 	}, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/v1/parser-configs", nil)
 	req.Header.Set("X-User-Id", "usr_admin")
+	req.Header.Set("X-Service-Token", testServiceToken)
 	req.Header.Set("X-User-Permissions", "knowledge:admin")
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)

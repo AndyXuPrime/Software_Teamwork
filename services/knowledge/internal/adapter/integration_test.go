@@ -31,12 +31,14 @@ func TestIntegrationKnowledgeBaseAndUpload(t *testing.T) {
 	server := NewServer(adapterconfig.Config{
 		ServiceVersion:     "integration",
 		VendorRuntimeURL:   vendorURL,
+		ServiceToken:       testServiceToken,
 		AutoStartIngestion: true,
 	}, nil)
 
 	kbReq := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases", strings.NewReader(`{"name":"Integration KB","description":"adapter integration test"}`))
 	kbReq.Header.Set("Content-Type", "application/json")
 	kbReq.Header.Set("X-User-Id", userID)
+	kbReq.Header.Set("X-Service-Token", testServiceToken)
 	kbReq.Header.Set("X-User-Permissions", "knowledge:write")
 	kbRec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(kbRec, kbReq)
@@ -57,6 +59,7 @@ func TestIntegrationKnowledgeBaseAndUpload(t *testing.T) {
 	t.Cleanup(func() {
 		delReq := httptest.NewRequest(http.MethodDelete, "/internal/v1/knowledge-bases/"+kbID, nil)
 		delReq.Header.Set("X-User-Id", userID)
+		delReq.Header.Set("X-Service-Token", testServiceToken)
 		delReq.Header.Set("X-User-Permissions", "knowledge:write")
 		delRec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(delRec, delReq)
@@ -78,6 +81,7 @@ func TestIntegrationKnowledgeBaseAndUpload(t *testing.T) {
 	uploadReq := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases/"+kbID+"/documents", body)
 	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
 	uploadReq.Header.Set("X-User-Id", userID)
+	uploadReq.Header.Set("X-Service-Token", testServiceToken)
 	uploadReq.Header.Set("X-User-Permissions", "knowledge:write")
 	uploadRec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(uploadRec, uploadReq)

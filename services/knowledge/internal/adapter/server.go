@@ -63,6 +63,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 	w.Header().Set("X-Request-Id", requestID)
 
+	if !s.requireServiceToken(w, r) {
+		return
+	}
+
 	recorder := &statusRecorder{ResponseWriter: w}
 	start := time.Now()
 	defer func() {

@@ -89,8 +89,8 @@
 
 | 项目 | 当前状态 | 缺口 |
 | --- | --- | --- |
-| 启动命令 | `cd services/knowledge && go run ./cmd/server` | 需要 PostgreSQL、File Service 和 Redis。 |
-| 环境变量 | adapter 模式需要 `DATABASE_URL`、`VENDOR_RUNTIME_URL`、`KNOWLEDGE_AUTO_START_INGESTION`、`DOC_ENGINE`；runtime profile 需要 PostgreSQL、Redis、MinIO、Elasticsearch 和 provider 配置 | 仍需按部署环境补真实依赖连通性检查。 |
+| 启动命令 | `cd services/knowledge && go run ./cmd/adapter` | 需要可访问的 host-run `services/knowledge-runtime` API。 |
+| 环境变量 | adapter 模式需要 `VENDOR_RUNTIME_URL`、`KNOWLEDGE_SERVICE_TOKEN` 或 `INTERNAL_SERVICE_TOKEN`、`KNOWLEDGE_AUTO_START_INGESTION`；`DATABASE_URL` 仅用于 parser-config admin。runtime 依赖 PostgreSQL、Redis、MinIO、Elasticsearch 和 provider 配置 | 仍需按部署环境补真实依赖连通性检查；所有 `/internal/v1/**` 调用必须带匹配的 `X-Service-Token`。 |
 | PostgreSQL / migration | `migrations/0001_create_knowledge_core_tables.sql`、`0002_create_parser_configs.sql`，runtime `pgx/v5` | goose apply CI 已覆盖 migration；repository lifecycle 由 `KNOWLEDGE_TEST_DATABASE_URL` 集成测试覆盖。 |
 | Redis / queue | 使用 `asynq` client 投递 ingestion 和 delete cleanup；worker 在同进程消费 `knowledge:document:ingest` 与 `knowledge:document:delete_cleanup` | 后续可按部署形态拆分独立 worker 进程。 |
 | Object storage / vector store / AI provider | RAGFlow runtime 通过 MinIO、Elasticsearch/向量索引和 provider 配置完成文档保存、embedding、索引和检索 | 本地 PDF E2E 覆盖上传、解析、切块、索引和查询；仍需完整 Gateway/MCP/QA 联调。 |
