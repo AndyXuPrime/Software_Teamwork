@@ -1093,3 +1093,38 @@ Added frontend regression coverage for QA session deletion when Gateway returns 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: Report generation model settings and seed fix
+
+**Date**: 2026-07-03
+**Task**: Report generation model settings and seed fix
+**Branch**: `Liutest/fix/report-generation-config`
+
+### Summary
+
+Supported both seeded report generation types, added frontend report model settings, aligned Chinese-facing seeds and report generation docs, and archived the completed PR 514 cleanup task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `41ecfad` | (see git log) |
+| `79428f0` | (see git log) |
+| `3c54db5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
