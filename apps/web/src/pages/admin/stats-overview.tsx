@@ -131,7 +131,7 @@ function MetricCard({
   const unavailable = rawValue === undefined || rawValue === null
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 hover:shadow-md transition-shadow duration-200">
+    <div className="rounded-lg border border-border bg-card p-4 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
       <div className="mb-2 flex items-center justify-between gap-2 text-sm text-muted-foreground">
         <span className="flex items-center gap-2">
           <Icon aria-hidden="true" className="size-4" />
