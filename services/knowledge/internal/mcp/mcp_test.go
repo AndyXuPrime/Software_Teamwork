@@ -710,7 +710,7 @@ func TestAnswerFromKnowledgeRequiresGatewayClient(t *testing.T) {
 	}
 }
 
-func TestStreamableHTTPHandlerForwardsCallerHeaders(t *testing.T) {
+func TestStreamableHTTPHandlerUsesTrustedCallerContext(t *testing.T) {
 	state := newFakeVendorState()
 	state.chunks = []map[string]any{
 		{
@@ -730,7 +730,11 @@ func TestStreamableHTTPHandlerForwardsCallerHeaders(t *testing.T) {
 		VendorRuntimeURL: vendor.URL,
 		ServiceToken:     testServiceToken,
 	}, nil)
-	httpServer := httptest.NewServer(kmcp.NewStreamableHTTPHandler(adapterServer, nil))
+	httpServer := httptest.NewServer(kmcp.NewStreamableHTTPHandler(adapterServer, kmcp.CallerContext{
+		UserID:       "usr_trusted_mcp",
+		ServiceToken: testServiceToken,
+		Permissions:  service.PermissionKnowledgeRead,
+	}, nil))
 	defer httpServer.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -741,10 +745,10 @@ func TestStreamableHTTPHandlerForwardsCallerHeaders(t *testing.T) {
 		Endpoint: httpServer.URL,
 		HTTPClient: &http.Client{
 			Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
-				r.Header.Set("X-User-Id", "usr_http")
+				r.Header.Set("X-User-Id", "usr_forged")
 				r.Header.Set("X-Request-Id", "req_http")
 				r.Header.Set("X-Service-Token", testServiceToken)
-				r.Header.Set("X-User-Permissions", service.PermissionKnowledgeRead)
+				r.Header.Set("X-User-Permissions", service.PermissionKnowledgeWrite)
 				return http.DefaultTransport.RoundTrip(r)
 			}),
 		},
@@ -770,6 +774,63 @@ func TestStreamableHTTPHandlerForwardsCallerHeaders(t *testing.T) {
 	}
 }
 
+func TestStreamableHTTPHandlerDoesNotTrustForgedWritePermission(t *testing.T) {
+	state := newFakeVendorState()
+	vendor := startFakeVendor(t, state)
+	defer vendor.Close()
+
+	adapterServer := adapter.NewServer(adapterconfig.Config{
+		ServiceVersion:   "test",
+		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
+	}, nil)
+	httpServer := httptest.NewServer(kmcp.NewStreamableHTTPHandler(adapterServer, kmcp.CallerContext{
+		UserID:       "usr_trusted_mcp",
+		ServiceToken: testServiceToken,
+		Permissions:  service.PermissionKnowledgeRead,
+	}, nil))
+	defer httpServer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "test-client", Version: "0.1.0"}, nil)
+	transport := &sdkmcp.StreamableClientTransport{
+		Endpoint: httpServer.URL,
+		HTTPClient: &http.Client{
+			Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				r.Header.Set("X-User-Id", "usr_attacker")
+				r.Header.Set("X-Service-Token", testServiceToken)
+				r.Header.Set("X-User-Permissions", service.PermissionKnowledgeWrite)
+				return http.DefaultTransport.RoundTrip(r)
+			}),
+		},
+	}
+	session, err := client.Connect(ctx, transport, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer session.Close()
+
+	result, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
+		Name: "create_knowledge_base",
+		Arguments: map[string]any{
+			"name": "Should Fail",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !result.IsError {
+		t.Fatalf("expected forged write permission to be ignored, got %+v", result)
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if len(state.datasets) != 0 {
+		t.Fatalf("datasets=%v, want none created by forged MCP caller", state.datasets)
+	}
+}
+
 func TestStreamableHTTPHandlerRejectsMissingServiceToken(t *testing.T) {
 	state := newFakeVendorState()
 	vendor := startFakeVendor(t, state)
@@ -780,7 +841,11 @@ func TestStreamableHTTPHandlerRejectsMissingServiceToken(t *testing.T) {
 		VendorRuntimeURL: vendor.URL,
 		ServiceToken:     testServiceToken,
 	}, nil)
-	httpServer := httptest.NewServer(kmcp.NewStreamableHTTPHandler(adapterServer, nil))
+	httpServer := httptest.NewServer(kmcp.NewStreamableHTTPHandler(adapterServer, kmcp.CallerContext{
+		UserID:       "usr_trusted_mcp",
+		ServiceToken: testServiceToken,
+		Permissions:  service.PermissionKnowledgeRead,
+	}, nil))
 	defer httpServer.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

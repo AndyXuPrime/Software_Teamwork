@@ -104,6 +104,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /internal/v1/documents/{documentId}/chunks", s.handleListDocumentChunks)
 	s.mux.HandleFunc("GET /internal/v1/documents/{documentId}/content", s.handleGetDocumentContent)
 	s.mux.HandleFunc("POST /internal/v1/knowledge-queries", s.handleCreateKnowledgeQuery)
+	s.mux.HandleFunc("GET /internal/v1/knowledge-statistics", s.handleKnowledgeStatistics)
 
 	s.mux.HandleFunc("GET /internal/v1/parser-configs", s.handleListParserConfigs)
 	s.mux.HandleFunc("POST /internal/v1/parser-configs", s.handleCreateParserConfig)

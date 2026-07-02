@@ -110,6 +110,11 @@ type knowledgeQueryTrace struct {
 	RerankTopN         *int    `json:"rerankTopN,omitempty"`
 }
 
+type knowledgeStatisticsSummary struct {
+	KnowledgeBaseCount int64 `json:"knowledgeBaseCount"`
+	DocumentCount      int64 `json:"documentCount"`
+}
+
 type documentSummary struct {
 	ID              string                 `json:"id"`
 	KnowledgeBaseID string                 `json:"knowledgeBaseId"`

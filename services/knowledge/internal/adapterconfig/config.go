@@ -19,6 +19,9 @@ const (
 type Config struct {
 	HTTPAddr           string
 	MCPAddr            string
+	MCPUserID          string
+	MCPRoles           string
+	MCPPermissions     string
 	ServiceVersion     string
 	Environment        string
 	ServiceToken       string
@@ -35,6 +38,9 @@ func Load() (Config, error) {
 	cfg := Config{
 		HTTPAddr:        stringValue("KNOWLEDGE_HTTP_ADDR", DefaultHTTPAddr),
 		MCPAddr:         strings.TrimSpace(os.Getenv("KNOWLEDGE_MCP_ADDR")),
+		MCPUserID:       stringValue("KNOWLEDGE_MCP_USER_ID", "knowledge_mcp_service"),
+		MCPRoles:        strings.TrimSpace(os.Getenv("KNOWLEDGE_MCP_ROLES")),
+		MCPPermissions:  stringValue("KNOWLEDGE_MCP_PERMISSIONS", "knowledge:read"),
 		ServiceVersion:  stringValue("KNOWLEDGE_SERVICE_VERSION", DefaultServiceVersion),
 		Environment:     stringValue("KNOWLEDGE_ENV", DefaultEnvironment),
 		ShutdownTimeout: DefaultShutdownTimeout,

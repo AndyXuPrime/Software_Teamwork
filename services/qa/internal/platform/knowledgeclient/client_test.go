@@ -124,8 +124,8 @@ func TestGetStatsPropagatesServiceHeadersAndMapsCounts(t *testing.T) {
 				t.Errorf("%s=%q want %q", name, got, want)
 			}
 		}
-		if got := r.Header.Get("X-User-Id"); got != "" {
-			t.Errorf("X-User-Id=%q want empty service-level request", got)
+		if got := r.Header.Get("X-User-Id"); got != "user-1" {
+			t.Errorf("X-User-Id=%q want user context", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"data":{"knowledgeBaseCount":7,"documentCount":42},"requestId":"req-stats"}`))
@@ -135,7 +135,7 @@ func TestGetStatsPropagatesServiceHeadersAndMapsCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kbCount, docCount, err := client.GetStats(context.Background(), "user-ignored")
+	kbCount, docCount, err := client.GetStats(context.Background(), "user-1")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,9 +12,9 @@ import (
 const serverName = "knowledge-mcp"
 
 // NewStreamableHTTPHandler returns an HTTP handler for MCP Streamable HTTP transport.
-func NewStreamableHTTPHandler(adapterServer *adapter.Server, chatClient *aigateway.ChatClient) http.Handler {
+func NewStreamableHTTPHandler(adapterServer *adapter.Server, caller CallerContext, chatClient *aigateway.ChatClient) http.Handler {
 	transport := sdkmcp.NewStreamableHTTPHandler(func(r *http.Request) *sdkmcp.Server {
-		return newMCPServer(adapterServer, callerFromHTTP(r), chatClient)
+		return newMCPServer(adapterServer, callerFromHTTP(r, caller), chatClient)
 	}, nil)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if adapterServer == nil || !adapterServer.AuthorizeServiceToken(r.Header.Get("X-Service-Token")) {

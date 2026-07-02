@@ -45,11 +45,16 @@ func readScope(reqCtx service.RequestContext) (service.AccessScope, error) {
 	if strings.TrimSpace(reqCtx.UserID) == "" {
 		return service.AccessScope{}, service.UnauthorizedError()
 	}
-	return service.AccessScope{
+	isAdmin := hasAdminAccess(reqCtx.Roles, reqCtx.Permissions)
+	scope := service.AccessScope{
 		UserID:     strings.TrimSpace(reqCtx.UserID),
-		CanReadAll: hasAdminRole(reqCtx.Roles) || hasPermission(reqCtx.Permissions, service.PermissionKnowledgeRead) || hasPermission(reqCtx.Permissions, service.PermissionKnowledgeWrite),
-		CanWrite:   hasAdminRole(reqCtx.Roles) || hasPermission(reqCtx.Permissions, service.PermissionKnowledgeWrite),
-	}, nil
+		CanReadAll: isAdmin || hasPermission(reqCtx.Permissions, service.PermissionKnowledgeRead) || hasPermission(reqCtx.Permissions, service.PermissionKnowledgeWrite),
+		CanWrite:   isAdmin || hasPermission(reqCtx.Permissions, service.PermissionKnowledgeWrite),
+	}
+	if !scope.CanReadAll {
+		return service.AccessScope{}, service.ForbiddenError("knowledge read permission is required")
+	}
+	return scope, nil
 }
 
 func mutationScope(reqCtx service.RequestContext) (service.AccessScope, error) {
@@ -61,6 +66,12 @@ func mutationScope(reqCtx service.RequestContext) (service.AccessScope, error) {
 		return service.AccessScope{}, service.ForbiddenError("knowledge write permission is required")
 	}
 	return scope, nil
+}
+
+func hasAdminAccess(roles []string, permissions []string) bool {
+	return hasAdminRole(roles) ||
+		hasPermission(permissions, service.PermissionSystemAdmin) ||
+		hasPermission(permissions, service.PermissionKnowledgeAdmin)
 }
 
 func hasAdminRole(roles []string) bool {

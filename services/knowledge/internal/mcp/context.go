@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// CallerContext carries auth and tracing headers forwarded to the adapter layer.
+// CallerContext carries trusted auth and tracing headers forwarded to the adapter layer.
 type CallerContext struct {
 	UserID       string
 	RequestID    string
@@ -14,21 +14,19 @@ type CallerContext struct {
 	Permissions  string
 }
 
-func callerFromHTTP(r *http.Request) CallerContext {
+func callerFromHTTP(r *http.Request, trusted CallerContext) CallerContext {
+	caller := trusted
 	if r == nil {
-		return CallerContext{}
+		return caller
 	}
 	requestID := strings.TrimSpace(r.Header.Get("X-Request-Id"))
 	if requestID == "" {
 		requestID = strings.TrimSpace(r.Header.Get("X-Request-ID"))
 	}
-	return CallerContext{
-		UserID:       strings.TrimSpace(r.Header.Get("X-User-Id")),
-		RequestID:    requestID,
-		ServiceToken: strings.TrimSpace(r.Header.Get("X-Service-Token")),
-		Roles:        strings.TrimSpace(r.Header.Get("X-User-Roles")),
-		Permissions:  strings.TrimSpace(r.Header.Get("X-User-Permissions")),
+	if requestID != "" {
+		caller.RequestID = requestID
 	}
+	return caller
 }
 
 func (c CallerContext) applyHeaders(r *http.Request) {

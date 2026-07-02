@@ -164,13 +164,11 @@ func (c *Client) CheckCitationSources(ctx context.Context, userID string, docume
 	return availability, nil
 }
 
-// GetStats fetches global knowledge base and document counts from the
-// knowledge service's internal statistics endpoint. The endpoint uses
-// service-level authentication (X-Service-Token) so the caller does not
-// need knowledge:read permissions. This is a best-effort call: errors
-// are returned to the caller so the ResourceService can fall back to
-// zero counts.
-func (c *Client) GetStats(ctx context.Context, _ string) (int, int, error) {
+// GetStats fetches knowledge base and document counts from the knowledge
+// service's internal statistics endpoint. The endpoint uses service-level
+// authentication and accepts an optional user context for tenant-scoped runtime
+// totals; it does not require knowledge:read permissions.
+func (c *Client) GetStats(ctx context.Context, userID string) (int, int, error) {
 	endpoint := c.baseURL + "/internal/v1/knowledge-statistics"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -178,6 +176,9 @@ func (c *Client) GetStats(ctx context.Context, _ string) (int, int, error) {
 	}
 	req.Header.Set("X-Service-Token", c.serviceToken)
 	req.Header.Set("X-Caller-Service", "qa")
+	if userID = strings.TrimSpace(userID); userID != "" {
+		req.Header.Set("X-User-Id", userID)
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return 0, 0, fmt.Errorf("knowledge stats request: %w", err)

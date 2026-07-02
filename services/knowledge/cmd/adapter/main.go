@@ -70,9 +70,15 @@ func main() {
 
 	var mcpServer *http.Server
 	if cfg.MCPAddr != "" {
+		mcpCaller := kmcp.CallerContext{
+			UserID:       cfg.MCPUserID,
+			ServiceToken: cfg.ServiceToken,
+			Roles:        cfg.MCPRoles,
+			Permissions:  cfg.MCPPermissions,
+		}
 		mcpServer = &http.Server{
 			Addr:    cfg.MCPAddr,
-			Handler: kmcp.NewStreamableHTTPHandler(server, chatClient),
+			Handler: kmcp.NewStreamableHTTPHandler(server, mcpCaller, chatClient),
 		}
 		go func() {
 			logger.Info("knowledge MCP server listening", "addr", cfg.MCPAddr)

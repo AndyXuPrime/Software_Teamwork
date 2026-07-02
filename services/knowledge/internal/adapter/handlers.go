@@ -423,6 +423,60 @@ func (s *Server) handleCreateKnowledgeQuery(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusCreated, knowledgeQueryFromVendor(newQueryID(), strings.TrimSpace(body.Query), data, topK, scoreThreshold, body.Rerank, body.RerankTopN), reqCtx.RequestID)
 }
 
+func (s *Server) handleKnowledgeStatistics(w http.ResponseWriter, r *http.Request) {
+	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
+	if userID == "" {
+		writeJSON(w, http.StatusOK, knowledgeStatisticsSummary{}, requestIDFromContext(r.Context()))
+		return
+	}
+	stats, err := s.collectKnowledgeStatistics(r.Context(), userID)
+	if err != nil {
+		writeAppError(w, r, mapVendorError(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, stats, requestIDFromContext(r.Context()))
+}
+
+func (s *Server) collectKnowledgeStatistics(ctx context.Context, userID string) (knowledgeStatisticsSummary, error) {
+	const pageSize = 100
+	var datasets []map[string]interface{}
+	var kbCount int64
+	for page := 1; ; page++ {
+		items, total, err := s.vendor.ListDatasets(ctx, userID, page, pageSize)
+		if err != nil {
+			return knowledgeStatisticsSummary{}, err
+		}
+		datasets = append(datasets, items...)
+		if total > kbCount {
+			kbCount = total
+		}
+		if len(items) == 0 || int64(page*pageSize) >= total {
+			break
+		}
+	}
+	if kbCount == 0 {
+		kbCount = int64(len(datasets))
+	}
+
+	var documentCount int64
+	for _, dataset := range datasets {
+		kbID := stringField(dataset, "id")
+		if kbID == "" {
+			continue
+		}
+		_, total, err := s.vendor.ListDocuments(ctx, userID, kbID, 1, 1)
+		if err != nil {
+			return knowledgeStatisticsSummary{}, err
+		}
+		documentCount += total
+	}
+
+	return knowledgeStatisticsSummary{
+		KnowledgeBaseCount: kbCount,
+		DocumentCount:      documentCount,
+	}, nil
+}
+
 func parsePageQuery(r *http.Request) (service.PageInput, error) {
 	page := parsePositiveIntParam(r, "page")
 	pageSize := parsePositiveIntParam(r, "pageSize")
