@@ -60,6 +60,15 @@ export type QAAgentToolCall = components['schemas']['QAAgentToolCall']
 export type QASseEventType = components['schemas']['QASseEventType']
 export type QASseEvent = components['schemas']['QASseEvent']
 
+// ── QA Report Artifacts ──
+export type QAReportArtifact = components['schemas']['QAReportArtifact']
+export type QAReportArtifactPreview = components['schemas']['QAReportArtifactPreview']
+
+/** QAMessage extended with optional report artifacts (not in the OpenAPI schema yet). */
+export type QAMessageWithArtifacts = QAMessage & {
+  artifacts?: QAReportArtifact[]
+}
+
 // ── Knowledge Bases ──
 export type ChunkStrategy = components['schemas']['ChunkStrategy']
 export type RetrievalStrategy = components['schemas']['RetrievalStrategy']
