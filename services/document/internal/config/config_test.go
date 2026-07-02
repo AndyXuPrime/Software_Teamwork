@@ -12,6 +12,7 @@ func TestLoadRejectsMissingDatabaseURL(t *testing.T) {
 	t.Setenv("DOCUMENT_FILE_SERVICE_URL", "http://localhost:8082")
 	t.Setenv("DOCUMENT_AI_GATEWAY_URL", "http://localhost:8086")
 	t.Setenv("DOCUMENT_AI_GATEWAY_PROFILE_ID", "default-chat")
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "shared-token")
 
 	_, err := Load()
 	if err == nil {
@@ -29,6 +30,7 @@ func TestLoadValidatesDocumentDependencies(t *testing.T) {
 	t.Setenv("DOCUMENT_FILE_SERVICE_URL", "http://localhost:8082")
 	t.Setenv("DOCUMENT_AI_GATEWAY_URL", "http://localhost:8086")
 	t.Setenv("DOCUMENT_AI_GATEWAY_PROFILE_ID", "default-chat")
+	t.Setenv("DOCUMENT_MCP_SERVICE_TOKEN", "mcp-token")
 	t.Setenv("DOCUMENT_PANDOC_PATH", "pandoc")
 	t.Setenv("DOCUMENT_LIBREOFFICE_PATH", "soffice")
 	t.Setenv("DOCUMENT_SHUTDOWN_TIMEOUT", "7s")
@@ -45,6 +47,9 @@ func TestLoadValidatesDocumentDependencies(t *testing.T) {
 	}
 	if cfg.AIGatewayProfileID != "default-chat" {
 		t.Fatalf("AIGatewayProfileID = %q", cfg.AIGatewayProfileID)
+	}
+	if cfg.MCPPath != DefaultMCPPath || cfg.MCPTokenHeader != DefaultMCPTokenHeader {
+		t.Fatalf("unexpected MCP defaults: %+v", cfg)
 	}
 	if cfg.PandocPath != "pandoc" || cfg.LibreOfficePath != "soffice" {
 		t.Fatalf("unexpected DOCX tool paths: %+v", cfg)
@@ -108,6 +113,52 @@ func TestLoadUsesDocumentAIGatewayServiceTokenFallback(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsEmptyDocumentMCPServiceToken(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("DOCUMENT_DATABASE_URL", "postgres://document:document@localhost:5432/document?sslmode=disable")
+	t.Setenv("DOCUMENT_REDIS_ADDR", "localhost:6379")
+	t.Setenv("DOCUMENT_FILE_SERVICE_URL", "http://localhost:8082")
+	t.Setenv("DOCUMENT_AI_GATEWAY_URL", "http://localhost:8086")
+	t.Setenv("DOCUMENT_AI_GATEWAY_PROFILE_ID", "default-chat")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected missing MCP service token error")
+	}
+	if !strings.Contains(err.Error(), "DOCUMENT_MCP_SERVICE_TOKEN") {
+		t.Fatalf("expected DOCUMENT_MCP_SERVICE_TOKEN in error, got %v", err)
+	}
+}
+
+func TestLoadUsesDocumentMCPServiceTokenFallback(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("DOCUMENT_DATABASE_URL", "postgres://document:document@localhost:5432/document?sslmode=disable")
+	t.Setenv("DOCUMENT_REDIS_ADDR", "localhost:6379")
+	t.Setenv("DOCUMENT_FILE_SERVICE_URL", "http://localhost:8082")
+	t.Setenv("DOCUMENT_AI_GATEWAY_URL", "http://localhost:8086")
+	t.Setenv("DOCUMENT_AI_GATEWAY_PROFILE_ID", "default-chat")
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "shared-token")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.MCPServiceToken != "shared-token" {
+		t.Fatalf("MCPServiceToken = %q, want shared-token", cfg.MCPServiceToken)
+	}
+
+	t.Setenv("DOCUMENT_MCP_SERVICE_TOKEN", "document-mcp-token")
+	t.Setenv("DOCUMENT_MCP_TOKEN_HEADER", "X-Service-Token")
+	t.Setenv("DOCUMENT_MCP_PATH", "/document-mcp")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() with document MCP token error = %v", err)
+	}
+	if cfg.MCPServiceToken != "document-mcp-token" || cfg.MCPTokenHeader != "X-Service-Token" || cfg.MCPPath != "/document-mcp" {
+		t.Fatalf("MCP config = %+v", cfg)
+	}
+}
+
 func TestLoadRejectsUntrustedDocumentAIGatewayURL(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("DOCUMENT_DATABASE_URL", "postgres://document:document@localhost:5432/document?sslmode=disable")
@@ -115,6 +166,7 @@ func TestLoadRejectsUntrustedDocumentAIGatewayURL(t *testing.T) {
 	t.Setenv("DOCUMENT_FILE_SERVICE_URL", "http://localhost:8082")
 	t.Setenv("DOCUMENT_AI_GATEWAY_URL", "https://public.example.test")
 	t.Setenv("DOCUMENT_AI_GATEWAY_PROFILE_ID", "default-chat")
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "shared-token")
 	if _, err := Load(); err == nil {
 		t.Fatal("expected untrusted AI Gateway host to fail")
 	}
@@ -135,6 +187,7 @@ func TestLoadUsesOptionalKnowledgeServiceConfig(t *testing.T) {
 	t.Setenv("DOCUMENT_FILE_SERVICE_URL", "http://localhost:8082")
 	t.Setenv("DOCUMENT_AI_GATEWAY_URL", "http://localhost:8086")
 	t.Setenv("DOCUMENT_AI_GATEWAY_PROFILE_ID", "default-chat")
+	t.Setenv("DOCUMENT_MCP_SERVICE_TOKEN", "mcp-token")
 
 	cfg, err := Load()
 	if err != nil {
@@ -177,6 +230,9 @@ func clearEnv(t *testing.T) {
 		"DOCUMENT_AI_GATEWAY_SERVICE_TOKEN",
 		"DOCUMENT_KNOWLEDGE_SERVICE_URL",
 		"DOCUMENT_KNOWLEDGE_SERVICE_TOKEN",
+		"DOCUMENT_MCP_PATH",
+		"DOCUMENT_MCP_SERVICE_TOKEN",
+		"DOCUMENT_MCP_TOKEN_HEADER",
 		"INTERNAL_SERVICE_TOKEN",
 		"DOCUMENT_PANDOC_PATH",
 		"DOCUMENT_LIBREOFFICE_PATH",
