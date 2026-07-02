@@ -121,6 +121,10 @@ reports/rendered_pages/
 !*.example.key
 !*.example.crt
 
+# Trellis local workspace files (task state, journals)
+.trellis/tasks/
+.trellis/.developer
+
 # Local archives and backups
 *.bak
 *.tmp
