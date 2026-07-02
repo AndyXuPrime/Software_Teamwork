@@ -246,12 +246,15 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
   React.useEffect(() => {
     if (!open) return
     const handleKey = (e: KeyboardEvent) => {
-      const items = itemsRef.current.filter((v): v is string => v !== undefined)
+      const items = itemsRef.current
       const findNext = (from: number, dir: 1 | -1): number => {
         let i = from + dir
         while (i >= 0 && i < items.length) {
-          const el = listRef.current?.querySelector(`[data-value="${CSS.escape(items[i]!)}"]`)
-          if (el && !el.hasAttribute('data-disabled')) return i
+          const v = items[i]
+          if (v !== undefined) {
+            const el = listRef.current?.querySelector(`[data-value="${CSS.escape(v)}"]`)
+            if (el && !el.hasAttribute('data-disabled')) return i
+          }
           i += dir
         }
         return -1
@@ -266,11 +269,11 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
         if (next >= 0) setHighlightedIndex(next)
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
-        const prev = findNext(highlightedIndex + 1, -1) // +1 because we search backward from current-1
+        const prev = findNext(highlightedIndex, -1)
         if (prev >= 0) setHighlightedIndex(prev)
       } else if (e.key === 'Enter' && highlightedIndex >= 0) {
         e.preventDefault()
-        const itemValue = items[highlightedIndex]!
+        const itemValue = items[highlightedIndex]
         if (itemValue !== undefined) {
           const el = listRef.current?.querySelector(`[data-value="${CSS.escape(itemValue)}"]`)
           if (!el?.hasAttribute('data-disabled')) onValueChange(itemValue)
