@@ -29,11 +29,20 @@ export const modelProfileKeys = {
 
 // ── Queries ──
 
+type UseModelProfilesOptions = {
+  queryEnabled?: boolean
+}
+
 /** List all runtime model profiles (non-paginated). */
-export function useModelProfiles(purpose?: string, enabled?: boolean) {
+export function useModelProfiles(
+  purpose?: string,
+  enabled?: boolean,
+  options: UseModelProfilesOptions = {},
+) {
   return useQuery({
     queryKey: modelProfileKeys.list(purpose, enabled),
     queryFn: () => listModelProfiles({ purpose, enabled }),
+    enabled: options.queryEnabled ?? true,
   })
 }
 

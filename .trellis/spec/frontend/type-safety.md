@@ -468,6 +468,10 @@ const payload: components['schemas']['CreateQALLMConnectionTestRequest'] = {
 - Report-generation LLM settings may send only
   `llm.provider: "ai-gateway"` and `llm.profileId` when publishing a selected
   profile from the UI.
+- Non-admin report writers may see their current user-visible QA/LLM profile
+  reference through `/api/v1/llm-config-versions/current`, but they must not
+  call admin-only `/api/v1/report-settings` or `/api/v1/admin/model-profiles`
+  from the report generation page.
 - Provider `baseUrl`, `apiKey`, secret refs, masked credential placeholders,
   and provider raw error details remain owned by AI Gateway model profiles and
   must not appear in report settings payloads.
@@ -479,13 +483,13 @@ const payload: components['schemas']['CreateQALLMConnectionTestRequest'] = {
 
 ### 4. Validation & Error Matrix
 
-| Condition | UI behavior |
-| --- | --- |
-| No selected profile id | Block publish and show a local validation notice. |
-| No enabled chat profiles | Show a warning that the admin must create/enable a chat profile first. |
+| Condition                                    | UI behavior                                                             |
+| -------------------------------------------- | ----------------------------------------------------------------------- |
+| No selected profile id                       | Block publish and show a local validation notice.                       |
+| No enabled chat profiles                     | Show a warning that the admin must create/enable a chat profile first.  |
 | Current profile id missing from enabled list | Show a current-profile fallback option but do not send provider fields. |
-| Gateway `400`, `403`, or `502` | Show the normalized Gateway error with request id when present. |
-| Successful `PATCH` | Invalidate `reportKeys.settings()` and show a publish success notice. |
+| Gateway `400`, `403`, or `502`               | Show the normalized Gateway error with request id when present.         |
+| Successful `PATCH`                           | Invalidate `reportKeys.settings()` and show a publish success notice.   |
 
 ### 5. Good/Base/Bad Cases
 
@@ -494,6 +498,8 @@ const payload: components['schemas']['CreateQALLMConnectionTestRequest'] = {
   settings.
 - Base: the current settings panel shows provider `ai-gateway`, profile id,
   and model returned by Document.
+- Base: non-admin report writers see a read-only current LLM profile summary
+  while the document-generation publish controls stay hidden.
 - Bad: a report settings form sends `apiKey`, `baseUrl`, or a provider name
   such as `openai` directly.
 - Bad: a browser action claims to update `DOCUMENT_AI_GATEWAY_PROFILE_ID`.
@@ -501,10 +507,13 @@ const payload: components['schemas']['CreateQALLMConnectionTestRequest'] = {
 ### 6. Tests Required
 
 - API wrapper test asserting `GET /report-settings` and `PATCH
-  /report-settings` use Gateway paths and do not send credential fields.
+/report-settings` use Gateway paths and do not send credential fields.
 - Query hook test asserting report settings invalidation after publish.
 - Page/component test asserting the stale capability warning is absent and the
   model publish flow sends only `provider: "ai-gateway"` plus `profileId`.
+- Page/component test asserting non-admin report writers do not request
+  `/report-settings` or `/admin/model-profiles`, while still seeing the current
+  `/llm-config-versions/current` profile summary.
 
 ### 7. Wrong vs Correct
 

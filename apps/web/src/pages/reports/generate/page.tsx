@@ -16,6 +16,7 @@ import { InlineNotice, ProgressSummary, StateBlock } from '@/components/common'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useModelProfiles } from '@/features/admin-config'
+import { useCurrentQALLMConfigQuery } from '@/features/qa-settings/qa-settings.queries'
 import type {
   CreateReportFormValues,
   Report,
@@ -37,7 +38,6 @@ import {
   useDownloadReportFileMutation,
   useReportBootstrapQueries,
   useReportDetailQueries,
-  useReportEvents,
   useReportJobQuery,
   useReportSettingsQuery,
   useRetryReportJobMutation,
@@ -46,7 +46,9 @@ import {
   useUpdateReportSectionMutation,
   useUpdateReportSettingsMutation,
 } from '@/features/reports'
+import { canAccess } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 function flattenOutline(nodes: ReportOutlineNode[]): ReportOutlineNode[] {
   return nodes.flatMap((node) => [node, ...flattenOutline(node.children ?? [])])
@@ -140,9 +142,20 @@ export function ReportGeneratePage() {
   const [documentProfileTouched, setDocumentProfileTouched] = useState(false)
   const [documentSettingsNotice, setDocumentSettingsNotice] = useState<string | null>(null)
 
+  const user = useAuthStore((state) => state.user)
+  const canManageDocumentModelSettings =
+    canAccess(user, { any: ['admin:model-profile:write', 'system:admin'] }) ||
+    canAccess(user, { roles: ['system:admin'] })
   const { typeQuery, templateQuery, materialQuery } = useReportBootstrapQueries(form.reportType)
-  const reportSettingsQuery = useReportSettingsQuery()
-  const chatProfilesQuery = useModelProfiles('chat', true)
+  const reportSettingsQuery = useReportSettingsQuery({
+    enabled: canManageDocumentModelSettings,
+  })
+  const userLLMConfigQuery = useCurrentQALLMConfigQuery({
+    enabled: Boolean(user),
+  })
+  const chatProfilesQuery = useModelProfiles('chat', true, {
+    queryEnabled: canManageDocumentModelSettings,
+  })
   const { outlinesQuery, sectionsQuery } = useReportDetailQueries(currentReport?.id ?? null)
   const jobQuery = useReportJobQuery(activeJobId)
   const createReportMutation = useCreateReportMutation()
@@ -154,7 +167,6 @@ export function ReportGeneratePage() {
   const retryJobMutation = useRetryReportJobMutation()
   const downloadMutation = useDownloadReportFileMutation()
   const cancelJobMutation = useCancelReportJob()
-  const eventsQuery = useReportEvents(currentReport?.id ?? null)
   const sectionVersionsQuery = useSectionVersions(
     currentReport?.id ?? null,
     showVersions ? activeSectionId : null,
@@ -228,11 +240,28 @@ export function ReportGeneratePage() {
   }, [form.templateId, templates])
 
   useEffect(() => {
+    if (!canManageDocumentModelSettings) {
+      setDocumentProfileId('')
+      setDocumentProfileTouched(false)
+      setDocumentSettingsNotice(null)
+      return
+    }
+
     if (documentProfileTouched) return
+    if (!reportSettingsQuery.isSuccess) {
+      setDocumentProfileId('')
+      return
+    }
 
     const nextProfileId = configuredDocumentProfileId || firstChatProfileId
     setDocumentProfileId(nextProfileId)
-  }, [configuredDocumentProfileId, documentProfileTouched, firstChatProfileId])
+  }, [
+    canManageDocumentModelSettings,
+    configuredDocumentProfileId,
+    documentProfileTouched,
+    firstChatProfileId,
+    reportSettingsQuery.isSuccess,
+  ])
 
   useEffect(() => {
     if (sections.length === 0) {
@@ -272,6 +301,14 @@ export function ReportGeneratePage() {
     const profileId = documentProfileId.trim()
     setDocumentSettingsNotice(null)
 
+    if (!canManageDocumentModelSettings) {
+      setDocumentSettingsNotice('当前账号无权发布文档生成模型配置。')
+      return
+    }
+    if (reportSettingsQuery.isLoading) {
+      setDocumentSettingsNotice('正在读取当前文档生成模型配置，请稍后再发布。')
+      return
+    }
     if (!profileId) {
       setDocumentSettingsNotice('请选择用于报告生成的文档生成模型。')
       return
@@ -341,7 +378,7 @@ export function ReportGeneratePage() {
       setActiveJobId(job.id)
       setStep('outline')
       setNotice(
-        '已创建报告草稿，并通过 /api/v1/reports/{reportId}/jobs 创建大纲任务；页面只展示服务端返回的大纲与事件。',
+        '已创建报告草稿，并通过 /api/v1/reports/{reportId}/jobs 创建大纲任务；页面只展示服务端返回的大纲与任务进度。',
       )
     } catch (error) {
       setActiveJobId(null)
@@ -493,6 +530,20 @@ export function ReportGeneratePage() {
   }
 
   const progressPercent = getProgressPercent(effectiveJob)
+  const jobStatusLabel = effectiveJob ? statusText[effectiveJob.status] : '-'
+  const jobProgressTone =
+    effectiveJob?.status === 'failed'
+      ? 'error'
+      : effectiveJob?.status === 'canceled'
+        ? 'warning'
+        : effectiveJob?.status === 'succeeded' || effectiveJob?.status === 'partial_succeeded'
+          ? 'success'
+          : 'default'
+  const canCancelJob = effectiveJob?.status === 'pending' || effectiveJob?.status === 'running'
+  const canRetryJob =
+    effectiveJob?.status === 'failed' ||
+    effectiveJob?.status === 'partial_succeeded' ||
+    effectiveJob?.status === 'canceled'
 
   return (
     <div className="flex h-full flex-col overflow-auto bg-background">
@@ -542,6 +593,93 @@ export function ReportGeneratePage() {
 
       <div className="grid flex-1 gap-6 p-6 xl:grid-cols-[minmax(0,1.1fr)_360px]">
         <div className="min-w-0 space-y-6">
+          {(currentReport || effectiveJob) && (
+            <section className="rounded-lg border border-border bg-card p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold">当前文档进度</h2>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {canRetryJob && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRetry}
+                      disabled={retryJobMutation.isPending}
+                    >
+                      {retryJobMutation.isPending ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-3" />
+                      )}
+                      重试任务
+                    </Button>
+                  )}
+                  {canCancelJob && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleCancel}
+                      title="任务取消暂不支持（Gateway 契约待补齐）"
+                      disabled={cancelJobMutation.isPending}
+                    >
+                      {cancelJobMutation.isPending && <Loader2 className="size-3 animate-spin" />}
+                      <Ban className="size-3" />
+                      取消任务
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
+                <div className="flex justify-between gap-4 rounded-lg border border-border bg-background px-3 py-2">
+                  <span className="text-muted-foreground">reportId</span>
+                  <code className="min-w-0 truncate">{currentReport?.id ?? '-'}</code>
+                </div>
+                <div className="flex justify-between gap-4 rounded-lg border border-border bg-background px-3 py-2">
+                  <span className="text-muted-foreground">jobId</span>
+                  <code className="min-w-0 truncate">{effectiveJob?.id ?? '-'}</code>
+                </div>
+                <div className="flex justify-between gap-4 rounded-lg border border-border bg-background px-3 py-2">
+                  <span className="text-muted-foreground">任务类型</span>
+                  <span>{effectiveJob?.jobType ?? '-'}</span>
+                </div>
+                <div className="flex justify-between gap-4 rounded-lg border border-border bg-background px-3 py-2">
+                  <span className="text-muted-foreground">状态</span>
+                  <span
+                    className={cn(
+                      effectiveJob?.status === 'failed' && 'text-destructive',
+                      effectiveJob?.status === 'canceled' && 'text-yellow-600',
+                      effectiveJob?.status === 'succeeded' && 'text-green-600',
+                      canCancelJob && 'text-primary',
+                    )}
+                  >
+                    {jobStatusLabel}
+                  </span>
+                </div>
+              </div>
+
+              <ProgressSummary
+                className="mt-4"
+                label="任务进度"
+                percent={progressPercent}
+                status={jobStatusLabel}
+                tone={jobProgressTone}
+              />
+
+              {effectiveJob?.error?.message && (
+                <p className="mt-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                  {effectiveJob.error.message}
+                </p>
+              )}
+              {effectiveJob?.resultSummary && (
+                <p className="mt-4 rounded-lg bg-muted p-3 text-sm text-muted-foreground">
+                  {effectiveJob.resultSummary}
+                </p>
+              )}
+            </section>
+          )}
+
           {step === 'draft' && (
             <form
               className="rounded-lg border border-border bg-card p-5"
@@ -961,105 +1099,154 @@ export function ReportGeneratePage() {
         </div>
 
         <aside className="flex flex-col space-y-4">
-          <section className="rounded-lg border border-border bg-card p-4">
-            <div className="flex items-center gap-2">
-              <Settings2 className="size-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold">文档生成模型</h2>
-            </div>
+          {user && (
+            <section className="rounded-lg border border-border bg-card p-4">
+              <h2 className="text-sm font-semibold">当前 LLM 配置</h2>
 
-            <div className="mt-3 rounded-lg border border-border bg-background p-3 text-sm">
-              <div className="mb-2 font-medium text-foreground">当前生效引用</div>
-              <dl className="grid gap-2">
-                <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">服务</dt>
-                  <dd className="text-foreground">ai-gateway</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">Profile ID</dt>
-                  <dd className="break-all text-foreground">
-                    {configuredDocumentProfileId || '-'}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">模型</dt>
-                  <dd className="break-all text-foreground">{configuredDocumentModel || '-'}</dd>
-                </div>
-              </dl>
-            </div>
-
-            <label className="mt-3 block space-y-1.5 text-sm">
-              <span className="font-medium text-foreground">文档生成模型</span>
-              <select
-                aria-label="文档生成模型"
-                value={documentProfileId}
-                onChange={(event) => handleSelectDocumentProfile(event.target.value)}
-                className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-                disabled={chatProfilesQuery.isLoading}
-              >
-                <option value="">请选择聊天模型 Profile</option>
-                {showDocumentProfileFallback && (
-                  <option value={documentProfileId}>
-                    当前配置：{selectedDocumentModel || documentProfileId}
-                  </option>
-                )}
-                {chatProfiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name} / {profile.model}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="mt-3 space-y-2 text-sm">
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">待发布 Profile</span>
-                <code className="break-all">{documentProfileId || '-'}</code>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">待发布模型</span>
-                <span className="break-all">{selectedDocumentModel || '-'}</span>
-              </div>
-            </div>
-
-            {chatProfilesQuery.isError && (
-              <InlineNotice className="mt-3" title="模型列表加载失败" variant="error">
-                {formatReportGatewayError(chatProfilesQuery.error, '模型列表加载失败')}
-              </InlineNotice>
-            )}
-            {reportSettingsQuery.isError && (
-              <InlineNotice className="mt-3" title="报告设置加载失败" variant="error">
-                {formatReportGatewayError(reportSettingsQuery.error, '报告设置加载失败')}
-              </InlineNotice>
-            )}
-            {!chatProfilesQuery.isLoading && chatProfiles.length === 0 && (
-              <InlineNotice className="mt-3" title="暂无可用模型" variant="warning">
-                请先在模型管理中新增并启用用途为 chat 的模型 Profile。
-              </InlineNotice>
-            )}
-            {documentSettingsNotice && (
-              <InlineNotice
-                className="mt-3"
-                title={documentSettingsNotice.includes('失败') ? '发布失败' : undefined}
-                variant={documentSettingsNotice.includes('失败') ? 'error' : 'info'}
-              >
-                {documentSettingsNotice}
-              </InlineNotice>
-            )}
-
-            <Button
-              type="button"
-              className="mt-3 w-full"
-              onClick={() => void handlePublishDocumentProfile()}
-              disabled={!documentProfileId.trim() || updateReportSettingsMutation.isPending}
-            >
-              {updateReportSettingsMutation.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
+              {userLLMConfigQuery.isLoading ? (
+                <p className="mt-3 text-sm text-muted-foreground">加载中...</p>
+              ) : userLLMConfigQuery.isError ? (
+                <InlineNotice className="mt-3" title="LLM 配置加载失败" variant="error">
+                  {formatReportGatewayError(userLLMConfigQuery.error, 'LLM 配置加载失败')}
+                </InlineNotice>
               ) : (
-                <Rocket className="size-4" />
+                <dl className="mt-3 grid gap-2 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">服务</dt>
+                    <dd className="text-foreground">
+                      {userLLMConfigQuery.data?.provider ?? 'ai-gateway'}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Profile ID</dt>
+                    <dd className="break-all text-foreground">
+                      {userLLMConfigQuery.data?.profileId ?? '-'}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">模型</dt>
+                    <dd className="break-all text-foreground">
+                      {userLLMConfigQuery.data?.modelName ?? '-'}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">版本</dt>
+                    <dd className="text-foreground">
+                      {userLLMConfigQuery.data?.versionNo
+                        ? `v${userLLMConfigQuery.data.versionNo}`
+                        : '-'}
+                    </dd>
+                  </div>
+                </dl>
               )}
-              发布文档模型配置
-            </Button>
-          </section>
+            </section>
+          )}
+
+          {canManageDocumentModelSettings && (
+            <section className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center gap-2">
+                <Settings2 className="size-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold">文档生成模型</h2>
+              </div>
+
+              <div className="mt-3 rounded-lg border border-border bg-background p-3 text-sm">
+                <div className="mb-2 font-medium text-foreground">当前生效引用</div>
+                <dl className="grid gap-2">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">服务</dt>
+                    <dd className="text-foreground">ai-gateway</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Profile ID</dt>
+                    <dd className="break-all text-foreground">
+                      {configuredDocumentProfileId || '-'}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">模型</dt>
+                    <dd className="break-all text-foreground">{configuredDocumentModel || '-'}</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <label className="mt-3 block space-y-1.5 text-sm">
+                <span className="font-medium text-foreground">文档生成模型</span>
+                <select
+                  aria-label="文档生成模型"
+                  value={documentProfileId}
+                  onChange={(event) => handleSelectDocumentProfile(event.target.value)}
+                  className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+                  disabled={reportSettingsQuery.isLoading || chatProfilesQuery.isLoading}
+                >
+                  <option value="">请选择聊天模型 Profile</option>
+                  {showDocumentProfileFallback && (
+                    <option value={documentProfileId}>
+                      当前配置：{selectedDocumentModel || documentProfileId}
+                    </option>
+                  )}
+                  {chatProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name} / {profile.model}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="mt-3 space-y-2 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">待发布 Profile</span>
+                  <code className="break-all">{documentProfileId || '-'}</code>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">待发布模型</span>
+                  <span className="break-all">{selectedDocumentModel || '-'}</span>
+                </div>
+              </div>
+
+              {chatProfilesQuery.isError && (
+                <InlineNotice className="mt-3" title="模型列表加载失败" variant="error">
+                  {formatReportGatewayError(chatProfilesQuery.error, '模型列表加载失败')}
+                </InlineNotice>
+              )}
+              {reportSettingsQuery.isError && (
+                <InlineNotice className="mt-3" title="报告设置加载失败" variant="error">
+                  {formatReportGatewayError(reportSettingsQuery.error, '报告设置加载失败')}
+                </InlineNotice>
+              )}
+              {!chatProfilesQuery.isLoading && chatProfiles.length === 0 && (
+                <InlineNotice className="mt-3" title="暂无可用模型" variant="warning">
+                  请先在模型管理中新增并启用用途为 chat 的模型 Profile。
+                </InlineNotice>
+              )}
+              {documentSettingsNotice && (
+                <InlineNotice
+                  className="mt-3"
+                  title={documentSettingsNotice.includes('失败') ? '发布失败' : undefined}
+                  variant={documentSettingsNotice.includes('失败') ? 'error' : 'info'}
+                >
+                  {documentSettingsNotice}
+                </InlineNotice>
+              )}
+
+              <Button
+                type="button"
+                className="mt-3 w-full"
+                onClick={() => void handlePublishDocumentProfile()}
+                disabled={
+                  !documentProfileId.trim() ||
+                  reportSettingsQuery.isLoading ||
+                  updateReportSettingsMutation.isPending
+                }
+              >
+                {updateReportSettingsMutation.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Rocket className="size-4" />
+                )}
+                发布文档模型配置
+              </Button>
+            </section>
+          )}
 
           <section className="rounded-lg border border-border bg-card p-4">
             <h2 className="text-sm font-semibold">当前报告</h2>
@@ -1078,102 +1265,6 @@ export function ReportGeneratePage() {
               </div>
             </div>
           </section>
-
-          <section className="rounded-lg border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">任务状态</h2>
-            <div className="mt-3 space-y-3">
-              <div className="flex justify-between gap-4 text-sm">
-                <span className="text-muted-foreground">jobId</span>
-                <code className="truncate">{effectiveJob?.id ?? '-'}</code>
-              </div>
-              <div className="flex justify-between gap-4 text-sm">
-                <span className="text-muted-foreground">任务类型</span>
-                <span>{effectiveJob?.jobType ?? '-'}</span>
-              </div>
-              <div className="flex justify-between gap-4 text-sm">
-                <span className="text-muted-foreground">状态</span>
-                <span
-                  className={cn(
-                    effectiveJob?.status === 'failed' && 'text-destructive',
-                    effectiveJob?.status === 'canceled' && 'text-yellow-600',
-                    effectiveJob?.status === 'succeeded' && 'text-green-600',
-                    (effectiveJob?.status === 'running' || effectiveJob?.status === 'pending') &&
-                      'text-primary',
-                  )}
-                >
-                  {effectiveJob ? statusText[effectiveJob.status] : '-'}
-                </span>
-              </div>
-              <ProgressSummary
-                label="任务进度"
-                percent={progressPercent}
-                status={effectiveJob ? statusText[effectiveJob.status] : '-'}
-                tone={
-                  effectiveJob?.status === 'failed'
-                    ? 'error'
-                    : effectiveJob?.status === 'canceled'
-                      ? 'warning'
-                      : effectiveJob?.status === 'succeeded' ||
-                          effectiveJob?.status === 'partial_succeeded'
-                        ? 'success'
-                        : 'default'
-                }
-              />
-              {(effectiveJob?.status === 'pending' || effectiveJob?.status === 'running') && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="w-full"
-                  onClick={handleCancel}
-                  title="任务取消暂不支持（Gateway 契约待补齐）"
-                  disabled={cancelJobMutation.isPending}
-                >
-                  {cancelJobMutation.isPending && <Loader2 className="size-3 animate-spin" />}
-                  <Ban className="size-3" />
-                  取消任务
-                </Button>
-              )}
-              {effectiveJob?.error?.message && (
-                <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-                  {effectiveJob.error.message}
-                </p>
-              )}
-              {effectiveJob?.resultSummary && (
-                <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
-                  {effectiveJob.resultSummary}
-                </p>
-              )}
-            </div>
-          </section>
-
-          {eventsQuery.isError && (
-            <InlineNotice title="事件日志加载失败" variant="error">
-              {formatReportGatewayError(eventsQuery.error, '事件日志加载失败')}
-            </InlineNotice>
-          )}
-
-          {eventsQuery.data && eventsQuery.data.length > 0 && (
-            <section className="rounded-lg border border-border bg-card p-4">
-              <h2 className="text-sm font-semibold">事件日志</h2>
-              <div className="mt-3 max-h-96 space-y-2 overflow-auto">
-                {eventsQuery.data
-                  .slice(-10)
-                  .reverse()
-                  .map((event) => (
-                    <div
-                      key={event.id}
-                      className="rounded-lg border border-border bg-background px-3 py-2 text-xs"
-                    >
-                      <div className="flex justify-between text-muted-foreground">
-                        <span className="font-medium">{event.eventType}</span>
-                        <span>{formatDate(event.createdAt)}</span>
-                      </div>
-                      {event.message && <p className="mt-1 text-foreground">{event.message}</p>}
-                    </div>
-                  ))}
-              </div>
-            </section>
-          )}
         </aside>
       </div>
     </div>

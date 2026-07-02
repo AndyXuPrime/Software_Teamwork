@@ -298,10 +298,15 @@ export function useReportStatisticsQueries() {
   return { overviewQuery, dailyQuery }
 }
 
-export function useReportSettingsQuery() {
+type UseReportSettingsQueryOptions = {
+  enabled?: boolean
+}
+
+export function useReportSettingsQuery(options: UseReportSettingsQueryOptions = {}) {
   return useQuery({
     queryKey: reportKeys.settings(),
     queryFn: getReportSettings,
+    enabled: options.enabled ?? true,
   })
 }
 
