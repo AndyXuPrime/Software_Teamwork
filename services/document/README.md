@@ -11,10 +11,11 @@ statistics, and operation logs. DOCX export currently uses the in-process Go
 `SimpleDOCXGenerator`. Basic AI outline and section-content orchestration is
 implemented for the fixed `summer_peak_inspection` report type through AI
 Gateway chat calls, with optional Knowledge retrieval context when configured
-and requested. A service-local Document MCP tool adapter is implemented for
-safe report generation, status, template schema, result, and basic DOCX export
-tool calls. A remote MCP server/QA end-to-end smoke remains follow-up work. The
-Pandoc/LibreOffice rich DOCX conversion toolchain remains future work.
+and requested. A stateless Streamable HTTP Document MCP server is implemented
+at `/mcp` for safe report generation, status, template schema, result, and basic
+DOCX export tool calls. QA discovery and an env-gated cross-service smoke are
+implemented; the Pandoc/LibreOffice rich DOCX conversion toolchain remains
+future work.
 
 ## Local Configuration
 
@@ -41,6 +42,9 @@ Optional variables:
 | `DOCUMENT_PANDOC_PATH` | `pandoc` | Reserved path for a future Pandoc-backed rich DOCX worker. The current host-run baseline does not require this CLI. |
 | `DOCUMENT_LIBREOFFICE_PATH` | `soffice` | Reserved path for a future LibreOffice-backed conversion worker. The current host-run baseline does not require this CLI. |
 | `DOCUMENT_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown timeout. |
+| `DOCUMENT_MCP_PATH` | `/mcp` | Streamable HTTP MCP endpoint path. |
+| `DOCUMENT_MCP_SERVICE_TOKEN` | `INTERNAL_SERVICE_TOKEN` fallback | Required MCP service credential. |
+| `DOCUMENT_MCP_TOKEN_HEADER` | `Authorization` | Credential header; Authorization accepts Bearer form. |
 
 ## Run
 
@@ -145,8 +149,9 @@ business IDs, and records operation logs with `requestSource=mcp` and
 MinIO, Qdrant, or model providers.
 
 `export_report_docx` uses the current basic DOCX report-file path. It must not
-be treated as Pandoc/LibreOffice rich DOCX support. A remote MCP server wrapper
-and cross-service QA smoke are still pending on the shared MCP smoke work.
+be treated as Pandoc/LibreOffice rich DOCX support. Exact schemas, runtime
+registration, result fields and the QA Agent workflow are documented in
+[`../../docs/services/document/docs/mcp-tools.md`](../../docs/services/document/docs/mcp-tools.md).
 
 ## Migrations
 

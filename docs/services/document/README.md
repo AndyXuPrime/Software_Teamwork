@@ -19,6 +19,7 @@ RESTful 路径、统一响应和错误 envelope 以 [前后端集成契约](../.
 | [`docs/frontend-api-design.md`](docs/frontend-api-design.md) | 前端 API 层、页面到接口映射和类型使用建议。 |
 | [`docs/generation-workflow.md`](docs/generation-workflow.md) | 报告 job、attempt、event、worker、AI Gateway、File Service 和 DOCX 创建的目标流程与当前缺口。 |
 | [`docs/implementation.md`](docs/implementation.md) | 当前代码实现、契约对齐、缺口和最近检查记录。 |
+| [`docs/mcp-tools.md`](docs/mcp-tools.md) | Document MCP 的 9 个当前工具、精确参数、注册方式、返回结构与 Agent 调用工作流。 |
 | [`docs/requirements.md`](docs/requirements.md) | 原始报告生成需求沉淀和验收点。 |
 
 已被 gateway OpenAPI 和本文覆盖的重复 API 契约草稿不再作为当前阅读入口；数据模型、前端 API 设计和需求沉淀这类服务细节文档单独保留。
@@ -219,7 +220,7 @@ outline_generation | outline_regeneration | content_generation | content_regener
 
 ### QA 与 MCP 工具
 
-Document 当前已在 `services/document/internal/service/mcp_tools.go` 提供服务内 MCP 工具适配层。该适配层接收可信 `RequestContext`，复用现有 Document service 能力，记录 `requestSource=mcp` 和 `toolName=<tool>` 的安全操作日志；远程 MCP server 包装和 QA 端到端 smoke 仍待共享 MCP 联调任务补齐。
+Document 当前已在 `services/document/internal/service/mcp_tools.go` 提供工具适配层，并通过宿主机 Document 进程的 Streamable HTTP `/mcp` 暴露。该适配层接收可信 `RequestContext`，复用现有 Document service 能力，记录 `requestSource=mcp` 和 `toolName=<tool>` 的安全操作日志。精确 input schema、返回结构、QA alias 前缀与 Agent 工作流见 [`docs/mcp-tools.md`](docs/mcp-tools.md)。
 
 当前工具包括：
 
@@ -279,4 +280,4 @@ go build ./cmd/server
 
 这些测试覆盖 Document 调用 File Service `/internal/v1/files/**`、`X-Service-Token` 透传、模板/素材/报告文件公开响应脱敏、报告文件 content 成功二进制返回、失败 JSON error envelope，以及 fake 依赖失败到 `dependency_error` 的映射。
 
-需要完整联调时，先通过 gateway 访问公开 `/api/v1/**` 路径，并确保 Document、File、Redis、AI Gateway 可用；如果生成请求使用知识库上下文，还需要 Knowledge。联调时重点检查 `X-Request-Id` 贯穿日志，File Service token 匹配，报告文件 content 未就绪时返回统一错误 envelope。当前富 DOCX 的 Pandoc/LibreOffice 工具链、Document MCP tools 和 `coal_inventory_audit` 生成策略仍是后续任务，不能作为 C-010 验收前提。
+需要完整联调时，先通过 gateway 访问公开 `/api/v1/**` 路径，并确保 Document、File、Redis、AI Gateway 可用；如果生成请求使用知识库上下文，还需要 Knowledge。联调时重点检查 `X-Request-Id` 贯穿日志，File Service token 匹配，报告文件 content 未就绪时返回统一错误 envelope。当前富 DOCX 的 Pandoc/LibreOffice 工具链、Issue #510 的 `generate_report_from_content` 和 `coal_inventory_audit` 生成策略仍是后续任务，不能作为 C-010 验收前提。

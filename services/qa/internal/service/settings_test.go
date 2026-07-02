@@ -18,6 +18,7 @@ type settingsRepositoryStub struct {
 	createdPrompt         string
 	createCount           int
 	createCalled          bool
+	mcpServers            []MCPServerRecord
 }
 
 func (r *settingsRepositoryStub) GetActiveQAConfig(context.Context) (RetrievalSettings, []string, error) {
@@ -71,7 +72,7 @@ func (r *settingsRepositoryStub) UpsertRuntimeSetting(context.Context, string, s
 }
 
 func (r *settingsRepositoryStub) ListMCPServers(context.Context) ([]MCPServerRecord, error) {
-	return nil, nil
+	return append([]MCPServerRecord(nil), r.mcpServers...), nil
 }
 
 func (r *settingsRepositoryStub) GetMCPServer(context.Context, string) (MCPServerRecord, error) {
@@ -215,6 +216,100 @@ func TestValidateRuntimeMCPRejectsStdioTransport(t *testing.T) {
 				t.Fatalf("expected transport validation error, got %v", err)
 			}
 		})
+	}
+}
+
+func TestLoadRuntimeConfigurationMergesBootstrapTokenIntoMatchingMCPRecord(t *testing.T) {
+	repository := &settingsRepositoryStub{mcpServers: []MCPServerRecord{{
+		ID: "document-db", Alias: "document", Transport: "streamable_http",
+		EndpointURL: "http://localhost:8085/mcp", TokenHeader: "Authorization",
+		ToolTimeoutSeconds: 30, Enabled: true,
+	}}}
+	bootstrap := RuntimeMCPConfig{
+		Alias: "document", Transport: "streamable_http", EndpointURL: "http://bootstrap.invalid/mcp",
+		Token: "environment-token", TokenHeader: "Authorization", ToolTimeout: 30 * time.Second,
+	}
+	svc, err := NewConfigService(repository, settingsCipherStub{}, BootstrapSettings{MCPServer: &bootstrap}, &settingsLLMTesterStub{}, settingsMCPTesterStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runtime, err := svc.LoadRuntimeConfiguration(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.MCPServers) != 1 {
+		t.Fatalf("MCPServers=%+v, want one merged server", runtime.MCPServers)
+	}
+	server := runtime.MCPServers[0]
+	if server.ID != "document-db" || server.EndpointURL != "http://localhost:8085/mcp" || server.Token != "environment-token" {
+		t.Fatalf("merged server=%+v", server)
+	}
+}
+
+func TestLoadRuntimeConfigurationKeepsStoredMCPToken(t *testing.T) {
+	repository := &settingsRepositoryStub{mcpServers: []MCPServerRecord{{
+		ID: "document-db", Alias: "document", Transport: "streamable_http",
+		EndpointURL: "http://localhost:8085/mcp", TokenEncrypted: []byte("stored-token"),
+		TokenHeader: "Authorization", ToolTimeoutSeconds: 30, Enabled: true,
+	}}}
+	bootstrap := RuntimeMCPConfig{Alias: "document", Token: "environment-token"}
+	svc, err := NewConfigService(repository, settingsCipherStub{}, BootstrapSettings{MCPServer: &bootstrap}, &settingsLLMTesterStub{}, settingsMCPTesterStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runtime, err := svc.LoadRuntimeConfiguration(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.MCPServers) != 1 || runtime.MCPServers[0].Token != "stored-token" {
+		t.Fatalf("MCPServers=%+v, want stored token to win", runtime.MCPServers)
+	}
+}
+
+func TestLoadRuntimeConfigurationDoesNotReenableDisabledBootstrapAlias(t *testing.T) {
+	repository := &settingsRepositoryStub{mcpServers: []MCPServerRecord{{
+		ID: "document-db", Alias: "document", Transport: "streamable_http",
+		EndpointURL: "http://localhost:8085/mcp", TokenHeader: "Authorization",
+		ToolTimeoutSeconds: 30, Enabled: false,
+	}}}
+	bootstrap := RuntimeMCPConfig{Alias: "document", Token: "environment-token"}
+	svc, err := NewConfigService(repository, settingsCipherStub{}, BootstrapSettings{MCPServer: &bootstrap}, &settingsLLMTesterStub{}, settingsMCPTesterStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runtime, err := svc.LoadRuntimeConfiguration(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.MCPServers) != 0 {
+		t.Fatalf("MCPServers=%+v, want disabled database record to suppress bootstrap", runtime.MCPServers)
+	}
+}
+
+func TestLoadRuntimeConfigurationAppendsBootstrapWhenOtherMCPRecordsExist(t *testing.T) {
+	repository := &settingsRepositoryStub{mcpServers: []MCPServerRecord{{
+		ID: "other-db", Alias: "other_mcp", Transport: "streamable_http",
+		EndpointURL: "http://localhost:8090/mcp", TokenHeader: "Authorization",
+		ToolTimeoutSeconds: 30, Enabled: true,
+	}}}
+	bootstrap := RuntimeMCPConfig{
+		Alias: "document", Transport: "streamable_http", EndpointURL: "http://localhost:8085/mcp",
+		Token: "environment-token", TokenHeader: "Authorization", ToolTimeout: 30 * time.Second,
+	}
+	svc, err := NewConfigService(repository, settingsCipherStub{}, BootstrapSettings{MCPServer: &bootstrap}, &settingsLLMTesterStub{}, settingsMCPTesterStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runtime, err := svc.LoadRuntimeConfiguration(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.MCPServers) != 2 || runtime.MCPServers[1].Alias != "document" {
+		t.Fatalf("MCPServers=%+v, want unrelated database server plus bootstrap", runtime.MCPServers)
 	}
 }
 
@@ -397,7 +492,7 @@ func TestUpdateSettingsMergesRetrievalAndPromptIntoSingleVersion(t *testing.T) {
 
 	newPrompt := "New merged prompt."
 	_, err = svc.UpdateSettings(context.Background(), "user-1", "request-1", UpdateQASettingsInput{
-		Retrieval: &RetrievalSettings{TopK: 10, ScoreThreshold: .8, RerankThreshold: .3, RerankTopN: 5},
+		Retrieval:    &RetrievalSettings{TopK: 10, ScoreThreshold: .8, RerankThreshold: .3, RerankTopN: 5},
 		SystemPrompt: &newPrompt,
 	})
 	if err != nil {

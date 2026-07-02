@@ -11,6 +11,7 @@ from pathlib import Path
 
 SEED_001 = Path("deploy/seeds/001-local-demo-seed.sql")
 SEED_002 = Path("deploy/seeds/002-ai-gateway-model-profiles.sql")
+SEED_003 = Path("deploy/seeds/003-qa-document-mcp.sql")
 CLEANUP_SEED = Path("deploy/seeds/099-local-demo-cleanup.sql")
 DEPLOY_README = Path("deploy/README.md")
 LOCAL_RUNBOOK = Path("docs/runbooks/local-integration.md")
@@ -61,6 +62,18 @@ REQUIRED_AI_TOKENS = [
     "local-demo-key-v1",
 ]
 
+REQUIRED_DOCUMENT_MCP_TOKENS = [
+    r"\\connect\s+qa_system",
+    "33333333-3333-4333-8333-333333333601",
+    "'document'",
+    "'Document MCP'",
+    "'streamable_http'",
+    "'http://localhost:8085/mcp'",
+    "'Authorization'",
+    "'local-seed'",
+    "ON CONFLICT (alias) DO UPDATE",
+]
+
 FORBIDDEN_AI_TOKENS = [
     "host.docker.internal",
 ]
@@ -102,6 +115,7 @@ REQUIRED_DEV_UP_TOKENS = [
     "psql",
     "001-local-demo-seed.sql",
     "002-ai-gateway-model-profiles.sql",
+    "003-qa-document-mcp.sql",
     "--wait",
     "--wait-timeout",
     "initialize_qdrant_collection",
@@ -140,6 +154,11 @@ REQUIRED_STOP_BACKEND_TOKENS = [
 
 REQUIRED_ENV_TOKENS = [
     "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple",
+    "MCP_TRANSPORT=streamable_http",
+    "MCP_SERVER_ALIAS=document",
+    "MCP_SERVER_URL=http://localhost:8085/mcp",
+    "MCP_SERVER_TOKEN=local-dev-internal-service-token-change-me",
+    "MCP_SERVER_TOKEN_HEADER=Authorization",
 ]
 
 REQUIRED_PARSER_UV_LOCK_TOKENS = [
@@ -183,6 +202,7 @@ def verify_local_seed_contract(root: Path) -> list[str]:
 
     seed_001 = read_required(root, SEED_001, issues)
     seed_002 = read_required(root, SEED_002, issues)
+    seed_003 = read_required(root, SEED_003, issues)
     cleanup_seed = read_required(root, CLEANUP_SEED, issues)
     auth_migrations = read_required_glob(root, AUTH_MIGRATIONS_DIR, "*.sql", issues)
     deploy_readme = read_required(root, DEPLOY_README, issues)
@@ -196,6 +216,7 @@ def verify_local_seed_contract(root: Path) -> list[str]:
 
     issues.extend(validate_seed_001(seed_001))
     issues.extend(validate_seed_002(seed_002))
+    issues.extend(validate_seed_003(seed_003))
     issues.extend(validate_cleanup_seed(cleanup_seed))
     issues.extend(validate_auth_migrations(auth_migrations))
     issues.extend(
@@ -276,6 +297,21 @@ def validate_seed_002(content: str) -> list[str]:
     return issues
 
 
+def validate_seed_003(content: str) -> list[str]:
+    if not content:
+        return []
+    issues: list[str] = []
+    for token in REQUIRED_DOCUMENT_MCP_TOKENS:
+        if token.startswith(r"\\connect"):
+            if not re.search(token, content):
+                issues.append(f"{SEED_003} missing database section matching `{token}`")
+        elif token not in content:
+            issues.append(f"{SEED_003} missing Document MCP token `{token}`")
+    if "token_encrypted" not in content or "NULL" not in content:
+        issues.append(f"{SEED_003} must keep the Document MCP credential out of PostgreSQL")
+    return issues
+
+
 def validate_cleanup_seed(content: str) -> list[str]:
     if not content:
         return []
@@ -285,10 +321,11 @@ def validate_cleanup_seed(content: str) -> list[str]:
         "doc_local_demo_seed",
         "22222222-2222-4222-8222-222222222301",
         "33333333-3333-4333-8333-333333333301",
+        "33333333-3333-4333-8333-333333333601",
     ]:
         if token not in content:
             issues.append(f"{CLEANUP_SEED} missing cleanup token `{token}`")
-    for table in ["message_content_blocks", "report_section_versions", "document_chunks", "auth_credentials"]:
+    for table in ["mcp_servers", "message_content_blocks", "report_section_versions", "document_chunks", "auth_credentials"]:
         if table not in content:
             issues.append(f"{CLEANUP_SEED} missing cleanup table `{table}`")
     return issues
@@ -364,6 +401,7 @@ def validate_forbidden_content(root: Path) -> list[str]:
     for relative in [
         SEED_001,
         SEED_002,
+        SEED_003,
         CLEANUP_SEED,
         DEPLOY_README,
         LOCAL_RUNBOOK,

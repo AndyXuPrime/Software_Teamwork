@@ -55,7 +55,9 @@ Environment keys:
 | `MCP_SERVER_COMMAND` | no | Reserved for package-owned stdio tests; runtime configuration must not launch local commands. |
 | `MCP_SERVER_ARGS_JSON` | no | Reserved for package-owned stdio tests; runtime MCP servers use Streamable HTTP. |
 | `MCP_SERVER_URL` | for HTTP | Absolute HTTP(S) Streamable HTTP endpoint. |
+| `MCP_SERVER_ALIAS` | for HTTP | Stable `[a-z0-9_]{2,32}` namespace; model-facing names are `<alias>__<server-tool>`. |
 | `MCP_SERVER_TOKEN` | no | Remote MCP credential; never log or persist. |
+| `MCP_SERVER_TOKEN_HEADER` | no | Credential header, default `Authorization`; Authorization tokens are sent as Bearer. |
 | `MCP_TOOL_TIMEOUT` | no | Positive Go duration, default `30s`. |
 | `AGENT_MAX_ITERATIONS` | no | Positive integer, default `8`. |
 | `AGENT_WORKDIR` | no | Existing workspace root for built-in file/command tools; defaults to process cwd. |
@@ -76,6 +78,13 @@ MCP CallToolResult
   -> role=tool, tool_call_id=<model call id>, content=<bounded result>
 ```
 
+Runtime MCP configuration merge:
+
+```text
+database mcp_servers metadata + matching environment bootstrap credential
+  -> RuntimeMCPConfig[]
+```
+
 Built-in Function Calling tools:
 
 ```text
@@ -89,6 +98,8 @@ bash(command, timeout_seconds?)  # only when explicitly enabled
 - Stdio server stdout contains MCP JSON-RPC only; diagnostics use stderr.
 - The loop executes every tool call in a model turn, appends correlated tool results, and calls the model again.
 - Built-in and MCP tools are merged behind one `ToolClient`; duplicate names fail discovery instead of silently shadowing another tool.
+- Database MCP rows are the administrative authority. For a matching alias, an encrypted database token wins; when the enabled row has no token, use the environment bootstrap token. A disabled matching row suppresses bootstrap. When only unrelated database aliases exist, append bootstrap instead of dropping it.
+- Local seeds may store alias, endpoint, header, timeout, and enabled state, but must not persist plaintext or environment-specific encrypted service tokens.
 - File tool paths are relative to `AGENT_WORKDIR` and checked after symlink resolution. File content must be UTF-8 and bounded.
 - The command tool runs inside `AGENT_WORKDIR`, has bounded output and timeout, and is disabled by default. It only permits path-free diagnostic commands; file access must use the workspace-bounded file tools.
 - Tool failures become sanitized tool-result messages so the model can recover. Raw downstream errors, prompts, credentials, and internal payloads are not returned to the model or frontend.
@@ -101,6 +112,9 @@ bash(command, timeout_seconds?)  # only when explicitly enabled
 | Missing model URL/key/model | Startup configuration error. |
 | Stdio transport in runtime configuration | Startup configuration error; use `streamable_http`. |
 | HTTP without absolute endpoint | Startup configuration error. |
+| Matching enabled database alias without stored token | Merge the matching environment token; retain database endpoint/timeout metadata. |
+| Matching disabled database alias | Keep disabled; do not append or re-enable environment bootstrap. |
+| Database contains only unrelated MCP aliases | Keep those enabled rows and append environment bootstrap. |
 | Invalid `MCP_SERVER_ARGS_JSON` | Startup configuration error; never invoke a shell. |
 | Missing or invalid `AGENT_WORKDIR` | Startup configuration error. |
 | Absolute, traversal, or escaping-symlink file path | Return sanitized `invalid_path`; do not access it. |
@@ -118,7 +132,9 @@ bash(command, timeout_seconds?)  # only when explicitly enabled
 ### 5. Good/Base/Bad Cases
 
 - Good: expose workspace-bounded local tools through Function Calling, optionally merge official-SDK MCP tools, and correlate results by `tool_call_id`.
+- Good: seed non-secret remote MCP metadata and inject its credential from the host environment by matching alias.
 - Base: run with `MCP_TRANSPORT=disabled` and use read/write/edit only.
+- Bad: treat the existence of any database MCP row as a reason to discard an unrelated environment bootstrap, or let bootstrap re-enable an explicitly disabled alias.
 - Bad: parse JSON-RPC manually inside the Agent Loop, invoke commands through a shell, print logs to MCP stdout, or send tokens/tool arguments to logs.
 
 ### 6. Tests Required
@@ -130,6 +146,7 @@ bash(command, timeout_seconds?)  # only when explicitly enabled
 - Composite-tool tests: merge and route local/MCP providers; reject duplicate names.
 - Model client contract test: Authorization header, `tools`, `tool_choice`, assistant `tool_calls`, and sanitized non-2xx handling.
 - Configuration tests: transport-specific required fields, JSON argument parsing, URL validation, and defaults.
+- Runtime configuration tests: matching token fallback, stored-token precedence, disabled-alias precedence, and bootstrap append with unrelated database aliases.
 - Service checks: `gofmt -l .`, `go vet ./...`, `go test ./...`, and `go build ./cmd/agent`.
 
 ### 7. Wrong vs Correct
