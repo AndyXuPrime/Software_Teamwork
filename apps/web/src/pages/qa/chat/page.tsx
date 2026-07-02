@@ -707,7 +707,15 @@ export function ChatPage() {
                 msgs[lastIdx] = {
                   ...last,
                   artifacts: [
-                    ...existing.filter((a) => a.reportId !== failedArtifact.reportId),
+                    ...existing.filter((a) => {
+                      const aKey = a.reportId ?? a.jobId ?? a.reportName ?? ''
+                      const bKey =
+                        failedArtifact.reportId ??
+                        failedArtifact.jobId ??
+                        failedArtifact.reportName ??
+                        ''
+                      return aKey !== bKey
+                    }),
                     failedArtifact,
                   ],
                 } as QAMessage
