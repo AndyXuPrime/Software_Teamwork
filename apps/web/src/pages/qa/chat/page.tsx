@@ -279,14 +279,11 @@ export function ChatPage() {
 
   // ── Report artifact download handler ──
   const handleArtifactDownload = useCallback(
-    async (reportFileId: string, filename: string) => {
+    async (downloadPath: string, filename: string) => {
       try {
-        const blob = await gatewayFileRequest(
-          `/report-files/${encodeURIComponent(reportFileId)}/content`,
-        )
+        const blob = await gatewayFileRequest(downloadPath)
         const url = URL.createObjectURL(blob)
         downloadFromUrl(url, filename)
-        // Revoke after a short delay to allow the browser to start the download
         setTimeout(() => URL.revokeObjectURL(url), 1000)
       } catch {
         setError('报告文件下载失败')

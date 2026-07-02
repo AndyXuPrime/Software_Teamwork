@@ -293,12 +293,19 @@ function getStringArray(record: Record<string, unknown>, key: string): string[] 
   return result.length > 0 ? result : undefined
 }
 
+function sanitizeArtifactText(value: string | undefined): string | undefined {
+  if (typeof value !== 'string' || value.length === 0) return undefined
+  const trimmed = value.slice(0, 200)
+  if (isBlockedSummaryValue(trimmed)) return undefined
+  return trimmed
+}
+
 function parseReportArtifactPreview(raw: unknown): QAReportArtifactPreview | undefined {
   if (!isRecord(raw)) return undefined
   const preview: QAReportArtifactPreview = {}
-  const title = getString(raw, 'title')
+  const title = sanitizeArtifactText(getString(raw, 'title'))
   if (title) preview.title = title
-  const summary = getString(raw, 'summary')
+  const summary = sanitizeArtifactText(getString(raw, 'summary'))
   if (summary) preview.summary = summary
   const outlineTitles = getStringArray(raw, 'outlineTitles')
   if (outlineTitles) preview.outlineTitles = outlineTitles
@@ -306,7 +313,7 @@ function parseReportArtifactPreview(raw: unknown): QAReportArtifactPreview | und
   if (sectionTitles) preview.sectionTitles = sectionTitles
   const progressPercent = getNumber(raw, 'progressPercent')
   if (progressPercent != null) preview.progressPercent = progressPercent
-  const statusText = getString(raw, 'statusText')
+  const statusText = sanitizeArtifactText(getString(raw, 'statusText'))
   if (statusText) preview.statusText = statusText
   // Must have at least one meaningful field
   if (
@@ -342,7 +349,7 @@ export function parseReportArtifact(raw: unknown): QAReportArtifact | null {
 
   const reportId = getString(raw, 'reportId')
   if (reportId) artifact.reportId = reportId
-  const reportName = getString(raw, 'reportName')
+  const reportName = sanitizeArtifactText(getString(raw, 'reportName'))
   if (reportName) artifact.reportName = reportName
   const reportType = getString(raw, 'reportType')
   if (reportType) artifact.reportType = reportType
