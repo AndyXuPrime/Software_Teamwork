@@ -239,7 +239,7 @@ chunks、jobs、documents、knowledge base 的顺序删除本轮 Knowledge Postg
 
 ```bash
 cd services/qa
-docker compose up --build
+docker compose up
 ```
 
 该 Compose 适合验证 Auth、QA、Gateway 的基础 ready 状态和 QA 非 provider 依赖路径：
@@ -256,7 +256,7 @@ curl -fsS http://localhost:8080/readyz
 
 ```bash
 cd services/document
-docker compose up --build
+docker compose up
 ```
 
 该 Compose 适合验证 Document PostgreSQL、Redis、migration、job enqueue 和 worker 状态机：
@@ -267,28 +267,29 @@ curl -fsS http://localhost:8085/readyz
 
 注意：模板、材料和报告文件 bytes 需要 File Service；真实大纲/正文生成需要 AI Gateway。当前基础 DOCX 导出使用 Document 内置 `SimpleDOCXGenerator`，不需要 Pandoc/LibreOffice；Pandoc/LibreOffice 仅是后续富 DOCX worker 工具链。当前 Compose 只给 File/AI Gateway 下游设置 URL，不启动这些下游服务，所以 Document-only 环境不能完整读取生成文件内容。Document worker 会执行 `report_file_creation` 的基础 DOCX 导出；其他大纲/正文生成类 job 仍只完成 job/attempt 状态流转。
 
-### AI Gateway root profile / host-run
+### AI Gateway host-run
 
-根级 `deploy/docker-compose.yml` 的 `--profile ai` 会启动 AI Gateway、执行 migration，并通过
-`seed-local-ai` 写入本地 placeholder profile。下面的 host-run 示例用于单独调试服务进程。
-AI Gateway 服务 token 运行时只接受 hash：
+PR #487 之后 AI Gateway 作为本机进程运行（不再有 `--profile ai` Docker 服务）。
+`dev-up.sh` 会自动执行 ai-gateway migration 并写入本地 placeholder profile；`run-backend.sh`
+会随其他服务一起启动 ai-gateway。
+
+AI Gateway 服务 token 运行时只接受 hash，如需手动验证：
 
 ```bash
 TOKEN=dev-internal-service-token-change-me
 printf '%s' "$TOKEN" | shasum -a 256 | awk '{print "sha256:" $1}'
 ```
 
-最小 host-run 环境示例：
+环境变量通过 `deploy/.env` 统一加载（`AI_GATEWAY_DATABASE_URL`、
+`AI_GATEWAY_SERVICE_TOKEN_HASHES`、`AI_GATEWAY_CREDENTIAL_ENCRYPTION_KEY` 等均在
+`.env` 中定义）。若要单独调试，可手动 source 后运行：
 
 ```bash
-export AI_GATEWAY_HTTP_ADDR=:8086
-export AI_GATEWAY_DATABASE_URL='postgres://ai_gateway:ai_gateway@localhost:5436/ai_gateway?sslmode=disable'
-export AI_GATEWAY_SERVICE_TOKEN_HASHES='sha256:<token-sha256-hex>'
-export AI_GATEWAY_CREDENTIAL_ENCRYPTION_KEY_REF=local-dev-key-v1
-export AI_GATEWAY_CREDENTIAL_ENCRYPTION_KEY='<long-local-secret>'
+set -a && source deploy/.env && set +a
 
 cd services/ai-gateway
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$AI_GATEWAY_DATABASE_URL" up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 \
+  -dir migrations postgres "$AI_GATEWAY_DATABASE_URL" up
 go run ./cmd/server
 ```
 
@@ -330,17 +331,17 @@ curl -X PATCH http://localhost:8080/api/v1/admin/model-profiles/default-chat \
 API key 通过管理端 UI 配置（Admin → 模型配置 → default-chat → 更新凭证），
 不经过命令行，避免泄漏到 shell 历史。
 
-> **Docker 网络注意**：ai-gateway 容器调用 `api.deepseek.com` 等外部 provider
-> 时走容器内网络，不继承宿主机代理。如果所在网络不能直连外网，需要在
-> `deploy/.env` 中配置容器代理（`host.docker.internal` 指向宿主机）：
+> **代理注意**：ai-gateway 以本机进程运行（PR #487 后不再使用 Docker），直接继承
+> 宿主机代理环境变量。如果所在网络需要代理才能访问外部 provider，在 `deploy/.env`
+> 中添加：
 >
 > ```bash
-> AI_GATEWAY_HTTP_PROXY=http://host.docker.internal:7897
-> AI_GATEWAY_HTTPS_PROXY=http://host.docker.internal:7897
+> HTTP_PROXY=http://127.0.0.1:7897
+> HTTPS_PROXY=http://127.0.0.1:7897
 > ```
 >
-> 配置后重启 ai-gateway 容器：`docker compose --profile ai restart ai-gateway`。
-> 端口号改成本机实际代理端口。
+> 然后重启 ai-gateway 进程（先执行 `stop-backend-windows.ps1`，再执行
+> `start-backend-windows.ps1`）。端口号改成本机实际代理端口。
 
 #### 验证
 
@@ -422,8 +423,8 @@ real provider credentials. Do not commit `.env` values, provider keys, service
 tokens, full prompts, document text, embedding payloads, or provider raw error
 bodies.
 
-1. Start the local AI profile stack:
-   `cd deploy && docker compose --profile ai up -d --build`.
+1. Start the local stack (infra + all backend services):
+   `./scripts/local/dev-up.sh && ./scripts/local/run-backend.sh`.
 2. Check AI Gateway readiness:
    `curl -s http://127.0.0.1:8086/readyz`.
    `missing` means the profile or active credential is absent; `placeholder`
