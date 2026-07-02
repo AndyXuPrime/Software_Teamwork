@@ -196,10 +196,15 @@ AI Gateway 的内部模型调用接口已经有独立契约：[`docs/services/ai
 
 ## 健康检查
 
+本项目选择拆分轻量 readiness 与完整跨服务诊断：`GET /readyz` 用于
+Gateway 自身接流量前的关键依赖门禁，不负责证明所有 owner service 的业务链路都
+可用。完整链路可用性由本地联调 runbook 中的 env-gated smoke、#125 跨服务
+smoke 和 #352 Auth/Gateway/Redis smoke 承担。
+
 | Endpoint | 说明 |
 | --- | --- |
 | `GET /healthz` | 进程存活检查，只表示 gateway 进程可响应。 |
-| `GET /readyz` | 就绪检查，后续可包含关键下游依赖状态。 |
+| `GET /readyz` | 轻量就绪检查，当前检查 Redis session cache、Auth `/readyz`，并确认 `knowledge`、`qa`、`document`、`ai-gateway` owner base URL 已配置。它不请求这些 owner services 的 `/readyz`，也不证明上传、检索、QA、报告生成、模型 profile 或真实 provider 调用已可用。 |
 
 ## 后续扩展
 
@@ -210,3 +215,4 @@ AI Gateway 的内部模型调用接口已经有独立契约：[`docs/services/ai
 - API 版本兼容策略。
 - 限流、审计和安全事件记录。
 - 多端 BFF 拆分条件。
+- 可选 diagnostics 或 smoke 入口，用于聚合 owner service ready 状态和业务级依赖验证；不把这类重型检查并入 Gateway `/readyz`。

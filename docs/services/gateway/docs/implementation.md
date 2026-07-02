@@ -56,13 +56,13 @@
 | 缺口 | 文档来源 | 影响范围 | 建议任务 |
 | --- | --- | --- | --- |
 | 管理概览/跨服务指标聚合路由待实现 | OpenAPI active paths 已定义 | backend / deploy | 契约已补齐，路由注册由单独后端 issue 追踪。 |
-| 真实依赖 ready/smoke 未验证 | README / deploy expectation | deploy / integration | 待确认：补 Redis + auth + owner services smoke。 |
+| 完整跨服务 smoke 未一键化 | README / deploy expectation | deploy / integration | `/readyz` 不承担完整业务链路验证；#125 承担跨服务 smoke，#352 承担 Auth/Gateway/Redis smoke 脚本化。 |
 
 ## 5. 文档与实现出入
 
 | 出入点 | 文档要求 | 当前实现 | 风险 | 建议处理 |
 | --- | --- | --- | --- | --- |
-| readyz 依赖 | Gateway README 要求统一入口可用 | `gatewayReadyCheck` 要求 Redis、auth、knowledge、qa、document、ai-gateway base URL 全配置 | 本地只启动 gateway 时 `/readyz` 易失败 | README/implementation 保留该行为，补本地 smoke 配置。 |
+| readyz 依赖 | Gateway README 要求轻量接流量门禁，完整 owner service 可用性由 smoke/diagnostics 承担 | `gatewayReadyCheck` 检查 Redis、Auth `/readyz`，并要求 knowledge、qa、document、ai-gateway base URL 全配置；不请求这些 owner services 的 `/readyz` | 只启动 gateway 时 `/readyz` 会因 Redis/Auth 或 owner base URL 配置缺失失败；即使 `/readyz` 通过，也不能证明上传、检索、QA、报告生成、模型 profile 或真实 provider 调用可用 | 当前行为符合 #353 选择的拆分语义；保持文档一致，完整链路继续由 #125/#352 和 runbook smoke 验证。 |
 | 下游错误归一化 | 前后端契约要求统一 error envelope | proxy 会丢弃非公开错误细节并归一化 | 有利于安全，但可能隐藏调试信息 | 在日志/trace 中补 request id 和 dependency 信息。 |
 | Gateway 不写业务逻辑 | 服务边界要求 Gateway 不访问 SQL/MinIO/Qdrant/LLM | 当前代码符合 | 无 | 持续通过 review/测试防回归。 |
 | metrics 边界 | #308/#322 要求 observability baseline | Gateway 暴露自身 HTTP request count/duration；跨服务业务指标契约已补齐（admin-overview / admin-metrics），路由实现待后续 backend issue | 无 | 前后端可基于 active contract 开发 dashboard。 |
@@ -77,7 +77,7 @@
 
 | 项目 | 当前状态 | 缺口 |
 | --- | --- | --- |
-| 启动命令 | `cd services/gateway && go run ./cmd/server` | 需要 Redis、auth 和 owner base URLs 才能 ready。 |
+| 启动命令 | `cd services/gateway && go run ./cmd/server` | 需要 Redis、auth 和 owner base URLs 才能 ready；不要求 owner service 业务 smoke 已通过。 |
 | 环境变量 | `GATEWAY_HTTP_ADDR`、`GATEWAY_METRICS_ADDR`、Redis、token hash secret、auth/knowledge/qa/document/ai-gateway base URLs、CORS、timeouts | 缺根级 Compose 串联验证。 |
 | PostgreSQL / migration | 不拥有 PostgreSQL | 无。 |
 | Redis / queue | Redis session cache | 缺真实 Redis 集成测试。 |
@@ -88,7 +88,7 @@
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
 | 单元测试 | `cd services/gateway && go test ./...` | pass（既有记录，2026-06-30；本轮文档审计未重跑） | 不覆盖真实 Redis/downstreams。 |
-| 集成测试 | Gateway + Redis + auth + owner services smoke | missing | 需要本地 Compose 或脚本。 |
+| 集成测试 | Gateway + Redis + Auth smoke；Gateway -> owner service smoke | partial / missing | #352 负责 Auth/Gateway/Redis 脚本化；#125 负责更完整的跨服务 smoke。 |
 | 契约测试 | `TestActiveRouteMatrixCoversGatewayOwnerMap`、`TestQAActiveOpenAPIContractsHaveSchemasAndAuth`、`TestQAInternalOpenAPIRefsCoverGatewayActivePaths`、`TestQASseEventSchemaCoversSafePublicEvents`、`TestNotImplementedRoutesReturnStableGatewayError`、`TestGatewayDoesNotImportBusinessInfrastructureClients` | QA schema subset pass（2026-07-01，本地 `go test ./internal/http -run QA`）；全量记录需随 PR 前检查更新 | 仍不覆盖真实 Redis/downstreams。 |
 | 手工 smoke | 登录、访问 knowledge/report/qa route | not run | 需要完整依赖环境。 |
 
@@ -96,7 +96,7 @@
 
 | 任务 | 类型 | 优先级 | 依据 | 说明 |
 | --- | --- | --- | --- | --- |
-| 增加 Gateway integration smoke | 新任务 | P1 | readyz 和 proxy 依赖真实服务 | 覆盖 Redis/auth/owner base URL。 |
+| 增加 Gateway integration smoke | 已有任务 | P1 | readyz 和 proxy 依赖真实服务 | #352 覆盖 Redis/Auth/Gateway 核心链路；#125 覆盖 owner service 业务链路。 |
 
 ## 10. 最近检查记录
 

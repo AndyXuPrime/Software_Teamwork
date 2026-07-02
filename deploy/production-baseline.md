@@ -250,10 +250,13 @@ specific state as healthy only for startup ordering; operators should still
 inspect the endpoint body and complete model-profile bootstrap before accepting
 AI-dependent traffic.
 
-`ingress /readyz` delegates to `gateway /readyz`; neither proves external
-provider credentials are accepted. Use the AI Gateway provider smoke and the
-Gateway -> Knowledge -> QA RAG smoke from `docs/runbooks/local-integration.md`
-when provider/profile validation is required.
+`ingress /readyz` delegates to `gateway /readyz`. Gateway readiness checks
+Redis, Auth `/readyz`, and owner service base URL configuration; it does not
+call Knowledge, QA, Document, or AI Gateway readiness endpoints and does not
+prove business workflows or external provider credentials are accepted. Use the
+AI Gateway provider smoke and the Gateway -> Knowledge -> QA RAG smoke from
+`docs/runbooks/local-integration.md` when provider/profile or full
+cross-service validation is required.
 
 ## Persistence And Backup
 

@@ -247,8 +247,17 @@ Invoke-RestMethod http://localhost:8087/readyz
 ```
 
 `gateway /readyz` checks Redis and auth, and verifies owner service URLs are
-configured. Auth, document, and ai-gateway readiness identify PostgreSQL
-problems. Compose health checks identify container-level dependency failures.
+configured. It does not call Knowledge, QA, Document, or AI Gateway readiness
+endpoints and does not prove business workflows such as upload, retrieval, QA
+answers, report generation, model profile bootstrap, or real provider calls.
+Auth, document, and ai-gateway readiness identify PostgreSQL problems. Compose
+health checks identify container-level dependency failures.
+
+Use the targeted smoke checks in
+[`docs/runbooks/local-integration.md`](../docs/runbooks/local-integration.md)
+for complete cross-service availability. #352 owns the repeatable
+Auth/Gateway/Redis smoke, and #125 owns the broader Gateway -> owner service
+and MCP/cross-service smoke coverage.
 
 ## Seed Data
 

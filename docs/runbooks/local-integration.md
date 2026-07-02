@@ -18,6 +18,11 @@
 | 生产/准生产 Compose | baseline docs | `deploy/production-baseline.md`、`deploy/docker-compose.production.yml` 和 `deploy/.env.production.example` 已提供单机 Compose 基线、环境变量模板、持久化卷、secret、健康检查、升级和回滚说明；真实云环境部署、DNS/TLS、受保护发布流水线和 #125 完整跨服务 smoke 仍不在本地联调范围内。 |
 
 因此当前本地联调应按“根级依赖基线 + 服务级 smoke + 手动拼接关键链路”的方式执行。除非 #125 等跨服务 smoke 任务落地，不要在 PR 或文档中声称已有完整一键本地 E2E 验收环境。
+Gateway `/readyz` 是轻量接流量门禁：它检查 Redis、Auth readiness 和
+owner service base URL 配置，但不请求 Knowledge、QA、Document 或 AI Gateway
+的 `/readyz`，也不证明上传、检索、QA、报告生成、模型 profile 或真实 provider
+调用可用。完整跨服务可用性必须使用下方 targeted smoke 或 #125/#352 的脚本化
+检查记录。
 
 ## 前置依赖
 
@@ -443,7 +448,7 @@ go run ./cmd/server
 
 | 场景 | 检查 | 当前预期 |
 | --- | --- | --- |
-| Auth/Gateway/QA 局部环境 | `GET /readyz` | 三个服务 ready；真实 AI 调用可能因未启动 AI Gateway 失败。 |
+| Auth/Gateway/QA 局部环境 | 各服务 `GET /readyz` + 目标 Gateway API smoke | Gateway `/readyz` 只证明 Redis/Auth 和 owner URL 配置；QA `GET /readyz` 证明 QA 进程与自身依赖 ready；真实 AI 调用仍可能因 AI Gateway profile/provider 未配置失败。 |
 | Document 局部环境 | 创建 report job 后查询 job/attempt/events | 非文件生成类任务会入队并由 worker 推进为 succeeded；不会生成真实 AI 大纲/正文。若额外提供 File Service，`report_file_creation` 可生成基础 DOCX 并通过 content endpoint 读取成功文件。 |
 | AI Gateway profile | 创建 chat/embedding/rerank profile，调用对应内部 endpoint | fake provider 和兼容 provider 应返回 OpenAI-style body；真实 provider 需手工验证。 |
 | Gateway contract | `python3 scripts/verify_gateway_active_api.py` | active path、owner、security 和 owner map 不漂移。 |
@@ -460,6 +465,7 @@ go run ./cmd/server
 | --- | --- | --- |
 | 根级跨服务 smoke 缺失 | 即使使用 `deploy/docker-compose.yml` 启动本地/演示基线，也不能自动证明 Auth/Gateway/File/Knowledge/QA/Document/AI Gateway 链路可用。 | #125 |
 | 跨服务契约测试和 E2E smoke 缺失 | 不能自动证明前端 -> Gateway -> 多服务链路可用。 | #125 |
+| Gateway `/readyz` 非完整依赖诊断 | `/readyz` 不请求所有 owner service `/readyz`，也不执行业务级 smoke；它通过不等于 Knowledge/QA/Document/AI Gateway 全链路可用。 | #353、#125、#352 |
 | Parser 真实 OCR smoke 不在普通 CI 中运行 | Parser 已有 env-gated 真实 PaddleOCR 模型 smoke，但 CI 仍使用 fake OCR backend；真实模型、OCR 质量和部署资源需要在具备模型的本地或部署环境手动记录。 | #125 |
 | Knowledge/QA RAG smoke 仍为显式 opt-in | File 自身 PostgreSQL + MinIO smoke 已有；Knowledge ingestion 真实依赖 smoke 已覆盖 File/Parser/PostgreSQL/Qdrant 写入和状态更新；Gateway -> Knowledge -> QA RAG smoke 已提供最小验收样例，但依赖可用 AI Gateway chat profile/provider，且不覆盖 MCP、前端或 #125 完整一键 E2E。 | #125、#152、#154、#304 |
 | 生产部署基线缺失 | 当前 `deploy/docker-compose.yml` 是本地/演示基线，不能直接当生产部署。 | #150 |
