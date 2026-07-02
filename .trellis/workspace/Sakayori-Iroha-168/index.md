@@ -29,7 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
-| 8 | 2026-07-02 | Gateway readyz semantics | `8736b13c` | `Special/docs/gateway-readyz-semantics` |
+| 8 | 2026-07-02 | Gateway readyz semantics | `7ee5551e`, `b4a560a1` | `Special/docs/gateway-readyz-semantics` |
 | 7 | 2026-07-02 | S-031 production compose baseline | `9cbc6e38` | `Special/docs/production-compose-baseline` |
 | 6 | 2026-07-01 | Knowledge QA RAG smoke | `b4acb18` | `Special/test/rag-e2e-smoke` |
 | 5 | 2026-07-01 | Resolve Code Scanning alerts | `2fd3688` | `Special/fix/code-scanning-alerts` |
