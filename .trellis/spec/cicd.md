@@ -1,6 +1,6 @@
 # CI/CD Guidelines
 
-> GitHub Actions and Docker Compose delivery rules for this monorepo.
+> GitHub Actions and local infrastructure Compose rules for this monorepo.
 
 ---
 
@@ -23,7 +23,8 @@ services/parser/
 deploy/docker-compose.yml
 ```
 
-Deployment target: single-machine Docker Compose.
+Current Docker target: local infrastructure Compose only. The repository does
+not provide a business-service Docker baseline.
 
 ---
 
@@ -484,8 +485,7 @@ Product workflow files:
 |----------|----------------|---------|
 | Frontend CI | `.github/workflows/frontend.yml` | `apps/web/**` |
 | Go Services CI | `.github/workflows/go-services.yml` | `services/**` |
-| Docker / Deploy Checks | `.github/workflows/docker-deploy-checks.yml` | service image inputs, service Compose files, `deploy/**` |
-| Deploy | `.github/workflows/deploy.yml` | protected branch or manual dispatch |
+| Docker / Deploy Checks | `.github/workflows/docker-deploy-checks.yml` | infra Compose, Docker policy docs/scripts, `deploy/**` |
 
 Use path filters so unrelated documentation or service changes do not run every
 job. A workflow may still run a cheap detection job to decide which service jobs
@@ -532,13 +532,13 @@ are needed.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: `services/qa/Dockerfile.host` is in the known Dockerfile set and builds
-  through a quoted `DOCKERFILE` env variable.
+- Good: `deploy/docker-compose.yml` is in the known Compose set and is validated
+  through a quoted `COMPOSE_FILE` env variable.
 - Good: renaming a file from `services/auth/**` to `services/qa/**` selects both
   affected services, because old and new paths are evaluated.
-- Base: a service `.dockerignore` change maps to that service's known
-  Dockerfiles.
-- Bad: `services/qa/Dockerfile";echo pwned #` matches a broad workflow trigger
+- Base: a root `.env.example` or Docker policy doc change maps to the known root
+  Compose file.
+- Bad: `deploy/docker-compose.yml";echo pwned #` matches a broad workflow trigger
   and is interpolated directly into a `run` script.
 
 ### 6. Tests Required
@@ -554,18 +554,18 @@ are needed.
 
 ```yaml
 run: |
-  dockerfile="${{ matrix.dockerfile }}"
-  docker build --file "$dockerfile" "$(dirname "$dockerfile")"
+  compose_file="${{ matrix.compose-file }}"
+  docker compose -f "$compose_file" config --quiet
 ```
 
 #### Correct
 
 ```yaml
 env:
-  DOCKERFILE: ${{ matrix.dockerfile }}
+  COMPOSE_FILE: ${{ matrix.compose-file }}
 run: |
-  dockerfile="$DOCKERFILE"
-  docker build --file "$dockerfile" "$(dirname "$dockerfile")"
+  compose_file="$COMPOSE_FILE"
+  docker compose -f "$compose_file" --env-file deploy/.env.example config --quiet
 ```
 
 ## Scenario: Gateway Active API Contract Workflow
@@ -830,99 +830,77 @@ jobs:
 
 ---
 
-## Docker Build
+## Docker Infra Compose
 
-Every runtime service should have its own Dockerfile:
+Repository Docker usage is infrastructure-only. The root Compose file may pull
+and start only:
 
 ```text
-apps/web/Dockerfile
-services/gateway/Dockerfile
-services/auth/Dockerfile
-services/file/Dockerfile
-services/qa/Dockerfile
-services/knowledge/Dockerfile
-services/parser/Dockerfile
-services/document/Dockerfile
-services/ai-gateway/Dockerfile
+postgres
+redis
+qdrant
+minio
+minio-init
 ```
 
 Rules:
 
-- Use multi-stage builds for Go services.
-- Produce small runtime images.
-- Dockerfiles may use BuildKit cache mounts for dependency caches; CI Docker
-  build jobs must set `DOCKER_BUILDKIT=1` when cache mounts are present.
-- Defaults must favor runnable, verified builds over the fastest mirror. Go
-  builds should keep checksum verification enabled and expose mirror choices as
-  explicit build args.
-- Mainland China users should have a first-class explicit registry/package
-  overlay. Prefer `registry rewrite > daemon mirror > proxy`: registry rewrite
-  is repository-visible through `DOCKER_IMAGE_REGISTRY_PREFIX` and `*_IMAGE`
-  variables, daemon mirrors are local machine state, and proxies are last-resort
-  environment state. Keep these paths documented and diagnosable.
+- Do not add business services, migration jobs, seed jobs, frontend, Parser, or
+  service runtime containers to the root Compose baseline.
+- Do not add `build:` entries to `deploy/docker-compose.yml`.
 - Compose infrastructure images must keep pinned defaults and may expose
   full-image override variables for local or enterprise registries. Do not use
   `latest` as a default or documented normal path.
+- Mainland China users should have first-class explicit registry defaults.
+  Prefer `registry rewrite > daemon mirror > proxy`: registry rewrite is
+  repository-visible through pinned `*_IMAGE` variables in `deploy/.env.example`,
+  daemon mirrors are local machine state, and proxies are last-resort
+  environment state. Keep these paths documented and diagnosable.
 - Docker/Compose PR checks must run `python3 scripts/check_docker_policy.py`
-  before image build/config validation. Keep this checker aligned with Docker
-  policy changes so CI blocks obvious regressions without depending on a working
-  Docker daemon mirror.
-- Parser runtime images must avoid recursive `chown -R /app`; use
-  `COPY --chown` for the builder output and create runtime cache directories
-  explicitly before switching to the non-root user.
+  before Compose config validation. Keep this checker aligned with Docker policy
+  changes so CI blocks obvious regressions without depending on a working Docker
+  daemon mirror.
 - Docker environment diagnostics belong in `scripts/check_docker_environment.py`.
   CI may run it with `--skip-network`; local investigations may run manifest
   probes with `--profile all --clean-env`.
-- Docker policy docs/spec changes, including `deploy/README.md` and
-  `deploy/production-baseline.md`, should trigger the lightweight policy checker
-  even when no Dockerfile changed. Do not force full image builds for docs-only
-  policy edits unless the workflow detection logic itself changed.
-- Build images for changed services on PRs.
-- Treat service source, module/lock files, Dockerfile, and `.dockerignore`
-  changes as image inputs for the service's source-backed Dockerfiles.
-- Push images only from trusted branches or manual release workflows.
-- Tag images with commit SHA and, when applicable, branch or release tags.
-- Never build images with secrets baked into layers.
+- Docker policy docs/spec changes, including `deploy/README.md`, should trigger
+  the lightweight policy checker even when Compose itself did not change.
+- Business-service Docker artifacts must not be introduced into the current
+  repository baseline.
 
 ---
 
-## Docker Compose Deployment
+## Local Integration Runtime
 
-Deployment uses `deploy/docker-compose.yml` on a single machine.
+Local integration uses `deploy/docker-compose.yml` only for shared
+infrastructure. Business services run on the host.
 
-Compose must include:
+Required local sequence:
 
-- frontend,
-- gateway,
-- auth,
-- file,
-- qa,
-- knowledge,
-- document,
-- ai-gateway,
-- postgres,
-- redis,
-- qdrant,
-- minio.
+1. Copy local defaults with `cp deploy/.env.example deploy/.env`.
+2. Run `./scripts/local/dev-up.sh` to pull/start infra, apply host migrations,
+   and apply local seed.
+3. Run `./scripts/local/run-backend.sh` to start Auth, File, Parser, Knowledge,
+   AI Gateway, QA, Document, and Gateway as host processes.
+4. Run `cd apps/web && bun install && bun run dev` for the frontend.
 
-Deployment rules:
+Runtime rules:
 
-- Store runtime secrets outside the repository.
-- Use `.env.example` for required variable names only.
-- Use named volumes for PostgreSQL, Qdrant, MinIO, and Redis when persistence is required.
-- Production/staging Compose should expose only the ingress service publicly by
-  default; frontend, gateway, and internal services stay on the Compose network.
-- Keep internal services on the Compose network.
-- Add health checks for infrastructure and services before relying on automated deployment.
+- Store real runtime secrets outside the repository.
+- Use `deploy/.env.example` as the single default local configuration source.
+  Startup scripts may load `deploy/.env`, but must not duplicate service env
+  defaults or generate env files for the user.
+- `run-backend.sh` prepares Parser with
+  `uv sync --frozen --group dev --extra paddleocr`; users need uv, not a
+  separate manual Python install step.
+- Use named volumes for PostgreSQL, Qdrant, and MinIO persistence.
+- Keep frontend and browser traffic routed through Gateway.
+- Health checks for infra stay in Compose; service health checks are host-run
+  `/healthz` and `/readyz` calls.
 
 ---
 
-## Secrets and Environments
-
-GitHub Actions secrets should be scoped by environment:
-
-- `staging` for test deployment,
-- `production` for release deployment if production is later enabled.
+## Secrets
 
 Never commit:
 
@@ -932,23 +910,6 @@ Never commit:
 - API keys,
 - SSH private keys,
 - cloud credentials.
-
-Deployment workflows should use GitHub Environments and required reviewers for
-production-like targets.
-
----
-
-## Rollback
-
-Every deployment workflow must have a documented rollback path before production
-use.
-
-Minimum rollback strategy:
-
-1. Keep previous image tags available.
-2. Keep the previous Compose file or release revision identifiable.
-3. Re-deploy the last known-good image tags.
-4. Do not run irreversible migrations automatically without an explicit release decision.
 
 ---
 
@@ -964,10 +925,9 @@ workflow sections above. For PRs:
 - Frontend changes are covered by Frontend CI; local `bun run --cwd apps/web check`,
   `bun run --cwd apps/web build`, and targeted tests remain useful PR-before
   evidence.
-- Docker/Compose config checks are covered for affected service image inputs,
-  existing buildable Dockerfiles, and service Compose files; image push, full DB
-  integration jobs, and cross-service smoke remain future gates until stable
-  workflows land.
+- Docker/Compose config checks are covered for the infra-only root Compose,
+  Docker policy docs/scripts, and image-source overlays; full DB integration
+  jobs and cross-service smoke remain future gates until stable workflows land.
 - Documentation changes update README/specs when architecture, commands,
   contracts, or implementation status change.
 
@@ -977,7 +937,5 @@ workflow sections above. For PRs:
 
 - Running all service builds for every small frontend change.
 - Assuming a root Go module exists.
-- Pushing Docker images from untrusted pull request contexts.
 - Committing production `.env` files.
 - Exposing internal services directly to the public network.
-- Adding deployment automation before rollback and secret handling are defined.

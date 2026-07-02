@@ -63,9 +63,9 @@ func Load() (Config, error) {
 		CORSAllowedHeaders:   csvValue("GATEWAY_CORS_ALLOWED_HEADERS", []string{"Authorization", "Content-Type", "X-Request-Id"}),
 		RedisAddr:            stringValue("GATEWAY_REDIS_ADDR", DefaultRedisAddr),
 		RedisPassword:        os.Getenv("GATEWAY_REDIS_PASSWORD"),
-		TokenHashSecret:      stringValue("GATEWAY_TOKEN_HASH_SECRET", DefaultTokenHashSecret),
+		TokenHashSecret:      stringValueFromKeys([]string{"GATEWAY_TOKEN_HASH_SECRET", "TOKEN_HASH_SECRET"}, DefaultTokenHashSecret),
 		TokenHashKeyVersion:  stringValue("GATEWAY_TOKEN_HASH_KEY_VERSION", DefaultTokenKeyVersion),
-		InternalServiceToken: strings.TrimSpace(os.Getenv("GATEWAY_INTERNAL_SERVICE_TOKEN")),
+		InternalServiceToken: firstNonEmptyEnv("GATEWAY_INTERNAL_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
 		AuthBaseURL:          stringValue("GATEWAY_AUTH_BASE_URL", "http://localhost:8001"),
 		KnowledgeBaseURL:     strings.TrimSpace(os.Getenv("GATEWAY_KNOWLEDGE_BASE_URL")),
 		QABaseURL:            strings.TrimSpace(os.Getenv("GATEWAY_QA_BASE_URL")),
@@ -145,6 +145,24 @@ func stringValue(key string, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func stringValueFromKeys(keys []string, fallback string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return fallback
+}
+
+func firstNonEmptyEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func csvValue(key string, fallback []string) []string {

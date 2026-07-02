@@ -18,7 +18,7 @@
 - env-gated integration tests 默认可能跳过；如果本次改动触碰 repository、SQL 或 migration，应尽量提供本地数据库执行记录。
 - 测试组 `T-*` 任务必须实际运行测试并留下可复核证据；纯单元/组件自动化或静态检查可在 issue/PR 中保留轻量执行记录，集成、E2E、权限/安全边界、文件/Parser 边界、migration、环境验收、人工验收、回归或缺陷复现必须按 `docs/testing/templates/test-report-template.md` 生成完整报告并归档到 `docs/testing/reports/YYYY-MM-DD/`。
 - 当前有前端 Playwright 基础 smoke，但没有后端跨服务完整 E2E smoke；不要用单服务测试或前端 mock E2E 替代跨服务验收。
-- Parser runtime、Dockerfile 和 Parser Service CI 已落地；当前 CI 使用 fake OCR backend 覆盖 lint/test/compile，并在 PaddleOCR 依赖、锁文件或 Dockerfile 变化时校验 extra lock。真实 PaddleOCR 模型 smoke 已作为 env-gated 本地命令提供，但不属于普通 CI required check。
+- Parser runtime 和 Parser Service CI 已落地；当前 CI 使用 fake OCR backend 覆盖 lint/test/compile，并在 PaddleOCR 依赖或锁文件变化时校验 extra lock。真实 PaddleOCR 模型 smoke 已作为 env-gated 本地命令提供，但不属于普通 CI required check。
 - open PR、未合入 issue 和草案不能写成当前 `develop` 已实现；测试记录也不能把未稳定依赖的检查写成 required。
 
 ## 自动化测试分层
@@ -35,7 +35,7 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 
 ### 触发原则
 
-触发范围以改动影响面为准：改文档只需要文档一致性和 `git diff --check`；改前端页面或 API client 需要前端 check/build/unit，触碰关键流程时再加 E2E smoke；改 Gateway OpenAPI、owner map 或 route 时需要契约校验和前端类型生成检查；改后端 service、repository、SQL 或 migration 时需要对应服务测试，并按风险补充 repository 或 migration apply；改 Docker、Compose、runtime dependency 或 CI 配置时，需要同步 runbook/技术决策文档并运行对应 policy/config 检查。跨契约、跨服务或共享能力变更要扩大验证范围，不能只跑离改动最近的一层。
+触发范围以改动影响面为准：改文档只需要文档一致性和 `git diff --check`；改前端页面或 API client 需要前端 check/build/unit，触碰关键流程时再加 E2E smoke；改 Gateway OpenAPI、owner map 或 route 时需要契约校验和前端类型生成检查；改后端 service、repository、SQL 或 migration 时需要对应服务测试，并按风险补充 repository 或 migration apply；改 Docker infra Compose、基础设施镜像源、runtime dependency 或 CI 配置时，需要同步 runbook/技术决策文档并运行对应 policy/config 检查。跨契约、跨服务或共享能力变更要扩大验证范围，不能只跑离改动最近的一层。
 
 ### 暂不纳入默认自动化的内容
 
@@ -48,8 +48,8 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | `frontend.yml` | `apps/web/**`、根前端依赖文件和 workflow | 执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`build`、`test:unit` 和 Playwright E2E smoke。 |
 | `go-services.yml` | `services/{ai-gateway,auth,document,file,gateway,knowledge,qa}` | 根据变更路径只选择受影响服务，执行 `go test ./...`、`go build ./cmd/server`；QA 额外 build `./cmd/agent`；Knowledge 或 workflow 变更时额外用 PostgreSQL 16 和 `KNOWLEDGE_TEST_DATABASE_URL` 执行 repository lifecycle integration test。 |
 | `go-migrations.yml` | 有 SQL migration 的后端服务 | 校验 migration 文件名并用 `goose@v3.27.1` 对 PostgreSQL 16 apply。 |
-| `parser-service.yml` | `services/parser/**` | 执行 `uv sync --frozen --group dev`、`uv run ruff check .`、`uv run pytest` 和 `uv run python -m compileall src tests`；当 `services/parser/pyproject.toml`、`uv.lock` 或 `Dockerfile` 变化时额外执行 PaddleOCR extra lock dry-run；测试使用 fake OCR backend，不下载真实 PaddleOCR 模型。 |
-| `docker-deploy-checks.yml` | Docker/Compose 输入、Docker 相关 runbook/spec、服务 Compose、`deploy/**` | 先执行 `python3 scripts/check_docker_policy.py`；对受影响服务的可构建 Dockerfile 执行 `docker build`，对变更的 Compose 文件执行 `docker compose ... config --quiet`；Docker 文档/spec-only 变更只跑轻量 policy check，不 push 镜像、不部署。 |
+| `parser-service.yml` | `services/parser/**` | 执行 `uv sync --frozen --group dev`、`uv run ruff check .`、`uv run pytest` 和 `uv run python -m compileall src tests`；当 `services/parser/pyproject.toml` 或 `uv.lock` 变化时额外执行 PaddleOCR extra lock dry-run；测试使用 fake OCR backend，不下载真实 PaddleOCR 模型。 |
+| `docker-deploy-checks.yml` | `deploy/docker-compose.yml`、Docker infra runbook/spec、Docker policy/environment scripts | 执行 `python3 scripts/check_docker_policy.py`、Docker policy/environment 单元测试、`check_docker_environment.py --skip-network --clean-env`，并对根级 infra-only Compose 执行 `docker compose ... config --quiet`；不处理业务服务容器。 |
 | `gateway-contract.yml` | Gateway OpenAPI active API | 执行 verifier unit tests 和 `python3 scripts/verify_gateway_active_api.py`。 |
 | `check-api-types.yml` | 前端 Gateway 类型漂移 | 在 `apps/web` 执行 `bun run api:generate`，本地等价命令为 `bun run --cwd apps/web api:generate`，并要求 generated diff 干净。 |
 | `commitlint.yml` / `pr-guard.yml` | 协作规则 | 检查提交格式、PR body、issue 关联和 base 更新要求。 |
@@ -68,10 +68,10 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | 前端 API 类型 | `bun run --cwd apps/web api:generate`；确认 generated diff 符合预期。 |
 | 单个 Go 服务 | `cd services/<service> && go test ./...`；`go build ./cmd/server`。 |
 | QA 服务 | `cd services/qa && go test ./...`；`go build ./cmd/server`；`go build ./cmd/agent`。 |
-| Docker policy | `python3 scripts/check_docker_policy.py`；验证 BuildKit、镜像默认值、`GOSUMDB`、`latest`、Parser 容器入口、中国网络 overlay 和 `.dockerignore` 是否回退。Image-only production Compose 只验证镜像 tag/config；Parser build mirror args 只在 Compose 实际包含 `build:` 时强制。 |
+| Docker policy | `python3 scripts/check_docker_policy.py`；验证根级 Compose 只包含 `postgres`、`redis`、`qdrant`、`minio`、`minio-init`，不包含 `build:`，基础设施镜像默认值不使用 `latest`，`deploy/.env.example` 只覆盖 infra image。 |
+| 本地启动脚本 / 文档 | `bash -n scripts/local/dev-up.sh scripts/local/run-backend.sh scripts/local/stop-backend.sh`；`python3 scripts/verify_local_seed_contract.py`；确认 README/deploy/runbook 第一屏仍是 `cp deploy/.env.example deploy/.env`、`./scripts/local/dev-up.sh`、`./scripts/local/run-backend.sh`、`cd apps/web && bun install && bun run dev`。 |
 | Docker environment | `python3 scripts/check_docker_environment.py --profile all --clean-env`；用于区分 registry rewrite、daemon mirror、Docker Hub direct 和 shell proxy 的问题。CI 只跑 `--skip-network`，真实 manifest 探测作为本地/排障检查。 |
-| Dockerfile | 对变更的可构建 Dockerfile 执行 `DOCKER_BUILDKIT=1 docker build --file <Dockerfile> <context>`；中国网络优先使用 `deploy/.env.china.example` 或等价 build args。不 push 镜像。若本机 Docker daemon mirror 在 base image metadata 阶段返回 401/超时，应先按 Docker runbook 选择 registry rewrite 或修正 mirror，或在 PR 记录为环境阻断。 |
-| Compose | `docker compose -f <compose-file> config --quiet`；根级 Compose 额外跑 `--env-file deploy/.env.example` 和 `--profile ai`。 |
+| Compose | `docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config --quiet`；服务清单只能是五个 infra 服务。 |
 | Knowledge repository / SQL | `cd services/knowledge && KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' go test ./internal/repository -count=1`。 |
 | Knowledge ingestion real deps | 启动 PostgreSQL/File/Parser/Qdrant 后执行 `cd services/knowledge && KNOWLEDGE_INGESTION_SMOKE=1 ... go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v`；默认无 env 时跳过，不进入普通 CI required check。 |
 | Gateway -> Knowledge owner route | 启动 Gateway/Auth/Redis/Knowledge/File/Parser/PostgreSQL 后执行 `cd services/knowledge && GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v`；默认无 env 时跳过，不进入普通 CI required check。 |
@@ -145,11 +145,9 @@ GATEWAY_SMOKE_PASSWORD='LocalDemoAdmin#12345' \
 go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v
 ```
 
-Before using `docker compose up --no-build file parser knowledge`, ensure the
-Parser image exists locally. If `software-teamwork-local-parser:latest` is
-absent, pre-build Parser with the documented Docker mirror/registry overlay;
-otherwise Docker may fail immediately on the missing image or block on
-`python:3.12-slim` metadata from Docker Hub.
+Before running this smoke, start infra from `deploy/` and start Auth, File,
+Parser, Knowledge, and Gateway on the host. Parser must listen on
+`http://127.0.0.1:8087` with the same service token used by Knowledge.
 
 QA 快速契约和安全边界测试使用 fake repository / fake runner，不依赖 PostgreSQL 或真实模型 provider：
 
@@ -211,8 +209,8 @@ prompts, document text, embedding payloads, or provider raw bodies.
 | 服务能力、stub/501 状态、worker、provider adapter 或 migration 变化 | 对应服务 `docs/implementation.md`。 |
 | OpenAPI / Gateway active path / 数据模型变化 | OpenAPI、owner map、README、service boundaries 或相关契约文档；契约语义变化需先交管理组决策。 |
 | runtime dependency / Compose / CI 变化 | `technology-decisions.md`、runbook 或本文。 |
-| Dockerfile、Compose image、Docker daemon mirror、registry rewrite、Go proxy/sumdb、apk/apt/PyPI/uv 源变化 | `docs/runbooks/docker-build-environment.md`、`deploy/README.md`、`deploy/.env.china.example`、`docs/architecture/technology-decisions.md`、`scripts/check_docker_policy.py`、`scripts/check_docker_environment.py` 和相关 Trellis spec；Compose 基础镜像覆盖变量必须保持 pinned 默认，不得把正常路径改成 `latest`。 |
-| Parser runtime、PaddleOCR、Python packaging、Parser Docker 或 HTTP tests 变化 | Parser README、`technology-decisions.md`、runbook 和本文。 |
+| Docker infra Compose、基础设施镜像、Docker daemon mirror、registry rewrite 变化 | `docs/runbooks/docker-image-pull-environment.md`、`deploy/README.md`、`deploy/.env.example`、`docs/architecture/technology-decisions.md`、`scripts/check_docker_policy.py`、`scripts/check_docker_environment.py` 和相关 Trellis spec；Compose 基础镜像覆盖变量必须保持 pinned 默认，不得把正常路径改成 `latest`。 |
+| Parser runtime、PaddleOCR、Python packaging 或 HTTP tests 变化 | Parser README、`technology-decisions.md`、runbook 和本文。 |
 | open PR 或未合入能力 | 只能写 pending、待合入或 follow-up，不得写成已实现。 |
 
 ## 跨服务 smoke 目标

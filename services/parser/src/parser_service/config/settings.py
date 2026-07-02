@@ -55,7 +55,7 @@ class Settings:
         return cls(
             host=_string("PARSER_HOST", cls.host),
             port=_int("PARSER_PORT", cls.port, minimum=1, maximum=65535),
-            service_token=_string("PARSER_SERVICE_TOKEN", cls.service_token),
+            service_token=_string("PARSER_SERVICE_TOKEN", _string("INTERNAL_SERVICE_TOKEN", cls.service_token)),
             backend=_string("PARSER_BACKEND", cls.backend),
             profile=_choice("PARSER_PROFILE", cls.profile, choices={"accurate", "balanced"}),
             max_document_bytes=_int(

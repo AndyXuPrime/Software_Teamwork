@@ -27,7 +27,9 @@ class DockerEnvironmentTests(unittest.TestCase):
 
         self.assertEqual(1, len(image_sets))
         images = image_sets[0][1]
-        self.assertEqual("docker.m.daocloud.io/library/golang:1.25-alpine", images["go builder"])
+        self.assertNotIn("go builder", images)
+        self.assertNotIn("parser python", images)
+        self.assertEqual("docker.m.daocloud.io/library/postgres:16-alpine", images["postgres"])
         self.assertEqual("docker.m.daocloud.io/qdrant/qdrant:v1.18.2", images["qdrant"])
 
     def test_redact_proxy_value_hides_credentials(self) -> None:

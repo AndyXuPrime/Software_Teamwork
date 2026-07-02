@@ -82,6 +82,20 @@ func TestLoadOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadUsesSharedTokenEnvironment(t *testing.T) {
+	t.Setenv("AUTH_DATABASE_URL", "postgres://auth:auth@localhost:5432/auth?sslmode=disable")
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "shared-service-token")
+	t.Setenv("TOKEN_HASH_SECRET", "shared-token-hash-secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.ServiceToken != "shared-service-token" || cfg.TokenHashSecret != "shared-token-hash-secret" {
+		t.Fatalf("shared token config = %+v", cfg)
+	}
+}
+
 func TestLoadRejectsInvalidDuration(t *testing.T) {
 	t.Setenv("AUTH_SHUTDOWN_TIMEOUT", "nope")
 

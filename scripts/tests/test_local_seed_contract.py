@@ -32,18 +32,6 @@ class LocalSeedContractTests(unittest.TestCase):
                 "LOCAL_ADMIN_USERNAME=admin\nLOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345\n",
                 encoding="utf-8",
             )
-            (root / "deploy" / "docker-compose.yml").write_text(
-                textwrap.dedent(
-                    """
-                    services:
-                      seed-local:
-                        depends_on:
-                          migrate-auth:
-                            condition: service_completed_successfully
-                    """
-                ),
-                encoding="utf-8",
-            )
             (root / "deploy" / "seeds" / "001-local-demo-seed.sql").write_text(
                 "\\connect auth_system\nINSERT INTO auth_users (id) VALUES ('usr_local_admin') ON CONFLICT (id) DO NOTHING;\n",
                 encoding="utf-8",
@@ -53,11 +41,29 @@ class LocalSeedContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (root / "deploy" / "README.md").write_text(
-                "seed-local admin LocalDemoAdmin#12345\n",
+                "deploy/.env.example 是唯一默认配置来源\n"
+                "cp deploy/.env.example deploy/.env\n"
+                "./scripts/local/dev-up.sh\n"
+                "./scripts/local/run-backend.sh\n"
+                "LOCAL_ADMIN_USERNAME=admin\n"
+                "LOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345\n"
+                "admin / LocalDemoAdmin#12345\n"
+                "cleanup with down -v\n",
+                encoding="utf-8",
+            )
+            (root / "scripts" / "local").mkdir(parents=True)
+            (root / "scripts" / "local" / "dev-up.sh").write_text(
+                "goose@v3.27.1\npsql\n001-local-demo-seed.sql\n",
+                encoding="utf-8",
+            )
+            (root / "scripts" / "local" / "run-backend.sh").write_text(
+                "uv sync --frozen --group dev --extra paddleocr\n"
+                "uv run --frozen parser-service\n"
+                "auth\nfile\nparser\nknowledge\nai-gateway\nqa\ndocument\ngateway\n",
                 encoding="utf-8",
             )
             (root / "docs" / "runbooks" / "local-integration.md").write_text(
-                "local integration seed-local\n",
+                "local integration local seed\n",
                 encoding="utf-8",
             )
 
@@ -66,7 +72,7 @@ class LocalSeedContractTests(unittest.TestCase):
         self.assertIssueContains(issues, "doc_local_demo_seed")
         self.assertIssueContains(issues, "22222222-2222-4222-8222-222222222301")
         self.assertIssueContains(issues, "33333333-3333-4333-8333-333333333301")
-        self.assertIssueContains(issues, "migrate-qa")
+        self.assertIssueContains(issues, "AUTH_DATABASE_URL")
 
     def test_verifier_reports_missing_auth_qa_settings_permissions(self) -> None:
         verifier = load_verifier()

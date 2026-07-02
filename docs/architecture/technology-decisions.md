@@ -8,7 +8,7 @@
 - 前端继续采用 `apps/web` 下的 Bun + Vite + React + TypeScript 应用。
 - 服务间通信以 RESTful HTTP API 为主，公开接口以 gateway OpenAPI 为权威。
 - 技术选型优先选择团队可维护、容易在 CI 中验证、和当前代码形态一致的方案。
-- 已经写入 `package.json`、`bun.lock`、`go.mod`、Dockerfile、Compose 或 GitHub Actions 的版本视为当前仓库版本。
+- 已经写入 `package.json`、`bun.lock`、`go.mod`、Compose 或 GitHub Actions 的版本视为当前仓库版本。
 - 本地开发 Compose 中的共享基础设施镜像必须使用明确 tag；新增或升级镜像时必须同步本文和对应 Compose/README。
 
 ## 版本标注规则
@@ -18,7 +18,7 @@
 | 已固定 | 版本已经在仓库配置或锁文件中固定，新代码默认沿用该版本或同一大版本。 |
 | 已选型，待固定 | 技术路线已确认，但仓库尚未引入依赖、CLI 或镜像版本；首次落地时必须写入明确版本并更新本文。 |
 | 标准库 / 协议 | 由 Go 标准库、Web 标准、HTTP/OpenAPI 协议或团队契约定义，不存在独立第三方依赖版本。 |
-| Compose 镜像 tag | 本地或部署 Compose 使用的镜像 tag，必须明确记录并与 Compose 文件一致。 |
+| Compose 镜像 tag | 本地 infra Compose 使用的镜像 tag，必须明确记录并与 Compose 文件一致。 |
 
 ## 服务文档使用方式
 
@@ -39,7 +39,7 @@
 | `services/auth` | 已落地 Go auth 服务、PostgreSQL repository、用户/会话内部 API、argon2id、token hash 和 migration。 | `services/auth/go.mod`、`services/auth/migrations/`、`docs/services/auth/docs/implementation.md` |
 | `services/file` | 已落地 Go file 服务、基础 `/internal/v1/files/**` API、memory/local/MinIO object store、file_objects migration、PostgreSQL metadata runtime 和 service-token 校验；`FILE_DATABASE_URL` 为空时仍保留 memory metadata 模式。 | `services/file/go.mod`、`services/file/migrations/`、`docs/services/file/docs/implementation.md` |
 | `services/knowledge` | 已落地 Go knowledge 服务、PostgreSQL repository、知识库 CRUD、文档上传 handoff、asynq 入队、入库 worker、Parser service client、Knowledge-owned chunker、embedding、Qdrant adapter、文档 chunks/content API 和 `knowledge-queries` 检索；真实跨依赖 smoke 仍待补齐。 | `services/knowledge/go.mod`、`services/knowledge/migrations/`、`docs/services/knowledge/docs/implementation.md` |
-| `services/parser` | 已落地内部 Python Parser runtime，使用 FastAPI/Uvicorn、`uv` 锁定依赖、PaddleOCR optional extra 和 Dockerfile；支持 `/healthz`、`/readyz`、`POST /internal/v1/parsed-documents`，并提供 TXT/Markdown、Office OpenXML 和 PaddleOCR OCR 解析路径。 | `services/parser/pyproject.toml`、`services/parser/uv.lock`、`services/parser/Dockerfile`、`docs/services/parser/api/internal.openapi.yaml`、`docs/services/parser/api/public.openapi.yaml`、`services/parser/api/openapi.yaml`（实现本地副本）、`docs/services/parser/README.md` |
+| `services/parser` | 已落地内部 Python Parser runtime，使用 FastAPI/Uvicorn、`uv` 锁定依赖和 PaddleOCR optional extra；支持 `/healthz`、`/readyz`、`POST /internal/v1/parsed-documents`，并提供 TXT/Markdown、Office OpenXML 和 PaddleOCR OCR 解析路径。 | `services/parser/pyproject.toml`、`services/parser/uv.lock`、`docs/services/parser/api/internal.openapi.yaml`、`docs/services/parser/api/public.openapi.yaml`、`services/parser/api/openapi.yaml`（实现本地副本）、`docs/services/parser/README.md` |
 | `services/qa` | 已落地 Go QA 服务、PostgreSQL repository、会话/消息/SSE、配置、引用、工具/MCP/model client 基础；默认走 AI Gateway chat，真实 Knowledge retrieval 和跨服务 smoke 仍待补齐。 | `services/qa/go.mod`、`services/qa/migrations/`、`docs/services/qa/docs/implementation.md` |
 | `services/document` | 已落地 Go document 服务、PostgreSQL repository、模板/材料/报告/大纲/章节 API、report jobs/attempts/events、report files、statistics、settings、asynq worker 状态机，以及 `summer_peak_inspection` 基础 AI 大纲/正文生成编排；Document MCP tools、更多报告类型生成策略和 Pandoc/LibreOffice 富 DOCX 工具链仍未落地。 | `services/document/go.mod`、`services/document/migrations/`、`docs/services/document/docs/implementation.md` |
 | `services/ai-gateway` | 已落地 Go AI Gateway、PostgreSQL repository、model profile CRUD、credential encryption、service-token auth、OpenAI-compatible chat completions、embeddings、rerankings、provider invocation 记录和 usage aggregate；真实 provider/跨服务 smoke 仍待补齐。 | `services/ai-gateway/go.mod`、`services/ai-gateway/migrations/`、`docs/services/ai-gateway/docs/implementation.md` |
@@ -81,12 +81,12 @@
 | 前端测试 | Vitest + React Testing Library + Playwright | Vitest `4.1.9`；Testing Library 见前端明细；Playwright `1.61.1` | 已固定 | 已加入 `apps/web/package.json` 和 `.github/workflows/frontend.yml`。 |
 | 前端代码质量 | ESLint Flat Config + Prettier | ESLint `9.39.4`，Prettier `3.9.0` | 已固定 | 插件版本见前端明细。 |
 | Parser 运行时语言 | Python | `3.12` | 已固定 | `services/parser` 使用 Python 3.12、`uv`、FastAPI/Uvicorn 和 PaddleOCR；这是 PaddleOCR 运行时边界，不是 Go 服务。 |
-| Parser 包管理 | `uv` | `uv@0.11.6` | 已固定 | `services/parser/uv.lock` 为 Parser 服务锁文件；CI 和 Dockerfile 使用同一版本。 |
+| Parser 包管理 | `uv` | `uv@0.11.6` | 已固定 | `services/parser/uv.lock` 为 Parser 服务锁文件；CI 和本机开发使用同一版本。 |
 | Parser HTTP 框架 | FastAPI + Uvicorn | `fastapi==0.138.2`、`uvicorn==0.49.0` | 已固定 | Parser 是内部服务，仅暴露 `/healthz`、`/readyz` 和 `/internal/v1/parsed-documents`。 |
 | Parser 校验 | Pydantic | `pydantic==2.13.4` | 已固定 | 用于 Parser HTTP request schema。 |
-| Parser OCR 后端 | PaddleOCR + PaddlePaddle | `paddleocr==3.7.0`、`paddlepaddle==3.3.1` | 已固定 | 本地开发中为 optional extra；runtime Dockerfile 默认安装 extra。 |
+| Parser OCR 后端 | PaddleOCR + PaddlePaddle | `paddleocr==3.7.0`、`paddlepaddle==3.3.1` | 已固定 | 本地开发中为 optional extra；真实 OCR smoke 需要显式安装 extra 并设置 env gate。 |
 | Parser 测试和 lint | pytest + Ruff | `pytest==9.0.2`、`ruff==0.14.9` | 已固定 | 测试使用 fake OCR backend，不下载模型。 |
-| 后端语言 | Go | `go 1.25` | 已固定 | 项目 Go 服务基线固定为 1.25；已落地服务 module 和 Dockerfile 应保持一致。 |
+| 后端语言 | Go | `go 1.25` | 已固定 | 项目 Go 服务基线固定为 1.25；已落地服务 module 应保持一致。 |
 | 后端 HTTP 路由 | Go `net/http` / `http.ServeMux` | Go `1.25` 标准库 | 已固定 | 不默认引入 `gin`/`chi`。 |
 | 后端日志 | Go `log/slog` | Go `1.25` 标准库 | 已固定 | 生产默认 JSON 结构化日志。 |
 | PostgreSQL 访问 | `pgx` + `sqlc` 形态 | `pgx/v5@v5.9.2`；sqlc CLI 推荐版本 `v1.31.1` | 已固定 | 已落地 PostgreSQL 服务统一使用 `pgx/v5@v5.9.2`。全仓 sqlc CLI 推荐版本统一为 `v1.31.1`；重生成任何服务的查询包时须使用 `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate`。 |
@@ -95,7 +95,6 @@
 | 关系数据库 | PostgreSQL | `postgres:16-alpine` | 已固定 | 当前本地 Compose 固定在 16 Alpine。 |
 | Redis 队列 | `asynq` over Redis | `asynq v0.26.0`；Redis `7-alpine` | 已固定 | Knowledge 和 Document 已接入 asynq client/worker；后续异步服务按需复用该队列基线。 |
 | Redis 缓存/会话 | `go-redis` | `go-redis/v9 v9.21.0` | 已固定 | Gateway 直接使用 `github.com/redis/go-redis/v9@v9.21.0`；Knowledge/Document 当前通过 asynq 间接带入的 `v9.14.1` 是实现出入，记录在对应 implementation 文档，不作为目标版本。 |
-| Go 服务 runtime 镜像 | Alpine | `alpine:3.22` | 已固定 | Go 服务 Dockerfile 和 migration Dockerfile 的 runtime stage 统一使用 `alpine:3.22`；如需偏离必须在对应服务 implementation 文档登记原因。 |
 | 向量数据库 | Qdrant | `qdrant/qdrant:v1.18.2` | 已固定 | 根目录本地 Compose 已固定 Qdrant 镜像；Knowledge schema 已保留 Qdrant point 字段，runtime adapter 尚未落地。 |
 | Qdrant 客户端 | 手写 HTTP client | Go 标准 HTTP client | 已选型，待落地 | 当前代码尚未实现 Qdrant client；落地时先不引入官方 client。 |
 | 对象存储 | MinIO 边界；当前 memory/local/MinIO object store | `minio/minio:RELEASE.2025-09-07T16-13-09Z`；`minio/mc:RELEASE.2025-08-13T08-35-41Z` | 已固定 | File service runtime 已有 MinIO adapter；根目录本地 Compose 使用一个 MinIO server 和一个 `mc` bucket 初始化容器；`minio-init` 不是第二个 MinIO server。 |
@@ -111,11 +110,11 @@
 | 后端测试 | Go `testing` + `httptest` | Go `1.25` 标准库 | 已固定 | 默认不引入 BDD 测试框架。 |
 | CI | GitHub Actions | `actions/github-script@v7`；runner `ubuntu-latest`；Bun `1.3.12`；Go `1.25.x` | 部分已固定 | 已有协作类 workflow、前端 check/build/unit/E2E smoke、Go service path-filtered build/test、goose migration apply、Docker/Compose config、Gateway contract 和 API type drift workflow。 |
 | Parser CI | GitHub Actions + uv | `uv@0.11.6`；runner `ubuntu-latest` | 已固定 | `.github/workflows/parser-service.yml` 运行 `uv sync --frozen --group dev`、Ruff、pytest 和 compileall。 |
-| Docker 镜像与构建源策略 | 默认官方校验源，可显式覆盖镜像源；中国大陆推荐显式 registry rewrite | Go 默认 `GOPROXY=https://proxy.golang.org,direct`、`GOSUMDB=sum.golang.org`；中国 overlay 使用 `deploy/.env.china.example`，优先级为 `registry rewrite > daemon mirror > proxy`；Compose 基础镜像可用 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`QDRANT_IMAGE`、`MINIO_IMAGE`、`MINIO_MC_IMAGE` 覆盖；`scripts/check_docker_policy.py` 做 CI 策略守门，`scripts/check_docker_environment.py` 做本机网络诊断 | 已固定 | 构建优先级是能跑、构建快、镜像小、内存少、存储少；不得为提速默认关闭 Go checksum verification，不得把 Compose 镜像改成 `latest`。 |
+| Docker infra 镜像拉取策略 | 中国大陆默认显式 registry rewrite；Compose 保留 Docker Hub fallback | `deploy/.env.example` 默认写入 DaoCloud registry rewrite，优先级为 `registry rewrite > daemon mirror > proxy`；Compose 基础镜像可用 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`QDRANT_IMAGE`、`MINIO_IMAGE`、`MINIO_MC_IMAGE` 覆盖；`scripts/check_docker_policy.py` 做 CI 策略守门，`scripts/check_docker_environment.py` 做本机网络诊断 | 已固定 | 仓库 Docker 只覆盖基础设施拉取；不得把 Compose 镜像改成 `latest`，不得把业务服务放回 Docker 默认路径。 |
 | 观测 | `slog` + Prometheus metrics；关键链路 OpenTelemetry tracing | `github.com/prometheus/client_golang@v1.23.2`；`go.opentelemetry.io/otel@v1.44.0`；`go.opentelemetry.io/otel/sdk@v1.44.0`；`go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.44.0`；`go.opentelemetry.io/otel/exporters/prometheus@v0.66.0` | 已选型，待固定 | 第一阶段先保证结构化日志和低基数字段指标；首次落地 metrics/tracing 时必须写入对应服务 `go.mod` 并同步本文状态。 |
-| DOCX 生成 | Document worker 当前使用内置 Go `SimpleDOCXGenerator`；Pandoc 作为富 DOCX 主工具链（C-011 已固定）；LibreOffice 暂不引入，保留后续候选 | 内置 Go 生成器：标准库；Pandoc：`pandoc/core:3.10`（镜像 tag 已固定，digest 在 Dockerfile 接入时固定）；LibreOffice：暂不引入 | 已固定（C-011） | 当前生产路径为内置 Go `SimpleDOCXGenerator`；富 DOCX worker 工具链已由 C-011 固定，见 [rich-docx-worker.md](../services/document/docs/rich-docx-worker.md)；Dockerfile 接入时必须写入 digest；LibreOffice 暂不引入，不能依赖运行环境自带 `soffice`。 |
+| DOCX 生成 | Document worker 当前使用内置 Go `SimpleDOCXGenerator`；Pandoc 作为富 DOCX 候选工具链；LibreOffice 暂不引入，保留后续候选 | 内置 Go 生成器：标准库；Pandoc CLI 版本后续在富 DOCX 任务中固定；LibreOffice：暂不引入 | 已固定（当前路径） | 当前路径为内置 Go `SimpleDOCXGenerator`；富 DOCX worker 的运行方式不属于当前本地 Docker 基线。 |
 | MCP 集成 | 官方 MCP Go SDK；暂不拆独立 sidecar | `github.com/modelcontextprotocol/go-sdk@v1.1.0` | 已固定 | QA 负责工具白名单、权限、参数校验、超时和脱敏记录；SDK 升级或 sidecar 化另开兼容性任务。 |
-| 本地部署 | Docker Compose | Compose 文件格式无 top-level version | 部分已落地 | 根 `deploy/docker-compose.yml` 已提供本地/演示联调基线；服务本地 Compose 可继续用于单服务调试。 |
+| 本地基础设施 | Docker Compose | Compose 文件格式无 top-level version | 已固定 | 根 `deploy/docker-compose.yml` 只拉取 PostgreSQL、Redis、Qdrant、MinIO 和 `minio-init`；业务服务全部 host-run。 |
 
 ## 前端版本明细
 
@@ -160,15 +159,13 @@
 
 | 组件 | 当前版本 | 来源 | 备注 |
 | --- | --- | --- | --- |
-| Go toolchain | `1.25` | 技术选型基线 | Go 服务统一使用 1.25；`services/*/go.mod` 和 Go build Dockerfile 应保持一致。 |
+| Go toolchain | `1.25` | 技术选型基线 | Go 服务统一使用 1.25；`services/*/go.mod` 应保持一致。 |
 | `github.com/jackc/pgx/v5` | `v5.9.2` | `services/auth/go.mod`、`services/knowledge/go.mod`、`services/qa/go.mod`、`services/document/go.mod`、`services/file/go.mod`、`services/ai-gateway/go.mod` | S-025 安全升级后全仓统一为 v5.9.2。 |
 | `sqlc` CLI 推荐版本 | `v1.31.1` | `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate` | 全仓统一推荐版本（S-033）。Auth/Document 已用 v1.31.1 生成；Knowledge/QA 存量生成包来自 v1.29.0，下次变更 SQL 时须用 v1.31.1 重新生成并提交。服务 README 已更新为 pinned 命令。 |
 | `github.com/pressly/goose/v3` | `v3.27.1` | 技术选型基线 | 迁移工具版本固定；可用 CLI 或库方式接入。 |
 | `github.com/redis/go-redis/v9` | `v9.21.0` | `services/gateway/go.mod` | 直接 Redis client 固定基线；Knowledge/Document 当前由 asynq 间接带入的 `v9.14.1` 是实现出入，待后续 asynq/queue 依赖升级时消除。 |
-| PostgreSQL | `16-alpine` | `services/qa/docker-compose.yml`、`services/qa/docker-compose.db.yml`、`services/document/docker-compose.yml` | 本地开发数据库。 |
-| Redis | `7-alpine` | `services/qa/docker-compose.yml` | 本地队列、缓存、短期协调依赖。 |
-| Alpine runtime | `3.22` | `deploy/Dockerfile.migrate`、`services/*/Dockerfile`、`services/*/Dockerfile.migrate` | Go 服务 runtime stage 和 migration runtime stage；Parser 仍使用 `python:3.12-slim`。 |
-| Nginx ingress | `nginx:1.29-alpine` | `deploy/docker-compose.production.yml`、`deploy/.env.production.example` | 生产/准生产 Compose 的唯一公开 HTTP 入口；`/api/v1`、`/healthz`、`/readyz` 代理到 gateway，其余路径代理到 frontend。 |
+| PostgreSQL | `postgres:16-alpine` | `deploy/docker-compose.yml` | 本地开发数据库。 |
+| Redis | `redis:7-alpine` | `deploy/docker-compose.yml` | 本地队列、缓存、短期协调依赖。 |
 | Qdrant | `qdrant/qdrant:v1.18.2` | `deploy/docker-compose.yml` | 根目录本地 Compose 向量数据库镜像。 |
 | MinIO server | `minio/minio:RELEASE.2025-09-07T16-13-09Z` | `deploy/docker-compose.yml` | 根目录本地 Compose 对象存储服务端镜像。 |
 | MinIO client (`mc`) | `minio/mc:RELEASE.2025-08-13T08-35-41Z` | `deploy/docker-compose.yml` | 根目录本地 Compose bucket 初始化镜像；`minio/mc:RELEASE.2025-09-07T16-13-09Z` 当前无 Docker Hub manifest，不能按 server tag 强行统一。 |
@@ -179,10 +176,8 @@
 | OpenTelemetry Prometheus exporter | `go.opentelemetry.io/otel/exporters/prometheus@v0.66.0` | 目标技术基线，尚未写入 `go.mod` | 用于 OTel metrics 与 Prometheus scrape 兼容；若服务只使用 Prometheus client，可暂不引入。 |
 | MCP Go SDK | `github.com/modelcontextprotocol/go-sdk@v1.1.0` | `services/qa/go.mod` | QA 当前直接作为 MCP Host/Client；暂不切换到独立 MCP sidecar。 |
 | Document 内置 DOCX 生成器 | Go 标准库 `archive/zip` + XML | `services/document/internal/service/docx_generator.go` | 当前只覆盖基础 DOCX 包装和文本/表格扁平化导出，不等同于 Pandoc/LibreOffice 富文档转换。 |
-| Pandoc CLI | `pandoc/core:3.10`（镜像 tag 已固定，C-011） | Docker Hub `pandoc/core` | C-011 选定为富 DOCX 主工具链；worker 调用边界、smoke 验证和 fallback 策略见 [rich-docx-worker.md](../services/document/docs/rich-docx-worker.md)；Dockerfile 接入时须写入镜像 digest。 |
+| Pandoc CLI | 后续富 DOCX 任务固定 | N/A | 当前 Document 路径不依赖 Pandoc；如后续引入，必须作为 host-run 或独立工具链任务同步本文。 |
 | LibreOffice headless | 暂不引入（C-011 决策） | N/A | Pandoc 满足首期富 DOCX 需求；LibreOffice 保留为后续候选，引入时须固定镜像 tag + digest，不能依赖运行环境自带 `soffice`。 |
-| QA service image | 本地构建 | `services/qa/docker-compose.yml` | QA 本地 Compose 串联 auth/gateway/QA 数据库。 |
-| Document service image | 本地构建 | `services/document/docker-compose.yml` | Document 本地 Compose 串联 PostgreSQL、migration 和服务。 |
 
 ## API 与契约版本
 
@@ -328,8 +323,8 @@ services/<service>/
 - Frontend CI 对 `apps/web/**`、根前端依赖文件和自身 workflow 变更执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`bun run --cwd apps/web build`、`bun run --cwd apps/web test:unit` 和 Playwright smoke。
 - Go Service CI 按服务路径选择受影响服务，执行 `go test ./...` 和 `go build ./cmd/server`；QA 额外执行 `go build ./cmd/agent`。
 - Goose migration CI 对有 SQL migration 的服务执行 `goose@v3.27.1` apply 校验。
-- Docker / Deploy Checks 对受影响服务的已有可构建 Dockerfile 执行 `docker build`，对服务 Compose 执行 `docker compose config --quiet`；PR 不 push 镜像、不部署。
-- 生产/准生产单机 Compose 基线使用 `deploy/docker-compose.production.yml`、`deploy/.env.production.example` 和 `deploy/production-baseline.md`，与本地/演示 `deploy/docker-compose.yml` 分离；生产模板必须使用明确镜像 tag、持久化卷和外部 secret 注入，不得复用本地 demo seed 或弱口令。
+- Docker / Deploy Checks 只验证 `deploy/docker-compose.yml` 的 infra-only config、Docker policy 和 Docker environment 诊断；不处理业务服务容器。
+- 当前仓库不保留生产/准生产 Compose 基线；后续如要增加部署能力，需要独立任务重新设计。
 
 ## 后续需要同步的实现任务
 
@@ -338,5 +333,5 @@ services/<service>/
 - 为需要异步任务的服务接入 `asynq` client/worker；Knowledge/Document 当前 asynq 传递依赖仍带入旧 `go-redis`，后续服务接入或升级前应优先对齐直接 Redis client 基线。
 - 前端接入 `openapi-typescript`，生成 gateway 类型，并固定生成器版本。
 - 前端测试接入 Vitest、React Testing Library 和 Playwright，并固定版本。
-- 本地 Compose 已固定 Qdrant、MinIO、MinIO mc 等依赖镜像 tag；后续升级或生产部署必须继续使用明确 tag，不能以 `latest` 作为基线。
-- 为 Prometheus metrics、OpenTelemetry tracing 和 MCP SDK/sidecar 固定版本；Document 富 DOCX worker 工具链已由 C-011 固定（`pandoc/core:3.10`，见 [rich-docx-worker.md](../services/document/docs/rich-docx-worker.md)）；Dockerfile 接入时须补写 digest 并同步本文。
+- 本地 infra Compose 已固定 PostgreSQL、Redis、Qdrant、MinIO、MinIO mc 等依赖镜像 tag；后续升级必须继续使用明确 tag，不能以 `latest` 作为基线。
+- 为 Prometheus metrics、OpenTelemetry tracing 和 MCP SDK/sidecar 固定版本；Document 富 DOCX worker 若后续引入，必须同步本文和对应服务文档。

@@ -15,10 +15,9 @@ def test_deploy_defaults_enable_ppstructurev3_backend():
 
     assert "PARSER_BACKEND=ppstructurev3" in env_example
     assert "PARSER_LOAD_BACKEND_ON_STARTUP=false" in env_example
-    assert "PARSER_BACKEND: ${PARSER_BACKEND:-ppstructurev3}" in compose
-    assert (
-        "PARSER_LOAD_BACKEND_ON_STARTUP: ${PARSER_LOAD_BACKEND_ON_STARTUP:-false}" in compose
-    )
+    assert "parser:" not in compose
+    assert "PARSER_BACKEND:" not in compose
+    assert "PARSER_LOAD_BACKEND_ON_STARTUP:" not in compose
     assert "PARSER_BACKEND=document" not in env_example
     assert "PARSER_BACKEND: ${PARSER_BACKEND:-document}" not in compose
 

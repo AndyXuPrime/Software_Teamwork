@@ -31,11 +31,17 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 ## Docker 与本地启动说明
 
 - 本地联调入口见 `README.md`、`deploy/README.md` 和 `docs/runbooks/local-integration.md`。
-- Docker 构建、镜像源、BuildKit cache、Go sumdb、Alpine/Debian/PyPI/uv 镜像和 daemon mirror 排障见 `docs/runbooks/docker-build-environment.md`。
-- 面向中国大陆网络的默认推荐路径是 `deploy/.env.china.example` 显式 registry rewrite；优先级为 `registry rewrite > daemon mirror > proxy`。已有 daemon mirror 或代理时，先跑 `python3 scripts/check_docker_environment.py --profile all --clean-env` 判定当前路径是否可用。
-- Docker 优先级固定为：能跑 > 构建快 > 镜像小 > 内存少 > 存储少。
-- 改 Dockerfile、Compose、镜像 tag、镜像源、Go proxy/sumdb、apk/apt/PyPI/uv 源、Docker 环境诊断或 `.dockerignore` 时，必须运行 `python3 scripts/check_docker_policy.py` 和相关单元测试，并按变更范围运行 Compose config / Docker build 检查。
-- 不要把正常路径改成 `GOSUMDB=off` 或 `latest` 镜像；遇到镜像源异常时先按 Docker runbook 排查并记录环境阻断。
+- 本次更新后的标准启动命令是：
+  `cp deploy/.env.example deploy/.env`，
+  `./scripts/local/dev-up.sh`，
+  `./scripts/local/run-backend.sh`，
+  `cd apps/web && bun install && bun run dev`。
+- 根级 Docker Compose 只允许拉取并启动基础设施：`postgres`、`redis`、`qdrant`、`minio`、`minio-init`。Auth、File、Knowledge、QA、Document、AI Gateway、Gateway、Parser 和前端都必须按文档在宿主机启动。
+- 仓库默认路径不再维护业务服务容器、服务级 Compose、migration 容器或 seed 容器。业务服务必须走宿主机启动。
+- `deploy/.env.example` 是唯一默认配置来源；用户复制成 `deploy/.env`。启动脚本只读取 `deploy/.env` 给宿主机进程使用，不得生成、改写或维护另一套默认变量。
+- Docker 镜像源、registry rewrite、daemon mirror、proxy、pull 卡顿和 WSL 内存排障见 `docs/runbooks/docker-image-pull-environment.md`。面向中国大陆网络的默认推荐路径是 `deploy/.env.example` 内置显式 registry rewrite；优先级为 `registry rewrite > daemon mirror > proxy`。
+- 改 Compose、基础设施镜像 tag、镜像源、Docker 环境诊断、Docker 文档或相关 Trellis spec 时，必须运行 `python3 scripts/check_docker_policy.py`、相关单元测试和 `docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config --quiet`。
+- 不要把正常路径改成 `latest` 镜像；遇到镜像源异常时先按 Docker runbook 排查并记录环境阻断。
 
 ## 本地私有说明
 

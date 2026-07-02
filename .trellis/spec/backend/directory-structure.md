@@ -8,7 +8,7 @@
 
 Backend services live under `services/<service>/`. Each service is an
 independent Go module with its own `go.mod`, HTTP server entrypoint,
-configuration, internal packages, tests, and Docker build.
+configuration, internal packages, tests, and host-run startup docs.
 
 Do not rely on a repository-root `go.mod` for backend service builds.
 
@@ -23,8 +23,7 @@ services/
 │   ├── cmd/server/
 │   ├── internal/
 │   ├── migrations/
-│   ├── api/
-│   └── Dockerfile
+│   └── api/
 ├── auth/
 ├── file/
 ├── qa/
@@ -49,7 +48,6 @@ it is a Python/FastAPI/PaddleOCR runtime boundary documented under
 services/<service>/
 ├── go.mod
 ├── go.sum
-├── Dockerfile
 ├── cmd/
 │   └── server/
 │       └── main.go
@@ -110,12 +108,12 @@ When adding a service:
 2. Add `cmd/server/main.go`.
 3. Add `internal/config` before reading environment variables elsewhere.
 4. Add service-local tests.
-5. Add Dockerfile and Docker Compose service wiring.
+5. Add host-run README instructions and required environment variables.
 6. Add CI path filters for `services/<service>/**`.
 7. Update README and this spec if the service changes architecture.
 
 When adding or changing a non-Go runtime such as Parser, document the runtime
-boundary, package manager, lockfile, Dockerfile, and service API under
+boundary, package manager, lockfile, host-run command, and service API under
 `docs/services/<service>/` and `docs/architecture/technology-decisions.md`.
 Do not introduce Go wrappers around runtime-specific libraries solely to match
 the Go service template.
@@ -132,7 +130,7 @@ business workflows:
 - service-local `api/openapi.yaml` for implemented internal or operational
   routes,
 - handler tests for response envelopes and request ID propagation,
-- Dockerfile and local Compose wiring when the service has a local stack,
+- host-run command and local infra dependencies when the service participates in local integration,
 - README notes that identify any retained prototype code as migration reference
   rather than stable runtime behavior.
 

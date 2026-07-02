@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify repository Dockerfiles and Compose files follow local build policy."""
+"""Verify repository Docker and Compose files follow local pull-only policy."""
 
 from __future__ import annotations
 
@@ -9,21 +9,12 @@ import sys
 from pathlib import Path
 
 
-SCAN_ROOTS = ("deploy", "services")
-EXPECTED_CHINA_ENV = {
-    "DOCKER_IMAGE_REGISTRY_PREFIX": "docker.m.daocloud.io/library/",
+EXPECTED_ENV_IMAGE_OVERRIDES = {
     "POSTGRES_IMAGE": "docker.m.daocloud.io/library/postgres:16-alpine",
     "REDIS_IMAGE": "docker.m.daocloud.io/library/redis:7-alpine",
     "QDRANT_IMAGE": "docker.m.daocloud.io/qdrant/qdrant:v1.18.2",
     "MINIO_IMAGE": "docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z",
     "MINIO_MC_IMAGE": "docker.m.daocloud.io/minio/mc:RELEASE.2025-08-13T08-35-41Z",
-    "GO_DOCKER_GOPROXY": "https://goproxy.cn,direct",
-    "GO_DOCKER_GOSUMDB": "sum.golang.google.cn",
-    "ALPINE_MIRROR": "https://mirrors.aliyun.com/alpine",
-    "DEBIAN_APT_MIRROR": "https://mirrors.aliyun.com/debian",
-    "DEBIAN_SECURITY_APT_MIRROR": "https://mirrors.aliyun.com/debian-security",
-    "PIP_INDEX_URL": "https://mirrors.aliyun.com/pypi/simple",
-    "UV_DEFAULT_INDEX": "https://mirrors.aliyun.com/pypi/simple",
 }
 EXPECTED_IMAGE_DEFAULTS = {
     "POSTGRES_IMAGE": "postgres:16-alpine",
@@ -32,185 +23,39 @@ EXPECTED_IMAGE_DEFAULTS = {
     "MINIO_IMAGE": "minio/minio:RELEASE.2025-09-07T16-13-09Z",
     "MINIO_MC_IMAGE": "minio/mc:RELEASE.2025-08-13T08-35-41Z",
 }
-GO_PROXY_ARG = "ARG GOPROXY=https://proxy.golang.org,direct"
-GO_SUMDB_ARG = "ARG GOSUMDB=sum.golang.org"
-GO_PROXY_COMPOSE = "GOPROXY: ${GO_DOCKER_GOPROXY:-https://proxy.golang.org,direct}"
-GO_SUMDB_COMPOSE = "GOSUMDB: ${GO_DOCKER_GOSUMDB:-sum.golang.org}"
-IMAGE_REGISTRY_COMPOSE = "IMAGE_REGISTRY_PREFIX: ${DOCKER_IMAGE_REGISTRY_PREFIX:-}"
-PARSER_COMPOSE_ARGS = (
-    "APT_MIRROR: ${DEBIAN_APT_MIRROR:-}",
-    "APT_SECURITY_MIRROR: ${DEBIAN_SECURITY_APT_MIRROR:-}",
-    "PIP_INDEX_URL: ${PIP_INDEX_URL:-}",
-    "UV_DEFAULT_INDEX: ${UV_DEFAULT_INDEX:-}",
-    "UV_INDEX: ${UV_INDEX:-}",
+LOCAL_COMPOSE_FILE = Path("deploy/docker-compose.yml")
+ALLOWED_LOCAL_COMPOSE_SERVICES = ("postgres", "redis", "qdrant", "minio", "minio-init")
+DISALLOWED_LOCAL_COMPOSE_SERVICES = (
+    "migrate-auth",
+    "migrate-file",
+    "migrate-knowledge",
+    "migrate-qa",
+    "migrate-document",
+    "migrate-ai-gateway",
+    "seed-local",
+    "seed-local-ai",
+    "auth",
+    "file",
+    "parser",
+    "knowledge",
+    "qa",
+    "document",
+    "ai-gateway",
+    "gateway",
 )
 
 
 def verify_docker_policy(root: Path) -> list[str]:
     issues: list[str] = []
-    for dockerfile in discover_dockerfiles(root):
-        issues.extend(validate_dockerfile(root, dockerfile))
-    for compose_file in discover_compose_files(root):
-        issues.extend(validate_compose_file(root, compose_file))
-    issues.extend(validate_china_env(root))
-    return issues
-
-
-def discover_dockerfiles(root: Path) -> list[Path]:
-    paths: list[Path] = []
-    for scan_root in SCAN_ROOTS:
-        directory = root / scan_root
-        if not directory.exists():
-            continue
-        paths.extend(
-            path
-            for path in directory.rglob("Dockerfile*")
-            if path.is_file() and ".git" not in path.parts
-        )
-    return sorted(paths)
-
-
-def discover_compose_files(root: Path) -> list[Path]:
-    paths: list[Path] = []
-    for scan_root in SCAN_ROOTS:
-        directory = root / scan_root
-        if not directory.exists():
-            continue
-        paths.extend(
-            path
-            for path in directory.rglob("docker-compose*.yml")
-            if path.is_file() and ".git" not in path.parts
-        )
-        paths.extend(
-            path
-            for path in directory.rglob("docker-compose*.yaml")
-            if path.is_file() and ".git" not in path.parts
-        )
-    return sorted(paths)
-
-
-def validate_dockerfile(root: Path, dockerfile: Path) -> list[str]:
-    rel = dockerfile.relative_to(root).as_posix()
-    content = dockerfile.read_text(encoding="utf-8")
-    issues: list[str] = []
-
-    if re.search(r"(?m)^\s*#\s*syntax=", content):
-        issues.append(
-            f"{rel}: do not require an external Dockerfile frontend; broken daemon mirrors can fail before local Dockerfile logic runs"
-        )
-
-    if "GOSUMDB=off" in content or re.search(r"GOSUMDB\s*[:=]\s*off\b", content):
-        issues.append(f"{rel}: must not disable Go checksum verification with GOSUMDB=off")
-
-    from_images = collect_base_from_images(content)
-    if from_images and "ARG IMAGE_REGISTRY_PREFIX=" not in content:
-        issues.append(f"{rel}: Dockerfiles with external FROM images must define ARG IMAGE_REGISTRY_PREFIX=")
-
-    for line_no, image in from_images:
-        if image == "scratch":
-            continue
-        if "${IMAGE_REGISTRY_PREFIX}" not in image:
-            issues.append(f"{rel}:{line_no}: base image `{image}` must use ${{IMAGE_REGISTRY_PREFIX}}")
-        image_without_prefix = image.replace("${IMAGE_REGISTRY_PREFIX}", "")
-        if uses_latest_tag(image_without_prefix):
-            issues.append(f"{rel}:{line_no}: base image `{image}` must not use latest")
-        if not has_explicit_tag_or_digest(image_without_prefix):
-            issues.append(f"{rel}:{line_no}: base image `{image}` must use an explicit tag or digest")
-
-    if is_go_dockerfile(content):
-        issues.extend(validate_go_dockerfile(rel, content))
-    if is_parser_dockerfile(rel, content):
-        issues.extend(validate_parser_dockerfile(rel, content))
-    if dockerfile.name == "Dockerfile.host" and "ARG POSTGRES_VERSION=16-alpine" not in content:
-        issues.append(f"{rel}: QA host Dockerfile must keep ARG POSTGRES_VERSION=16-alpine")
-
-    if not (dockerfile.parent / ".dockerignore").exists():
-        issues.append(f"{rel}: Docker build context must have a sibling .dockerignore")
-
-    return issues
-
-
-def collect_base_from_images(content: str) -> list[tuple[int, str]]:
-    stage_aliases: set[str] = set()
-    from_images: list[tuple[int, str]] = []
-    for line_no, line in enumerate(content.splitlines(), start=1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        tokens = stripped.split()
-        if not tokens or tokens[0].upper() != "FROM":
-            continue
-
-        image_index = 1
-        while image_index < len(tokens) and tokens[image_index].startswith("--"):
-            image_index += 1
-        if image_index >= len(tokens):
-            continue
-
-        image = tokens[image_index]
-        if image.lower() not in stage_aliases:
-            from_images.append((line_no, image))
-
-        for index, token in enumerate(tokens):
-            if token.upper() == "AS" and index + 1 < len(tokens):
-                stage_aliases.add(tokens[index + 1].lower())
-                break
-    return from_images
-
-
-def is_go_dockerfile(content: str) -> bool:
-    return "golang:" in content or "GOPROXY" in content or "go build" in content
-
-
-def is_parser_dockerfile(rel: str, content: str) -> bool:
-    return rel == "services/parser/Dockerfile" or "uv sync" in content or "parser-service" in content
-
-
-def validate_go_dockerfile(rel: str, content: str) -> list[str]:
-    issues: list[str] = []
-    required = (
-        GO_PROXY_ARG,
-        GO_SUMDB_ARG,
-        "ARG ALPINE_MIRROR=",
-        "--mount=type=cache,target=/go/pkg/mod",
-        "--mount=type=cache,target=/root/.cache/go-build",
-    )
-    for needle in required:
-        if needle not in content:
-            issues.append(f"{rel}: missing Go Docker build policy `{needle}`")
-    if "apk add" in content and "--mount=type=cache,target=/var/cache/apk" not in content:
-        issues.append(f"{rel}: apk installs must use a BuildKit cache mount for /var/cache/apk")
-    return issues
-
-
-def validate_parser_dockerfile(rel: str, content: str) -> list[str]:
-    issues: list[str] = []
-    required = (
-        "ARG APT_MIRROR=",
-        "ARG APT_SECURITY_MIRROR=",
-        "ARG UV_DEFAULT_INDEX=",
-        "ARG PIP_INDEX_URL=",
-        "--mount=type=cache,target=/var/cache/apt",
-        "--mount=type=cache,target=/root/.cache/uv",
-        "--mount=type=cache,target=/root/.cache/pip",
-        "mkdir -p /tmp/parser-cache",
-        "COPY --from=builder --chown=parser:parser /app /app",
-        'CMD ["parser-service"]',
-    )
-    for needle in required:
-        if needle not in content:
-            issues.append(f"{rel}: missing Parser Docker build policy `{needle}`")
-    if re.search(r'(?m)^\s*(CMD|ENTRYPOINT)\s+\["uv"', content):
-        issues.append(f"{rel}: runtime image must call parser-service directly, not uv run")
-    if re.search(r"chown\s+-R\s+\S+\s+/app\b", content):
-        issues.append(
-            f"{rel}: runtime image must use COPY --chown for /app instead of recursive chown"
-        )
+    issues.extend(validate_compose_file(root, root / LOCAL_COMPOSE_FILE))
+    issues.extend(validate_env_example(root))
     return issues
 
 
 def validate_compose_file(root: Path, compose_file: Path) -> list[str]:
-    rel = compose_file.relative_to(root).as_posix()
+    rel = compose_file.as_posix()
+    if compose_file.is_absolute():
+        rel = compose_file.relative_to(root).as_posix()
     content = compose_file.read_text(encoding="utf-8")
     issues: list[str] = []
 
@@ -219,21 +64,8 @@ def validate_compose_file(root: Path, compose_file: Path) -> list[str]:
             issues.append(f"{rel}:{line_no}: Compose image `{image}` must not use latest")
         issues.extend(validate_compose_image_default(rel, line_no, image))
 
-    if "GOSUMDB=off" in content or re.search(r"GOSUMDB\s*:\s*(?:\$\{[^}]*:-)?off\b", content):
-        issues.append(f"{rel}: must not disable Go checksum verification with GOSUMDB=off")
-
-    if "build:" in content and IMAGE_REGISTRY_COMPOSE not in content:
-        issues.append(f"{rel}: Compose builds must pass `{IMAGE_REGISTRY_COMPOSE}`")
-
-    if "GOPROXY:" in content and GO_PROXY_COMPOSE not in content:
-        issues.append(f"{rel}: Go build args must default to `{GO_PROXY_COMPOSE}`")
-    if "GOSUMDB:" in content and GO_SUMDB_COMPOSE not in content:
-        issues.append(f"{rel}: Go build args must default to `{GO_SUMDB_COMPOSE}`")
-
-    if "build:" in content and is_parser_compose_file(content):
-        for needle in PARSER_COMPOSE_ARGS:
-            if needle not in content:
-                issues.append(f"{rel}: Parser Compose build must pass `{needle}`")
+    if rel == "deploy/docker-compose.yml":
+        issues.extend(validate_local_infra_compose(rel, content))
 
     return issues
 
@@ -271,31 +103,59 @@ def validate_compose_image_default(rel: str, line_no: int, image: str) -> list[s
     return issues
 
 
-def is_parser_compose_file(content: str) -> bool:
-    return "services/parser" in content or "PARSER_" in content
+def validate_local_infra_compose(rel: str, content: str) -> list[str]:
+    issues: list[str] = []
+    services = tuple(extract_compose_services(content))
+    service_set = set(services)
+    if service_set != set(ALLOWED_LOCAL_COMPOSE_SERVICES):
+        issues.append(
+            f"{rel}: local Docker must only define infrastructure services "
+            f"{', '.join(ALLOWED_LOCAL_COMPOSE_SERVICES)}; found {', '.join(services) or '(none)'}"
+        )
+    if re.search(r"(?m)^\s+build\s*:", content):
+        issues.append(f"{rel}: local Docker is pull-only and must not contain build entries")
+    for service in DISALLOWED_LOCAL_COMPOSE_SERVICES:
+        if service in service_set:
+            issues.append(f"{rel}: business service `{service}` must run on the host, not in local Docker")
+    return issues
 
 
-def validate_china_env(root: Path) -> list[str]:
-    env_file = root / "deploy" / ".env.china.example"
+def extract_compose_services(content: str) -> list[str]:
+    services: list[str] = []
+    in_services = False
+    for line in content.splitlines():
+        if re.match(r"^services:\s*$", line):
+            in_services = True
+            continue
+        if in_services and re.match(r"^[A-Za-z0-9_.-]+:\s*$", line):
+            break
+        if not in_services:
+            continue
+        match = re.match(r"^  ([A-Za-z0-9_.-]+):\s*$", line)
+        if match:
+            services.append(match.group(1))
+    return services
+
+
+def validate_env_example(root: Path) -> list[str]:
+    env_file = root / "deploy" / ".env.example"
     if not env_file.exists():
-        return []
+        return ["deploy/.env.example is required for local startup defaults"]
 
     content = env_file.read_text(encoding="utf-8")
     values = parse_env_file(content)
     issues: list[str] = []
 
-    for key, expected in EXPECTED_CHINA_ENV.items():
+    for key, expected in EXPECTED_ENV_IMAGE_OVERRIDES.items():
         actual = values.get(key)
         if actual != expected:
             issues.append(
-                f"deploy/.env.china.example: `{key}` must stay `{expected}` for the documented mainland China Docker path"
+                f"deploy/.env.example: `{key}` must stay `{expected}` for the documented mainland China Docker path"
             )
 
     for key, value in values.items():
         if key.endswith("_IMAGE") and uses_latest_tag(value):
-            issues.append(f"deploy/.env.china.example: `{key}` must not use latest")
-    if values.get("GO_DOCKER_GOSUMDB") == "off":
-        issues.append("deploy/.env.china.example: must not disable Go checksum verification")
+            issues.append(f"deploy/.env.example: `{key}` must not use latest")
 
     return issues
 

@@ -132,7 +132,7 @@ changed service.
 |-----------|-------------------|
 | Service directory has `go.mod` but no matrix entry | Add it before merging CI changes. |
 | Matrix entry has no `services/<name>/go.mod` | Remove or fix the entry; setup/run will fail. |
-| Dockerfile Go image diverges from module baseline | Update module and Go build image together. |
+| Go service module diverges from `go-version: '1.25.x'` CI baseline | Update the module baseline or CI baseline together. |
 | `services/qa/cmd/agent` exists but CI does not build it | Add or restore the QA agent build step. |
 
 ### 5. Good/Base/Bad Cases
@@ -229,22 +229,31 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 
 ### 1. Scope / Trigger
 
-- Trigger: adding or changing `deploy/docker-compose.yml`, local demo seed
-  data, service Dockerfiles, service port mappings, health checks, readiness
-  wiring, service tokens, or `.env.example` files for the backend integration
-  environment.
-- Applies to `deploy/**`, service-local Dockerfiles, migration wiring, and
-  documentation that tells frontend or new contributors how to start services.
+- Trigger: adding or changing `deploy/docker-compose.yml`, local demo seed data,
+  infrastructure image tags, Docker image source overlays, service ports,
+  readiness wiring, service tokens, or `.env.example` files for the backend
+  integration environment.
+- Applies to `deploy/**`, host-run migration wiring, local seed docs, Docker
+  policy/environment scripts, and documentation that tells frontend or new
+  contributors how to start services.
 
 ### 2. Signatures
 
 - Compose entrypoint:
   - `docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config --quiet`
-  - `docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example --profile ai config --quiet`
+  - `docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config --services`
 - Runtime entrypoint:
-  - `cd deploy && docker compose up -d --build`
-  - `cd deploy && docker compose --profile ai up -d --build`
-- Public browser/API entrypoint:
+  - `cp deploy/.env.example deploy/.env`
+  - `./scripts/local/dev-up.sh`
+  - `./scripts/local/run-backend.sh`
+  - `cd apps/web && bun install && bun run dev`
+- Allowed Compose services:
+  - `postgres`
+  - `redis`
+  - `qdrant`
+  - `minio`
+  - `minio-init`
+- Public browser/API entrypoint after host-run services start:
   - `http://localhost:8080` through gateway.
 - Operational routes:
   - `GET /healthz`
@@ -252,125 +261,100 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 
 ### 3. Contracts
 
+- Root local Compose is infrastructure-only. It must not contain business
+  services, migration jobs, seed jobs, or any `build:` entry.
+- Business services run on the host. Docs must provide host-run commands for
+  Auth, File, Parser, Knowledge, AI Gateway, QA, Document, Gateway, and frontend.
 - Frontend and browser-facing documentation must route traffic through gateway;
   internal service ports may be exposed only for local debugging.
 - `.env.example` values must be local placeholders and must not contain real
   provider keys, tokens, passwords, or production credentials.
-- Compose must include health checks for infrastructure and service containers
-  where the image has a practical probe command.
-- PostgreSQL health checks used by migration jobs must probe TCP readiness, e.g.
-  `pg_isready -h localhost -U postgres -d postgres`; socket-only checks can pass
-  during the official image's temporary init server and start migrations before
-  port `5432` accepts connections.
+- `deploy/.env.example` is the single default local configuration source.
+  Startup scripts may load `deploy/.env`, but must not duplicate service env
+  defaults or print long `export` blocks in user-facing docs.
+- `run-backend.sh` prepares Parser with
+  `uv sync --frozen --group dev --extra paddleocr` so the default host-run
+  backend starts with the OCR runtime dependencies required by current features.
+- Compose must include practical health checks for infrastructure containers.
+- PostgreSQL health checks must probe TCP readiness, e.g.
+  `pg_isready -h localhost -U postgres -d postgres`.
 - Qdrant health checks must use commands available inside `qdrant/qdrant`; do
-  not assume `curl` or `wget` exists. A bash TCP probe such as
-  `bash -ec '</dev/tcp/127.0.0.1/6333'` is acceptable when HTTP tooling is absent.
-- Service containers must use service-local Dockerfiles and keep each Go service
-  independently buildable.
-- Docker build priority is: runnable builds first, build speed second, small
-  image size third, low memory use fourth, and low storage use fifth.
-- Go service Dockerfiles must keep checksum verification enabled by default.
-  The default build args should use `GOPROXY=https://proxy.golang.org,direct`
-  and `GOSUMDB=sum.golang.org`; mainland China acceleration may be an explicit
-  build-arg override such as `GOPROXY=https://goproxy.cn,direct` paired with
-  `GOSUMDB=sum.golang.google.cn`.
-- Do not use `GOSUMDB=off` as a normal Docker build fix. It is only an explicit
-  last-resort local workaround because it disables module checksum verification.
+  not assume `curl` or `wget` exists.
 - Compose infrastructure images must keep explicit pinned defaults. If a local
   or enterprise registry is required, expose it through image variables such as
   `POSTGRES_IMAGE`, `REDIS_IMAGE`, `QDRANT_IMAGE`, `MINIO_IMAGE`, and
   `MINIO_MC_IMAGE`; do not replace pinned defaults with `latest`.
-- Docker policy regressions must be machine-checkable. When changing Dockerfile,
-  Compose, image tags, mirror args, Go proxy/sumdb, Parser package sources, or
-  `.dockerignore`, update and run `python3 scripts/check_docker_policy.py`
-  before relying on `docker build`.
-- Parser runtime Dockerfiles must use `COPY --chown` for `/app` ownership and
-  must not do recursive `chown -R /app`; recursive ownership fixes on the Python
-  virtualenv are slow, grow layers, and can fail late in project-level builds.
-- For mainland China Docker usage, prefer `deploy/.env.china.example` or an
-  equivalent explicit registry rewrite over daemon mirrors and proxies. Existing
+- For mainland China Docker usage, prefer the pinned registry rewrite in
+  `deploy/.env.example` over daemon mirrors and proxies. Existing
   daemon mirrors or proxies are acceptable only after
   `python3 scripts/check_docker_environment.py --profile all --clean-env`
   proves their manifest path is healthy.
 - Local Docker image tags must stay pinned and version-aligned across Compose,
-  Dockerfiles, README/runbooks, and `docs/architecture/technology-decisions.md`.
-  The current backend baseline is `postgres:16-alpine`, `redis:7-alpine`,
-  `qdrant/qdrant:v1.18.2`, `golang:1.25-alpine`, and `alpine:3.22` for Go
-  service runtime stages. MinIO is the explicit exception: root Compose uses one
-  `minio/minio` server image and one `minio/mc` bucket-initializer image, so
-  different release tags are allowed only when the higher server tag has no
-  matching `mc` manifest and the reason is documented.
+  README/runbooks, and `docs/architecture/technology-decisions.md`.
 - PostgreSQL seed scripts may create local/demo data only after service-owned
-  migrations have applied; production seed or secret material does not belong in
-  `deploy/seeds`.
-- When a local seed SQL script connects to a service database with `\connect`,
-  the matching Compose seed service must depend on that service's migration job
-  with `condition: service_completed_successfully`. Do not rely on implicit
-  migration ordering or on another seed entrypoint to have prepared the schema.
+  migrations have applied from the host with `goose@v3.27.1`.
 - Local/demo seed changes should have a deterministic contract checker that
   validates required resource IDs, idempotency markers, documentation coverage,
-  Compose migration dependencies, and forbidden secret/private-content patterns.
-- File Service runs with PostgreSQL metadata in the root local Compose baseline,
-  so it must receive `FILE_INTERNAL_SERVICE_TOKEN` or `INTERNAL_SERVICE_TOKEN`.
-  Callers that may reach File Service without passing through gateway, such as
-  Knowledge and Document background workers, must also receive a matching file
-  service token and send it as `X-Service-Token`.
-- Optional services such as `ai-gateway` may use a Compose profile, but gateway
-  base URL configuration should remain explicit so route failures are
-  diagnosable.
+  host-run migration/seed commands, and forbidden secret/private-content
+  patterns.
+- File Service runs with PostgreSQL metadata in the local baseline, so it must
+  receive `FILE_INTERNAL_SERVICE_TOKEN` or `INTERNAL_SERVICE_TOKEN`. Callers that
+  may reach File Service without passing through gateway must send a matching
+  `X-Service-Token`.
+- AI Gateway runs on the host. It may still report provider readiness as degraded
+  while seeded placeholder credentials are present; use `/healthz` for process
+  startup and `/readyz` only for real provider readiness.
 
 ### 4. Validation & Error Matrix
 
 | Condition | Required handling |
 | --- | --- |
 | Compose YAML or env interpolation is invalid | `docker compose ... config --quiet` must fail before merge. |
-| Docker policy checker fails | Fix the Dockerfile/Compose regression or update `scripts/check_docker_policy.py` and the Docker runbook in the same PR when the policy intentionally changes. |
-| Required Docker image is unavailable locally | Document `docker pull` commands and report Docker runtime validation as skipped. |
-| Same component appears with multiple Docker tags | Use the documented baseline or, absent a special reason, the higher explicit version; if code cannot be changed in the same task, record the implementation/documentation mismatch in the service implementation document. |
-| Docker build times out on `proxy.golang.org` | Rebuild with explicit build args `GOPROXY=https://goproxy.cn,direct` and `GOSUMDB=sum.golang.google.cn`; keep checksum verification enabled. |
-| Go migration image fails while verifying goose dependencies through a proxy sumdb path | Avoid the broken third-party sumdb proxy path by setting `GOSUMDB=sum.golang.google.cn`; do not default to `GOSUMDB=off`. |
-| Compose infrastructure image pull is slow or blocked | Prefer explicit registry rewrite through `DOCKER_IMAGE_REGISTRY_PREFIX` and `*_IMAGE`; if using daemon mirror, prove it with `scripts/check_docker_environment.py`; use Docker daemon proxy only when registry rewrite and mirror paths are unavailable. |
-| Migration jobs fail with `connect: connection refused` immediately after PostgreSQL init | Ensure Postgres healthcheck uses `pg_isready -h localhost`, then recreate containers without deleting volumes unless seed state requires it. |
-| Qdrant stays `health: starting` while `http://localhost:6333/readyz` works | Inspect Docker health output for missing probe tools and switch to an in-image TCP probe. |
+| Compose service list includes anything other than the five infra services | Remove the service or update policy only if the team explicitly changes the Docker boundary. |
+| Compose contains `build:` | Remove it; repository Docker must stay pull-only infra. |
+| Docker policy checker fails | Fix the Compose/docs/script regression or update `scripts/check_docker_policy.py` and the runbook in the same PR when the policy intentionally changes. |
+| Required Docker image is unavailable locally | Document `docker compose pull <service>` commands and report Docker runtime validation as skipped. |
+| Same component appears with multiple Docker tags | Use the documented baseline or record the reason in the implementation document. |
+| Compose infrastructure image pull is slow or blocked | Prefer explicit registry rewrite through pinned `*_IMAGE` values in `deploy/.env.example`; if using daemon mirror, prove it with `scripts/check_docker_environment.py`; use Docker daemon proxy only when registry rewrite and mirror paths are unavailable. |
 | File calls return `401 unauthorized` while `file /readyz` is healthy | Verify `FILE_INTERNAL_SERVICE_TOKEN` on file and matching `KNOWLEDGE_SERVICE_TOKEN`, `DOCUMENT_FILE_SERVICE_TOKEN`, or propagated `X-Service-Token` on callers. |
-| Gateway readiness fails | Check Redis and auth first, then search logs by `X-Request-Id`. |
-| Auth/document/ai-gateway readiness fails | Inspect PostgreSQL container, migration job, and service logs. |
+| Gateway readiness fails | Check Redis and Auth first, then search logs by `X-Request-Id`. |
+| Auth/document/ai-gateway readiness fails | Inspect PostgreSQL, host-run migration status, and service logs. |
 | Seed data insert fails | Keep scripts idempotent with `ON CONFLICT` and verify migrations ran first. |
-| Seed SQL connects to a service database but `seed-local` does not depend on that service migration | Add the missing `depends_on` migration edge or split the seed into a separate entrypoint that waits for the correct migration. |
-| Optional AI Gateway is not running | Core startup may proceed, but QA/model routes should document dependency failure risk. |
+| AI Gateway `/readyz` returns placeholder/degraded while `/healthz` is ok | Treat service startup as successful; document that real provider credentials are still required for model calls. |
 
 ### 5. Good/Base/Bad Cases
 
-- Good: `deploy/README.md` documents ports, env keys, image pulls, seed data,
-  request-id troubleshooting, and common dependency failures; Compose config
-  parses for both default and optional profiles.
+- Good: `deploy/README.md` documents infra pulls, host-run migrations, host-run
+  services, seed data, request-id troubleshooting, and common dependency
+  failures; Compose config parses and lists only the five infra services.
 - Base: Docker runtime smoke tests are skipped when images are missing, but the
   exact image pull commands and skipped validation are reported.
-- Bad: frontend documentation points to `http://localhost:8083` for Knowledge,
-  `.env.example` contains a real provider API key, a seed script writes data
-  before the owning service migration job completes, or File Service runs in DB
-  mode without matching service tokens for direct internal callers.
+- Bad: documentation tells new contributors to run business services through
+  Compose, `.env.example` contains a real provider API key, or a seed script
+  writes data before the owning service migration has run.
 
 ### 6. Tests Required
 
-- Run Compose config parsing for default and optional profiles.
-- Run the local seed contract checker and its unit tests when seed SQL, seed
-  docs, or seed Compose dependencies change.
-- When Docker is available, run an isolated Compose seed validation that applies
-  migrations, reruns the seed entrypoint for idempotency, and exercises targeted
-  cleanup/reset. If skipped, record the exact Docker or image blocker.
+- Run Compose config parsing for the infra baseline.
+- Run `docker compose ... config --services` and confirm only the five infra
+  services are present.
+- Run `bash -n scripts/local/dev-up.sh scripts/local/run-backend.sh scripts/local/stop-backend.sh`
+  when local startup scripts change.
+- Run `python3 scripts/check_docker_policy.py` and the policy/environment unit
+  tests when Compose, Docker docs, image tags, or Docker scripts change.
+- Run the local seed contract checker and its unit tests when seed SQL or seed
+  docs change.
 - Search Docker and docs for duplicate image tags such as `redis:7` vs
-  `redis:7-alpine`, `alpine:3.21` vs `alpine:3.22`, and MinIO server/client
-  tags before declaring version cleanup complete.
+  `redis:7-alpine`, and MinIO server/client tags before declaring version
+  cleanup complete.
 - Run `git diff --check`.
 - Run `go test ./...` and `go build ./cmd/server` for changed Go services or
   every service referenced by the integration baseline when feasible.
 - For QA, also run `go build ./cmd/agent` when `services/qa/cmd/agent` exists.
-- Run Docker image build/start smoke tests when the required local images are
-  available; otherwise document the missing image installation commands.
-- Runtime smoke tests must include `docker compose ps` and at least one host
-  `/readyz` call for gateway, each core service, Qdrant, and optional
-  `ai-gateway` when the `ai` profile is enabled.
+- Runtime smoke tests should include `docker compose ps`, Gateway `/readyz`, AI
+  Gateway `/healthz`, and at least one host `/readyz` call for each host-run core
+  service. AI Gateway `/readyz` is a real-provider readiness check and may return
+  `503 degraded` for seeded placeholder credentials.
 
 ### 7. Wrong vs Correct
 
@@ -381,6 +365,7 @@ frontend -> http://localhost:8083/internal/v1/knowledge-bases
 deploy/.env.example -> real provider API key
 document worker -> file /internal/v1/files without X-Service-Token
 seed SQL -> inserts model_profiles before ai-gateway migrations
+root Compose -> business service or build entry
 ```
 
 #### Correct
@@ -389,7 +374,8 @@ seed SQL -> inserts model_profiles before ai-gateway migrations
 frontend -> gateway http://localhost:8080/api/v1/knowledge-bases
 deploy/.env.example -> local placeholder secrets only
 document worker -> file /internal/v1/files with DOCUMENT_FILE_SERVICE_TOKEN
-seed SQL -> idempotent local/demo data after service migrations
+seed SQL -> idempotent local/demo data after host-run service migrations
+root Compose -> postgres, redis, qdrant, minio, minio-init only
 ```
 
 ---

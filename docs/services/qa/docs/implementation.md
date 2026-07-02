@@ -114,7 +114,7 @@
 
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
-| 单元测试 | `docker run --rm -e GOPROXY=https://goproxy.cn,direct -e GOSUMDB=sum.golang.google.cn -v "$PWD/services/qa:/src" -v qa-go-mod-cache:/go/pkg/mod -v qa-go-build-cache:/root/.cache/go-build -w /src golang:1.25-alpine go test ./...` | pass（2026-07-01，本轮 TDD） | 真实 DB tests 可能被 env gate 跳过。 |
+| 单元测试 | `cd services/qa && go test ./...` | pass（2026-07-01，本轮 TDD） | 真实 DB tests 可能被 env gate 跳过。 |
 | 服务构建 | 同上 Docker Go 环境运行 `go build ./cmd/server` 和 `go build ./cmd/agent` | pass（2026-07-01，本轮 TDD） | 宿主机未安装 Go 时使用 Docker Go 镜像。 |
 | 集成测试 | `QA_TEST_DATABASE_URL=... go test ./internal/repository` | not run | 需要 PostgreSQL。 |
 | 契约测试 | Gateway QA schema contract + QA HTTP/service safety tests | partial / guarded | `cd services/gateway && go test ./internal/http -run QA` 覆盖 25 个 QA-owned Gateway active paths 的 schema/auth/content type 与 internal `$ref` drift；QA service fake-backed SSE 安全测试不依赖 PostgreSQL。 |

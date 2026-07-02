@@ -12,11 +12,12 @@ from pathlib import Path
 SEED_001 = Path("deploy/seeds/001-local-demo-seed.sql")
 SEED_002 = Path("deploy/seeds/002-ai-gateway-model-profiles.sql")
 CLEANUP_SEED = Path("deploy/seeds/099-local-demo-cleanup.sql")
-COMPOSE_FILE = Path("deploy/docker-compose.yml")
 DEPLOY_README = Path("deploy/README.md")
 LOCAL_RUNBOOK = Path("docs/runbooks/local-integration.md")
 ENV_EXAMPLE = Path("deploy/.env.example")
 AUTH_MIGRATIONS_DIR = Path("services/auth/migrations")
+DEV_UP_SCRIPT = Path("scripts/local/dev-up.sh")
+RUN_BACKEND_SCRIPT = Path("scripts/local/run-backend.sh")
 
 REQUIRED_SEED_001_TOKENS = {
     "Auth local admin user": ["usr_local_admin", "cred_local_admin_password", "urole_local_admin_admin"],
@@ -78,24 +79,52 @@ REQUIRED_AUTH_MIGRATION_TOKENS = {
 }
 
 REQUIRED_DOC_TOKENS = [
-    "seed-local",
-    "seed-local-ai",
+    "唯一默认配置来源",
     "LOCAL_ADMIN_USERNAME=admin",
     "LOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345",
-    "usr_local_admin",
-    "kb_local_demo",
-    "doc_local_demo_seed",
-    "22222222-2222-4222-8222-222222222301",
-    "33333333-3333-4333-8333-333333333301",
-    "POST /api/v1/sessions",
-    "/api/v1/admin/parser-configs",
-    "admin:model-profile:write",
-    "admin:parser-config:write",
-    "argon2id",
-    "rotation",
-    "cleanup",
-    "CI-safe",
-    "local/manual",
+    "admin / LocalDemoAdmin#12345",
+    "cp deploy/.env.example deploy/.env",
+    "./scripts/local/dev-up.sh",
+    "./scripts/local/run-backend.sh",
+    "down -v",
+]
+
+REQUIRED_DEV_UP_TOKENS = [
+    "goose@v3.27.1",
+    "psql",
+    "001-local-demo-seed.sql",
+    "002-ai-gateway-model-profiles.sql",
+    "AUTH_DATABASE_URL",
+    "FILE_DATABASE_URL",
+    "KNOWLEDGE_DATABASE_URL",
+    "QA_DATABASE_URL",
+    "DOCUMENT_DATABASE_URL",
+    "AI_GATEWAY_DATABASE_URL",
+    "POSTGRES_ADMIN_URL",
+]
+
+REQUIRED_RUN_BACKEND_TOKENS = [
+    "uv sync --frozen --group dev --extra paddleocr",
+    "uv run --frozen parser-service",
+    "auth",
+    "file",
+    "parser",
+    "knowledge",
+    "ai-gateway",
+    "qa",
+    "document",
+    "gateway",
+]
+
+FORBIDDEN_STARTUP_DOC_TOKENS = [
+    "export AUTH_DATABASE_URL",
+    "export FILE_DATABASE_URL",
+    "export KNOWLEDGE_DATABASE_URL",
+    "export QA_DATABASE_URL",
+    "export DOCUMENT_DATABASE_URL",
+    "export AI_GATEWAY_DATABASE_URL",
+    "docker compose up --build",
+    "docker compose --profile ai",
 ]
 
 FORBIDDEN_PATTERNS = [
@@ -116,17 +145,17 @@ def verify_local_seed_contract(root: Path) -> list[str]:
     seed_002 = read_required(root, SEED_002, issues)
     cleanup_seed = read_required(root, CLEANUP_SEED, issues)
     auth_migrations = read_required_glob(root, AUTH_MIGRATIONS_DIR, "*.sql", issues)
-    compose = read_required(root, COMPOSE_FILE, issues)
     deploy_readme = read_required(root, DEPLOY_README, issues)
     runbook = read_required(root, LOCAL_RUNBOOK, issues)
     env_example = read_required(root, ENV_EXAMPLE, issues)
+    dev_up_script = read_required(root, DEV_UP_SCRIPT, issues)
+    run_backend_script = read_required(root, RUN_BACKEND_SCRIPT, issues)
 
     issues.extend(validate_seed_001(seed_001))
     issues.extend(validate_seed_002(seed_002))
     issues.extend(validate_cleanup_seed(cleanup_seed))
     issues.extend(validate_auth_migrations(auth_migrations))
-    issues.extend(validate_compose(compose))
-    issues.extend(validate_docs(deploy_readme, runbook, env_example))
+    issues.extend(validate_docs(deploy_readme, runbook, env_example, dev_up_script, run_backend_script))
     issues.extend(validate_forbidden_content(root))
     return issues
 
@@ -219,34 +248,42 @@ def validate_auth_migrations(content: str) -> list[str]:
     return issues
 
 
-def validate_compose(content: str) -> list[str]:
-    if not content:
-        return []
-    issues: list[str] = []
-    seed_local_block = extract_service_block(content, "seed-local")
-    if "migrate-qa" not in seed_local_block:
-        issues.append(f"{COMPOSE_FILE} seed-local depends_on must include migrate-qa")
-    if "001-local-demo-seed.sql" not in seed_local_block:
-        issues.append(f"{COMPOSE_FILE} seed-local must run 001-local-demo-seed.sql")
-    return issues
-
-
-def validate_docs(deploy_readme: str, runbook: str, env_example: str) -> list[str]:
+def validate_docs(
+    deploy_readme: str,
+    runbook: str,
+    env_example: str,
+    dev_up_script: str,
+    run_backend_script: str,
+) -> list[str]:
     issues: list[str] = []
     combined = "\n".join([deploy_readme, runbook, env_example])
     for token in REQUIRED_DOC_TOKENS:
         if token not in combined:
             issues.append(f"seed documentation missing `{token}`")
-    if "system:admin" not in combined and "admin runtime config" not in combined:
-        issues.append("seed documentation must mention system:admin or admin runtime config permissions")
-    if "099-local-demo-cleanup.sql" not in combined and "down -v" not in combined:
-        issues.append("seed documentation must mention targeted cleanup or full volume reset")
+    for token in FORBIDDEN_STARTUP_DOC_TOKENS:
+        if token in combined:
+            issues.append(f"startup documentation must not include `{token}`")
+    for token in REQUIRED_DEV_UP_TOKENS:
+        if token not in dev_up_script:
+            issues.append(f"{DEV_UP_SCRIPT} missing local seed runner token `{token}`")
+    for token in REQUIRED_RUN_BACKEND_TOKENS:
+        if token not in run_backend_script:
+            issues.append(f"{RUN_BACKEND_SCRIPT} missing backend startup token `{token}`")
     return issues
 
 
 def validate_forbidden_content(root: Path) -> list[str]:
     issues: list[str] = []
-    for relative in [SEED_001, SEED_002, CLEANUP_SEED, DEPLOY_README, LOCAL_RUNBOOK, ENV_EXAMPLE]:
+    for relative in [
+        SEED_001,
+        SEED_002,
+        CLEANUP_SEED,
+        DEPLOY_README,
+        LOCAL_RUNBOOK,
+        ENV_EXAMPLE,
+        DEV_UP_SCRIPT,
+        RUN_BACKEND_SCRIPT,
+    ]:
         path = root / relative
         if not path.exists():
             continue
@@ -255,24 +292,6 @@ def validate_forbidden_content(root: Path) -> list[str]:
             if pattern.search(content):
                 issues.append(f"{relative} contains forbidden {label} pattern")
     return issues
-
-
-def extract_service_block(compose: str, service_name: str) -> str:
-    lines = compose.splitlines()
-    start = None
-    for index, line in enumerate(lines):
-        if re.match(rf"^\s{{2}}{re.escape(service_name)}:\s*$", line):
-            start = index
-            break
-    if start is None:
-        return ""
-
-    collected = [lines[start]]
-    for line in lines[start + 1 :]:
-        if re.match(r"^\s{2}[A-Za-z0-9_-]+:\s*$", line):
-            break
-        collected.append(line)
-    return "\n".join(collected)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

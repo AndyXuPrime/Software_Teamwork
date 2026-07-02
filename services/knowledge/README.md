@@ -181,14 +181,12 @@ offline-safe. When enabled, it verifies one Markdown fixture through:
   persistence.
 - Qdrant collection creation, point upsert, payload lookup, and cleanup.
 
-Start the local dependency subset from the root Compose baseline:
+Start infra and the required host-run services first from the repository root:
 
 ```bash
-cd deploy
-cp .env.example .env
-# For mainland China Docker builds, append the project-provided mirror overlay:
-# cat .env.china.example >> .env
-DOCKER_BUILDKIT=1 docker compose --env-file .env up -d --build postgres migrate-file file parser qdrant
+cp deploy/.env.example deploy/.env
+./scripts/local/dev-up.sh
+./scripts/local/run-backend.sh
 ```
 
 Then run the smoke from `services/knowledge`:
@@ -214,8 +212,8 @@ the process is interrupted, remove leftover Qdrant collections with the same
 prefix and drop leftover PostgreSQL schemas after checking no other local smoke
 is using them.
 
-Optional AI Gateway embedding can be tested by also starting the `ai` profile,
-creating a usable embedding profile/provider credential, and setting
+Optional AI Gateway embedding can be tested by also starting host-run
+AI Gateway, creating a usable embedding profile/provider credential, and setting
 `EMBEDDING_PROVIDER=ai_gateway`, `AI_GATEWAY_BASE_URL`,
 `AI_GATEWAY_SERVICE_TOKEN`, `AI_GATEWAY_EMBEDDING_PROFILE_ID` or
 `EMBEDDING_PROFILE_ID`, `EMBEDDING_MODEL`, and `EMBEDDING_DIMENSION`.
@@ -234,21 +232,17 @@ The positive path also creates and reads a run-scoped knowledge base while
 sending a spoofed `X-User-Id`, then asserts `createdBy` equals the real session
 user rather than the spoofed header value.
 
-Parser image availability is a precondition when starting the local stack with
-`--no-build`. If `software-teamwork-local-parser:latest` is absent, Docker
-cannot start `parser`; rebuilding it may need `python:3.12-slim` metadata from
-Docker Hub or the mirror/registry rewrite documented in
-`docs/runbooks/docker-build-environment.md`. Prefer one of these before running
-the owner smoke:
+Before running the owner smoke, start infra plus host-run Auth, File, Parser,
+Knowledge, and Gateway using `deploy/README.md`:
 
 ```bash
-cd deploy
-cp .env.example .env
-# For mainland China Docker builds, append the project-provided mirror overlay:
-# cat .env.china.example >> .env
-DOCKER_BUILDKIT=1 docker compose --env-file .env build parser
-DOCKER_BUILDKIT=1 docker compose --env-file .env up -d --build gateway
+cp deploy/.env.example deploy/.env
+./scripts/local/dev-up.sh
+./scripts/local/run-backend.sh
 ```
+
+Parser must listen on `localhost:8087` and use the same service token as
+Knowledge.
 
 Then run:
 

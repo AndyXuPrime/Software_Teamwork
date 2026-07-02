@@ -9,11 +9,14 @@ on:
       - 'services/**'
       - 'deploy/**'
       - 'docs/README.md'
-      - 'docs/runbooks/docker-build-environment.md'
+      - 'docs/runbooks/local-integration.md'
+      - 'docs/runbooks/docker-image-pull-environment.md'
       - 'docs/testing/strategy.md'
+      - 'docs/testing/test-matrix.md'
       - 'docs/architecture/technology-decisions.md'
       - '.trellis/spec/cicd.md'
       - '.trellis/spec/backend/quality-guidelines.md'
+      - '.trellis/spec/backend/directory-structure.md'
       - '.github/codex/prompts/review.md'
       - 'scripts/check_docker_policy.py'
       - 'scripts/check_docker_environment.py'
@@ -28,11 +31,14 @@ on:
       - 'services/**'
       - 'deploy/**'
       - 'docs/README.md'
-      - 'docs/runbooks/docker-build-environment.md'
+      - 'docs/runbooks/local-integration.md'
+      - 'docs/runbooks/docker-image-pull-environment.md'
       - 'docs/testing/strategy.md'
+      - 'docs/testing/test-matrix.md'
       - 'docs/architecture/technology-decisions.md'
       - '.trellis/spec/cicd.md'
       - '.trellis/spec/backend/quality-guidelines.md'
+      - '.trellis/spec/backend/directory-structure.md'
       - '.github/codex/prompts/review.md'
       - 'scripts/check_docker_policy.py'
       - 'scripts/check_docker_environment.py'
@@ -48,8 +54,6 @@ jobs:
   detect:
     runs-on: ubuntu-latest
     outputs:
-      dockerfiles: ${{ steps.changed.outputs.dockerfiles }}
-      has-dockerfiles: ${{ steps.changed.outputs.has-dockerfiles }}
       compose-files: ${{ steps.changed.outputs.compose-files }}
       has-compose-files: ${{ steps.changed.outputs.has-compose-files }}
       has-policy-check: ${{ steps.changed.outputs.has-policy-check }}
@@ -59,64 +63,28 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const currentBuildableDockerfiles = new Set([
-              'deploy/Dockerfile.migrate',
-              'services/ai-gateway/Dockerfile',
-              'services/auth/Dockerfile',
-              'services/document/Dockerfile',
-              'services/document/Dockerfile.migrate',
-              'services/file/Dockerfile',
-              'services/gateway/Dockerfile',
-              'services/knowledge/Dockerfile',
-              'services/parser/Dockerfile',
-              'services/qa/Dockerfile',
-              'services/qa/Dockerfile.host',
-              'services/qa/Dockerfile.migrate',
-            ]);
-            const sourceBackedDockerfiles = new Set([
-              'services/ai-gateway/Dockerfile',
-              'services/auth/Dockerfile',
-              'services/document/Dockerfile',
-              'services/file/Dockerfile',
-              'services/gateway/Dockerfile',
-              'services/knowledge/Dockerfile',
-              'services/parser/Dockerfile',
-              'services/qa/Dockerfile',
-              'services/qa/Dockerfile.host',
-            ]);
-            const qaComposeFile = 'services/qa/docker-compose.yml';
-            const qaDbComposeFile = 'services/qa/docker-compose.db.yml';
             const knownComposeFiles = new Set([
               'deploy/docker-compose.yml',
-              'deploy/docker-compose.production.yml',
-              'services/document/docker-compose.yml',
-              qaDbComposeFile,
-              qaComposeFile,
             ]);
             const composeFilePattern =
-              /^(deploy|services\/[^/]+)\/.*docker-compose[^/]*\.ya?ml$/u;
-            const buildableDockerfilePattern =
-              /^(deploy|services\/[^/]+)\/Dockerfile(?:\.(?:host|migrate))?$/u;
-            const serviceDockerInputPattern =
-              /^services\/([^/]+)\/(?!(?:Dockerfile(?:\.(?:host|migrate))?|\.dockerignore|docker-compose[^/]*\.ya?ml)$).+/u;
+              /^deploy\/.*docker-compose[^/]*\.ya?ml$/u;
             const rootDeployComposeFile = 'deploy/docker-compose.yml';
-            const productionDeployComposeFile = 'deploy/docker-compose.production.yml';
             const rootDeployComposeDependencyPattern =
-              /^deploy\/(?:\.env\.example|postgres\/init\/.+|seeds\/.+)$/u;
-            const productionDeployComposeDependencyPattern =
-              /^deploy\/(?:\.env\.production\.example|postgres\/init-production\/.+|nginx\/production\.conf)$/u;
+              /^deploy\/(?:\.env\.example|postgres\/init\/.+)$/u;
             const workflowPath = '.github/workflows/docker-deploy-checks.yml';
             const dockerPolicyPaths = new Set([
               'README.md',
               'AGENTS.md',
               'deploy/README.md',
-              'deploy/production-baseline.md',
               'docs/README.md',
-              'docs/runbooks/docker-build-environment.md',
+              'docs/runbooks/local-integration.md',
+              'docs/runbooks/docker-image-pull-environment.md',
               'docs/testing/strategy.md',
+              'docs/testing/test-matrix.md',
               'docs/architecture/technology-decisions.md',
               '.trellis/spec/cicd.md',
               '.trellis/spec/backend/quality-guidelines.md',
+              '.trellis/spec/backend/directory-structure.md',
               '.github/codex/prompts/review.md',
               'scripts/check_docker_policy.py',
               'scripts/check_docker_environment.py',
@@ -159,51 +127,6 @@ jobs:
             const workflowChanged = files.includes(workflowPath);
             const dockerPolicyChanged = files.some((file) => dockerPolicyPaths.has(file));
             const fullDockerCheckChanged = workflowChanged;
-            const dockerfiles = new Set();
-
-            const addBuildableDockerfilesForService = (service) => {
-              const prefix = `services/${service}/`;
-              for (const dockerfile of currentBuildableDockerfiles) {
-                if (dockerfile.startsWith(prefix)) {
-                  dockerfiles.add(dockerfile);
-                }
-              }
-            };
-            const addSourceBackedDockerfilesForService = (service) => {
-              const prefix = `services/${service}/`;
-              for (const dockerfile of sourceBackedDockerfiles) {
-                if (dockerfile.startsWith(prefix)) {
-                  dockerfiles.add(dockerfile);
-                }
-              }
-            };
-
-            if (fullDockerCheckChanged) {
-              for (const dockerfile of currentBuildableDockerfiles) {
-                dockerfiles.add(dockerfile);
-              }
-            } else {
-              for (const file of files) {
-                if (
-                  buildableDockerfilePattern.test(file) &&
-                  currentBuildableDockerfiles.has(file)
-                ) {
-                  dockerfiles.add(file);
-                  continue;
-                }
-
-                const dockerignoreMatch = file.match(/^services\/([^/]+)\/\.dockerignore$/u);
-                if (dockerignoreMatch) {
-                  addSourceBackedDockerfilesForService(dockerignoreMatch[1]);
-                  continue;
-                }
-
-                const serviceDockerInputMatch = file.match(serviceDockerInputPattern);
-                if (serviceDockerInputMatch) {
-                  addSourceBackedDockerfilesForService(serviceDockerInputMatch[1]);
-                }
-              }
-            }
             const composeFiles = new Set();
             if (fullDockerCheckChanged) {
               for (const composeFile of knownComposeFiles) {
@@ -216,17 +139,11 @@ jobs:
                   knownComposeFiles.has(file)
                 ) {
                   composeFiles.add(file);
-                  if (file === qaDbComposeFile) {
-                    composeFiles.add(qaComposeFile);
-                  }
                   continue;
                 }
 
                 if (rootDeployComposeDependencyPattern.test(file)) {
                   composeFiles.add(rootDeployComposeFile);
-                }
-                if (productionDeployComposeDependencyPattern.test(file)) {
-                  composeFiles.add(productionDeployComposeFile);
                 }
               }
             }
@@ -234,19 +151,12 @@ jobs:
             const hasPolicyCheck =
               fullDockerCheckChanged ||
               dockerPolicyChanged ||
-              dockerfiles.size > 0 ||
               composeFiles.size > 0;
 
             core.info(`Changed files: ${files.join(', ') || '(none)'}`);
             core.info(`Full Docker check requested: ${fullDockerCheckChanged}`);
             core.info(`Docker policy check requested: ${hasPolicyCheck}`);
-            core.info(`Dockerfiles: ${[...dockerfiles].join(', ') || '(none)'}`);
             core.info(`Compose files: ${[...composeFiles].join(', ') || '(none)'}`);
-            core.setOutput('dockerfiles', JSON.stringify([...dockerfiles].sort()));
-            core.setOutput(
-              'has-dockerfiles',
-              dockerfiles.size > 0 ? 'true' : 'false'
-            );
             core.setOutput('compose-files', JSON.stringify([...composeFiles].sort()));
             core.setOutput(
               'has-compose-files',
@@ -274,41 +184,6 @@ jobs:
       - name: Validate Docker environment diagnostic
         run: python3 scripts/check_docker_environment.py --skip-network --clean-env
 
-  docker-build:
-    needs: [detect, policy-check]
-    if: needs.detect.outputs.has-dockerfiles == 'true'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        dockerfile: ${{ fromJSON(needs.detect.outputs.dockerfiles) }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go for host-binary Dockerfile
-        if: matrix.dockerfile == 'services/qa/Dockerfile.host'
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.x'
-          cache-dependency-path: services/qa/go.mod
-
-      - name: Prepare host-binary Dockerfile input
-        if: matrix.dockerfile == 'services/qa/Dockerfile.host'
-        run: |
-          mkdir -p services/qa/bin
-          cd services/qa
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o bin/qa-server ./cmd/server
-
-      - name: Build Dockerfile
-        env:
-          DOCKER_BUILDKIT: '1'
-          DOCKERFILE: ${{ matrix.dockerfile }}
-        run: |
-          dockerfile="$DOCKERFILE"
-          context="$(dirname "$dockerfile")"
-          docker build --file "$dockerfile" "$context"
-
   compose-config:
     needs: [detect, policy-check]
     if: needs.detect.outputs.has-compose-files == 'true'
@@ -328,9 +203,6 @@ jobs:
           compose_file="$COMPOSE_FILE"
           if [ "$compose_file" = "deploy/docker-compose.yml" ]; then
             docker compose -f "$compose_file" --env-file deploy/.env.example config --quiet
-            docker compose -f "$compose_file" --env-file deploy/.env.example --profile ai config --quiet
-          elif [ "$compose_file" = "deploy/docker-compose.production.yml" ]; then
-            docker compose -f "$compose_file" --env-file deploy/.env.production.example config --quiet
           else
             docker compose -f "$compose_file" config --quiet
           fi
