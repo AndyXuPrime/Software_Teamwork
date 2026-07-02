@@ -143,3 +143,36 @@ Rebased onto latest upstream develop, kept infra-only Docker direction, simplifi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Guard Docker local startup contracts
+
+**Date**: 2026-07-02
+**Task**: Guard Docker local startup contracts
+**Branch**: `Special/chore/docker-infra-only-startup`
+
+### Summary
+
+Handled review follow-ups for the infra-only local startup PR: Qdrant collection initialization, seed contract CI coverage, and Docker artifact regression guards.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `48a854e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
