@@ -323,7 +323,7 @@ function SelectItem({
     typeof children === 'string' ? (
       <span
         data-slot="select-item-text"
-        className="truncate group-hover:overflow-visible group-hover:text-clip group-hover:whitespace-nowrap"
+        className="truncate group-hover:max-w-none group-hover:w-auto"
       >
         {children}
       </span>
