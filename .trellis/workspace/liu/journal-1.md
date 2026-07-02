@@ -1060,3 +1060,36 @@ Improved admin model profile visibility and QA/LLM profile selection UX; added c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: Cover QA session delete 204 response
+
+**Date**: 2026-07-02
+**Task**: Cover QA session delete 204 response
+**Branch**: `Liutest/test/qa-session-delete-204`
+
+### Summary
+
+Added frontend regression coverage for QA session deletion when Gateway returns 204 No Content, after confirming the production requestVoid fix already exists on upstream develop.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8df6ec0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
