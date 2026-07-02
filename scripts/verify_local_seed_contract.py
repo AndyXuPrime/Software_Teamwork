@@ -20,6 +20,7 @@ DEV_UP_SCRIPT = Path("scripts/local/dev-up.sh")
 RUN_BACKEND_SCRIPT = Path("scripts/local/run-backend.sh")
 STOP_BACKEND_SCRIPT = Path("scripts/local/stop-backend.sh")
 PARSER_UV_LOCK = Path("services/parser/uv.lock")
+GITIGNORE = Path(".gitignore")
 
 REQUIRED_SEED_001_TOKENS = {
     "Auth local admin user": ["usr_local_admin", "cred_local_admin_password", "urole_local_admin_admin"],
@@ -146,6 +147,10 @@ REQUIRED_PARSER_UV_LOCK_TOKENS = [
     "https://pypi.tuna.tsinghua.edu.cn/packages/",
 ]
 
+REQUIRED_GITIGNORE_TOKENS = [
+    "/.local/",
+]
+
 FORBIDDEN_PARSER_UV_LOCK_TOKENS = [
     "https://pypi.org/simple",
     "https://files.pythonhosted.org",
@@ -187,6 +192,7 @@ def verify_local_seed_contract(root: Path) -> list[str]:
     run_backend_script = read_required(root, RUN_BACKEND_SCRIPT, issues)
     stop_backend_script = read_required(root, STOP_BACKEND_SCRIPT, issues)
     parser_uv_lock = read_required(root, PARSER_UV_LOCK, issues)
+    gitignore = read_required(root, GITIGNORE, issues)
 
     issues.extend(validate_seed_001(seed_001))
     issues.extend(validate_seed_002(seed_002))
@@ -203,6 +209,7 @@ def verify_local_seed_contract(root: Path) -> list[str]:
         )
     )
     issues.extend(validate_parser_uv_lock(parser_uv_lock))
+    issues.extend(validate_gitignore(gitignore))
     issues.extend(validate_forbidden_content(root))
     return issues
 
@@ -339,6 +346,16 @@ def validate_parser_uv_lock(content: str) -> list[str]:
     for token in FORBIDDEN_PARSER_UV_LOCK_TOKENS:
         if token in content:
             issues.append(f"{PARSER_UV_LOCK} must not lock parser packages to `{token}`")
+    return issues
+
+
+def validate_gitignore(content: str) -> list[str]:
+    if not content:
+        return []
+    issues: list[str] = []
+    for token in REQUIRED_GITIGNORE_TOKENS:
+        if token not in content:
+            issues.append(f"{GITIGNORE} missing local runtime ignore token `{token}`")
     return issues
 
 
