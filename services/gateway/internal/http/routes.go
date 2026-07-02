@@ -16,6 +16,8 @@ type routeSpec struct {
 var modelProfileAdminPermissions = []string{"system:admin", "admin:model-profile:write"}
 var parserConfigAdminPermissions = []string{"system:admin", "knowledge:admin", "admin:parser-config:write"}
 var dashboardAdminPermissions = []string{"system:admin"}
+var qaSettingsReadPermissions = []string{"qa:settings:read"}
+var qaSettingsWritePermissions = []string{"qa:settings:write"}
 
 var activeProxyRoutes = []routeSpec{
 	{Method: "GET", Pattern: "/api/v1/knowledge-bases", Owner: "knowledge", OperationID: "listKnowledgeBases"},
@@ -102,8 +104,8 @@ var activeProxyRoutes = []routeSpec{
 	{Method: "GET", Pattern: "/api/v1/messages/{messageId}/citations", Owner: "qa", OperationID: "listQAMessageCitations"},
 	{Method: "GET", Pattern: "/api/v1/citations/{citationId}", Owner: "qa", OperationID: "getQACitation"},
 	{Method: "POST", Pattern: "/api/v1/citation-lookups", Owner: "qa", OperationID: "createQACitationLookup"},
-	{Method: "GET", Pattern: "/api/v1/qa-config-versions/current", Owner: "qa", OperationID: "getCurrentQAConfigVersion"},
-	{Method: "POST", Pattern: "/api/v1/qa-config-versions", Owner: "qa", OperationID: "createQAConfigVersion"},
+	{Method: "GET", Pattern: "/api/v1/qa-config-versions/current", Owner: "qa", OperationID: "getCurrentQAConfigVersion", AdminPermissions: qaSettingsReadPermissions},
+	{Method: "POST", Pattern: "/api/v1/qa-config-versions", Owner: "qa", OperationID: "createQAConfigVersion", AdminPermissions: qaSettingsWritePermissions},
 	{Method: "GET", Pattern: "/api/v1/llm-config-versions/current", Owner: "qa", OperationID: "getCurrentQALLMConfigVersion"},
 	{Method: "POST", Pattern: "/api/v1/llm-config-versions", Owner: "qa", OperationID: "createQALLMConfigVersion"},
 	{Method: "POST", Pattern: "/api/v1/llm-connection-tests", Owner: "qa", OperationID: "createQALLMConnectionTest"},

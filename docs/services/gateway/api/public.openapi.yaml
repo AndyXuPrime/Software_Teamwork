@@ -2180,6 +2180,13 @@ paths:
       summary: Get current QA config version
       operationId: getCurrentQAConfigVersion
       x-owner-service: qa
+      x-required-permissions:
+        - qa:settings:read
+      description: >
+        Returns the active QA runtime configuration including the global Agent
+        system prompt. Requires qa:settings:read permission. The full
+        systemPrompt is ONLY returned here; it must never appear in SSE events,
+        QA chat responses, logs, metrics, tool call summaries, or error messages.
       responses:
         '200':
           description: Current QA config version.
@@ -2187,6 +2194,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/QAConfigVersionResponse'
+        '403':
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
   /api/v1/qa-config-versions:
@@ -2196,7 +2205,14 @@ paths:
       summary: Create QA config version
       operationId: createQAConfigVersion
       x-owner-service: qa
-      description: Creates a versioned QA runtime configuration so historical answers remain traceable to the retrieval and Agent settings used at generation time.
+      x-required-permissions:
+        - qa:settings:write
+      description: >
+        Creates a versioned QA runtime configuration so historical answers remain
+        traceable to the retrieval, Agent settings, and system prompt used at
+        generation time. Requires qa:settings:write permission. The published
+        system prompt becomes active for the next question; in-flight answer
+        generations continue using their previously acquired snapshot.
       requestBody:
         required: true
         content:
@@ -5583,6 +5599,14 @@ components:
           $ref: '#/components/schemas/QALLMConfigVersion'
         agent:
           $ref: '#/components/schemas/QAAgentConfig'
+        systemPrompt:
+          type: string
+          description: >
+            Global Agent system prompt. Only visible to authorized admin clients
+            (requires qa:settings:read). Must not appear in SSE events, QA
+            responses, logs, metrics, or error messages.
+          minLength: 1
+          maxLength: 20000
         isActive:
           type: boolean
         createdAt:
@@ -5644,6 +5668,15 @@ components:
           $ref: '#/components/schemas/CreateQALLMConfigVersionRequest'
         agent:
           $ref: '#/components/schemas/QAAgentConfig'
+        systemPrompt:
+          type: string
+          description: >
+            Global Agent system prompt. Optional on create; if omitted, the
+            current active version's prompt is inherited so that only changing
+            retrieval/agent settings does not clear the existing prompt.
+            Must be 1–20000 bytes (octet_length) after trimming.
+          minLength: 1
+          maxLength: 20000
         activate:
           type: boolean
           default: true
