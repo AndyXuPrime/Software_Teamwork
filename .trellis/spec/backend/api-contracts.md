@@ -214,6 +214,102 @@ gateway -> normalized KnowledgeQueryResponse or ErrorResponse
 - `docs/architecture/service-boundaries.md`
 - `docs/architecture/frontend-backend-contract.md`
 
+## Scenario: Gateway Readiness Semantics
+
+### 1. Scope / Trigger
+
+- Trigger: changing Gateway `/healthz`, Gateway `/readyz`, Compose health checks,
+  local/production readiness docs, or cross-service smoke expectations.
+- Applies to `services/gateway/cmd/server/main.go`,
+  `services/gateway/internal/http/server.go`, Gateway OpenAPI health routes,
+  `deploy/**`, and readiness/smoke runbooks.
+
+### 2. Signatures
+
+Gateway operational routes stay unversioned and unauthenticated:
+
+```text
+GET /healthz
+GET /readyz
+```
+
+The current Gateway runtime readiness check covers:
+
+```text
+Redis session cache readiness
+Auth /readyz
+Configured owner service base URLs for knowledge, qa, document, and ai-gateway
+```
+
+### 3. Contracts
+
+- `/healthz` is process liveness only.
+- `/readyz` is a lightweight Gateway readiness gate for accepting normal public
+  traffic. It must not become the full cross-service business smoke.
+- Gateway `/readyz` may check Gateway-owned runtime dependencies, Auth
+  readiness, and owner base URL configuration needed for route dispatch.
+- Gateway `/readyz` must not synchronously call every owner service readiness
+  endpoint or run business workflows such as upload, retrieval, QA answer,
+  report generation, AI Gateway provider smoke, or model-profile bootstrap.
+- Complete owner-service and provider availability belongs in targeted smoke or
+  diagnostics, such as Auth/Gateway/Redis smoke and Gateway -> owner service
+  end-to-end smoke.
+- Public readiness responses must not expose internal service URLs, Redis keys,
+  database URLs, service tokens, provider credentials, or raw downstream bodies.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Gateway process can respond | `/healthz` returns `200` project envelope. |
+| Redis session cache is unavailable | `/readyz` returns `503 dependency_error`; logs include request id and sanitized dependency name. |
+| Auth `/readyz` is unavailable | `/readyz` returns `503 dependency_error`; logs include request id and sanitized dependency name. |
+| Required owner base URL is missing or blank | `/readyz` returns `503 dependency_error` before claiming Gateway can route public traffic. |
+| Required owner base URL is non-empty but malformed | Current `/readyz` does not guarantee URL syntax validation; proxy routes fail with their normal sanitized dependency error if the URL cannot be parsed for routing. Add a code test before strengthening this contract. |
+| Owner service business workflow is unavailable after `/readyz` passed | The affected public API returns its normal sanitized dependency error; investigate with targeted smoke and request id, not by expanding `/readyz` into a full workflow probe. |
+| AI Gateway profile/provider credential is missing or placeholder | AI-dependent smoke or owner routes report the failure; Gateway `/readyz` is not the proof point. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: Gateway `/readyz` checks Redis, Auth, and route configuration, then
+  deployment runbooks require targeted smoke for Knowledge/QA/Document/AI
+  workflows.
+- Base: Compose uses Gateway `/readyz` for startup ordering while production
+  readiness docs separately list service-level `/readyz` and provider smoke.
+- Bad: Gateway `/readyz` uploads a document, queries Qdrant, calls QA chat, or
+  fails startup only because a real model provider credential has not been
+  bootstrapped yet.
+
+### 6. Tests Required
+
+- Gateway handler tests must cover successful `/healthz`, successful `/readyz`,
+  and failed `/readyz` returning `503 dependency_error` with request id.
+- When `gatewayReadyCheck` behavior changes, add or update unit tests for Redis,
+  Auth, and owner base URL failure classification. If readiness starts
+  rejecting malformed non-empty owner URLs, add a regression test for that
+  exact case in the same change.
+- Documentation-only readiness changes must parse the changed Gateway OpenAPI
+  files, run `python3 scripts/verify_gateway_active_api.py`, and run
+  `git diff --check`.
+- If Compose health checks or Docker policy changes, also run the relevant
+  Compose config and Docker policy checks from the Docker runbook.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+GET /readyz -> gateway calls knowledge, qa, document, ai-gateway /readyz
+GET /readyz -> gateway performs upload/retrieval/QA/provider smoke
+```
+
+#### Correct
+
+```text
+GET /readyz -> Redis ready + Auth ready + owner base URLs configured
+targeted smoke -> Gateway public API -> owner services -> File/Parser/Qdrant/AI Gateway
+```
+
 ## Scenario: Knowledge Active Operation Proxy Contracts
 
 ### 1. Scope / Trigger

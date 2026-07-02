@@ -27,7 +27,7 @@ type routeContract struct {
 }
 
 func TestActiveRouteMatrixCoversGatewayOwnerMap(t *testing.T) {
-	if got, want := activeOperationCount(), 97; got != want {
+	if got, want := activeOperationCount(), 103; got != want {
 		t.Fatalf("active operations = %d, want %d", got, want)
 	}
 	openAPIRoutes := gatewayOpenAPIRoutes(t, gatewayOpenAPIPath(t))
@@ -55,12 +55,12 @@ func TestActiveRouteMatrixCoversGatewayOwnerMap(t *testing.T) {
 		}
 	}
 	expected := map[string]int{
-		"gateway":    2,
+		"gateway":    4,
 		"auth":       4,
 		"knowledge":  18,
 		"ai-gateway": 5,
 		"document":   43,
-		"qa":         25,
+		"qa":         29,
 	}
 	for owner, want := range expected {
 		if got := ownerCounts[owner]; got != want {
@@ -96,7 +96,7 @@ func TestNotImplementedRoutesReturnStableGatewayError(t *testing.T) {
 			UserID:          "usr_1",
 			Username:        "alice",
 			Roles:           []string{"admin"},
-			Permissions:     []string{"knowledge:read"},
+			Permissions:     []string{"knowledge:read", "system:admin"},
 			TokenType:       "Bearer",
 			AccessTokenHash: tokenHash,
 			IssuedAt:        time.Now().Add(-time.Minute).UTC(),

@@ -27,9 +27,9 @@
 | --- | --- | --- |
 | 文档状态 | active | README、公开草案、数据模型、内部 OpenAPI 和实现说明存在。 |
 | 代码状态 | partial | Go service 已实现知识库 CRUD、文档列表/上传/详情、文档 tags 更新、软删除、delete cleanup worker、File Service handoff、PostgreSQL repository、asynq enqueue、parser-configs 运行时管理、ingestion worker、Parser Service client、Knowledge-owned chunker、embedding、chunk 持久化、vector index 写入、文档 chunks/content API 和 `knowledge-queries` 检索。 |
-| 契约对齐 | partial | Gateway OpenAPI 已声明 document lifecycle、chunks、content、knowledge-queries、parser configs；这些 active routes 已由 Knowledge 和 Gateway proxy 落地。Knowledge ingestion 真实依赖 smoke 和 Gateway -> Knowledge owner route smoke 已补齐；retrieval/rerank、MCP 和完整 Gateway E2E 仍待后续 smoke。 |
+| 契约对齐 | partial | Gateway OpenAPI 已声明 document lifecycle、chunks、content、knowledge-queries、parser configs；这些 active routes 已由 Knowledge 和 Gateway proxy 落地。Knowledge ingestion 真实依赖 smoke、Gateway -> Knowledge owner route smoke，以及 Gateway -> Knowledge -> QA RAG env-gated smoke 已补齐；MCP、前端和 #125 完整一键 Gateway E2E 仍待后续 smoke。 |
 | 数据持久化 | postgres / Redis queue / Qdrant | runtime 使用 PostgreSQL；Redis/asynq 负责任务投递；vector index 支持 Qdrant，未配置时使用 in-memory index。 |
-| 测试状态 | partial | 单元、handler、contract、repository integration、platform tests、env-gated ingestion real deps smoke 和 Gateway owner route smoke 覆盖 CRUD、权限、上传补偿、document lifecycle tags/soft delete/delete cleanup worker、queue handoff、worker 入库、File content/delete、Parser HTTP client、chunking、embedding、vector payload、Qdrant point 写入/按文档删除、parser-configs、chunks/content、`knowledge-queries`、Gateway/Auth 到 Knowledge owner route 的上下文注入、错误 envelope 和 request id；缺 retrieval/rerank 与完整 Gateway/MCP E2E 联调。 |
+| 测试状态 | partial | 单元、handler、contract、repository integration、platform tests、env-gated ingestion real deps smoke、Gateway owner route smoke 和 Gateway RAG E2E smoke 覆盖 CRUD、权限、上传补偿、document lifecycle tags/soft delete/delete cleanup worker、queue handoff、worker 入库、File content/delete、Parser HTTP client、chunking、embedding、vector payload、Qdrant point 写入/按文档删除、parser-configs、chunks/content、`knowledge-queries`、Gateway/Auth 到 Knowledge owner route 的上下文注入、QA answer/citations 最小链路、错误 envelope 和 request id；真实 AI Gateway embedding/rerank provider、MCP 和完整 #125 E2E 仍需后续联调。 |
 | 依赖解耦 | documented | A-12 检索和 A-14 契约测试可依赖 `docs/api-contract.md` 2.6 与 `docs/data-models.md` 6.7 的 seeded chunk/vector fixture，不再要求 A-11 worker runtime 先完成。 |
 | 建议动作 | 联调 / 人工复审 | 继续补真实 File/Parser/Redis/Qdrant/AI Gateway 端到端 smoke，以及并发/外部副作用一致性加固；人工复审任务幂等、失败状态收敛和敏感数据不泄漏。 |
 
@@ -56,12 +56,13 @@
 | PostgreSQL migration/repository | `services/knowledge/migrations/0001_create_knowledge_core_tables.sql`、`0002_create_parser_configs.sql`、`internal/repository/postgres.go` | `docs/services/knowledge/docs/data-models.md` | `go test ./...`；CI 用 `KNOWLEDGE_TEST_DATABASE_URL` 跑 repository lifecycle integration test | runtime 使用 PostgreSQL，保存文档、job、parser configs 和 chunks。分页 limit/offset 转 `int32` 前在 repository 层做显式范围校验，非法页码或溢出 offset 返回 validation error，不静默截断到 `MaxInt32`。 |
 | Knowledge ingestion 真实依赖 smoke | `services/knowledge/internal/integration/ingestion_real_deps_smoke_test.go` | #86 / #289、`docs/runbooks/local-integration.md` | `KNOWLEDGE_INGESTION_SMOKE=1 ... go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v` | 默认跳过；启用后使用真实 File Service、Parser Service、PostgreSQL、Qdrant 和默认 local hashing embedding，验证 fixture 上传、捕获 ingestion payload、worker handler、ready/succeeded 状态、chunk/embedding metadata 和 Qdrant point payload，并清理 File object、Qdrant collection、PostgreSQL schema。 |
 | Gateway -> Knowledge owner route smoke | `services/knowledge/internal/integration/gateway_owner_route_smoke_test.go` | #86 / #289、Gateway active owner route contract | `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v` | 默认跳过；启用后先检查 File、Parser、Knowledge ready、Knowledge PostgreSQL ping 和 Redis PING，再断言伪造 `X-User-*` 且无 Bearer token 的 Gateway 请求返回 `401`，最后通过 Gateway 创建 session，调用 `GET /api/v1/knowledge-bases`，并创建/读取 run-scoped KB 校验 `createdBy` 是真实 session user 而非伪造 header。 |
+| Gateway -> Knowledge -> QA RAG smoke | `services/knowledge/internal/integration/gateway_rag_e2e_smoke_test.go` | #304、`docs/runbooks/local-integration.md` | `GATEWAY_RAG_E2E_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayRAGE2ESmoke$' -count=1 -v` | 默认跳过；启用后通过 Gateway 创建 session/KB、上传 Markdown fixture，轮询文档 ready 和 chunkCount，调用 `knowledge-queries` 断言命中 `calibrate relay RAG-E2E-304` 和 rerank trace，再通过 QA config/session/message 验证 answer 包含 `RAG-E2E-304` 且 citations 匹配本轮 KB/doc/chunk。需要可用 AI Gateway chat profile/provider；默认 local hashing/in-memory vector 只证明等价检索数据，真实 Qdrant/AI Gateway embedding/rerank provider 需显式 env。 |
 
 ## 4. 未实现
 
 | 缺口 | 文档来源 | 影响范围 | 建议任务 |
 | --- | --- | --- | --- |
-| `knowledge-queries` 真实 Qdrant retrieval smoke 未闭环 | `docs/services/knowledge/docs/api-contract.md`、`docs/architecture/technology-decisions.md` | retrieval / deployment | ingestion smoke 已验证真实 Qdrant collection 创建、point 写入和 payload 读取；仍需补通过 `knowledge-queries` 走 Qdrant search、PostgreSQL hydrate 和可选 rerank 的真实依赖 smoke。 |
+| `knowledge-queries` 真实 Qdrant retrieval smoke 未闭环 | `docs/services/knowledge/docs/api-contract.md`、`docs/architecture/technology-decisions.md` | retrieval / deployment | Gateway RAG smoke 已验证通过 `knowledge-queries` 命中本轮文档；默认 Compose 仍走 in-memory vector index。需要设置 `KNOWLEDGE_QDRANT_URL=http://qdrant:6333` 后记录真实 Qdrant search、PostgreSQL hydrate 和可选 rerank 证据。 |
 | 真实 AI Gateway embedding/rerank smoke 未闭环 | `docs/architecture/service-boundaries.md`、`docs/services/knowledge/docs/data-models.md` | retrieval / AI Gateway | embedding 与 rerank adapter 已实现，默认 local hashing/no-op fallback；需要带真实 provider credential 的跨服务 smoke。 |
 
 ## 5. 文档与实现出入
@@ -94,7 +95,7 @@
 | 环境变量 | `DATABASE_URL`、`FILE_SERVICE_BASE_URL`、`PARSER_SERVICE_BASE_URL`、`KNOWLEDGE_REDIS_ADDR`、`KNOWLEDGE_SERVICE_TOKEN` 必填；另有 embedding、AI Gateway、Qdrant、HTTP/version/env/max upload/shutdown 配置 | 仍需按部署环境补真实依赖连通性检查。 |
 | PostgreSQL / migration | `migrations/0001_create_knowledge_core_tables.sql`、`0002_create_parser_configs.sql`，runtime `pgx/v5` | goose apply CI 已覆盖 migration；repository lifecycle 由 `KNOWLEDGE_TEST_DATABASE_URL` 集成测试覆盖。 |
 | Redis / queue | 使用 `asynq` client 投递 ingestion 和 delete cleanup；worker 在同进程消费 `knowledge:document:ingest` 与 `knowledge:document:delete_cleanup` | 后续可按部署形态拆分独立 worker 进程。 |
-| Object storage / vector store / AI provider | 通过 File Service 保存、读取和删除 raw file；默认 local hashing + memory vector index；可选 Qdrant adapter、AI Gateway embedding adapter 和 rerank adapter 已接入 | ingestion smoke 已覆盖真实 File/Parser/PostgreSQL/Qdrant 写入；仍需真实 AI Gateway provider、retrieval/rerank、delete cleanup 真实依赖和完整 Gateway/MCP 联调。 |
+| Object storage / vector store / AI provider | 通过 File Service 保存、读取和删除 raw file；默认 local hashing + memory vector index；可选 Qdrant adapter、AI Gateway embedding adapter 和 rerank adapter 已接入 | ingestion smoke 已覆盖真实 File/Parser/PostgreSQL/Qdrant 写入；Gateway RAG smoke 已覆盖 Gateway upload、Knowledge query 和 QA citation 最小链路；仍需真实 AI Gateway embedding/rerank provider、delete cleanup 真实依赖和完整 Gateway/MCP 联调。 |
 | Parser runtime | Knowledge 通过 `PARSER_SERVICE_BASE_URL` 调 `services/parser` 的 `/internal/v1/parsed-documents`；Parser Service 以 Python/FastAPI/PaddleOCR PP-StructureV3 独立部署，并返回页级 `ParsedDocument.pages` | 仍需真实 PP-StructureV3 模型 smoke 和部署环境资源配置。 |
 
 当 `EMBEDDING_PROVIDER=ai_gateway` 时，`EMBEDDING_MODEL` 必须匹配解析出的 AI Gateway embedding profile `model`。`AI_GATEWAY_EMBEDDING_PROFILE_ID` 可留空以使用 AI Gateway 默认启用的 embedding profile，但 provider 调用前仍会强制校验 model 匹配。
@@ -137,6 +138,7 @@ ORDER BY j.updated_at DESC;
 | Parser 服务测试 | `cd services/parser && uv run ruff check . && uv run pytest && uv run python -m compileall src tests` | available / not run in this documentation pass | Parser 拥有独立 service-local 测试；默认使用 fake OCR backend，不下载 PaddleOCR 模型，真实 PaddleOCR smoke 需显式环境变量。 |
 | Knowledge ingestion 真实依赖 smoke | `KNOWLEDGE_INGESTION_SMOKE=1 ... go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v` | available（2026-07-01 新增；默认 skip） | 覆盖 PostgreSQL/File Service/Parser Service/local hashing embedding/Qdrant 写入和清理；不覆盖 Redis delivery、`knowledge-queries`、rerank、MCP 或 Gateway E2E。 |
 | Gateway -> Knowledge owner route smoke | `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v` | available（2026-07-01 新增；默认 skip） | 覆盖伪造 `X-User-*` 未认证请求拒绝、Gateway session 创建、KB `createdBy` 真实 session user 断言，以及 Parser/File/Redis/PostgreSQL ready 前置检查；不覆盖完整 Gateway route matrix。 |
+| Gateway -> Knowledge -> QA RAG smoke | `GATEWAY_RAG_E2E_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayRAGE2ESmoke$' -count=1 -v` | available（2026-07-01 新增；默认 skip；本轮只跑默认 skip 编译检查） | 覆盖最小 RAG 样例的 Gateway 上传、ingestion ready/chunks、`knowledge-queries` 命中、QA answer 和 citations；需要可用 AI Gateway chat profile/provider，真实 provider 不进入普通 CI。 |
 | 端到端上传/删除联调 | Gateway + Redis delivery + PostgreSQL + File + Parser + Qdrant end-to-end upload/delete | partial | A-021 直接调用 worker handler 消费捕获的 ingestion payload，刻意不把 Redis/asynq delivery 可靠性扩进本 smoke；delete cleanup 当前由 unit/integration repository 测试覆盖，仍缺真实 Redis delivery + File/Qdrant cleanup smoke。完整 Gateway/Redis/MCP E2E 仍由 #125 等任务覆盖。 |
 | 契约测试 | gateway route matrix + Knowledge handler tests | pass（2026-06-30） | document lifecycle、chunks、content、knowledge-queries、parser-configs 等 active path 已补 contract/request-id/error envelope 覆盖。 |
 | 手工 smoke | 启动 PostgreSQL、File、Redis 后上传文档 | not run | 需要可复现脚本或 Compose。 |
@@ -146,13 +148,14 @@ ORDER BY j.updated_at DESC;
 | 任务 | 类型 | 优先级 | 依据 | 说明 |
 | --- | --- | --- | --- | --- |
 | 补真实 delete cleanup smoke | 新任务 | P0 | 当前已实现 worker，但仍缺真实 Redis delivery + File/Qdrant cleanup smoke | 通过真实 File Service、Redis/asynq 和 Qdrant 验证删除文档后 File DELETE、Qdrant filter delete、job succeeded/failed 重试语义。 |
-| 补真实 retrieval/rerank/Gateway 端到端 smoke | 新任务 | P0 | A-021 已覆盖 ingestion 写入，但不覆盖查询与 Gateway 总入口 | 覆盖 gateway 上传、Redis/asynq delivery、`knowledge-queries` 可命中、可选 AI Gateway embedding/rerank、MCP/QA 调用入口。 |
+| 补真实 Qdrant/AI Gateway retrieval-rerank 证据 | 新任务 | P0 | #304 已提供最小 Gateway RAG smoke，但默认路径允许 local hashing/in-memory vector 和 no-op rerank fallback | 在真实 Qdrant、AI Gateway embedding/rerank provider、Redis/asynq delivery 环境下记录 `knowledge-queries` search/rerank 证据，并继续由 #125 覆盖 MCP/前端完整 E2E。 |
 
 ## 10. 最近检查记录
 
 | 日期 | 检查人/工具 | 代码基准 | 结论 |
 | --- | --- | --- | --- |
 | 2026-07-01 | Codex | Issue #342 branch | 实现 Knowledge 文档 delete cleanup worker：删除文档后软删并投递 `knowledge:document:delete_cleanup`，worker 幂等调用 File DELETE 和按 `document_id` 清理 vector points，失败摘要脱敏写入 `processing_jobs`；仍需真实 Redis delivery + File/Qdrant cleanup smoke 和人工复审。 |
+| 2026-07-01 | Codex | Issue #304 branch | 新增 env-gated `TestGatewayRAGE2ESmoke`，默认 skip；启用后通过 Gateway 上传最小 Markdown fixture，验证 Knowledge ingestion ready/chunkCount、`knowledge-queries` 命中、QA answer 包含 `RAG-E2E-304`，并校验 citation 摘要匹配本轮 KB/doc/chunk。 |
 | 2026-07-01 | Codex | A-021 working tree | 新增 env-gated `TestKnowledgeIngestionRealDepsSmoke`，默认 skip；启用后验证 fixture 从 File Service、Parser Service、Knowledge worker、local hashing embedding 到 Qdrant point 写入和 PostgreSQL 状态更新，并记录清理策略。 |
 | 2026-07-01 | Codex CodeQL follow-up | working tree | 继续收敛合并后仍 open 的 rerank allocation 告警：rerank result ordering 的 slice/map capacity 改为 `maxRetrievalTopK` 常量，`limit` 仅作为业务截断条件，避免用户控制值继续流入 allocation size。 |
 | 2026-07-01 | Codex | A-021 scope update | 根据 Gateway/Auth 前置发现，新增 env-gated `TestGatewayKnowledgeOwnerRouteSmoke` 和 Parser image 构建/缓存前置说明；owner smoke 启用后先查 File/Parser/Knowledge ready、PostgreSQL 和 Redis，再通过 Gateway session 调用 `GET /api/v1/knowledge-bases`。 |

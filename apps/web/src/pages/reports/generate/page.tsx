@@ -204,9 +204,6 @@ export function ReportGeneratePage() {
       specialty: parsed.data.specialty,
       businessObject: parsed.data.businessObject,
       year: parsed.data.year,
-      extraContext: parsed.data.extraContextText
-        ? { note: parsed.data.extraContextText }
-        : undefined,
       source: 'frontend' as const,
     }
 

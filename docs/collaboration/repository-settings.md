@@ -89,8 +89,9 @@ check 名称补入 `contexts`。
 两个模板标题都采用 `[A/B/C/F/S/T-001] 中文任务标题` 或 `[T-001] 中文测试任务标题`
 格式，正文包含任务信息、工时字段、依赖字段和 `Project sync` 字段，以便 Task Issue Sync
 识别和同步 Project 字段。Test Task Issue 模板额外包含测试执行与缺陷处理规则，要求测试
-主责人实际运行测试、记录结果，按 `docs/testing/templates/test-report-template.md` 生成
-测试报告并归档到 `docs/testing/reports/YYYY-MM-DD/`，并把大问题转给对应 owner 小组。
+主责人实际运行测试并记录结果；纯单元/组件自动化或静态检查可在 issue/PR 中保留轻量执行
+记录，复杂测试按 `docs/testing/templates/test-report-template.md` 生成报告并归档到
+`docs/testing/reports/YYYY-MM-DD/`，并把大问题转给对应 owner 小组。
 
 Project `Software Teamwork` 的 `Group` 单选字段需要包含 `L1nggTeam`、`JerryTeam`、
 `PrimeTeam`、`Frontend`、`Special` 和 `Test`。`Test` 用于测试文档、测试代码、测试报告
@@ -106,6 +107,8 @@ Project `Software Teamwork` 需要包含以下工时字段：
 
 工时字段只填写小时数，允许整数或浮点数，例如 `0`、`0.5`、`1.25`。workflow 会兼容远端仍是
 Text 的旧字段并写入数字字符串，但后续统计功能依赖 GitHub Project 字段为 Number。
+新建或编辑非 `Draft` 任务时，`预期工时（小时数）` 必须是大于 `0` 的具体估算；只有
+`Draft` 可以临时留空、写 `待估` 或写 `0`。`实际工时（小时数）` 可在任务完成前保持 `0`。
 
 GitHub user-level Projects v2 通常需要额外 token。维护者应创建一个有 Project
 读写权限的 fine-grained token 或 classic token，并在仓库 Secrets 中配置：
@@ -138,6 +141,8 @@ Issue label、Assignee 和正文更新仍使用默认 `GITHUB_TOKEN`，`PROJECTS
 - 认领成功后自动把评论者设为 Assignee。
 - 若正文包含任务模板字段，会把 `状态` 从 `Draft` 或 `Ready` 改为
   `In Progress`，并把 Project `Status` 同步为 `In Progress`。
+- 认领会把任务推进到非 `Draft` 状态，因此正文 `预期工时（小时数）` 必须已填写
+  大于 `0` 的小时数；`0`、`待估`、`未填写` 或留空会被拒绝。
 - 认领同步会刷新 Project `ExpectedHours` 和 `ActualHours`，来源分别是正文
   `预期工时（小时数）` 和 `实际工时（小时数）`。
 - 若 Project 同步成功，正文中的 `Project sync` 会写为 `synced`；同步失败会写为
@@ -146,8 +151,15 @@ Issue label、Assignee 和正文更新仍使用默认 `GITHUB_TOKEN`，`PROJECTS
 
 实际工时规则：
 
+- issue 关闭时，Task Issue Sync 会自动按“任务创建时间”和“`依赖任务` 中已关闭依赖的最晚
+  关闭时间”两者较晚者，到当前 issue 本次关闭时间的间隔，回填正文
+  `实际工时（小时数）` 并同步 Project `ActualHours`。
+- 维护者可以手动运行 Task Issue Sync 的 `workflow_dispatch`，传入已关闭任务的
+  `issue_number`，在不重新打开 issue 的情况下补算实际工时。
 - 仓库维护者、协作者或当前 Assignee 可以评论 `实际工时：2` 或 `实际工时：0.5` 设置实际工时。
-- 自动化会更新正文 `实际工时（小时数）` 字段，并同步 Project `ActualHours`。
+- 评论设置会覆盖自动生成值，自动化会更新正文 `实际工时（小时数）` 字段，并同步 Project
+  `ActualHours`。
+- 非 `Draft` 任务设置实际工时时，正文 `预期工时（小时数）` 也必须是大于 `0` 的小时数。
 - 如果 Project 同步失败，正文仍会保留评论中的实际工时，`Project sync` 会写为
   `blocked`，workflow run 会失败以提醒维护者补权限或字段配置。
 

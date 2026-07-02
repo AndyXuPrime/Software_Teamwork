@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Service-local Go test/build and Compose validation expectations."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Sensitive-data logging constraints for smoke diagnostics."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Dependency error and public failure classification expectations."}
+{"file":"docs/runbooks/local-integration.md","reason":"Verify final commands and failure triage match documented local integration state."}
+{"file":"docs/services/gateway/api/public.openapi.yaml","reason":"Ensure any Gateway-facing route claims remain aligned with active public contracts."}

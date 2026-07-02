@@ -43,20 +43,11 @@
 | 运行时解析器配置管理 | 公开管理员入口、管理员授权、响应包裹结构、密钥安全归一化。 | `knowledge` | 已生效的 gateway 契约：`/api/v1/admin/parser-configs` 和 `/api/v1/admin/parser-configs/{parserConfigId}`。Knowledge 负责解析器后端校验、并发限制和文档处理行为。Gateway 不得实现解析。 |
 | 文档解析运行时 | 无公开入口；仅传递内部调用上下文。 | `parser` | Parser 负责 OCR/PaddleOCR 等解析运行时和模型加载。Knowledge 负责在调用前做文档权限/状态校验，调用后校验 parsed content，并继续切片、embedding、索引和状态推进。 |
 | Provider 模型调用 | 仅内部模型调用 API。 | `ai-gateway` | Chat 和 embedding API 使用 OpenAI 兼容 body。Chat 也支持 OpenAI 兼容的 Function Calling 字段。由于 OpenAI 没有原生 rerank endpoint，rerank 采用 OpenAI 风格。领域服务负责 prompt、业务上下文、MCP 执行和持久化。 |
-| 管理概览和指标聚合 | 缺失公开契约。 | `gateway` 聚合；各服务负责自己的指标。 | 仅占位。指标和聚合形态尚不稳定。不包含运行时模型/解析器配置，因为它们现在已是生效的 gateway 契约。 |
+| 管理概览和聚合指标 | `GET /api/v1/admin/overview` 和 `GET /api/v1/admin/metrics` 均已生效。 | `gateway` 聚合；各服务负责自己的指标。 | 已转为 active contract。Admin overview 提供各模块轻量快照，admin-metrics 提供跨服务时间序列趋势数据。 |
 
 ## 缺失契约登记
 
-以下下游前端/后端接口在团队最终确定请求和响应结构前，只登记在
-`docs/services/gateway/api/public.openapi.yaml` 顶层 `x-missing-contracts`，
-不进入 active paths。QA 会话、消息、SSE、响应运行、引用、配置、检索测试和指标路由
-已不再缺失；它们是已生效的 gateway 契约。
-
-| 领域 | 占位路径 | 归属方 |
-| --- | --- | --- |
-| 管理概览和指标聚合 | `GET /api/v1/admin-overview`、`GET /api/v1/admin-metrics` | `gateway` 加领域服务 |
-
-在对应 OpenAPI operation 添加之前，不要为这些占位路径生成前端 API client 或后端 handler。
+当前无缺失契约。所有计划内公开 API 均已转为 active paths。
 MCP 原始工具 schema、完整工具参数/结果、内部审计细节、prompt、provider 原始错误和存储对象 key
 被有意排除在公开 QA 契约之外，而不是被视为缺失的前端端点。
 

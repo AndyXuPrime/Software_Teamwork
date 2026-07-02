@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -162,7 +163,21 @@ func scanCitation(row rowScanner) (service.Citation, error) {
 	if item.Metadata == nil {
 		item.Metadata = map[string]any{}
 	}
+	item.AttachmentID = citationAttachmentIDFromMetadata(item.Metadata)
+	delete(item.Metadata, "attachmentId")
+	delete(item.Metadata, "attachment_id")
 	return service.NormalizeCitation(item), nil
+}
+
+func citationAttachmentIDFromMetadata(metadata map[string]any) string {
+	for _, key := range []string{"attachmentId", "attachment_id"} {
+		if value, ok := metadata[key].(string); ok {
+			if attachmentID := strings.TrimSpace(value); attachmentID != "" {
+				return attachmentID
+			}
+		}
+	}
+	return ""
 }
 
 func (r *Postgres) ListToolCalls(ctx context.Context, userID, runID string) ([]service.AgentToolCall, error) {
@@ -264,31 +279,14 @@ func applyQAConfigVersionCompatibilityFields(v *service.QAConfigVersion) {
 	v.EnabledToolNames = append([]string(nil), v.Agent.EnabledToolNames...)
 }
 
+func postCommitConfigContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+}
+
 func (r *Postgres) CreateQAConfigVersionResource(ctx context.Context, userID string, input service.CreateQAConfigVersionInput) (service.QAConfigVersion, error) {
-	retrieval := input.Retrieval
-	if retrieval.TopK == 0 {
-		retrieval.TopK = input.TopK
-	}
-	if retrieval.TopK == 0 {
-		retrieval.TopK = 5
-	}
-	if retrieval.ScoreThreshold == 0 {
-		retrieval.ScoreThreshold = input.SimilarityThreshold
-	}
-	if retrieval.ScoreThreshold == 0 {
-		retrieval.ScoreThreshold = .7
-	}
-	if input.UseRerank {
-		retrieval.EnableRerank = true
-	}
-	if retrieval.RerankThreshold == 0 {
-		retrieval.RerankThreshold = input.RerankThreshold
-	}
-	if retrieval.RerankTopN == 0 {
-		retrieval.RerankTopN = input.RerankTopN
-	}
+	retrieval := retrievalConfigFromCreateInput(input)
 	agent := agentConfigFromCreateInput(input)
-	activate := input.Activate == nil || *input.Activate
+	activate := shouldActivateConfigResource(input.Activate)
 	kbs := input.KnowledgeBases
 	if len(kbs) == 0 {
 		for i, id := range input.DefaultKnowledgeBaseIDs {
@@ -303,17 +301,24 @@ func (r *Postgres) CreateQAConfigVersionResource(ctx context.Context, userID str
 	if _, err = tx.Exec(ctx, `LOCK TABLE qa_config_versions IN EXCLUSIVE MODE`); err != nil {
 		return service.QAConfigVersion{}, err
 	}
-	// Inherit current active prompt before deactivating.
+	replacedActiveID := ""
 	systemPrompt := ""
 	if input.SystemPrompt != nil {
 		systemPrompt = *input.SystemPrompt
-	} else {
+	} else if activate {
+		// Inherit active prompt before deactivating.
 		var activePrompt string
 		if err := tx.QueryRow(ctx, `SELECT COALESCE(system_prompt,'') FROM qa_config_versions WHERE is_active=true ORDER BY version_no DESC LIMIT 1`).Scan(&activePrompt); err == nil {
 			systemPrompt = activePrompt
 		}
 	}
 	if activate {
+		err = tx.QueryRow(ctx, `SELECT id::text FROM qa_config_versions WHERE is_active=true ORDER BY version_no DESC LIMIT 1`).Scan(&replacedActiveID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			replacedActiveID = ""
+		} else if err != nil {
+			return service.QAConfigVersion{}, fmt.Errorf("get replaced QA config: %w", err)
+		}
 		if _, err = tx.Exec(ctx, `UPDATE qa_config_versions SET is_active=false WHERE is_active=true`); err != nil {
 			return service.QAConfigVersion{}, err
 		}
@@ -332,7 +337,78 @@ func (r *Postgres) CreateQAConfigVersionResource(ctx context.Context, userID str
 	if err = tx.Commit(ctx); err != nil {
 		return service.QAConfigVersion{}, err
 	}
-	return r.getQAConfigVersion(ctx, id, false)
+	readCtx, cancel := postCommitConfigContext(ctx)
+	defer cancel()
+	version, err := r.getQAConfigVersion(readCtx, id, false)
+	version.ReplacedActiveVersionID = replacedActiveID
+	if err != nil {
+		version.ID = id
+	}
+	return version, err
+}
+
+func (r *Postgres) RestoreQAConfigActiveVersion(ctx context.Context, failedVersionID, restoreVersionID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin restore QA config: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err = tx.Exec(ctx, `LOCK TABLE qa_config_versions IN EXCLUSIVE MODE`); err != nil {
+		return err
+	}
+	var currentActiveID string
+	err = tx.QueryRow(ctx, `SELECT id::text FROM qa_config_versions WHERE is_active=true ORDER BY version_no DESC LIMIT 1`).Scan(&currentActiveID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		currentActiveID = ""
+	} else if err != nil {
+		return fmt.Errorf("get active QA config for restore: %w", err)
+	}
+	if currentActiveID != failedVersionID {
+		return tx.Commit(ctx)
+	}
+	if _, err = tx.Exec(ctx, `UPDATE qa_config_versions SET is_active=false WHERE id=$1`, failedVersionID); err != nil {
+		return fmt.Errorf("deactivate failed QA config: %w", err)
+	}
+	if restoreVersionID != "" {
+		commandTag, err := tx.Exec(ctx, `UPDATE qa_config_versions SET is_active=true WHERE id=$1`, restoreVersionID)
+		if err != nil {
+			return fmt.Errorf("restore previous QA config: %w", err)
+		}
+		if commandTag.RowsAffected() == 0 {
+			return tx.Commit(ctx)
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func retrievalConfigFromCreateInput(input service.CreateQAConfigVersionInput) service.RetrievalSettings {
+	retrieval := input.Retrieval
+	if retrieval.TopK == 0 {
+		retrieval.TopK = input.TopK
+	}
+	if retrieval.TopK == 0 {
+		retrieval.TopK = 5
+	}
+	if !retrieval.HasScoreThreshold() {
+		retrieval.ScoreThreshold = input.SimilarityThreshold
+		if retrieval.ScoreThreshold == 0 {
+			retrieval.ScoreThreshold = .7
+		}
+	}
+	if input.UseRerank {
+		retrieval.EnableRerank = true
+	}
+	if retrieval.RerankThreshold == 0 {
+		retrieval.RerankThreshold = input.RerankThreshold
+	}
+	if retrieval.RerankTopN == 0 {
+		retrieval.RerankTopN = input.RerankTopN
+	}
+	return retrieval
+}
+
+func shouldActivateConfigResource(activate *bool) bool {
+	return activate == nil || *activate
 }
 
 func agentConfigFromCreateInput(input service.CreateQAConfigVersionInput) service.AgentConfig {
@@ -397,7 +473,14 @@ func (r *Postgres) CreateLLMConfigVersionResource(ctx context.Context, userID st
 	if _, err = tx.Exec(ctx, `LOCK TABLE llm_config_versions IN EXCLUSIVE MODE`); err != nil {
 		return service.LLMConfigVersion{}, err
 	}
+	replacedActiveID := ""
 	if activate {
+		err = tx.QueryRow(ctx, `SELECT id::text FROM llm_config_versions WHERE is_active=true ORDER BY version_no DESC LIMIT 1`).Scan(&replacedActiveID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			replacedActiveID = ""
+		} else if err != nil {
+			return service.LLMConfigVersion{}, fmt.Errorf("get replaced LLM config: %w", err)
+		}
 		if _, err = tx.Exec(ctx, `UPDATE llm_config_versions SET is_active=false WHERE is_active=true`); err != nil {
 			return service.LLMConfigVersion{}, err
 		}
@@ -410,7 +493,48 @@ func (r *Postgres) CreateLLMConfigVersionResource(ctx context.Context, userID st
 	if err = tx.Commit(ctx); err != nil {
 		return service.LLMConfigVersion{}, err
 	}
-	return r.getLLMConfigVersion(ctx, id, false)
+	readCtx, cancel := postCommitConfigContext(ctx)
+	defer cancel()
+	version, err := r.getLLMConfigVersion(readCtx, id, false)
+	version.ReplacedActiveVersionID = replacedActiveID
+	if err != nil {
+		version.ID = id
+	}
+	return version, err
+}
+
+func (r *Postgres) RestoreLLMConfigActiveVersion(ctx context.Context, failedVersionID, restoreVersionID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin restore LLM config: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err = tx.Exec(ctx, `LOCK TABLE llm_config_versions IN EXCLUSIVE MODE`); err != nil {
+		return err
+	}
+	var currentActiveID string
+	err = tx.QueryRow(ctx, `SELECT id::text FROM llm_config_versions WHERE is_active=true ORDER BY version_no DESC LIMIT 1`).Scan(&currentActiveID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		currentActiveID = ""
+	} else if err != nil {
+		return fmt.Errorf("get active LLM config for restore: %w", err)
+	}
+	if currentActiveID != failedVersionID {
+		return tx.Commit(ctx)
+	}
+	if _, err = tx.Exec(ctx, `UPDATE llm_config_versions SET is_active=false WHERE id=$1`, failedVersionID); err != nil {
+		return fmt.Errorf("deactivate failed LLM config: %w", err)
+	}
+	if restoreVersionID != "" {
+		commandTag, err := tx.Exec(ctx, `UPDATE llm_config_versions SET is_active=true WHERE id=$1`, restoreVersionID)
+		if err != nil {
+			return fmt.Errorf("restore previous LLM config: %w", err)
+		}
+		if commandTag.RowsAffected() == 0 {
+			return tx.Commit(ctx)
+		}
+	}
+	return tx.Commit(ctx)
 }
 func (r *Postgres) SaveLLMConnectionTest(ctx context.Context, userID string, result service.LLMProfileTestResult) (service.LLMProfileTestResult, error) {
 	_, err := r.pool.Exec(ctx, `INSERT INTO llm_connection_tests(id,external_user_id,success,latency_ms,model_name,error_code,error_message,tested_at) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),$8)`, result.ID, userID, result.Success, result.LatencyMS, result.ModelName, result.ErrorCode, result.ErrorMessage, result.TestedAt)
@@ -566,7 +690,7 @@ func retrievalResultWithAliases(item service.RetrievalTestResult) service.Retrie
 	return item
 }
 
-func (r *Postgres) GetMetricsOverview(ctx context.Context, days int) (service.MetricsOverview, error) {
+func (r *Postgres) GetMetricsOverview(ctx context.Context, _ string, days int) (service.MetricsOverview, error) {
 	if days <= 0 {
 		days = 1
 	}

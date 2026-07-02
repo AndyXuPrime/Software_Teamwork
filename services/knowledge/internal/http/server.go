@@ -21,6 +21,7 @@ type Config struct {
 	Environment    string
 	Logger         *slog.Logger
 	MaxUploadBytes int64
+	ServiceToken   string
 }
 
 type Server struct {
@@ -29,6 +30,7 @@ type Server struct {
 	environment    string
 	logger         *slog.Logger
 	maxUploadBytes int64
+	serviceToken   string
 	mux            *http.ServeMux
 }
 
@@ -47,6 +49,7 @@ func NewServer(knowledge *service.Service, cfg Config) *Server {
 		environment:    cfg.Environment,
 		logger:         cfg.Logger,
 		maxUploadBytes: cfg.MaxUploadBytes,
+		serviceToken:   cfg.ServiceToken,
 		mux:            http.NewServeMux(),
 	}
 	s.routes()
@@ -74,6 +77,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /internal/v1/parser-configs/{parserConfigId}", s.handleGetParserConfig)
 	s.mux.HandleFunc("PATCH /internal/v1/parser-configs/{parserConfigId}", s.handleUpdateParserConfig)
 	s.mux.HandleFunc("DELETE /internal/v1/parser-configs/{parserConfigId}", s.handleDeleteParserConfig)
+	s.mux.HandleFunc("GET /internal/v1/knowledge-statistics", s.handleGetStatistics)
 	s.mux.HandleFunc("/", s.handleNotFound)
 }
 
@@ -639,4 +643,35 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(status int) {
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
+}
+
+func secureTokenEqual(left, right string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	var result byte
+	for index := range left {
+		result |= left[index] ^ right[index]
+	}
+	return result == 0
+}
+
+func (s *Server) handleGetStatistics(w http.ResponseWriter, r *http.Request) {
+	if s.serviceToken == "" || !secureTokenEqual(r.Header.Get("X-Service-Token"), s.serviceToken) {
+		writeAppError(w, r, service.UnauthorizedError())
+		return
+	}
+	stats, err := s.knowledge.GetGlobalStats(r.Context())
+	if err != nil {
+		writeAppError(w, r, err)
+		return
+	}
+	type statsResponse struct {
+		KnowledgeBaseCount int64 `json:"knowledgeBaseCount"`
+		DocumentCount      int64 `json:"documentCount"`
+	}
+	writeJSON(w, http.StatusOK, statsResponse{
+		KnowledgeBaseCount: stats.KnowledgeBaseCount,
+		DocumentCount:      stats.DocumentCount,
+	}, requestIDFromContext(r.Context()))
 }

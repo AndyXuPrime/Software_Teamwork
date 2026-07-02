@@ -4,6 +4,15 @@ This directory is the S-05 local/demo integration baseline. It starts shared
 infrastructure plus the backend service loop through gateway. It is not a
 production deployment baseline.
 
+Production or staging uses a separate baseline:
+[`production-baseline.md`](./production-baseline.md),
+`docker-compose.production.yml`, `.env.production.example`, and
+`nginx/production.conf`. Do not promote the local `.env.example`, local seed
+data, or local demo credentials into shared or long-lived environments. The
+production baseline exposes only the `ingress` service publicly; it routes
+browser `/api/v1/**` calls to gateway and keeps frontend/gateway service ports
+inside the Compose network.
+
 ## Entry Points
 
 - Browser/frontend entrypoint: `http://localhost:8080` through gateway only.
@@ -42,12 +51,27 @@ This overlay uses explicit registry rewrites and package mirrors. It is the
 preferred path for users with no Docker mirror/proxy configured, and it avoids
 depending on daemon-level mirror behavior.
 
-Optional AI Gateway:
+AI/模型功能必需：AI Gateway profile
+
+The default stack starts the core services. Enable the `ai` profile before using
+admin model profiles, QA real model calls, Document AI generation, real
+embedding/rerank paths, or AI Gateway provider smoke.
 
 ```powershell
 cd deploy
 docker compose --profile ai up -d --build
 ```
+
+To start only the AI Gateway profile service on top of an already running core
+stack:
+
+```powershell
+docker compose --env-file .env --profile ai up -d --build ai-gateway
+Invoke-RestMethod http://localhost:8086/readyz
+```
+
+`gateway /readyz` does not prove AI Gateway or provider readiness. Seeded local
+AI profiles are placeholders until replaced with real provider credentials.
 
 Default seeded login:
 
@@ -146,7 +170,7 @@ MinIO server. Update this document and
 | knowledge | 8083 | 8083 | Internal knowledge service |
 | qa | 8084 | 8084 | Internal QA service |
 | document | 8085 | 8085 | Internal document service |
-| ai-gateway | 8086 | 8086 | Optional model/profile service |
+| ai-gateway | 8086 | 8086 | Model/profile service for AI features |
 | parser | 8087 | 8087 | Internal parser service |
 | postgres | 5432 | 5432 | Local relational databases |
 | redis | 6379 | 6379 | Sessions, queues, coordination |
@@ -159,13 +183,13 @@ Override host ports in `deploy/.env`.
 
 | Variable | Service | Required | Description |
 | --- | --- | --- | --- |
-| `INTERNAL_SERVICE_TOKEN` | gateway/auth/knowledge/qa/ai-gateway | yes | Local service-to-service token placeholder. |
+| `INTERNAL_SERVICE_TOKEN` | gateway/auth/file/parser/knowledge/qa/document/ai-gateway | yes | Local service-to-service token placeholder. |
 | `TOKEN_HASH_SECRET` | gateway/auth | yes | Local HMAC secret for opaque token hashes. |
 | `GATEWAY_AUTH_BASE_URL` | gateway | set in Compose | Internal auth base URL. |
 | `GATEWAY_KNOWLEDGE_BASE_URL` | gateway | set in Compose | Internal knowledge base URL. |
 | `GATEWAY_QA_BASE_URL` | gateway | set in Compose | Internal QA base URL. |
 | `GATEWAY_DOCUMENT_BASE_URL` | gateway | set in Compose | Internal document base URL. |
-| `GATEWAY_AI_GATEWAY_BASE_URL` | gateway | set in Compose | Internal AI Gateway base URL; route calls require optional profile to run. |
+| `GATEWAY_AI_GATEWAY_BASE_URL` | gateway | set in Compose | Internal AI Gateway base URL; AI/model routes require the `ai` profile to run. |
 | `AUTH_DATABASE_URL` | auth | yes | Auth PostgreSQL DSN. |
 | `FILE_DATABASE_URL` | file | yes | File metadata PostgreSQL DSN. |
 | `FILE_STORAGE_BACKEND` | file | no | `local` in Compose for durable local smoke tests. |
@@ -176,12 +200,17 @@ Override host ports in `deploy/.env`.
 | `KNOWLEDGE_REDIS_ADDR` | knowledge | yes | Redis/asynq endpoint. |
 | `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL` / `EMBEDDING_DIMENSION` | knowledge | no | Defaults to local hashing embeddings for deterministic local retrieval tests. |
 | `KNOWLEDGE_QDRANT_URL` / `QDRANT_COLLECTION` | knowledge | no | Optional Qdrant REST URL and collection; leave URL empty to use Knowledge's in-memory vector index. |
-| `KNOWLEDGE_AI_GATEWAY_BASE_URL` / `AI_GATEWAY_EMBEDDING_PROFILE_ID` | knowledge | no | Optional AI Gateway embedding profile wiring. Requires `--profile ai` and real provider credentials when `EMBEDDING_PROVIDER=ai_gateway`. |
-| `RERANK_MODEL` / `RERANK_PROFILE_ID` | knowledge | no | Optional AI Gateway rerank wiring. Empty `RERANK_MODEL` keeps rerank requests on the local no-op fallback. |
+| `KNOWLEDGE_AI_GATEWAY_BASE_URL` / `AI_GATEWAY_EMBEDDING_PROFILE_ID` | knowledge | no | AI Gateway embedding profile wiring. Requires `--profile ai` and real provider credentials when `EMBEDDING_PROVIDER=ai_gateway`. |
+| `RERANK_MODEL` / `RERANK_PROFILE_ID` | knowledge | no | AI Gateway rerank wiring. Empty `RERANK_MODEL` keeps rerank requests on the local no-op fallback. |
 | `PARSER_BACKEND` | parser | no | Defaults to `ppstructurev3` for structured PDF/image parsing; set `document` only for local text/Office parsing without OCR dependencies. |
 | `QA_DATABASE_URL` | qa | yes | QA PostgreSQL DSN. |
 | `KNOWLEDGE_SERVICE_URL` | qa | yes | Internal Knowledge Service URL. |
-| `AI_GATEWAY_URL` | qa | yes | Internal chat completions URL; useful when `--profile ai` is running. |
+| `AI_GATEWAY_URL` | qa | yes | Internal chat completions URL; QA real model calls require `--profile ai`. |
+| `AI_GATEWAY_PROFILE_ID` / `MODEL_ID` | qa | no | Optional default QA AI Gateway chat profile/model. QA settings versions can override these; model must exactly match the selected AI Gateway profile. |
+| `QA_SETTINGS_OPEN` / `QA_ADMIN_USER_IDS` | qa | no | Local QA settings-write allowance. Keep closed by default; enable only for trusted local smoke or configure explicit admin user ids. |
+| `MCP_TRANSPORT` / `MCP_SERVER_ALIAS` / `MCP_SERVER_URL` | qa | no | Local Compose defaults to `streamable_http` / `document` / `http://document:8085/mcp` so QA can discover Document report tools. |
+| `MCP_SERVER_TOKEN` / `MCP_SERVER_TOKEN_HEADER` | qa | no | Document MCP credential. Defaults to the same `INTERNAL_SERVICE_TOKEN` placeholder and `Authorization` header used by Document MCP. |
+| `MCP_TOOL_TIMEOUT` | qa | no | Per-tool timeout for remote MCP calls; defaults to `30s`. |
 | `DOCUMENT_DATABASE_URL` | document | yes | Document PostgreSQL DSN. |
 | `DOCUMENT_REDIS_ADDR` | document | yes | Redis/asynq endpoint. |
 | `DOCUMENT_FILE_SERVICE_URL` | document | yes | Internal File Service URL. |
@@ -189,6 +218,7 @@ Override host ports in `deploy/.env`.
 | `DOCUMENT_AI_GATEWAY_URL` | document | yes | Internal AI Gateway base URL. |
 | `DOCUMENT_AI_GATEWAY_PROFILE_ID` | document | yes | Seeded placeholder profile id, `default-chat`. |
 | `DOCUMENT_AI_GATEWAY_SERVICE_TOKEN` | document | yes | Local service token for AI Gateway internal profile APIs. |
+| `DOCUMENT_MCP_SERVICE_TOKEN` / `DOCUMENT_MCP_TOKEN_HEADER` | document | yes | Streamable HTTP MCP credential; defaults to `INTERNAL_SERVICE_TOKEN` and `Authorization` in local Compose. |
 | `AI_GATEWAY_DATABASE_URL` | ai-gateway | yes | AI Gateway PostgreSQL DSN. |
 | `AI_GATEWAY_SERVICE_TOKEN_HASHES` | ai-gateway | yes | SHA-256 hashes for allowed service tokens. |
 | `AI_GATEWAY_CREDENTIAL_ENCRYPTION_KEY_REF` | ai-gateway | yes | Local encryption key reference placeholder. |
@@ -221,8 +251,17 @@ Invoke-RestMethod http://localhost:8087/readyz
 ```
 
 `gateway /readyz` checks Redis and auth, and verifies owner service URLs are
-configured. Auth, document, and ai-gateway readiness identify PostgreSQL
-problems. Compose health checks identify container-level dependency failures.
+configured. It does not call Knowledge, QA, Document, or AI Gateway readiness
+endpoints and does not prove business workflows such as upload, retrieval, QA
+answers, report generation, model profile bootstrap, or real provider calls.
+Auth, document, and ai-gateway readiness identify PostgreSQL problems. Compose
+health checks identify container-level dependency failures.
+
+Use the targeted smoke checks in
+[`docs/runbooks/local-integration.md`](../docs/runbooks/local-integration.md)
+for complete cross-service availability. #352 owns the repeatable
+Auth/Gateway/Redis smoke, and #125 owns the broader Gateway -> owner service
+and MCP/cross-service smoke coverage.
 
 ## Seed Data
 
@@ -252,7 +291,7 @@ Seeded local resources:
 | Area | Deterministic resource |
 | --- | --- |
 | Auth | user `usr_local_admin`, username `admin`, password `LocalDemoAdmin#12345`, role `admin` |
-| Auth permissions | `admin:model-profile:write` and `admin:parser-config:write`; `system:admin` is not required for this local admin |
+| Auth permissions | `admin:model-profile:write`, `admin:parser-config:write`, `qa:settings:read`, and `qa:settings:write`; `system:admin` is not required for this local admin |
 | Knowledge | knowledge base `kb_local_demo`, document `doc_local_demo_seed`, chunk `chunk_local_demo_seed_001` |
 | Document | material `22222222-2222-4222-8222-222222222201`, report `22222222-2222-4222-8222-222222222301`, outline `22222222-2222-4222-8222-222222222401` |
 | QA | conversation `33333333-3333-4333-8333-333333333301`, user message `33333333-3333-4333-8333-333333333401`, assistant message `33333333-3333-4333-8333-333333333402` |
@@ -279,7 +318,8 @@ Invoke-RestMethod -Uri http://localhost:8080/api/v1/admin/parser-configs -Header
 ```
 
 The response should include role `admin` and admin runtime config permissions
-such as `admin:model-profile:write` or `admin:parser-config:write`. The
+such as `admin:model-profile:write`, `admin:parser-config:write`, or
+`qa:settings:read`. The
 `GET /api/v1/admin/parser-configs` call proves the seeded admin token passes a
 Gateway admin route preflight; use `/api/v1/admin/model-profiles` when the
 optional AI profile is running.
@@ -367,12 +407,12 @@ embedding/rerank validation.
 
 | Symptom | Likely cause | Check |
 | --- | --- | --- |
-| `gateway /readyz` returns `502 dependency_error` | Redis or auth is not ready | `docker compose ps`, `docker compose logs redis auth gateway` |
+| `gateway /readyz` returns `503 dependency_error` | Redis, auth, or required owner service base URL configuration is not ready | `docker compose ps`, `docker compose logs redis auth gateway` |
 | `auth /readyz` returns `postgres unavailable` | Auth migration or PostgreSQL failed | `docker compose logs postgres migrate-auth auth` |
 | Knowledge upload returns `502 dependency_error` | File Service, Parser Service, or Redis queue unavailable | `docker compose logs file parser knowledge redis` |
 | Knowledge query returns `502 dependency_error` | Qdrant collection missing, AI Gateway embedding/rerank unavailable, or fake provider credential still configured | `docker compose logs knowledge qdrant ai-gateway` |
 | Document readyz returns dependency error | Document DB migration failed or DB is unreachable | `docker compose logs migrate-document document postgres` |
-| QA message call fails on model invocation | Optional `ai-gateway` profile not running, fake local credential still in use, or host provider is not listening on `host.docker.internal:11434` | `docker compose --profile ai ps`, `docker compose logs ai-gateway qa` |
+| QA message call fails on model invocation | AI Gateway profile is not running, fake local credential is still in use, or host provider is not listening on `host.docker.internal:11434` | `docker compose --profile ai ps`, `docker compose logs ai-gateway qa` |
 | MinIO bucket missing | `minio-init` did not complete | `docker compose logs minio minio-init` |
 | Host port conflict | Another local process uses a default port | Change the matching `*_PORT` in `deploy/.env` |
 

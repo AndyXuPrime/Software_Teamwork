@@ -270,6 +270,20 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "502": { $ref: "#/components/responses/Error" }
+  /internal/v1/knowledge-statistics:
+    get:
+      tags: [knowledge]
+      summary: Get global knowledge base and document counts
+      description: Returns totals across all knowledge bases and documents. Authenticated via X-Service-Token header only; no user-level permissions required.
+      operationId: internalGetKnowledgeStatistics
+      responses:
+        "200":
+          description: Global statistics.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeStatisticsResponse"
+        "401": { $ref: "#/components/responses/Error" }
 components:
   parameters:
     Page:
@@ -307,6 +321,16 @@ components:
         data:
           type: object
           additionalProperties: true
+        requestId: { type: string }
+    KnowledgeStatisticsResponse:
+      type: object
+      required: [data, requestId]
+      properties:
+        data:
+          type: object
+          properties:
+            knowledgeBaseCount: { type: integer }
+            documentCount: { type: integer }
         requestId: { type: string }
     CreateKnowledgeBaseRequest:
       type: object

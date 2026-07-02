@@ -14,3 +14,11 @@ export {
   useParserConfigs,
   useUpdateParserConfig,
 } from './hooks/use-parser-configs'
+export {
+  buildCreateModelProfileRequest,
+  buildUpdateModelProfileRequest,
+  formatModelProfileError,
+  type ModelProfileFormValues,
+  validateCreateModelProfileForm,
+  validateUpdateModelProfileForm,
+} from './model-profile-form'

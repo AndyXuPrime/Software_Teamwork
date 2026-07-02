@@ -16,7 +16,7 @@
 - OpenAPI 是协作源；改 Gateway active API 时必须跑契约校验和前端类型同步检查。
 - 数据库 migration 必须能从空库 apply。
 - env-gated integration tests 默认可能跳过；如果本次改动触碰 repository、SQL 或 migration，应尽量提供本地数据库执行记录。
-- 测试组 `T-*` 任务必须实际运行测试，并按 `docs/testing/templates/test-report-template.md` 生成完整测试报告，归档到 `docs/testing/reports/YYYY-MM-DD/`。
+- 测试组 `T-*` 任务必须实际运行测试并留下可复核证据；纯单元/组件自动化或静态检查可在 issue/PR 中保留轻量执行记录，集成、E2E、权限/安全边界、文件/Parser 边界、migration、环境验收、人工验收、回归或缺陷复现必须按 `docs/testing/templates/test-report-template.md` 生成完整报告并归档到 `docs/testing/reports/YYYY-MM-DD/`。
 - 当前有前端 Playwright 基础 smoke，但没有后端跨服务完整 E2E smoke；不要用单服务测试或前端 mock E2E 替代跨服务验收。
 - Parser runtime、Dockerfile 和 Parser Service CI 已落地；当前 CI 使用 fake OCR backend 覆盖 lint/test/compile，并在 PaddleOCR 依赖、锁文件或 Dockerfile 变化时校验 extra lock。真实 PaddleOCR 模型 smoke 已作为 env-gated 本地命令提供，但不属于普通 CI required check。
 - open PR、未合入 issue 和草案不能写成当前 `develop` 已实现；测试记录也不能把未稳定依赖的检查写成 required。
@@ -68,7 +68,7 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | 前端 API 类型 | `bun run --cwd apps/web api:generate`；确认 generated diff 符合预期。 |
 | 单个 Go 服务 | `cd services/<service> && go test ./...`；`go build ./cmd/server`。 |
 | QA 服务 | `cd services/qa && go test ./...`；`go build ./cmd/server`；`go build ./cmd/agent`。 |
-| Docker policy | `python3 scripts/check_docker_policy.py`；验证 BuildKit、镜像默认值、`GOSUMDB`、`latest`、Parser 容器入口、中国网络 overlay 和 `.dockerignore` 是否回退。 |
+| Docker policy | `python3 scripts/check_docker_policy.py`；验证 BuildKit、镜像默认值、`GOSUMDB`、`latest`、Parser 容器入口、中国网络 overlay 和 `.dockerignore` 是否回退。Image-only production Compose 只验证镜像 tag/config；Parser build mirror args 只在 Compose 实际包含 `build:` 时强制。 |
 | Docker environment | `python3 scripts/check_docker_environment.py --profile all --clean-env`；用于区分 registry rewrite、daemon mirror、Docker Hub direct 和 shell proxy 的问题。CI 只跑 `--skip-network`，真实 manifest 探测作为本地/排障检查。 |
 | Dockerfile | 对变更的可构建 Dockerfile 执行 `DOCKER_BUILDKIT=1 docker build --file <Dockerfile> <context>`；中国网络优先使用 `deploy/.env.china.example` 或等价 build args。不 push 镜像。若本机 Docker daemon mirror 在 base image metadata 阶段返回 401/超时，应先按 Docker runbook 选择 registry rewrite 或修正 mirror，或在 PR 记录为环境阻断。 |
 | Compose | `docker compose -f <compose-file> config --quiet`；根级 Compose 额外跑 `--env-file deploy/.env.example` 和 `--profile ai`。 |
@@ -230,12 +230,12 @@ prompts, document text, embedding payloads, or provider raw bodies.
 
 ## 测试报告归档
 
-测试报告是测试任务的必交付物，不是 PR body 的替代品。每个 `T-*` 测试任务完成时都应：
+测试证据是测试任务的必交付物，不是 PR body 中一句“已测试”的替代品。`T-*` 测试任务完成时应按测试类型分层记录：
 
-- 复制 `docs/testing/templates/test-report-template.md` 生成报告。
-- 将报告保存到 `docs/testing/reports/YYYY-MM-DD/`，日期使用实际执行日期。
-- 在报告中记录被测 commit、环境、执行命令、结果、失败证据、未运行原因、缺陷处理和最终结论。
-- 在测试 issue 和 PR 中链接报告路径。
+- 纯单元测试、组件测试和静态检查默认并入自动化；在 issue/PR 中记录命令、环境、结果、失败证据、未运行原因和缺陷处理即可。
+- 集成测试、E2E、权限/安全边界、文件/Parser 边界、migration、环境验收、人工验收、回归测试或缺陷复现必须复制 `docs/testing/templates/test-report-template.md` 生成完整报告。
+- 完整报告保存到 `docs/testing/reports/YYYY-MM-DD/`，日期使用实际执行日期。
+- 在测试 issue 和 PR 中链接报告路径或轻量执行记录。
 
 旧的 `docs/tests/` 目录不再新增报告；历史报告已迁移到 `docs/testing/reports/`。
 

@@ -48,6 +48,13 @@ Both endpoints return the project success envelope and include `X-Request-Id`:
 }
 ```
 
+`/healthz` is process liveness. `/readyz` is the lightweight Gateway readiness
+gate: it checks Redis session-cache readiness, Auth `/readyz`, and configured
+owner service base URLs. It does not call Knowledge, QA, Document, or AI
+Gateway readiness endpoints, and it does not prove upload, retrieval, QA
+answers, report generation, model profiles, or real provider calls are working.
+Use the local integration runbook smoke checks for those workflows.
+
 ## Environment Variables
 
 | Variable | Default | Description |

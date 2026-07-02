@@ -88,6 +88,7 @@ jobs:
             const qaDbComposeFile = 'services/qa/docker-compose.db.yml';
             const knownComposeFiles = new Set([
               'deploy/docker-compose.yml',
+              'deploy/docker-compose.production.yml',
               'services/document/docker-compose.yml',
               qaDbComposeFile,
               qaComposeFile,
@@ -99,12 +100,17 @@ jobs:
             const serviceDockerInputPattern =
               /^services\/([^/]+)\/(?!(?:Dockerfile(?:\.(?:host|migrate))?|\.dockerignore|docker-compose[^/]*\.ya?ml)$).+/u;
             const rootDeployComposeFile = 'deploy/docker-compose.yml';
+            const productionDeployComposeFile = 'deploy/docker-compose.production.yml';
             const rootDeployComposeDependencyPattern =
               /^deploy\/(?:\.env\.example|postgres\/init\/.+|seeds\/.+)$/u;
+            const productionDeployComposeDependencyPattern =
+              /^deploy\/(?:\.env\.production\.example|postgres\/init-production\/.+|nginx\/production\.conf)$/u;
             const workflowPath = '.github/workflows/docker-deploy-checks.yml';
             const dockerPolicyPaths = new Set([
               'README.md',
               'AGENTS.md',
+              'deploy/README.md',
+              'deploy/production-baseline.md',
               'docs/README.md',
               'docs/runbooks/docker-build-environment.md',
               'docs/testing/strategy.md',
@@ -219,6 +225,9 @@ jobs:
                 if (rootDeployComposeDependencyPattern.test(file)) {
                   composeFiles.add(rootDeployComposeFile);
                 }
+                if (productionDeployComposeDependencyPattern.test(file)) {
+                  composeFiles.add(productionDeployComposeFile);
+                }
               }
             }
 
@@ -320,6 +329,8 @@ jobs:
           if [ "$compose_file" = "deploy/docker-compose.yml" ]; then
             docker compose -f "$compose_file" --env-file deploy/.env.example config --quiet
             docker compose -f "$compose_file" --env-file deploy/.env.example --profile ai config --quiet
+          elif [ "$compose_file" = "deploy/docker-compose.production.yml" ]; then
+            docker compose -f "$compose_file" --env-file deploy/.env.production.example config --quiet
           else
             docker compose -f "$compose_file" config --quiet
           fi

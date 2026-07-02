@@ -1,4 +1,6 @@
 -- +goose Up
+-- needs_decision: placeholder templates below require real DOCX files before production use.
+-- Path: services/document/migrations/0003_seed_initial_report_defaults.sql
 INSERT INTO report_types (code, name, description, enabled)
 VALUES
     ('summer_peak_inspection', '迎峰度夏检查报告', '迎峰度夏检查报告', true),
@@ -26,20 +28,13 @@ VALUES
         1,
         'placeholder-summer-peak-inspection.docx',
         0,
-        '{
-            "templateStatus": "needs_decision",
-            "dependency": "Formal DOCX template file is pending.",
-            "placeholderTemplate": true,
-            "importPath": "services/document/migrations/0003_seed_initial_report_defaults.sql",
-            "outline": [
-                {"title": "检查概况", "level": 1},
-                {"title": "风险与问题", "level": 1},
-                {"title": "整改建议", "level": 1}
-            ]
-        }'::jsonb,
+        '[
+            {"title": "检查概况", "level": 1},
+            {"title": "风险与问题", "level": 1},
+            {"title": "整改建议", "level": 1}
+        ]'::jsonb,
         '{
             "styleProfileId": "first-slice-default-docx",
-            "templateStatus": "needs_decision",
             "defaultFormat": "docx"
         }'::jsonb,
         'Needs Decision: formal DOCX template file is pending. Placeholder seeded from services/document/migrations/0003_seed_initial_report_defaults.sql.',
@@ -53,20 +48,13 @@ VALUES
         1,
         'placeholder-coal-inventory-audit.docx',
         0,
-        '{
-            "templateStatus": "needs_decision",
-            "dependency": "Formal DOCX template file is pending.",
-            "placeholderTemplate": true,
-            "importPath": "services/document/migrations/0003_seed_initial_report_defaults.sql",
-            "outline": [
-                {"title": "审计概况", "level": 1},
-                {"title": "库存核查", "level": 1},
-                {"title": "审计结论", "level": 1}
-            ]
-        }'::jsonb,
+        '[
+            {"title": "审计概况", "level": 1},
+            {"title": "库存核查", "level": 1},
+            {"title": "审计结论", "level": 1}
+        ]'::jsonb,
         '{
             "styleProfileId": "first-slice-default-docx",
-            "templateStatus": "needs_decision",
             "defaultFormat": "docx"
         }'::jsonb,
         'Needs Decision: formal DOCX template file is pending. Placeholder seeded from services/document/migrations/0003_seed_initial_report_defaults.sql.',

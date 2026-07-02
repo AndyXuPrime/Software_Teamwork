@@ -36,8 +36,10 @@ BEGIN
     FROM qa_runtime_settings
     WHERE key = 'system_prompt';
 
-    -- If we have both an active config and a runtime prompt, migrate it
-    IF v_active_id IS NOT NULL AND v_runtime_prompt IS NOT NULL THEN
+    -- If we have both an active config and a runtime prompt, migrate it.
+    -- Only migrate if the old prompt is within the 20000-byte limit.
+    IF v_active_id IS NOT NULL AND v_runtime_prompt IS NOT NULL
+       AND octet_length(v_runtime_prompt) <= 20000 THEN
         UPDATE qa_config_versions
         SET system_prompt = v_runtime_prompt
         WHERE id = v_active_id

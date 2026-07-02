@@ -154,6 +154,44 @@ func TestBodyLimitRejectsLargeRequest(t *testing.T) {
 	}
 }
 
+func TestQAAttachmentUploadAllowsContractBodySize(t *testing.T) {
+	server := gatewayhttp.NewServer(gatewayhttp.Config{
+		Logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ServiceVersion:     "test",
+		Environment:        "test",
+		RequestTimeout:     time.Second,
+		MaxBodyBytes:       4,
+		CORSAllowedOrigins: []string{"*"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/qa-sessions/session-1/attachments", bytes.NewReader(make([]byte, (20<<20)+(64<<10))))
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code == http.StatusRequestEntityTooLarge {
+		t.Fatalf("QA attachment upload was rejected by the default gateway body limit: body = %s", res.Body.String())
+	}
+}
+
+func TestQAAttachmentUploadRejectsBodyAboveMultipartEnvelope(t *testing.T) {
+	server := gatewayhttp.NewServer(gatewayhttp.Config{
+		Logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ServiceVersion:     "test",
+		Environment:        "test",
+		RequestTimeout:     time.Second,
+		MaxBodyBytes:       32 << 20,
+		CORSAllowedOrigins: []string{"*"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/qa-sessions/session-1/attachments", bytes.NewReader(make([]byte, (21<<20)+1)))
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413; body = %s", res.Code, res.Body.String())
+	}
+}
+
 func newHTTPTestServer(t *testing.T) http.Handler {
 	t.Helper()
 	return gatewayhttp.NewServer(gatewayhttp.Config{

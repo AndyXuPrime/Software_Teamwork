@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/api-contracts.md", "reason": "Gateway readiness semantics, health route response contracts, and documentation-only validation requirements."}
+{"file": "docs/architecture/service-boundaries.md", "reason": "Gateway ownership boundary and public health route responsibilities."}

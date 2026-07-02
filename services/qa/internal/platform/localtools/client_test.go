@@ -128,9 +128,11 @@ func TestCommandToolIsOptInAndBounded(t *testing.T) {
 	}
 
 	enabled := newTestClient(t, true)
-	result, err := enabled.CallTool(context.Background(), ToolBash, json.RawMessage(`{"command":"echo hello"}`))
-	if err != nil || result.IsError || !strings.Contains(strings.ToLower(result.Content), "hello") {
-		t.Fatalf("command failed: result=%+v err=%v", result, err)
+	if runtime.GOOS != "windows" {
+		result, err := enabled.CallTool(context.Background(), ToolBash, json.RawMessage(`{"command":"echo hello"}`))
+		if err != nil || result.IsError || !strings.Contains(strings.ToLower(result.Content), "hello") {
+			t.Fatalf("command failed: result=%+v err=%v", result, err)
+		}
 	}
 	blocked, err := enabled.CallTool(context.Background(), ToolBash, mustJSON(t, map[string]any{"command": "echo hello; uname -a"}))
 	if err != nil || !blocked.IsError || !strings.Contains(blocked.Content, "command_blocked") {

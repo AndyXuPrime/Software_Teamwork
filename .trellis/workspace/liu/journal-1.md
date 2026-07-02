@@ -993,3 +993,37 @@ Added deterministic local integration seed data for Auth, Knowledge, Document, Q
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: Fix model profile form validation
+
+**Date**: 2026-07-02
+**Task**: Fix model profile form validation
+**Branch**: `Frontend/fix/model-profile-form-validation`
+
+### Summary
+
+Fixed the admin model profile form so create and update payloads omit default max_tokens, added purpose-specific validation and ApiError requestId/field detail formatting, and documented the frontend model profile form contract for issue #445.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `db68dce` | (see git log) |
+| `2b10410` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

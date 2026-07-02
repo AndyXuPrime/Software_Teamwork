@@ -10,6 +10,10 @@ type userIDContextKey struct{}
 
 type requestIDContextKey struct{}
 
+type userRolesContextKey struct{}
+
+type userPermissionsContextKey struct{}
+
 type citationNoContextKey struct{}
 
 type knowledgeBaseIDsContextKey struct{}
@@ -24,11 +28,12 @@ type atomicCitationNo struct {
 }
 
 type RetrievalSettings struct {
-	TopK            int     `json:"topK"`
-	ScoreThreshold  float64 `json:"scoreThreshold"`
-	EnableRerank    bool    `json:"enableRerank"`
-	RerankThreshold float64 `json:"rerankThreshold"`
-	RerankTopN      int     `json:"rerankTopN"`
+	TopK                     int     `json:"topK"`
+	ScoreThreshold           float64 `json:"scoreThreshold"`
+	ScoreThresholdConfigured bool    `json:"-"`
+	EnableRerank             bool    `json:"enableRerank"`
+	RerankThreshold          float64 `json:"rerankThreshold"`
+	RerankTopN               int     `json:"rerankTopN"`
 }
 
 func newAtomicCitationNo(initial int) *atomicCitationNo {
@@ -59,6 +64,24 @@ func WithUserID(ctx context.Context, userID string) context.Context {
 
 func UserIDFromContext(ctx context.Context) string {
 	value, _ := ctx.Value(userIDContextKey{}).(string)
+	return value
+}
+
+func WithUserRoles(ctx context.Context, roles string) context.Context {
+	return context.WithValue(ctx, userRolesContextKey{}, strings.TrimSpace(roles))
+}
+
+func UserRolesFromContext(ctx context.Context) string {
+	value, _ := ctx.Value(userRolesContextKey{}).(string)
+	return value
+}
+
+func WithUserPermissions(ctx context.Context, permissions string) context.Context {
+	return context.WithValue(ctx, userPermissionsContextKey{}, strings.TrimSpace(permissions))
+}
+
+func UserPermissionsFromContext(ctx context.Context) string {
+	value, _ := ctx.Value(userPermissionsContextKey{}).(string)
 	return value
 }
 
@@ -114,5 +137,33 @@ func WithRetrievalSettings(ctx context.Context, settings RetrievalSettings) cont
 
 func RetrievalSettingsFromContext(ctx context.Context) RetrievalSettings {
 	value, _ := ctx.Value(retrievalSettingsContextKey{}).(RetrievalSettings)
+	return value
+}
+
+type sessionIDContextKey struct{}
+
+type messageAttachmentIDsContextKey struct{}
+
+func WithSessionID(ctx context.Context, sessionID string) context.Context {
+	return context.WithValue(ctx, sessionIDContextKey{}, strings.TrimSpace(sessionID))
+}
+
+func SessionIDFromContext(ctx context.Context) string {
+	value, _ := ctx.Value(sessionIDContextKey{}).(string)
+	return value
+}
+
+func WithMessageAttachmentIDs(ctx context.Context, ids []string) context.Context {
+	copied := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if trimmed := strings.TrimSpace(id); trimmed != "" {
+			copied = append(copied, trimmed)
+		}
+	}
+	return context.WithValue(ctx, messageAttachmentIDsContextKey{}, copied)
+}
+
+func MessageAttachmentIDsFromContext(ctx context.Context) []string {
+	value, _ := ctx.Value(messageAttachmentIDsContextKey{}).([]string)
 	return value
 }

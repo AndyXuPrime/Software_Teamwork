@@ -285,6 +285,7 @@ services:
       PARSER_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
       PARSER_BACKEND: ${PARSER_BACKEND:-ppstructurev3}
       PARSER_LOAD_BACKEND_ON_STARTUP: ${PARSER_LOAD_BACKEND_ON_STARTUP:-false}
+      PARSER_MAX_DOCUMENT_BYTES: ${PARSER_MAX_DOCUMENT_BYTES:-20971520}
     ports:
       - "${PARSER_HTTP_PORT:-8087}:8087"
     healthcheck:
@@ -355,11 +356,22 @@ services:
       QA_DATABASE_URL: postgres://qa_app:qa_app_dev@postgres:5432/qa_system?sslmode=disable
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
       KNOWLEDGE_SERVICE_URL: http://knowledge:8083
+      FILE_SERVICE_BASE_URL: http://file:8082
+      PARSER_SERVICE_BASE_URL: http://parser:8087
+      PARSER_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
       AI_GATEWAY_URL: http://ai-gateway:8086/internal/v1/chat/completions
       AI_GATEWAY_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
       AI_GATEWAY_TOKEN_HEADER: X-Service-Token
+      AI_GATEWAY_PROFILE_ID: ${AI_GATEWAY_PROFILE_ID:-}
       MODEL_ID: ${MODEL_ID:-local-placeholder-chat}
-      MCP_TRANSPORT: disabled
+      QA_SETTINGS_OPEN: ${QA_SETTINGS_OPEN:-false}
+      QA_ADMIN_USER_IDS: ${QA_ADMIN_USER_IDS:-}
+      MCP_TRANSPORT: ${MCP_TRANSPORT:-streamable_http}
+      MCP_SERVER_ALIAS: ${MCP_SERVER_ALIAS:-document}
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://document:8085/mcp}
+      MCP_SERVER_TOKEN: ${MCP_SERVER_TOKEN:-${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}}
+      MCP_SERVER_TOKEN_HEADER: ${MCP_SERVER_TOKEN_HEADER:-Authorization}
+      MCP_TOOL_TIMEOUT: ${MCP_TOOL_TIMEOUT:-30s}
       QA_CONFIG_ENCRYPTION_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
       AGENT_WORKDIR: /workspace
     ports:
@@ -370,6 +382,12 @@ services:
       migrate-qa:
         condition: service_completed_successfully
       knowledge:
+        condition: service_healthy
+      file:
+        condition: service_healthy
+      parser:
+        condition: service_healthy
+      document:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8084/readyz"]
@@ -395,6 +413,10 @@ services:
       DOCUMENT_AI_GATEWAY_URL: http://ai-gateway:8086
       DOCUMENT_AI_GATEWAY_PROFILE_ID: default-chat
       DOCUMENT_AI_GATEWAY_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
+      DOCUMENT_MCP_PATH: ${DOCUMENT_MCP_PATH:-/mcp}
+      DOCUMENT_MCP_SERVICE_TOKEN: ${DOCUMENT_MCP_SERVICE_TOKEN:-${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}}
+      DOCUMENT_MCP_TOKEN_HEADER: ${DOCUMENT_MCP_TOKEN_HEADER:-Authorization}
       DOCUMENT_PANDOC_PATH: pandoc
       DOCUMENT_LIBREOFFICE_PATH: soffice
     ports:

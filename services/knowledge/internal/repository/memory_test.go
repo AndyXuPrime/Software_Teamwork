@@ -35,15 +35,53 @@ func TestMemoryRepositorySoftDeleteKnowledgeBaseHidesDocuments(t *testing.T) {
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	})
+	repo.SeedDocument(service.KnowledgeDocument{
+		ID:              "doc_2",
+		KnowledgeBaseID: "kb_1",
+		Name:            "细则.pdf",
+		Status:          service.DocumentStatusReady,
+		CreatedBy:       "usr_1",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
 
-	if err := repo.SoftDeleteKnowledgeBase(context.Background(), "kb_1", now.Add(time.Hour), scope); err != nil {
+	tasks, err := repo.SoftDeleteKnowledgeBase(context.Background(), service.DeleteKnowledgeBaseRecord{
+		KnowledgeBaseID:    "kb_1",
+		CleanupJobIDPrefix: "job_kb_delete",
+		JobType:            service.JobTypeDeleteCleanup,
+		JobStatus:          service.JobStatusQueued,
+		JobStage:           "delete_cleanup",
+		JobMessage:         "document marked deleted; cleanup is pending",
+		MaxAttempts:        service.DefaultIngestionMaxAttempts,
+		DeletedAt:          now.Add(time.Hour),
+		CreatedAt:          now.Add(time.Hour),
+		UpdatedAt:          now.Add(time.Hour),
+	}, scope)
+	if err != nil {
 		t.Fatalf("SoftDeleteKnowledgeBase() error = %v", err)
+	}
+	if len(tasks) != 2 || tasks[0].DocumentID != "doc_1" || tasks[0].JobID == "" || tasks[1].DocumentID != "doc_2" || tasks[1].JobID == "" {
+		t.Fatalf("cleanup tasks = %+v", tasks)
+	}
+	retryableTasks, err := repo.ListRetryableDeleteCleanupTasks(context.Background(), service.DeleteCleanupTaskListInput{RequestID: "req_reconcile", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListRetryableDeleteCleanupTasks() error = %v", err)
+	}
+	if len(retryableTasks) != 2 ||
+		retryableTasks[0].DocumentID != "doc_1" ||
+		retryableTasks[0].JobID != tasks[0].JobID ||
+		retryableTasks[1].DocumentID != "doc_2" ||
+		retryableTasks[1].JobID != tasks[1].JobID {
+		t.Fatalf("retryable cleanup tasks = %+v", retryableTasks)
 	}
 	if _, err := repo.GetKnowledgeBase(context.Background(), "kb_1", scope); err != service.ErrNotFound {
 		t.Fatalf("GetKnowledgeBase() error = %v", err)
 	}
 	if _, err := repo.GetDocument(context.Background(), "doc_1", scope); err != service.ErrNotFound {
 		t.Fatalf("GetDocument() error = %v", err)
+	}
+	if _, err := repo.GetDocument(context.Background(), "doc_2", scope); err != service.ErrNotFound {
+		t.Fatalf("GetDocument(doc_2) error = %v", err)
 	}
 }
 
@@ -145,7 +183,18 @@ func TestMemoryRepositoryMarkFailedKeepsJobTerminalWhenDocumentWasDeleted(t *tes
 	if job.Status != service.JobStatusRunning {
 		t.Fatalf("job status = %s, want running", job.Status)
 	}
-	if err := repo.SoftDeleteKnowledgeBase(context.Background(), "kb_1", now.Add(time.Minute), scope); err != nil {
+	if _, err := repo.SoftDeleteKnowledgeBase(context.Background(), service.DeleteKnowledgeBaseRecord{
+		KnowledgeBaseID:    "kb_1",
+		CleanupJobIDPrefix: "job_kb_delete",
+		JobType:            service.JobTypeDeleteCleanup,
+		JobStatus:          service.JobStatusQueued,
+		JobStage:           "delete_cleanup",
+		JobMessage:         "document marked deleted; cleanup is pending",
+		MaxAttempts:        service.DefaultIngestionMaxAttempts,
+		DeletedAt:          now.Add(time.Minute),
+		CreatedAt:          now.Add(time.Minute),
+		UpdatedAt:          now.Add(time.Minute),
+	}, scope); err != nil {
 		t.Fatalf("SoftDeleteKnowledgeBase() error = %v", err)
 	}
 

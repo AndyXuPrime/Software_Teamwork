@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -220,6 +221,18 @@ func (r *PostgresRepository) CreateKnowledgeBase(ctx context.Context, input serv
 	return knowledgeBaseFromCreateRow(row), nil
 }
 
+func (r *PostgresRepository) GetGlobalStats(ctx context.Context) (service.GlobalStats, error) {
+	kbCount, err := r.queries.CountKnowledgeBasesGlobal(ctx)
+	if err != nil {
+		return service.GlobalStats{}, wrapPostgresError("count knowledge bases global", err)
+	}
+	docCount, err := r.queries.CountDocumentsGlobal(ctx)
+	if err != nil {
+		return service.GlobalStats{}, wrapPostgresError("count documents global", err)
+	}
+	return service.GlobalStats{KnowledgeBaseCount: kbCount, DocumentCount: docCount}, nil
+}
+
 func (r *PostgresRepository) ListKnowledgeBases(ctx context.Context, scope service.AccessScope, page service.PageInput) (service.KnowledgeBaseList, error) {
 	limit, offset, err := limitOffset(page)
 	if err != nil {
@@ -310,38 +323,83 @@ func (r *PostgresRepository) UpdateKnowledgeBase(ctx context.Context, input serv
 	return r.GetKnowledgeBase(ctx, input.ID, scope)
 }
 
-func (r *PostgresRepository) SoftDeleteKnowledgeBase(ctx context.Context, id string, deletedAt time.Time, scope service.AccessScope) error {
+func (r *PostgresRepository) SoftDeleteKnowledgeBase(ctx context.Context, input service.DeleteKnowledgeBaseRecord, scope service.AccessScope) ([]service.DocumentDeleteCleanupTask, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return wrapPostgresError("begin knowledge base delete transaction", err)
+		return nil, wrapPostgresError("begin knowledge base delete transaction", err)
 	}
 	defer func() {
 		_ = tx.Rollback(ctx)
 	}()
 
+	id := strings.TrimSpace(input.KnowledgeBaseID)
 	qtx := r.queries.WithTx(tx)
 	rowsAffected, err := qtx.MarkKnowledgeBaseDeleted(ctx, sqlc.MarkKnowledgeBaseDeletedParams{
 		ID:         id,
-		DeletedAt:  pgTime(deletedAt),
+		DeletedAt:  pgTime(input.DeletedAt),
 		CanReadAll: scope.CanReadAll,
 		UserID:     scope.UserID,
 	})
 	if err != nil {
-		return wrapPostgresError("mark knowledge base deleted", err)
+		return nil, wrapPostgresError("mark knowledge base deleted", err)
 	}
 	if rowsAffected == 0 {
-		return service.ErrNotFound
+		return nil, service.ErrNotFound
 	}
-	if err := qtx.MarkDocumentsDeletedByKnowledgeBase(ctx, sqlc.MarkDocumentsDeletedByKnowledgeBaseParams{
-		KnowledgeBaseID: id,
-		DeletedAt:       pgTime(deletedAt),
-	}); err != nil {
-		return wrapPostgresError("mark documents deleted by knowledge base", err)
+	cleanupJobIDPrefix := strings.TrimSpace(input.CleanupJobIDPrefix)
+	if cleanupJobIDPrefix == "" {
+		cleanupJobIDPrefix = "job_delete_cleanup"
+	}
+	rows, err := tx.Query(ctx, `
+UPDATE knowledge_documents
+SET deleted_at = $1,
+    updated_at = $1,
+    current_job_id = $2 || '_' || id
+WHERE knowledge_base_id = $3
+  AND deleted_at IS NULL
+RETURNING id, knowledge_base_id, created_by, current_job_id`,
+		pgTime(input.DeletedAt),
+		cleanupJobIDPrefix,
+		id,
+	)
+	if err != nil {
+		return nil, wrapPostgresError("mark documents deleted by knowledge base", err)
+	}
+
+	tasks := []service.DocumentDeleteCleanupTask{}
+	for rows.Next() {
+		var task service.DocumentDeleteCleanupTask
+		if err := rows.Scan(&task.DocumentID, &task.KnowledgeBaseID, &task.UserID, &task.JobID); err != nil {
+			return nil, wrapPostgresError("scan deleted knowledge base document", err)
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrapPostgresError("iterate deleted knowledge base documents", err)
+	}
+	rows.Close()
+
+	for _, task := range tasks {
+		if _, err := qtx.CreateProcessingJob(ctx, sqlc.CreateProcessingJobParams{
+			ID:                   task.JobID,
+			KnowledgeBaseID:      task.KnowledgeBaseID,
+			DocumentID:           task.DocumentID,
+			JobType:              input.JobType,
+			Status:               input.JobStatus,
+			CurrentStage:         input.JobStage,
+			Message:              input.JobMessage,
+			MaxAttempts:          input.MaxAttempts,
+			ParserConfigSnapshot: []byte(`{}`),
+			CreatedAt:            pgTime(input.CreatedAt),
+			UpdatedAt:            pgTime(input.UpdatedAt),
+		}); err != nil {
+			return nil, wrapPostgresError("create knowledge base document cleanup job", err)
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return wrapPostgresError("commit knowledge base delete transaction", err)
+		return nil, wrapPostgresError("commit knowledge base delete transaction", err)
 	}
-	return nil
+	return tasks, nil
 }
 
 func (r *PostgresRepository) ListDocumentsByKnowledgeBase(ctx context.Context, knowledgeBaseID string, status *service.DocumentStatus, scope service.AccessScope, page service.PageInput) (service.DocumentList, error) {
@@ -523,8 +581,8 @@ func (r *PostgresRepository) ListRetryableDeleteCleanupTasks(ctx context.Context
 	      AND j.updated_at < $8
 	    )
 	  )
-	ORDER BY j.updated_at ASC
-	LIMIT $9`,
+		ORDER BY j.updated_at ASC, d.id ASC, j.id ASC
+		LIMIT $9`,
 		service.JobTypeDeleteCleanup,
 		service.JobStatusQueued,
 		service.JobStatusFailed,
@@ -646,7 +704,7 @@ func (r *PostgresRepository) CreateDocumentWithJob(ctx context.Context, input se
 	if err := tx.Commit(ctx); err != nil {
 		return service.KnowledgeDocument{}, service.ProcessingJob{}, wrapPostgresError("commit document upload transaction", err)
 	}
-	return documentFromCreateRow(docRow), processingJobFromRow(jobRow), nil
+	return documentFromCreateRow(docRow), processingJobFromCreateRow(jobRow), nil
 }
 
 func (r *PostgresRepository) MarkDocumentJobFailed(ctx context.Context, documentID string, jobID string, expectedAttempts *int32, code string, message string, failedAt time.Time) error {
@@ -1176,6 +1234,29 @@ func documentFromCreateRow(row sqlc.CreateDocumentRow) service.KnowledgeDocument
 }
 
 func processingJobFromRow(row sqlc.ProcessingJob) service.ProcessingJob {
+	return service.ProcessingJob{
+		ID:                   row.ID,
+		KnowledgeBaseID:      row.KnowledgeBaseID,
+		DocumentID:           textPtr(row.DocumentID),
+		JobType:              row.JobType,
+		Status:               row.Status,
+		CurrentStage:         textPtr(row.CurrentStage),
+		ProgressPercent:      row.ProgressPercent,
+		Message:              textPtr(row.Message),
+		ErrorCode:            textPtr(row.ErrorCode),
+		ErrorMessage:         textPtr(row.ErrorMessage),
+		Attempts:             row.Attempts,
+		MaxAttempts:          row.MaxAttempts,
+		ParserConfigID:       textPtr(row.ParserConfigID),
+		ParserConfigSnapshot: cloneJSON(row.ParserConfigSnapshot, "{}"),
+		StartedAt:            timePtr(row.StartedAt),
+		FinishedAt:           timePtr(row.FinishedAt),
+		CreatedAt:            row.CreatedAt.Time,
+		UpdatedAt:            row.UpdatedAt.Time,
+	}
+}
+
+func processingJobFromCreateRow(row sqlc.CreateProcessingJobRow) service.ProcessingJob {
 	return service.ProcessingJob{
 		ID:                   row.ID,
 		KnowledgeBaseID:      row.KnowledgeBaseID,

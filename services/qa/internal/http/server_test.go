@@ -23,6 +23,34 @@ type fakeQAService struct {
 }
 
 type fakeSettingsService struct{}
+
+type fakeAttachmentService struct {
+	upload func(context.Context, string, string, service.CreateAttachmentInput) (service.AttachmentUploadResult, error)
+	list   func(context.Context, string, string, service.AttachmentListOptions) (service.Page[service.SessionAttachment], error)
+	get    func(context.Context, string, string, string) (service.SessionAttachment, error)
+}
+
+func (f fakeAttachmentService) Upload(ctx context.Context, userID, sessionID string, input service.CreateAttachmentInput) (service.AttachmentUploadResult, error) {
+	if f.upload != nil {
+		return f.upload(ctx, userID, sessionID, input)
+	}
+	return service.AttachmentUploadResult{}, nil
+}
+func (f fakeAttachmentService) List(ctx context.Context, userID, sessionID string, options service.AttachmentListOptions) (service.Page[service.SessionAttachment], error) {
+	if f.list != nil {
+		return f.list(ctx, userID, sessionID, options)
+	}
+	return service.Page[service.SessionAttachment]{}, nil
+}
+func (f fakeAttachmentService) Get(ctx context.Context, userID, sessionID, attachmentID string) (service.SessionAttachment, error) {
+	if f.get != nil {
+		return f.get(ctx, userID, sessionID, attachmentID)
+	}
+	return service.SessionAttachment{}, nil
+}
+func (fakeAttachmentService) Delete(context.Context, string, string, string) error  { return nil }
+func (fakeAttachmentService) Process(context.Context, string, string, string) error { return nil }
+
 type fakeResourceService struct{}
 type fakeResourceServiceWithListEvents struct {
 	fakeResourceService
@@ -127,7 +155,7 @@ func (f fakeResourceServiceWithCreate) CreateRetrievalTestRun(ctx context.Contex
 func (fakeResourceService) GetRetrievalTestRun(context.Context, string, string) (service.RetrievalTestRun, error) {
 	return service.RetrievalTestRun{}, nil
 }
-func (fakeResourceService) GetMetricsOverview(context.Context, int) (service.MetricsOverview, error) {
+func (fakeResourceService) GetMetricsOverview(context.Context, string, int) (service.MetricsOverview, error) {
 	return service.MetricsOverview{}, nil
 }
 func (fakeResourceService) GetMetricsTrend(context.Context, int) (service.MetricsTrend, error) {
@@ -253,6 +281,69 @@ func TestListConversationUsesDocumentedQueryParameters(t *testing.T) {
 	}
 	if !strings.Contains(recorder.Body.String(), `"pageSize":5`) {
 		t.Fatalf("unexpected page response: %s", recorder.Body.String())
+	}
+}
+
+func TestListAttachmentsForwardsStatusAndReturnsPublicShape(t *testing.T) {
+	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	attachments := fakeAttachmentService{list: func(_ context.Context, userID, sessionID string, options service.AttachmentListOptions) (service.Page[service.SessionAttachment], error) {
+		if userID != "user-1" || sessionID != "session-id" {
+			t.Fatalf("unexpected owner: user=%q session=%q", userID, sessionID)
+		}
+		if options != (service.AttachmentListOptions{Page: 2, PageSize: 5, Status: service.AttachmentStatusFailed}) {
+			t.Fatalf("options=%+v", options)
+		}
+		return service.Page[service.SessionAttachment]{
+			Items: []service.SessionAttachment{{
+				ID: "attachment-id", SessionID: sessionID, OwnerUserID: userID,
+				FileRef: "private-file-ref", Filename: "failed.pdf", ContentType: "application/pdf",
+				SizeBytes: 42, Status: service.AttachmentStatusFailed, ErrorSummary: "safe parse failure",
+				PageCount: 3, ChunkCount: 4, ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now,
+			}},
+			Page: 2, PageSize: 5, Total: 1,
+		}, nil
+	}}
+	server := newTestServerWithAttachments(t, attachments)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-sessions/session-id/attachments?page=2&pageSize=5&status=failed", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	for _, expected := range []string{`"errorCode":"attachment_parse_failed"`, `"errorMessage":"safe parse failure"`, `"status":"failed"`} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("response missing %s: %s", expected, body)
+		}
+	}
+	for _, privateField := range []string{"private-file-ref", `"errorSummary"`, `"pageCount"`, `"chunkCount"`, `"updatedAt"`, `"deletedAt"`} {
+		if strings.Contains(body, privateField) {
+			t.Fatalf("response exposed %s: %s", privateField, body)
+		}
+	}
+}
+
+func TestListAttachmentsReturnsValidationErrorForUnsupportedStatus(t *testing.T) {
+	attachments := fakeAttachmentService{list: func(_ context.Context, _, _ string, options service.AttachmentListOptions) (service.Page[service.SessionAttachment], error) {
+		if options.Status != "unknown" {
+			t.Fatalf("status=%q", options.Status)
+		}
+		return service.Page[service.SessionAttachment]{}, service.ValidationError(map[string]string{"status": "unsupported"})
+	}}
+	server := newTestServerWithAttachments(t, attachments)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-sessions/session-id/attachments?status=unknown", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), `"code":"validation_error"`) {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -659,9 +750,141 @@ func newTestServerWithResources(t *testing.T, qa fakeQAService, resources Resour
 			return service.AskResult{}, nil
 		}
 	}
-	server, err := NewServer(qa, fakeSettingsService{}, resources, Config{MaxRequestBytes: 4096, ServiceToken: "test-service-token"})
+	server, err := NewServer(qa, fakeSettingsService{}, resources, fakeAttachmentService{}, Config{MaxRequestBytes: 4096, ServiceToken: "test-service-token"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return server
+}
+
+func newTestServerWithAttachments(t *testing.T, attachments AttachmentService) *Server {
+	t.Helper()
+	qa := fakeQAService{
+		create: func(context.Context, string, string) (service.Conversation, error) {
+			return service.Conversation{}, nil
+		},
+		ask: func(context.Context, string, string, service.AskInput, service.ProgressObserver) (service.AskResult, error) {
+			return service.AskResult{}, nil
+		},
+	}
+	server, err := NewServer(qa, fakeSettingsService{}, fakeResourceService{}, attachments, Config{MaxRequestBytes: 4096, ServiceToken: "test-service-token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return server
+}
+
+func newTestServerSettingsOpen(t *testing.T, qa fakeQAService, resources ResourceService) *Server {
+	t.Helper()
+	if qa.create == nil {
+		qa.create = func(context.Context, string, string) (service.Conversation, error) {
+			return service.Conversation{}, nil
+		}
+	}
+	if qa.ask == nil {
+		qa.ask = func(context.Context, string, string, service.AskInput, service.ProgressObserver) (service.AskResult, error) {
+			return service.AskResult{}, nil
+		}
+	}
+	server, err := NewServer(qa, fakeSettingsService{}, resources, fakeAttachmentService{}, Config{MaxRequestBytes: 4096, ServiceToken: "test-service-token", SettingsOpen: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return server
+}
+
+func TestMetricsEndpointRequiresSettingsPermission(t *testing.T) {
+	server := newTestServer(t, fakeQAService{})
+	for _, tc := range []struct {
+		method, path string
+	}{
+		{http.MethodGet, "/internal/v1/qa-metrics/overview"},
+		{http.MethodGet, "/internal/v1/qa-metrics/trend"},
+		{http.MethodGet, "/internal/v1/qa-metrics/top-queries"},
+		{http.MethodGet, "/internal/v1/qa-metrics/intent-distribution"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(tc.method, tc.path, nil)
+			request.Header.Set("X-User-Id", "user-1")
+			request.Header.Set("X-Service-Token", "test-service-token")
+			server.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusForbidden {
+				t.Fatalf("%s %s: expected 403, got %d", tc.method, tc.path, recorder.Code)
+			}
+		})
+	}
+}
+
+func TestMetricsOverviewReturnsSuccessWithPermission(t *testing.T) {
+	resources := fakeResourceService{}
+	server := newTestServerSettingsOpen(t, fakeQAService{}, resources)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-metrics/overview", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var body struct {
+		Data      service.MetricsOverview `json:"data"`
+		RequestID string                  `json:"requestId"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.RequestID == "" {
+		t.Fatal("expected requestId in response")
+	}
+}
+
+func TestMetricsDaysValidation(t *testing.T) {
+	server := newTestServerSettingsOpen(t, fakeQAService{}, fakeResourceService{})
+	for _, tc := range []string{
+		"/internal/v1/qa-metrics/overview?days=0",
+		"/internal/v1/qa-metrics/overview?days=400",
+		"/internal/v1/qa-metrics/trend?days=-1",
+	} {
+		t.Run(tc, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, tc, nil)
+			request.Header.Set("X-User-Id", "user-1")
+			request.Header.Set("X-Service-Token", "test-service-token")
+			server.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("%s: expected 400, got %d", tc, recorder.Code)
+			}
+		})
+	}
+}
+
+func TestTopQueriesLimitValidation(t *testing.T) {
+	server := newTestServerSettingsOpen(t, fakeQAService{}, fakeResourceService{})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-metrics/top-queries?limit=200", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestMetricsTrendDoesNotLeakQueryContent(t *testing.T) {
+	server := newTestServerSettingsOpen(t, fakeQAService{}, fakeResourceService{})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-metrics/trend?days=7", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", recorder.Code)
+	}
+	body := recorder.Body.String()
+	for _, forbidden := range []string{"secret", "token", "prompt", "apiKey", "objectKey"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("metrics response leaked %q", forbidden)
+		}
+	}
 }

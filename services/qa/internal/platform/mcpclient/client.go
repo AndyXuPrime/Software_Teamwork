@@ -81,9 +81,10 @@ func buildTransport(cfg Config) (mcp.Transport, error) {
 			IdleConnTimeout:       90 * time.Second,
 		}
 		client := &http.Client{Transport: httpclient.HeaderTransport{
-			Base:   base,
-			Header: cfg.TokenHeader,
-			Token:  cfg.Token,
+			Base:          base,
+			Header:        cfg.TokenHeader,
+			Token:         cfg.Token,
+			CallerService: "qa",
 		}}
 		return &mcp.StreamableClientTransport{
 			Endpoint:   cfg.Endpoint,

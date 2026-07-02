@@ -88,7 +88,7 @@ func NewServer(cfg Config) *Server {
 			AllowedHeaders:   cfg.CORSAllowedHeaders,
 			AllowCredentials: cfg.CORSAllowCredentials,
 		}),
-		middleware.BodyLimit(cfg.MaxBodyBytes),
+		middleware.BodyLimitForRequest(cfg.MaxBodyBytes, bodyLimitForRequest),
 	)
 	return s
 }
@@ -109,6 +109,27 @@ func (s *Server) routes() {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
+}
+
+const (
+	qaAttachmentMaxFileBytes       = int64(20 << 20)
+	qaAttachmentMultipartOverhead  = int64(1 << 20)
+	qaAttachmentUploadMaxBodyBytes = qaAttachmentMaxFileBytes + qaAttachmentMultipartOverhead
+)
+
+func bodyLimitForRequest(r *http.Request) int64 {
+	if r.Method != http.MethodPost {
+		return 0
+	}
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) == 5 &&
+		parts[0] == "api" &&
+		parts[1] == "v1" &&
+		parts[2] == "qa-sessions" &&
+		parts[4] == "attachments" {
+		return qaAttachmentUploadMaxBodyBytes
+	}
+	return 0
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

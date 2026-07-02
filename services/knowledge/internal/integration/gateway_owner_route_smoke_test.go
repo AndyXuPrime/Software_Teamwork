@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -383,16 +384,30 @@ func cleanupGatewaySmokeKnowledgeBase(t *testing.T, cfg gatewayOwnerSmokeConfig,
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		pool, err := pgxpool.New(cleanupCtx, cfg.knowledgeDatabaseURL)
-		if err != nil {
-			t.Errorf("cleanup gateway smoke knowledge base: connect PostgreSQL: %v", err)
-			return
-		}
-		defer pool.Close()
-		if _, err := pool.Exec(cleanupCtx, "DELETE FROM knowledge_bases WHERE id = $1", knowledgeBaseID); err != nil {
+		if err := deleteGatewaySmokeKnowledgeBaseRows(cleanupCtx, cfg, knowledgeBaseID); err != nil {
 			t.Errorf("cleanup gateway smoke knowledge base %q: %v", knowledgeBaseID, err)
 		}
 	})
+}
+
+func deleteGatewaySmokeKnowledgeBaseRows(ctx context.Context, cfg gatewayOwnerSmokeConfig, knowledgeBaseID string) error {
+	pool, err := pgxpool.New(ctx, cfg.knowledgeDatabaseURL)
+	if err != nil {
+		return fmt.Errorf("connect PostgreSQL: %w", err)
+	}
+	defer pool.Close()
+	statements := []string{
+		"DELETE FROM document_chunks WHERE knowledge_base_id = $1",
+		"DELETE FROM processing_jobs WHERE knowledge_base_id = $1",
+		"DELETE FROM knowledge_documents WHERE knowledge_base_id = $1",
+		"DELETE FROM knowledge_bases WHERE id = $1",
+	}
+	for _, statement := range statements {
+		if _, err := pool.Exec(ctx, statement, knowledgeBaseID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func spoofedGatewayUserID(realUserID string) string {

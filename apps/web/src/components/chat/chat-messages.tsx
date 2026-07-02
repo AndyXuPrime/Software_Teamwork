@@ -2,11 +2,12 @@ import { Check, ChevronDown, ChevronRight } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 
+import ReportArtifactCard from '@/components/chat/report-artifact-card'
 import { InlineNotice } from '@/components/common'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import type { QACitation, QAMessage, QAThinkingStep } from '@/lib/types'
+import type { QACitation, QAMessage, QAReportArtifact, QAThinkingStep } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -183,10 +184,22 @@ function StatusLabel({ status }: { status: QAMessage['status'] }) {
 }
 
 /* ── Single message bubble ── */
-function MessageBubble({ msg, isStreaming }: { msg: QAMessage; isStreaming: boolean }) {
+function MessageBubble({
+  msg,
+  isStreaming,
+  onArtifactDownload,
+}: {
+  msg: QAMessage
+  isStreaming: boolean
+  onArtifactDownload?: (reportFileId: string, filename: string) => void
+}) {
   const isUser = msg.role === 'user'
   const hasThinking = msg.thinking && msg.thinking.length > 0
   const hasCitations = msg.citations && msg.citations.length > 0
+
+  // Report artifacts stored as a dynamic property (not in the QAMessage schema yet)
+  const artifacts = (msg as Record<string, unknown>).artifacts as QAReportArtifact[] | undefined
+  const hasArtifacts = artifacts && artifacts.length > 0
 
   // Determine effective streaming state
   const effectiveStreaming = msg.status === 'streaming' || (!msg.status && isStreaming)
@@ -266,6 +279,16 @@ function MessageBubble({ msg, isStreaming }: { msg: QAMessage; isStreaming: bool
             </div>
           </div>
         )}
+
+        {/* Report artifacts (assistant only) */}
+        {hasArtifacts &&
+          artifacts!.map((artifact) => (
+            <ReportArtifactCard
+              key={artifact.reportId ?? artifact.jobId ?? artifact.reportName ?? 'artifact'}
+              artifact={artifact}
+              onDownload={onArtifactDownload}
+            />
+          ))}
       </div>
     </div>
   )
@@ -280,9 +303,16 @@ type ChatMessagesProps = {
   streaming: boolean
   error: string | null
   onRetry?: () => void
+  onArtifactDownload?: (reportFileId: string, filename: string) => void
 }
 
-export default function ChatMessages({ messages, streaming, error, onRetry }: ChatMessagesProps) {
+export default function ChatMessages({
+  messages,
+  streaming,
+  error,
+  onRetry,
+  onArtifactDownload,
+}: ChatMessagesProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom when messages or streaming updates
@@ -305,7 +335,11 @@ export default function ChatMessages({ messages, streaming, error, onRetry }: Ch
               msg.role === 'user' ? 'self-end' : 'self-start',
             )}
           >
-            <MessageBubble msg={msg} isStreaming={isStreamingAsst} />
+            <MessageBubble
+              msg={msg}
+              isStreaming={isStreamingAsst}
+              onArtifactDownload={onArtifactDownload}
+            />
           </div>
         )
       })}

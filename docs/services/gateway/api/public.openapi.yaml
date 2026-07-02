@@ -12,8 +12,8 @@ info:
     knowledge-owned knowledge base, document upload, processing, content, chunk, and retrieval routes,
     document-owned report generation and report settings routes, qa-owned intelligent question answering
     routes, and admin-facing runtime model/parser configuration routes as active
-    contracts. Downstream admin overview/metrics aggregation interfaces remain
-    under x-missing-contracts until finalized.
+    contracts. Both admin-overview and admin-metrics are now active gateway
+    contracts for the administration dashboard.
 x-api-style:
   required: RESTful resource-oriented HTTP APIs
   appliesTo:
@@ -87,7 +87,11 @@ paths:
       security: []
       responses:
         '200':
-          description: Gateway is ready to serve traffic.
+          description: >
+            Gateway lightweight readiness passed. This checks the Gateway
+            session cache dependency, Auth readiness, and owner service base URL
+            configuration; it does not prove owner-service business workflows or
+            external provider calls are available.
           content:
             application/json:
               schema:
@@ -1849,7 +1853,7 @@ paths:
             text/event-stream:
               schema:
                 type: string
-                description: Server-Sent Events with event types `message.created`, `agent.iteration.started`, `reasoning.step`, `tool.started`, `tool.completed`, `tool.failed`, `answer.delta`, `citation.delta`, `answer.completed`, `error`, and optional `heartbeat`.
+                description: Server-Sent Events with event types `message.created`, `agent.iteration.started`, `reasoning.step`, `tool.started`, `tool.completed`, `tool.failed`, `answer.delta`, `citation.delta`, `answer.completed`, `error`, and optional `heartbeat`. For `tool.completed` and `tool.failed`, Document report-generation tools may include `payload.result.reportArtifact` using the `QAReportArtifact` schema.
         '400':
           $ref: '#/components/responses/Error'
         '403':
@@ -2098,7 +2102,7 @@ paths:
       summary: List QA response run tool calls
       operationId: listQAResponseRunToolCalls
       x-owner-service: qa
-      description: Returns sanitized tool-call summaries only. Raw MCP schemas, full arguments, raw tool results, prompts, internal URLs, object keys, and provider errors are not part of the public contract.
+      description: Returns sanitized tool-call summaries only. Raw MCP schemas, full arguments, raw tool results, prompts, internal URLs, object keys, and provider errors are not part of the public contract. Document report-generation tools may include a `reportArtifact` object under `resultSummary` using the `QAReportArtifact` schema.
       responses:
         '200':
           description: QA tool call summaries.
@@ -2427,6 +2431,87 @@ paths:
               schema:
                 $ref: '#/components/schemas/QAIntentDistributionResponse'
         '400':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/overview:
+    get:
+      tags:
+      - admin
+      summary: Cross-service administration overview
+      description: |
+        Aggregated snapshot for the administration dashboard.  Gateway
+        collects lightweight metrics from QA, Knowledge (document stats),
+        and Document (report stats) owner services on each request; the
+        `reports` response module reflects Document-owned report data.
+        Data is suitable for a landing-page dashboard and is not a
+        real-time operational view.
+        Route is registered and returns 501 Not Implemented until
+        aggregation implementation is complete.
+      operationId: getAdminOverview
+      x-owner-service: gateway
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Aggregated overview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOverviewResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '501':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/metrics:
+    get:
+      tags:
+      - admin
+      summary: Cross-service time-series metrics
+      description: |
+        Daily or hourly trend data across QA, Knowledge (document stats),
+        and Document (report stats) owner services.  Supports a configurable
+        lookback window for dashboard trend charts.
+        **Route registration** is tracked in a separate backend issue;
+        this OpenAPI contract defines the design-time schema only.
+      operationId: getAdminMetrics
+      x-owner-service: gateway
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: days
+        in: query
+        description: Number of days to look back.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 90
+          default: 30
+      - name: granularity
+        in: query
+        description: Time bucket size.
+        schema:
+          type: string
+          enum:
+          - daily
+          - hourly
+          default: daily
+      responses:
+        '200':
+          description: Aggregated time-series metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMetricsResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '501':
           $ref: '#/components/responses/Error'
 components:
   securitySchemes:
@@ -5148,7 +5233,9 @@ components:
         argumentsSummary:
           $ref: '#/components/schemas/JsonObject'
         resultSummary:
-          $ref: '#/components/schemas/JsonObject'
+          allOf:
+          - $ref: '#/components/schemas/JsonObject'
+          description: Sanitized tool result summary. For Document report-generation tools, may contain `reportArtifact` with schema `QAReportArtifact`.
         status:
           type: string
           enum:
@@ -5166,6 +5253,106 @@ components:
           type: string
           format: date-time
           nullable: true
+    QAReportArtifactPreview:
+      type: object
+      description: Safe user-visible preview for a QA-triggered report generation artifact. It must not contain full report body text, prompts, raw MCP arguments/results, provider errors, vector payloads, internal URLs, File internal IDs, buckets, or object keys.
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          description: Short preview title shown to the user.
+        summary:
+          type: string
+          description: Short user-visible summary, not full section content.
+        outlineTitles:
+          type: array
+          description: Report or section headings safe for preview cards.
+          items:
+            type: string
+        sectionTitles:
+          type: array
+          description: Generated or planned section titles safe for preview cards.
+          items:
+            type: string
+        progressPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        statusText:
+          type: string
+          description: User-visible status such as `generating outline` or `DOCX export failed`.
+    QAReportArtifact:
+      type: object
+      description: Safe artifact summary returned by QA when Document report-generation tools create, update, export, or inspect a report. The object is allowed only inside sanitized QA tool results, never as raw MCP output.
+      additionalProperties: false
+      required:
+      - artifactType
+      properties:
+        artifactType:
+          type: string
+          enum:
+          - report_generation
+        reportId:
+          type: string
+          description: Document-owned public report business id, when a report exists and the caller can read it.
+        reportName:
+          type: string
+          description: User-visible report title.
+        reportType:
+          type: string
+          description: Report type code such as `summer_peak_inspection`.
+        jobId:
+          type: string
+          description: Document-owned report job id for async generation/export tracking.
+        jobType:
+          $ref: '#/components/schemas/ReportJobType'
+        jobStatus:
+          type: string
+          enum:
+          - accepted
+          - pending
+          - running
+          - succeeded
+          - failed
+          - canceled
+          description: QA-facing normalized job status. `accepted` may be used immediately after an async job is created before Document reports `pending`.
+        reportStatus:
+          type: string
+          description: Report lifecycle status such as `outline_generated`, `generated`, or `failed`.
+        reportFileId:
+          type: string
+          description: Public report file id. Present only when Document can expose generated file metadata to the caller.
+        filename:
+          type: string
+        format:
+          type: string
+          enum:
+          - docx
+        fileStatus:
+          type: string
+          enum:
+          - pending
+          - running
+          - succeeded
+          - failed
+          - canceled
+          description: Export file status. The download button is allowed only when this is `succeeded` and `downloadPath` is present.
+        fileSize:
+          type: integer
+          format: int64
+          minimum: 0
+        preview:
+          $ref: '#/components/schemas/QAReportArtifactPreview'
+        downloadPath:
+          type: string
+          pattern: '^/api/v1/report-files/[^/]+/content$'
+          example: /api/v1/report-files/rf_123/content
+          description: Gateway public content path. Must be present only when `fileStatus` is `succeeded` and the caller has read permission for the report file.
+        detailPath:
+          type: string
+          pattern: '^/api/v1/reports/[^/]+$'
+          example: /api/v1/reports/rpt_123
+          description: Optional Gateway report detail path or frontend deep-link target based on the public report id.
     QAAgentToolCallListResponse:
       type: object
       required:
@@ -5206,7 +5393,9 @@ components:
         eventType:
           $ref: '#/components/schemas/QASseEventType'
         payload:
-          $ref: '#/components/schemas/JsonObject'
+          allOf:
+          - $ref: '#/components/schemas/JsonObject'
+          description: Event payload. `tool.completed` and `tool.failed` events may include `result.reportArtifact` with schema `QAReportArtifact`.
         createdAt:
           type: string
           format: date-time
@@ -5857,10 +6046,153 @@ components:
             $ref: '#/components/schemas/QAIntentDistributionItem'
         requestId:
           type: string
+    AdminOverview:
+      type: object
+      description: Cross-service snapshot for the administration landing page.
+      required:
+      - qa
+      - documents
+      - reports
+      - system
+      - updatedAt
+      properties:
+        qa:
+          type: object
+          description: QA service summary.
+          required:
+          - totalQaCount
+          - todayQaCount
+          - conversationCount
+          - avgLatencyMs
+          properties:
+            totalQaCount:
+              type: integer
+              minimum: 0
+            todayQaCount:
+              type: integer
+              minimum: 0
+            conversationCount:
+              type: integer
+              minimum: 0
+            avgLatencyMs:
+              type: integer
+              minimum: 0
+        documents:
+          type: object
+          description: Document service summary.
+          required:
+          - totalCount
+          properties:
+            totalCount:
+              type: integer
+              minimum: 0
+            parsingSuccessRate:
+              type: number
+              minimum: 0
+              maximum: 1
+        reports:
+          type: object
+          description: Report service summary.
+          required:
+          - totalGenerated
+          - todayGenerated
+          properties:
+            totalGenerated:
+              type: integer
+              minimum: 0
+            todayGenerated:
+              type: integer
+              minimum: 0
+        system:
+          type: object
+          description: System-level metrics.
+          required:
+          - activeUsersToday
+          properties:
+            activeUsersToday:
+              type: integer
+              minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
+    AdminOverviewResponse:
+      type: object
+      required:
+      - data
+      - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminOverview'
+        requestId:
+          type: string
+    AdminMetricsPoint:
+      type: object
+      description: Single data point in a time-series.
+      required:
+      - date
+      - count
+      properties:
+        date:
+          type: string
+          format: date-time
+          description: Bucket start time. For daily granularity the time
+            component is 00:00:00Z; for hourly the time component is the
+            hour start.
+        count:
+          type: integer
+          minimum: 0
+    AdminMetrics:
+      type: object
+      description: Cross-service time-series for dashboard trend charts.
+      required:
+      - days
+      - qa
+      - documents
+      - reports
+      - system
+      properties:
+        days:
+          type: integer
+          minimum: 1
+        granularity:
+          type: string
+          enum:
+          - daily
+          - hourly
+        qa:
+          type: array
+          description: QA service daily/hourly query counts.
+          items:
+            $ref: '#/components/schemas/AdminMetricsPoint'
+        documents:
+          type: array
+          description: Document service daily/hourly processing counts.
+          items:
+            $ref: '#/components/schemas/AdminMetricsPoint'
+        reports:
+          type: array
+          description: Report service daily/hourly generation counts.
+          items:
+            $ref: '#/components/schemas/AdminMetricsPoint'
+        system:
+          type: array
+          description: System-level daily/hourly active user counts.
+          items:
+            $ref: '#/components/schemas/AdminMetricsPoint'
+    AdminMetricsResponse:
+      type: object
+      required:
+      - data
+      - requestId
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminMetrics'
+        requestId:
+          type: string
 x-missing-contracts:
 - service: gateway
-  status: missing
-  reason: Administration overview and metrics aggregation contract is not finalized yet. Runtime model/parser configuration is an active gateway contract.
-  placeholderOperations:
-  - GET /api/v1/admin-overview
-  - GET /api/v1/admin-metrics
+  status: resolved
+  reason: |
+    Both admin-overview and admin-metrics are now active gateway
+    contracts.  No remaining missing admin contracts.
+  placeholderOperations: []

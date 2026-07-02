@@ -25,7 +25,7 @@ type openAPIOperation struct {
 func TestQAActiveOpenAPIContractsHaveSchemasAndAuth(t *testing.T) {
 	document := readOpenAPIDocument(t, gatewayOpenAPIPath(t))
 	operations := ownerOpenAPIOperations(t, document, "qa")
-	if got, want := len(operations), 25; got != want {
+	if got, want := len(operations), 29; got != want {
 		t.Fatalf("qa active operations = %d, want %d", got, want)
 	}
 
@@ -53,7 +53,11 @@ func TestQAActiveOpenAPIContractsHaveSchemasAndAuth(t *testing.T) {
 		}
 
 		if operation.Method == http.MethodPost || operation.Method == http.MethodPatch {
-			assertJSONRequestSchema(t, document, operation)
+			if operation.OperationID == "uploadQASessionAttachment" {
+				assertMultipartRequestSchema(t, document, operation)
+			} else {
+				assertJSONRequestSchema(t, document, operation)
+			}
 		}
 		assertQASuccessResponseSchemas(t, document, operation)
 		assertQAErrorResponseSchemas(t, document, operation)
@@ -306,6 +310,19 @@ func assertJSONRequestSchema(t *testing.T, document map[string]any, operation op
 	mediaType := requiredNestedMap(t, content, "application/json")
 	if mapValue(mediaType["schema"]) == nil {
 		t.Fatalf("%s %s application/json request body missing schema", operation.Method, operation.Path)
+	}
+}
+
+func assertMultipartRequestSchema(t *testing.T, document map[string]any, operation openAPIOperation) {
+	t.Helper()
+	requestBody := resolveOpenAPIMapValue(t, document, operation.Operation["requestBody"])
+	if requestBody == nil {
+		t.Fatalf("%s %s missing multipart request body schema", operation.Method, operation.Path)
+	}
+	content := requiredNestedMap(t, requestBody, "content")
+	mediaType := requiredNestedMap(t, content, "multipart/form-data")
+	if mapValue(mediaType["schema"]) == nil {
+		t.Fatalf("%s %s multipart/form-data request body missing schema", operation.Method, operation.Path)
 	}
 }
 

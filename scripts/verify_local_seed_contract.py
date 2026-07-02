@@ -16,6 +16,7 @@ COMPOSE_FILE = Path("deploy/docker-compose.yml")
 DEPLOY_README = Path("deploy/README.md")
 LOCAL_RUNBOOK = Path("docs/runbooks/local-integration.md")
 ENV_EXAMPLE = Path("deploy/.env.example")
+AUTH_MIGRATIONS_DIR = Path("services/auth/migrations")
 
 REQUIRED_SEED_001_TOKENS = {
     "Auth local admin user": ["usr_local_admin", "cred_local_admin_password", "urole_local_admin_admin"],
@@ -55,6 +56,27 @@ REQUIRED_AI_TOKENS = [
     "local-demo-key-v1",
 ]
 
+REQUIRED_AUTH_MIGRATION_TOKENS = {
+    "QA settings permission": [
+        "perm_qa_settings_read",
+        "qa:settings:read",
+        "perm_qa_settings_write",
+        "qa:settings:write",
+    ],
+    "admin QA settings grant": [
+        "rperm_admin_qa_settings_read",
+        "rperm_admin_qa_settings_write",
+        "'admin', 'qa:settings:read'",
+        "'admin', 'qa:settings:write'",
+    ],
+    "super admin QA settings grant": [
+        "rperm_super_qa_settings_read",
+        "rperm_super_qa_settings_write",
+        "'super_admin', 'qa:settings:read'",
+        "'super_admin', 'qa:settings:write'",
+    ],
+}
+
 REQUIRED_DOC_TOKENS = [
     "seed-local",
     "seed-local-ai",
@@ -93,6 +115,7 @@ def verify_local_seed_contract(root: Path) -> list[str]:
     seed_001 = read_required(root, SEED_001, issues)
     seed_002 = read_required(root, SEED_002, issues)
     cleanup_seed = read_required(root, CLEANUP_SEED, issues)
+    auth_migrations = read_required_glob(root, AUTH_MIGRATIONS_DIR, "*.sql", issues)
     compose = read_required(root, COMPOSE_FILE, issues)
     deploy_readme = read_required(root, DEPLOY_README, issues)
     runbook = read_required(root, LOCAL_RUNBOOK, issues)
@@ -101,6 +124,7 @@ def verify_local_seed_contract(root: Path) -> list[str]:
     issues.extend(validate_seed_001(seed_001))
     issues.extend(validate_seed_002(seed_002))
     issues.extend(validate_cleanup_seed(cleanup_seed))
+    issues.extend(validate_auth_migrations(auth_migrations))
     issues.extend(validate_compose(compose))
     issues.extend(validate_docs(deploy_readme, runbook, env_example))
     issues.extend(validate_forbidden_content(root))
@@ -114,6 +138,26 @@ def read_required(root: Path, relative: Path, issues: list[str]) -> str:
     except OSError as exc:
         issues.append(f"{relative} is required but cannot be read: {exc}")
         return ""
+
+
+def read_required_glob(root: Path, relative: Path, pattern: str, issues: list[str]) -> str:
+    path = root / relative
+    try:
+        files = sorted(path.glob(pattern))
+    except OSError as exc:
+        issues.append(f"{relative} is required but cannot be read: {exc}")
+        return ""
+    if not files:
+        issues.append(f"{relative} must contain `{pattern}` files")
+        return ""
+
+    contents: list[str] = []
+    for file in files:
+        try:
+            contents.append(file.read_text(encoding="utf-8"))
+        except OSError as exc:
+            issues.append(f"{file.relative_to(root)} is required but cannot be read: {exc}")
+    return "\n".join(contents)
 
 
 def validate_seed_001(content: str) -> list[str]:
@@ -161,6 +205,17 @@ def validate_cleanup_seed(content: str) -> list[str]:
     for table in ["message_content_blocks", "report_section_versions", "document_chunks", "auth_credentials"]:
         if table not in content:
             issues.append(f"{CLEANUP_SEED} missing cleanup table `{table}`")
+    return issues
+
+
+def validate_auth_migrations(content: str) -> list[str]:
+    if not content:
+        return []
+    issues: list[str] = []
+    for group, tokens in REQUIRED_AUTH_MIGRATION_TOKENS.items():
+        for token in tokens:
+            if token not in content:
+                issues.append(f"{AUTH_MIGRATIONS_DIR} missing {group} token `{token}`")
     return issues
 
 

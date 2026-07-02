@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
-- **Last Active**: 2026-07-01
+- **Total Sessions**: 8
+- **Last Active**: 2026-07-02
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~172 | Active |
+| `journal-1.md` | ~303 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,9 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-07-02 | Gateway readyz semantics | `7ee5551e`, `b4a560a1` | `Special/docs/gateway-readyz-semantics` |
+| 7 | 2026-07-02 | S-031 production compose baseline | `9cbc6e38` | `Special/docs/production-compose-baseline` |
+| 6 | 2026-07-01 | Knowledge QA RAG smoke | `b4acb18` | `Special/test/rag-e2e-smoke` |
 | 5 | 2026-07-01 | Resolve Code Scanning alerts | `2fd3688` | `Special/fix/code-scanning-alerts` |
 | 4 | 2026-07-01 | Document system link condition coverage | `27543d3` | `Special/docs/sync-trellis-spec-docs` |
 | 3 | 2026-07-01 | Archive auth gateway test audit | `2c524c6` | `Special/docs/sync-trellis-spec-docs` |

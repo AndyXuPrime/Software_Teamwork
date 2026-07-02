@@ -99,9 +99,13 @@ jobs:
               return fieldMatch ? cleanValue(fieldMatch[1]) : '';
             };
             const readHourField = (baseLabel) => readField(`${baseLabel}（小时数）`) || readField(baseLabel);
-            const parseHourNumber = (value, label) => {
+            const parseHourNumber = (value, label, options = {}) => {
+              const { allowEmptyAsZero = true, allowZero = true } = options;
               const normalized = cleanValue(value || '');
               if (!normalized || normalized === '待估' || normalized === '未填写') {
+                if (!allowEmptyAsZero) {
+                  throw new Error(`${label} is required and must be greater than 0.`);
+                }
                 return { number: 0, text: '0' };
               }
               if (!/^\d+(?:\.\d+)?$/u.test(normalized)) {
@@ -110,6 +114,9 @@ jobs:
               const number = Number(normalized);
               if (!Number.isFinite(number) || number < 0) {
                 throw new Error(`${label} must be a finite non-negative hour number.`);
+              }
+              if (!allowZero && number === 0) {
+                throw new Error(`${label} must be greater than 0.`);
               }
               return { number, text: String(number) };
             };
@@ -312,6 +319,10 @@ jobs:
             const taskStatus = readField('状态') || 'Draft';
             const expectedHoursRaw = readHourField('预期工时');
             const existingActualHoursRaw = readHourField('实际工时');
+            const parseExpectedHoursForStatus = (status) => parseHourNumber(expectedHoursRaw, '预期工时（小时数）', {
+              allowEmptyAsZero: status === 'Draft',
+              allowZero: status === 'Draft',
+            });
 
             const createComment = async (body) => {
               await github.rest.issues.createComment({
@@ -344,7 +355,9 @@ jobs:
               }
               let requestedActualHoursValue;
               try {
-                requestedActualHoursValue = parseHourNumber(requestedActualHours, '实际工时（小时数）');
+                requestedActualHoursValue = parseHourNumber(requestedActualHours, '实际工时（小时数）', {
+                  allowEmptyAsZero: false,
+                });
               } catch (error) {
                 await createComment('实际工时更新失败：请填写非负小时数，不要带单位；例如 `实际工时：2` 或 `实际工时：0.5`。');
                 core.info(`Actual-hours update rejected because value is invalid: ${error.message}`);
@@ -360,11 +373,20 @@ jobs:
                 return;
               }
 
+              let expectedHoursForSync;
+              try {
+                expectedHoursForSync = parseExpectedHoursForStatus(taskStatus);
+              } catch (error) {
+                await createComment('实际工时更新失败：当前任务不是 Draft，预期工时必须先填写大于 0 的小时数，例如 `0.5`、`1` 或 `2`。');
+                core.info(`Actual-hours update rejected because expected hours are invalid for status ${taskStatus}: ${error.message}`);
+                return;
+              }
+
               let syncState = 'pending';
               let syncErrorMessage = '';
               try {
                 await updateProjectFields([
-                  { kind: 'number', name: 'ExpectedHours', value: parseHourNumber(expectedHoursRaw, '预期工时（小时数）') },
+                  { kind: 'number', name: 'ExpectedHours', value: expectedHoursForSync },
                   { kind: 'number', name: 'ActualHours', value: requestedActualHoursValue },
                   { kind: 'text', name: 'OwnerNote', value: `@${commenterLogin} 通过 issue 评论更新实际工时；任务编号 ${taskCode}；由 Task Claim 更新。` },
                 ]);
@@ -413,6 +435,15 @@ jobs:
             }
 
             const alreadyAssigned = assignees.some((assignee) => assignee.login.toLowerCase() === commenterLogin.toLowerCase());
+            let expectedHoursForClaim;
+            try {
+              expectedHoursForClaim = parseExpectedHoursForStatus('In Progress');
+            } catch (error) {
+              await createComment('认领失败：请先把 `预期工时（小时数）` 填为大于 0 的小时数，例如 `0.5`、`1` 或 `2`。');
+              core.info(`Claim rejected because expected hours are invalid for In Progress: ${error.message}`);
+              return;
+            }
+
             if (!alreadyAssigned) {
               try {
                 await github.rest.issues.addAssignees({
@@ -439,7 +470,7 @@ jobs:
                 { kind: 'module-single-select', name: 'Module', values: moduleNames },
                 { kind: 'single-select', name: 'Risk', value: 'Normal' },
                 { kind: 'text', name: 'Dependency', value: dependency },
-                { kind: 'number', name: 'ExpectedHours', value: parseHourNumber(expectedHoursRaw, '预期工时（小时数）') },
+                { kind: 'number', name: 'ExpectedHours', value: expectedHoursForClaim },
                 { kind: 'number', name: 'ActualHours', value: parseHourNumber(existingActualHoursRaw, '实际工时（小时数）') },
                 { kind: 'text', name: 'OwnerNote', value: `@${commenterLogin} 通过 issue 评论认领；任务编号 ${taskCode}；由 Task Claim 更新。` },
               ]);

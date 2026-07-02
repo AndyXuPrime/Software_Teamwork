@@ -99,7 +99,7 @@ async function redirectToAppHome() {
 async function redirectToAdminHome() {
   const store = await restoreAuthForRoute()
 
-  if (canAccess(store.user, systemAdminAccess)) {
+  if (canAccess(store.user, { any: ['qa:use', 'system:admin'] })) {
     throw redirect({ to: '/admin/stats' })
   }
 
@@ -138,10 +138,10 @@ const knowledgeAccess: PermissionRequirement = {
   any: ['knowledge:read', 'knowledge:write', 'document:upload'],
 }
 const knowledgeWriteAccess: PermissionRequirement = { any: ['knowledge:write'] }
-const systemAdminAccess: PermissionRequirement = { any: ['system:admin'] }
 const adminAccess: PermissionRequirement = {
   any: [
     'system:admin',
+    'qa:use',
     'report:read',
     'report:write',
     'reports:write',
@@ -249,7 +249,7 @@ const adminIndexRoute = createRoute({
 const adminStylesRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'styles',
-  beforeLoad: requireAuth(systemAdminAccess),
+  beforeLoad: requireAuth(),
   component: StyleManagement,
 })
 
@@ -354,14 +354,14 @@ const adminQARetrievalTestRoute = createRoute({
 const adminSettingsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'settings',
-  beforeLoad: requireAuth(systemAdminAccess),
+  beforeLoad: requireAuth({ any: ['system:admin'] }),
   component: SystemSettings,
 })
 
 const adminStatsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'stats',
-  beforeLoad: requireAuth(systemAdminAccess),
+  beforeLoad: requireAuth({ any: ['qa:use', 'system:admin'] }),
   component: StatsOverviewPage,
 })
 

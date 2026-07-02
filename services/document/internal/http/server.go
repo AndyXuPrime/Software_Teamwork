@@ -67,6 +67,8 @@ type Config struct {
 	JobSvc          JobSvc
 	AdminService    AdminSvc
 	ReportFileSvc   ReportFileSvc
+	MCPHandler      http.Handler
+	MCPPath         string
 	MaxUploadBytes  int64
 }
 
@@ -79,6 +81,8 @@ type Server struct {
 	adminService   AdminSvc
 	reportFileSvc  ReportFileSvc
 	maxUploadBytes int64
+	mcpHandler     http.Handler
+	mcpPath        string
 	mux            *http.ServeMux
 }
 
@@ -98,6 +102,8 @@ func NewServer(cfg Config) *Server {
 		adminService:   cfg.AdminService,
 		reportFileSvc:  cfg.ReportFileSvc,
 		maxUploadBytes: cfg.MaxUploadBytes,
+		mcpHandler:     cfg.MCPHandler,
+		mcpPath:        strings.TrimSpace(cfg.MCPPath),
 		mux:            http.NewServeMux(),
 	}
 	server.routes()
@@ -136,6 +142,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /report-operation-logs", s.handleListReportOperationLogs)
 	s.mux.HandleFunc("GET /report-settings", s.handleGetReportSettings)
 	s.mux.HandleFunc("PATCH /report-settings", s.handleUpdateReportSettings)
+	if s.mcpHandler != nil && s.mcpPath != "" {
+		s.mux.Handle(s.mcpPath, s.mcpHandler)
+	}
 	s.mux.HandleFunc("/", s.handleNotFound)
 }
 

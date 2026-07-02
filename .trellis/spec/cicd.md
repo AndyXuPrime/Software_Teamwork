@@ -82,11 +82,16 @@ custom fields.
   owner-service, contract, data-model, migration, security, product, architecture,
   or cross-module issues must become separate owner-group issues and be linked
   from the testing task.
-- Every `T-*` issue must require a completed test report based on
+- Every `T-*` issue must require reviewable test evidence. Pure unit,
+  component, and static-check automation may use lightweight issue/PR execution
+  records; integration, E2E, permission/security boundary, file/parser boundary,
+  migration, environment acceptance, manual acceptance, regression, and defect
+  reproduction tasks must require a completed report based on
   `docs/testing/templates/test-report-template.md`, archived under
   `docs/testing/reports/YYYY-MM-DD/`, and linked from the testing issue or PR.
-- Missing `预期工时（小时数）` defaults to numeric `0`; missing
-  `实际工时（小时数）` defaults to numeric `0`.
+- Missing or zero `预期工时（小时数）` is allowed only while the managed issue
+  status is `Draft`; non-Draft task issues must provide a positive estimate.
+- Missing `实际工时（小时数）` defaults to numeric `0`.
 - Hour fields must be non-negative hour numbers without units. Floating-point
   values are allowed, e.g. `0`, `0.5`, `1.25`.
 - GitHub Project hour fields should be Number fields for statistics. Workflow
@@ -94,17 +99,32 @@ custom fields.
   Text fields.
 - GitHub Project field names are exact: `ExpectedHours` and `ActualHours`.
 - Claim comments must keep existing claim validation, set `Status` to
-  `In Progress`, and refresh both hour fields in the Project.
+  `In Progress`, and refresh both hour fields in the Project. Because claim
+  changes the effective status to non-`Draft`, it must reject missing, `0`,
+  `待估`, or `未填写` expected hours before assigning or syncing Project fields.
+- Closing a managed issue must calculate `ActualHours` automatically from the
+  later of issue `created_at` and the latest closed dependency in `依赖任务`, to
+  the current issue `closed_at`, then update the issue body and Project
+  `ActualHours`; closed GitHub issues must sync Project `Status` to `Done`
+  regardless of stale body `状态` text.
+- Maintainers may rerun Task Issue Sync with `workflow_dispatch` and
+  `issue_number` to backfill a closed managed issue without reopening it.
 - Actual-hours comments must update the issue body `实际工时（小时数）` field
-  and sync Project `ActualHours`; they must not require the task to be claimable.
+  and sync Project `ActualHours`; they must not require the task to be claimable,
+  must remain able to override an automatically generated value, and must still
+  enforce positive expected hours for non-`Draft` tasks.
 
 ### 4. Validation & Error Matrix
 
 | Condition | Required handling |
 | --- | --- |
 | Issue title is not a managed task title | Skip without mutating the issue or Project. |
-| `预期工时（小时数）` is missing | Sync `ExpectedHours` as `0`. |
+| `预期工时（小时数）` is missing, zero, `待估`, or `未填写` on a non-`Draft` issue | Set `Project sync` to `blocked` and fail the workflow run. |
+| Claim would move an issue to `In Progress` while `预期工时（小时数）` is missing, zero, `待估`, or `未填写` | Reject with an issue comment and do not assign or mutate Project fields. |
+| Actual-hours comment targets a non-`Draft` issue while `预期工时（小时数）` is missing, zero, `待估`, or `未填写` | Reject with an issue comment and do not mutate fields. |
+| `预期工时（小时数）` is missing on a `Draft` issue | Sync `ExpectedHours` as `0`. |
 | `实际工时（小时数）` is missing | Sync `ActualHours` as `0`. |
+| Managed issue is closed | Calculate and write `ActualHours` from the later of issue creation and latest closed dependency to issue close time. |
 | Comment is `实际工时：` with an empty or non-numeric value | Reject with an issue comment and do not mutate fields. |
 | Commenter is not trusted or assigned | Reject actual-hours update with an issue comment. |
 | Project lacks `ExpectedHours` or `ActualHours` | Set `Project sync` to `blocked` and fail the workflow run. |
@@ -853,7 +873,8 @@ Rules:
 - Docker environment diagnostics belong in `scripts/check_docker_environment.py`.
   CI may run it with `--skip-network`; local investigations may run manifest
   probes with `--profile all --clean-env`.
-- Docker policy docs/spec changes should trigger the lightweight policy checker
+- Docker policy docs/spec changes, including `deploy/README.md` and
+  `deploy/production-baseline.md`, should trigger the lightweight policy checker
   even when no Dockerfile changed. Do not force full image builds for docs-only
   policy edits unless the workflow detection logic itself changed.
 - Build images for changed services on PRs.
@@ -889,7 +910,8 @@ Deployment rules:
 - Store runtime secrets outside the repository.
 - Use `.env.example` for required variable names only.
 - Use named volumes for PostgreSQL, Qdrant, MinIO, and Redis when persistence is required.
-- Expose only frontend and gateway publicly by default.
+- Production/staging Compose should expose only the ingress service publicly by
+  default; frontend, gateway, and internal services stay on the Compose network.
 - Keep internal services on the Compose network.
 - Add health checks for infrastructure and services before relying on automated deployment.
 

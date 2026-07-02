@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend service, local integration, API, logging, and quality rules for this cross-service smoke."}
+{"file":"docs/architecture/service-boundaries.md","reason":"Authoritative ownership boundaries for File, Parser, Knowledge, AI Gateway, QA, and Gateway."}
+{"file":"docs/runbooks/local-integration.md","reason":"Primary runbook target and current local integration smoke baseline."}
+{"file":"docs/services/knowledge/docs/implementation.md","reason":"Current Knowledge ingestion/retrieval implementation facts and known smoke gaps."}
+{"file":"docs/services/qa/docs/implementation.md","reason":"Current QA Agent, AI Gateway, Knowledge retrieval, and citation smoke gap facts."}
+{"file":"docs/services/ai-gateway/docs/provider-adapters.md","reason":"Provider, embedding, rerank, and sensitive-data constraints for AI Gateway smoke paths."}

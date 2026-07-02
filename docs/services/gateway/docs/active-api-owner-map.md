@@ -4,7 +4,7 @@ This document is the human-readable audit list for gateway active API paths. The
 
 ## Audit Result
 
-- Active operations: `101`.
+- Active operations: `103`.
 - Every `/api/v1/**` active operation has `operationId`, `tags`, `x-owner-service`, security, at least one `2XX` response, and at least one `4XX` response.
 - `/healthz` and `/readyz` are operational routes owned by `gateway`; they intentionally do not use bearer auth.
 - No stable active path uses action-style segments such as `/login`, `/logout`, `/search`, `/generate`, `/export`, `/retry`, or `/revoke`.
@@ -19,7 +19,7 @@ This document is the human-readable audit list for gateway active API paths. The
 
 | Owner service | Active operations | Notes |
 | --- | ---: | --- |
-| `gateway` | 2 | Gateway health/readiness and public routing surface. |
+| `gateway` | 4 | Gateway health/readiness, public routing, admin overview and metrics aggregation. |
 | `auth` | 4 | Users, sessions, current-user identity, roles, and permissions. |
 | `knowledge` | 18 | Knowledge bases, knowledge documents, chunks, retrieval, and parser runtime config. |
 | `ai-gateway` | 5 | Model profile runtime configuration exposed through gateway admin paths. |
@@ -28,12 +28,8 @@ This document is the human-readable audit list for gateway active API paths. The
 
 ## Missing Contracts
 
-| Placeholder operation | Expected owner | Status | Frontend/backend rule |
-| --- | --- | --- | --- |
-| `GET /api/v1/admin-overview` | `gateway` aggregation with domain services | missing | Do not generate frontend client methods or backend handlers until the request/response contract is finalized. |
-| `GET /api/v1/admin-metrics` | `gateway` aggregation with domain services | missing | Do not generate frontend client methods or backend handlers until the request/response contract is finalized. |
-
-Current missing scope is limited to management overview and cross-service metrics aggregation. Admin model profile and parser configuration paths are active contracts and are listed below.
+No missing contracts remain. All previously placeholder admin overview and metrics
+aggregation endpoints are now active gateway contracts listed below.
 
 ## Active Operations
 
@@ -140,3 +136,5 @@ Current missing scope is limited to management overview and cross-service metric
 | `GET` | `/api/v1/qa-metrics/trend` | `qa` | `qa-metrics` | `getQAMetricsTrend` | `bearerAuth` |
 | `GET` | `/api/v1/qa-metrics/top-queries` | `qa` | `qa-metrics` | `listQATopQueries` | `bearerAuth` |
 | `GET` | `/api/v1/qa-metrics/intent-distribution` | `qa` | `qa-metrics` | `listQAIntentDistribution` | `bearerAuth` |
+| `GET` | `/api/v1/admin/overview` | `gateway` | `admin` | `getAdminOverview` | `bearerAuth` |
+| `GET` | `/api/v1/admin/metrics` | `gateway` | `admin` | `getAdminMetrics` | `bearerAuth` |

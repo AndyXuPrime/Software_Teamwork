@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend documentation, OpenAPI, build, and diff-check verification expectations."}
+{"file": ".trellis/spec/guides/commit-convention.md", "reason": "Commit format and pre-commit workflow requirements for the PR follow-up fixes."}

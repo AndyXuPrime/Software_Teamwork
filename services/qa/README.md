@@ -142,7 +142,94 @@ not try to launch local source-only helper commands.
 
 Set `MCP_TRANSPORT=streamable_http` and provide `MCP_SERVER_URL` to merge remote
 tools with the built-in registry. Optional credentials use `MCP_SERVER_TOKEN`
-and `MCP_SERVER_TOKEN_HEADER`.
+and `MCP_SERVER_TOKEN_HEADER`. `MCP_SERVER_ALIAS` controls the model-facing tool
+prefix for the environment bootstrap server and defaults to `env_default`; use
+`document` for the Document MCP server so report tools are exposed as
+`document__<tool>`.
+
+### Document report tools
+
+Document report generation is integrated through the same MCP ToolClient
+boundary as other remote tools. QA does not import `services/document/internal`
+packages or read Document/File/Object Storage internals directly; the Document
+service owns report jobs, report files, provider prompts, and internal file
+references. Streamable HTTP MCP calls include the configured service token plus
+trusted context headers (`X-Caller-Service: qa`, `X-Request-Id`, `X-User-Id`,
+`X-User-Roles`, and `X-User-Permissions`) so Document can enforce permissions
+and preserve audit correlation.
+
+When the Document MCP server is registered with alias `document`, QA exposes
+the following model-facing tool names through the existing MCP prefixing rule:
+
+| Tool | Purpose |
+| --- | --- |
+| `document__generate_report_outline` | Create an outline generation job. |
+| `document__generate_report_text` | Create a content generation job. |
+| `document__get_generation_status` | Read async job status/progress. |
+| `document__export_report_docx` | Start or inspect DOCX export metadata. |
+| `document__get_report_result` | Read a safe report result summary. |
+
+These five names are included in the default QA tool whitelist. They are only
+listed to the model when a reachable MCP server actually returns matching
+tools, so environments without Document MCP support degrade to "tool not
+available" instead of panicking. Additional Document tools may be enabled by a
+new QA config version when their service contract is stable.
+
+For environment-based smoke or deployment bootstrap, configure:
+
+```powershell
+$env:MCP_TRANSPORT = "streamable_http"
+$env:MCP_SERVER_ALIAS = "document"
+$env:MCP_SERVER_URL = "http://127.0.0.1:8085/mcp"
+$env:MCP_SERVER_TOKEN = "local-dev-internal-service-token-change-me"
+$env:MCP_SERVER_TOKEN_HEADER = "Authorization"
+$env:MCP_TOOL_TIMEOUT = "30s"
+$env:AGENT_MAX_ITERATIONS = "8"
+$env:QA_DOCUMENT_MCP_SMOKE = "1"
+```
+
+In root Compose, QA uses the container URL `http://document:8085/mcp` and the
+same local `INTERNAL_SERVICE_TOKEN` placeholder by default. Host-run smoke tests
+use `http://127.0.0.1:8085/mcp` because the Document service port is published
+to the host.
+
+`MCP_TOOL_TIMEOUT` bounds each Document tool call. QA does not perform an
+unbounded status-poll loop inside the tool adapter; if the model calls
+`document__get_generation_status` in the same run, the number of attempts is
+bounded by `AGENT_MAX_ITERATIONS` and the per-tool timeout. Full QA -> Document
+worker -> Gateway download smoke should stay env-gated with
+`QA_DOCUMENT_MCP_SMOKE=1` so ordinary CI does not require a live Document worker.
+
+Run the env-gated smoke from the QA service after starting the root Compose
+stack with Document, File, Redis, PostgreSQL, Gateway, and the local seed data:
+
+```powershell
+cd D:\软件工称大作业\Software_Teamwork\services\qa
+$env:QA_DOCUMENT_MCP_SMOKE = "1"
+$env:MCP_TRANSPORT = "streamable_http"
+$env:MCP_SERVER_ALIAS = "document"
+$env:MCP_SERVER_URL = "http://127.0.0.1:8085/mcp"
+$env:MCP_SERVER_TOKEN = "local-dev-internal-service-token-change-me"
+$env:MCP_SERVER_TOKEN_HEADER = "Authorization"
+go test ./internal/platform/mcpclient -run '^TestDocumentMCPReportToolsSmoke$' -count=1 -v
+```
+
+The smoke validates `tools/list`, `document__*` prefixing, the default report
+tool whitelist, outline job acceptance, status lookup, DOCX export/result
+artifact mapping, forbidden access summaries, and the rule that unfinished jobs
+do not expose a `downloadPath`. Override
+`QA_DOCUMENT_MCP_SMOKE_REPORT_ID` and `QA_DOCUMENT_MCP_SMOKE_MATERIAL_ID` only
+when the seed data differs. Set `QA_DOCUMENT_MCP_SMOKE_GATEWAY_BASE_URL` plus a
+user `QA_DOCUMENT_MCP_SMOKE_GATEWAY_BEARER` to add the optional public Gateway
+download probe for `/api/v1/report-files/{reportFileId}/content`.
+
+Document MCP results are never forwarded as raw JSON to SSE, logs, or
+`agent_tool_calls.result_summary`. QA maps them into the Gateway
+`QAReportArtifact` shape under `result.reportArtifact`, preserving only public
+report/job/file identifiers, status, safe progress, and the public download
+path `/api/v1/report-files/{reportFileId}/content` when `fileStatus=succeeded`.
+Raw prompts, provider errors, internal URLs, object keys, File internal IDs,
+service tokens, and full report body text are stripped.
 
 ### MCP local integration
 

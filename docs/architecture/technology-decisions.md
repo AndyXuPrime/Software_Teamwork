@@ -168,6 +168,7 @@
 | PostgreSQL | `16-alpine` | `services/qa/docker-compose.yml`、`services/qa/docker-compose.db.yml`、`services/document/docker-compose.yml` | 本地开发数据库。 |
 | Redis | `7-alpine` | `services/qa/docker-compose.yml` | 本地队列、缓存、短期协调依赖。 |
 | Alpine runtime | `3.22` | `deploy/Dockerfile.migrate`、`services/*/Dockerfile`、`services/*/Dockerfile.migrate` | Go 服务 runtime stage 和 migration runtime stage；Parser 仍使用 `python:3.12-slim`。 |
+| Nginx ingress | `nginx:1.29-alpine` | `deploy/docker-compose.production.yml`、`deploy/.env.production.example` | 生产/准生产 Compose 的唯一公开 HTTP 入口；`/api/v1`、`/healthz`、`/readyz` 代理到 gateway，其余路径代理到 frontend。 |
 | Qdrant | `qdrant/qdrant:v1.18.2` | `deploy/docker-compose.yml` | 根目录本地 Compose 向量数据库镜像。 |
 | MinIO server | `minio/minio:RELEASE.2025-09-07T16-13-09Z` | `deploy/docker-compose.yml` | 根目录本地 Compose 对象存储服务端镜像。 |
 | MinIO client (`mc`) | `minio/mc:RELEASE.2025-08-13T08-35-41Z` | `deploy/docker-compose.yml` | 根目录本地 Compose bucket 初始化镜像；`minio/mc:RELEASE.2025-09-07T16-13-09Z` 当前无 Docker Hub manifest，不能按 server tag 强行统一。 |
@@ -328,6 +329,7 @@ services/<service>/
 - Go Service CI 按服务路径选择受影响服务，执行 `go test ./...` 和 `go build ./cmd/server`；QA 额外执行 `go build ./cmd/agent`。
 - Goose migration CI 对有 SQL migration 的服务执行 `goose@v3.27.1` apply 校验。
 - Docker / Deploy Checks 对受影响服务的已有可构建 Dockerfile 执行 `docker build`，对服务 Compose 执行 `docker compose config --quiet`；PR 不 push 镜像、不部署。
+- 生产/准生产单机 Compose 基线使用 `deploy/docker-compose.production.yml`、`deploy/.env.production.example` 和 `deploy/production-baseline.md`，与本地/演示 `deploy/docker-compose.yml` 分离；生产模板必须使用明确镜像 tag、持久化卷和外部 secret 注入，不得复用本地 demo seed 或弱口令。
 
 ## 后续需要同步的实现任务
 

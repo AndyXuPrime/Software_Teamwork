@@ -103,6 +103,8 @@ func GenerateArgumentsSummary(toolName string, arguments json.RawMessage) map[st
 	switch toolName {
 	case ToolSearchKnowledge:
 		return generateSearchArgumentsSummary(decoded)
+	case ToolSearchSessionAttachments:
+		return generateAttachmentSearchArgumentsSummary(decoded)
 	case ToolGetCitationSource:
 		return generateCitationArgumentsSummary(decoded)
 	default:
@@ -144,6 +146,32 @@ func generateSearchArgumentsSummary(args map[string]any) map[string]any {
 	return summary
 }
 
+func generateAttachmentSearchArgumentsSummary(args map[string]any) map[string]any {
+	summary := map[string]any{"tool": ToolSearchSessionAttachments}
+	if query, ok := args["query"].(string); ok {
+		summary["query_length"] = len(query)
+	}
+	if ids, ok := args["attachment_ids"].([]any); ok {
+		summary["attachment_count"] = len(ids)
+	}
+	return summary
+}
+
+func generateAttachmentSearchResultSummary(content string) map[string]any {
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(content), &decoded); err != nil {
+		return map[string]any{"error": "failed to decode result"}
+	}
+	summary := map[string]any{"tool": ToolSearchSessionAttachments}
+	if hitCount, ok := decoded["hit_count"].(float64); ok {
+		summary["hit_count"] = int(hitCount)
+	}
+	if results, ok := decoded["results"].([]any); ok {
+		summary["citation_count"] = len(results)
+	}
+	return summary
+}
+
 func generateCitationArgumentsSummary(args map[string]any) map[string]any {
 	summary := map[string]any{
 		"tool": ToolGetCitationSource,
@@ -163,6 +191,9 @@ func generateCitationArgumentsSummary(args map[string]any) map[string]any {
 // GenerateResultSummary creates a sanitized summary of tool results.
 // It must not expose full content, internal URLs, object keys, or secrets.
 func GenerateResultSummary(toolName string, resultContent string) map[string]any {
+	if summary, ok := generateDocumentReportResultSummary(toolName, resultContent); ok {
+		return summary
+	}
 	if summary, ok := toolFailureSummary(toolName, resultContent); ok {
 		summary["tool"] = toolName
 		return summary
@@ -170,6 +201,8 @@ func GenerateResultSummary(toolName string, resultContent string) map[string]any
 	switch toolName {
 	case ToolSearchKnowledge:
 		return generateSearchResultSummary(resultContent)
+	case ToolSearchSessionAttachments:
+		return generateAttachmentSearchResultSummary(resultContent)
 	case ToolGetCitationSource:
 		return generateCitationResultSummary(resultContent)
 	default:
@@ -210,7 +243,7 @@ func toolFailureSummary(toolName string, content string) (map[string]any, bool) 
 }
 
 func isBuiltinTool(toolName string) bool {
-	return toolName == ToolSearchKnowledge || toolName == ToolGetCitationSource
+	return toolName == ToolSearchKnowledge || toolName == ToolGetCitationSource || toolName == ToolSearchSessionAttachments
 }
 
 func truncateSummary(value string, limit int) string {
