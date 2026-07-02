@@ -7,7 +7,7 @@
 
 import type { QAMessage, QASession, QASessionStatus } from '@/lib/types'
 
-import { buildQuery, gatewayPageRequest, gatewayRequest } from './client'
+import { buildQuery, gatewayPageRequest, gatewayRequest, requestVoid } from './client'
 
 // ---------------------------------------------------------------------------
 // POST /qa-sessions
@@ -95,7 +95,7 @@ export async function archiveSession(sessionId: string): Promise<QASession> {
 // ---------------------------------------------------------------------------
 
 export async function deleteSession(sessionId: string): Promise<void> {
-  await gatewayRequest<void>(`/qa-sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
+  await requestVoid(`/qa-sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
 }
 
 // ---------------------------------------------------------------------------
