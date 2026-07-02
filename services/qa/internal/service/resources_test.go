@@ -17,6 +17,18 @@ func TestDefaultAgentConfigEnablesAttachmentSearch(t *testing.T) {
 	}
 }
 
+func TestDefaultAgentConfigEnablesKnowledgeMCPTools(t *testing.T) {
+	config := DefaultAgentConfig()
+	for _, name := range []string{
+		"knowledge__search_knowledge", "knowledge__list_documents",
+		"knowledge__get_document", "knowledge__list_document_chunks",
+	} {
+		if !containsString(config.EnabledToolNames, name) {
+			t.Fatalf("enabledToolNames=%v, want %s", config.EnabledToolNames, name)
+		}
+	}
+}
+
 func TestNormalizeCitationPreservesAvailableAttachmentSource(t *testing.T) {
 	citation := NormalizeCitation(Citation{
 		AttachmentID:      "attachment-1",
