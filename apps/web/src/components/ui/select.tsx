@@ -304,7 +304,7 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
 // ── Inner (sliding highlight) ──
 
 function SelectContentInner({ children }: { children: React.ReactNode }) {
-  const { setHighlightedIndex } = useSelectContext()
+  const { setHighlightedIndex, listRef } = useSelectContext()
 
   const handleMouseEnterItem = React.useCallback(
     (e: React.MouseEvent<HTMLElement>, index: number) => {
@@ -323,6 +323,7 @@ function SelectContentInner({ children }: { children: React.ReactNode }) {
 
   return (
     <div
+      ref={listRef}
       data-slot="select-content-inner"
       className="relative"
       style={{ '--slider-offset': '0px' } as React.CSSProperties}
