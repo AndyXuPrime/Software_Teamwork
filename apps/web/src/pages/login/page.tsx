@@ -274,7 +274,10 @@ export function LoginPage() {
 
           {/* Error display */}
           {error && (
-            <div className="mt-4 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+            <div
+              className="mt-4 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-400"
+              role="alert"
+            >
               {error}
             </div>
           )}
