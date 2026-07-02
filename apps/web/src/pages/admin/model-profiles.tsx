@@ -1,4 +1,4 @@
-import { Cpu, Edit, Loader2, Plus, Trash2 } from 'lucide-react'
+import { Copy, Cpu, Edit, Loader2, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
@@ -86,16 +86,16 @@ function ModelProfilesSkeleton() {
       </div>
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-4 py-3">
-          <div className="grid grid-cols-6 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
+          <div className="grid grid-cols-7 gap-4">
+            {Array.from({ length: 7 }).map((_, i) => (
               <div key={i} className="h-4 rounded bg-muted" />
             ))}
           </div>
         </div>
         <div className="divide-y divide-border">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="grid grid-cols-6 gap-4 px-4 py-3">
-              {Array.from({ length: 6 }).map((_, j) => (
+            <div key={i} className="grid grid-cols-7 gap-4 px-4 py-3">
+              {Array.from({ length: 7 }).map((_, j) => (
                 <div key={j} className="h-4 rounded bg-muted" />
               ))}
             </div>
@@ -177,6 +177,18 @@ export function ModelProfilesPage() {
     setDeleteOpen(true)
   }, [])
 
+  const copyProfileId = useCallback(async (profileId: string) => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API unavailable')
+      }
+      await navigator.clipboard.writeText(profileId)
+      setNotification({ type: 'success', text: 'Profile ID 已复制' })
+    } catch {
+      setNotification({ type: 'error', text: '无法复制 Profile ID，请手动选择复制' })
+    }
+  }, [])
+
   const handleCreate = useCallback(() => {
     const validation = validateCreateModelProfileForm(form)
     if (!validation.isValid) {
@@ -185,7 +197,13 @@ export function ModelProfilesPage() {
     }
     createMutation.mutate(buildCreateModelProfileRequest(form), {
       onSuccess: () => {
-        setNotification({ type: 'success', text: '模型配置创建成功' })
+        setNotification({
+          type: 'success',
+          text:
+            form.purpose === 'chat'
+              ? '模型配置创建成功，请到 QA / LLM 配置中选择该 Profile 并发布后生效'
+              : '模型配置创建成功',
+        })
         setCreateOpen(false)
       },
       onError: (err) => {
@@ -208,7 +226,13 @@ export function ModelProfilesPage() {
       },
       {
         onSuccess: () => {
-          setNotification({ type: 'success', text: '模型配置更新成功' })
+          setNotification({
+            type: 'success',
+            text:
+              form.purpose === 'chat'
+                ? '模型配置更新成功，请到 QA / LLM 配置中选择该 Profile 并发布后生效'
+                : '模型配置更新成功',
+          })
           setEditOpen(false)
           setEditingProfile(null)
         },
@@ -243,7 +267,7 @@ export function ModelProfilesPage() {
   return (
     <div>
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="text-2xl font-semibold text-foreground">模型管理</h3>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -254,6 +278,10 @@ export function ModelProfilesPage() {
           <Plus aria-hidden="true" className="mr-1 size-4" />
           新建模型
         </Button>
+      </div>
+
+      <div className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+        聊天模型创建或更新后，需要到 QA / LLM 配置中选择该 Profile 并发布后才会生效。
       </div>
 
       {/* Toast notification */}
@@ -305,6 +333,9 @@ export function ModelProfilesPage() {
             <thead>
               <tr className="border-b border-border bg-muted/30">
                 <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">名称</th>
+                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">
+                  Profile ID
+                </th>
                 <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">用途</th>
                 <th className="hidden px-4 py-2.5 text-left font-medium text-muted-foreground sm:table-cell">
                   服务商
@@ -322,6 +353,22 @@ export function ModelProfilesPage() {
                 <tr key={profile.id} className="transition-colors duration-150 hover:bg-muted/30">
                   <td className="max-w-36 truncate px-4 py-2.5 font-medium text-foreground">
                     {profile.name}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex min-w-48 max-w-72 items-center gap-1.5">
+                      <span className="min-w-0 break-all rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground">
+                        {profile.id}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => void copyProfileId(profile.id)}
+                        aria-label={`复制 Profile ID ${profile.id}`}
+                      >
+                        <Copy aria-hidden="true" className="size-3.5" />
+                      </Button>
+                    </div>
                   </td>
                   <td className="px-4 py-2.5">
                     <Badge variant="secondary">
@@ -495,7 +542,7 @@ export function ModelProfilesPage() {
                   type="checkbox"
                   checked={form.supportsStreaming}
                   onChange={(e) => updateField('supportsStreaming', e.target.checked)}
-                  className="size-4 rounded border-input text-primary focus:ring-ring"
+                  className="size-4 rounded-sm border-input accent-primary focus:ring-ring"
                 />
                 <label
                   htmlFor="mp-create-supportsstreaming"
@@ -512,6 +559,7 @@ export function ModelProfilesPage() {
                   type="checkbox"
                   checked={form.enabled}
                   onChange={(e) => updateField('enabled', e.target.checked)}
+                  className="size-4 rounded-sm border-input accent-primary focus:ring-ring"
                 />
                 启用
               </label>
@@ -520,6 +568,7 @@ export function ModelProfilesPage() {
                   type="checkbox"
                   checked={form.isDefault}
                   onChange={(e) => updateField('isDefault', e.target.checked)}
+                  className="size-4 rounded-sm border-input accent-primary focus:ring-ring"
                 />
                 设为默认模型
               </label>
@@ -745,7 +794,7 @@ export function ModelProfilesPage() {
                   type="checkbox"
                   checked={form.supportsStreaming}
                   onChange={(e) => updateField('supportsStreaming', e.target.checked)}
-                  className="size-4 rounded border-input text-primary focus:ring-ring"
+                  className="size-4 rounded-sm border-input accent-primary focus:ring-ring"
                 />
                 <label
                   htmlFor="mp-edit-supportsstreaming"
@@ -762,6 +811,7 @@ export function ModelProfilesPage() {
                   type="checkbox"
                   checked={form.enabled}
                   onChange={(e) => updateField('enabled', e.target.checked)}
+                  className="size-4 rounded-sm border-input accent-primary focus:ring-ring"
                 />
                 启用
               </label>
@@ -770,6 +820,7 @@ export function ModelProfilesPage() {
                   type="checkbox"
                   checked={form.isDefault}
                   onChange={(e) => updateField('isDefault', e.target.checked)}
+                  className="size-4 rounded-sm border-input accent-primary focus:ring-ring"
                 />
                 设为默认模型
               </label>

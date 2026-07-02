@@ -32,6 +32,38 @@ const modelProfile: ModelProfile = {
 }
 
 describe('ModelProfilesPage', () => {
+  it('shows profile id, copies it, and explains the QA/LLM next step', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (request.method === 'GET' && url.pathname.endsWith('/admin/model-profiles')) {
+        return jsonResponse({ data: [modelProfile], requestId: 'req-model-list' })
+      }
+
+      return jsonResponse({ data: [], requestId: 'req-default' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithProviders(<ModelProfilesPage />)
+
+    expect(await screen.findByText('Chat profile')).toBeVisible()
+    expect(screen.getByText('Profile ID')).toBeVisible()
+    expect(screen.getByText('profile-chat')).toBeVisible()
+    expect(screen.getByText(/QA \/ LLM 配置/)).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: '复制 Profile ID profile-chat' }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('profile-chat'))
+    expect(await screen.findByText('Profile ID 已复制')).toBeVisible()
+  })
+
   it('updates enabled and default status without sending an empty api key', async () => {
     const patchBodies: unknown[] = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

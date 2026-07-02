@@ -1027,3 +1027,36 @@ Fixed the admin model profile form so create and update payloads omit default ma
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: Improve model profile LLM config UX
+
+**Date**: 2026-07-02
+**Task**: Improve model profile LLM config UX
+**Branch**: `Liutest/feat/model-profile-llm-config-ux`
+
+### Summary
+
+Improved admin model profile visibility and QA/LLM profile selection UX; added component tests and completed frontend checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9af374b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

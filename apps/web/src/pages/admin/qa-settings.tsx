@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, FlaskConical, RefreshCw, Rocket } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Copy, FlaskConical, RefreshCw, Rocket } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
 
@@ -6,6 +6,7 @@ import { ApiError } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { useModelProfiles } from '@/features/admin-config'
 import {
   useCreateQAConfigVersionMutation,
   useCreateQALLMConfigVersionMutation,
@@ -258,8 +259,8 @@ function buildLLMPayload(form: LLMFormState): CreateQALLMConfigVersionRequest {
     profileId,
     modelName,
     timeoutSeconds: optionalInteger(form.timeoutSeconds, 'LLM 超时', 1),
-    temperature: optionalNumber(form.temperature, 'Temperature'),
-    maxTokens: optionalInteger(form.maxTokens, 'Max tokens', 1),
+    temperature: optionalNumber(form.temperature, '温度'),
+    maxTokens: optionalInteger(form.maxTokens, '最大 Token 数', 1),
     activate: form.activate,
   })
 
@@ -278,23 +279,11 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '未知错误'
 }
 
-function VersionMeta({
-  id,
-  versionNo,
-  isActive,
-  createdAt,
-}: {
-  id?: string
-  versionNo?: number
-  isActive?: boolean
-  createdAt?: string
-}) {
+function VersionMeta({ isActive, createdAt }: { isActive?: boolean; createdAt?: string }) {
   return (
     <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-      <span className="rounded-md border border-border px-2 py-1">版本 {versionNo ?? '-'}</span>
-      <span className="rounded-md border border-border px-2 py-1">ID {id ?? '-'}</span>
       <span className="rounded-md border border-border px-2 py-1">
-        {isActive ? '当前生效' : '未生效'}
+        {isActive ? '生效中' : '未生效'}
       </span>
       <span className="rounded-md border border-border px-2 py-1">
         {createdAt ? new Date(createdAt).toLocaleString() : '-'}
@@ -321,6 +310,7 @@ function StatusMessage({ type, message }: { type: 'success' | 'error'; message: 
 
 export function QASettings() {
   const { qaConfigQuery, llmConfigQuery } = useQASettingsQueries()
+  const chatProfilesQuery = useModelProfiles('chat', true)
   const createQAMutation = useCreateQAConfigVersionMutation()
   const createLLMMutation = useCreateQALLMConfigVersionMutation()
   const testLLMMutation = useCreateQALLMConnectionTestMutation()
@@ -343,11 +333,48 @@ export function QASettings() {
     }
   }, [llmConfigQuery.data])
 
-  const isLoading = qaConfigQuery.isLoading || llmConfigQuery.isLoading
+  const chatProfiles = chatProfilesQuery.data ?? []
+  const selectedChatProfile = chatProfiles.find((profile) => profile.id === llmForm.profileId)
+  const hasSelectedLLMProfile = llmForm.profileId.trim() !== '' && llmForm.modelName.trim() !== ''
+  const showCurrentProfileFallback =
+    llmForm.profileId.trim() !== '' &&
+    !selectedChatProfile &&
+    !chatProfiles.some((profile) => profile.id === llmForm.profileId)
+
+  const isLoading =
+    qaConfigQuery.isLoading || llmConfigQuery.isLoading || chatProfilesQuery.isLoading
   const loadError = useMemo(() => {
-    const error = qaConfigQuery.error ?? llmConfigQuery.error
+    const error = qaConfigQuery.error ?? llmConfigQuery.error ?? chatProfilesQuery.error
     return error ? getErrorMessage(error) : null
-  }, [llmConfigQuery.error, qaConfigQuery.error])
+  }, [chatProfilesQuery.error, llmConfigQuery.error, qaConfigQuery.error])
+
+  const handleSelectChatProfile = (profileId: string) => {
+    const profile = chatProfiles.find((item) => item.id === profileId)
+    if (!profile) {
+      setLLMForm((current) => ({ ...current, profileId }))
+      return
+    }
+
+    setLLMForm((current) => ({
+      ...current,
+      modelName: profile.model,
+      profileId: profile.id,
+    }))
+    setTestResult(null)
+    setLLMResult(null)
+  }
+
+  const copyLLMProfileId = async () => {
+    try {
+      if (!llmForm.profileId.trim() || !navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API unavailable')
+      }
+      await navigator.clipboard.writeText(llmForm.profileId)
+      setLLMResult('Profile ID 已复制')
+    } catch {
+      setErrors((current) => ({ ...current, llm: '无法复制 Profile ID，请手动选择复制' }))
+    }
+  }
 
   const publishQAConfig = async () => {
     setErrors((current) => ({ ...current, qa: undefined }))
@@ -434,8 +461,6 @@ export function QASettings() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h4 className="text-lg font-semibold text-foreground">QA 运行配置</h4>
                 <VersionMeta
-                  id={qaConfigQuery.data?.id}
-                  versionNo={qaConfigQuery.data?.versionNo}
                   isActive={qaConfigQuery.data?.isActive}
                   createdAt={qaConfigQuery.data?.createdAt}
                 />
@@ -468,7 +493,7 @@ export function QASettings() {
               <label className="flex items-center gap-2 rounded-lg border border-border p-3 text-sm">
                 <input
                   type="checkbox"
-                  className="size-4"
+                  className="size-4 rounded-sm border-input accent-primary focus:ring-ring"
                   checked={qaForm.enableRerank}
                   onChange={(event) => setQAForm({ ...qaForm, enableRerank: event.target.checked })}
                 />
@@ -533,7 +558,7 @@ export function QASettings() {
               <label className="flex items-center gap-2 rounded-lg border border-border p-3 text-sm">
                 <input
                   type="checkbox"
-                  className="size-4"
+                  className="size-4 rounded-sm border-input accent-primary focus:ring-ring"
                   checked={qaForm.activate}
                   onChange={(event) => setQAForm({ ...qaForm, activate: event.target.checked })}
                 />
@@ -590,14 +615,12 @@ export function QASettings() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h4 className="text-lg font-semibold text-foreground">LLM 配置</h4>
                 <VersionMeta
-                  id={llmConfigQuery.data?.id}
-                  versionNo={llmConfigQuery.data?.versionNo}
                   isActive={llmConfigQuery.data?.isActive}
                   createdAt={llmConfigQuery.data?.createdAt}
                 />
               </div>
               <p className="text-sm text-muted-foreground">
-                页面只展示和提交 profileId、modelName 与生成参数，不包含 provider API key。
+                选择已启用的聊天模型 Profile，测试连接后发布配置即可生效。
               </p>
             </div>
 
@@ -615,21 +638,21 @@ export function QASettings() {
             )}
 
             <div className="rounded-lg border border-border bg-background p-3 text-sm">
-              <div className="mb-2 font-medium text-foreground">当前引用</div>
+              <div className="mb-2 font-medium text-foreground">当前生效引用</div>
               <dl className="grid gap-2">
                 <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">provider</dt>
-                  <dd className="font-mono text-foreground">ai-gateway</dd>
+                  <dt className="text-muted-foreground">服务</dt>
+                  <dd className="text-foreground">ai-gateway</dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">profileId</dt>
-                  <dd className="break-all font-mono text-foreground">
+                  <dt className="text-muted-foreground">Profile ID</dt>
+                  <dd className="break-all text-foreground">
                     {llmConfigQuery.data?.profileId ?? '-'}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">modelName</dt>
-                  <dd className="break-all font-mono text-foreground">
+                  <dt className="text-muted-foreground">模型名称</dt>
+                  <dd className="break-all text-foreground">
                     {llmConfigQuery.data?.modelName ?? '-'}
                   </dd>
                 </div>
@@ -638,18 +661,54 @@ export function QASettings() {
 
             <div className="grid gap-3">
               <label className="space-y-1.5 text-sm">
-                <span className="font-medium text-foreground">profileId</span>
-                <Input
+                <span className="font-medium text-foreground">聊天模型</span>
+                <select
+                  aria-label="聊天模型"
                   value={llmForm.profileId}
-                  onChange={(event) => setLLMForm({ ...llmForm, profileId: event.target.value })}
-                />
+                  onChange={(event) => handleSelectChatProfile(event.target.value)}
+                  className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                >
+                  <option value="">请选择聊天模型</option>
+                  {showCurrentProfileFallback && (
+                    <option value={llmForm.profileId}>
+                      当前配置：{llmForm.modelName || llmForm.profileId}
+                    </option>
+                  )}
+                  {chatProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name} / {profile.model}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {chatProfiles.length === 0 && !showCurrentProfileFallback && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700">
+                  暂无已启用的聊天模型，请先在模型管理中新建并启用聊天模型。
+                </div>
+              )}
+
+              <label className="space-y-1.5 text-sm">
+                <span className="font-medium text-foreground">Profile ID</span>
+                <div className="flex items-center gap-2">
+                  <span className="min-h-8 flex-1 break-all rounded-lg border border-input bg-background px-2.5 py-1 text-sm text-foreground">
+                    {llmForm.profileId || '-'}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => void copyLLMProfileId()}
+                    disabled={!llmForm.profileId.trim()}
+                    aria-label="复制 LLM Profile ID"
+                  >
+                    <Copy aria-hidden="true" className="size-4" />
+                  </Button>
+                </div>
               </label>
               <label className="space-y-1.5 text-sm">
-                <span className="font-medium text-foreground">modelName</span>
-                <Input
-                  value={llmForm.modelName}
-                  onChange={(event) => setLLMForm({ ...llmForm, modelName: event.target.value })}
-                />
+                <span className="font-medium text-foreground">模型名称</span>
+                <Input readOnly value={llmForm.modelName} />
               </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">超时（秒）</span>
@@ -663,7 +722,7 @@ export function QASettings() {
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="space-y-1.5 text-sm">
-                  <span className="font-medium text-foreground">Temperature</span>
+                  <span className="font-medium text-foreground">温度</span>
                   <Input
                     value={llmForm.temperature}
                     onChange={(event) =>
@@ -673,7 +732,7 @@ export function QASettings() {
                   />
                 </label>
                 <label className="space-y-1.5 text-sm">
-                  <span className="font-medium text-foreground">Max tokens</span>
+                  <span className="font-medium text-foreground">最大 Token 数</span>
                   <Input
                     value={llmForm.maxTokens}
                     onChange={(event) => setLLMForm({ ...llmForm, maxTokens: event.target.value })}
@@ -684,7 +743,7 @@ export function QASettings() {
               <label className="flex items-center gap-2 rounded-lg border border-border p-3 text-sm">
                 <input
                   type="checkbox"
-                  className="size-4"
+                  className="size-4 rounded-sm border-input accent-primary focus:ring-ring"
                   checked={llmForm.activate}
                   onChange={(event) => setLLMForm({ ...llmForm, activate: event.target.checked })}
                 />
@@ -697,7 +756,7 @@ export function QASettings() {
                 type="button"
                 variant="outline"
                 onClick={() => void testLLMConnection()}
-                disabled={testLLMMutation.isPending}
+                disabled={testLLMMutation.isPending || !hasSelectedLLMProfile}
               >
                 <FlaskConical aria-hidden="true" className="size-4" />
                 测试连接
@@ -705,10 +764,10 @@ export function QASettings() {
               <Button
                 type="button"
                 onClick={() => void publishLLMConfig()}
-                disabled={createLLMMutation.isPending}
+                disabled={createLLMMutation.isPending || !hasSelectedLLMProfile}
               >
                 <Rocket aria-hidden="true" className="size-4" />
-                发布 LLM 新版本
+                发布配置
               </Button>
             </div>
           </section>
