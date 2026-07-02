@@ -19,12 +19,15 @@ import type {
   ReportOutline,
   ReportSection,
   ReportSectionVersion,
+  ReportSettings,
+  ReportSettingsUpdateResult,
   ReportStatisticsOverview,
   ReportStatus,
   ReportTemplate,
   ReportTemplateStructure,
   ReportType,
   ReportTypeCode,
+  UpdateReportSettingsRequest,
 } from './report-generation.types'
 
 export type ReportListParams = {
@@ -147,6 +150,19 @@ export function downloadReportFile(reportFileId: string): Promise<Blob> {
 
 export function getReportStatisticsOverview(): Promise<ReportStatisticsOverview> {
   return gatewayRequest<ReportStatisticsOverview>('/report-statistics/overview')
+}
+
+export function getReportSettings(): Promise<ReportSettings> {
+  return gatewayRequest<ReportSettings>('/report-settings')
+}
+
+export function updateReportSettings(
+  payload: UpdateReportSettingsRequest,
+): Promise<ReportSettingsUpdateResult> {
+  return gatewayRequest<ReportSettingsUpdateResult>('/report-settings', {
+    method: 'PATCH',
+    body: payload,
+  })
 }
 
 export function listDailyReportStatistics(days = 30): Promise<ReportDailyStatistic[]> {

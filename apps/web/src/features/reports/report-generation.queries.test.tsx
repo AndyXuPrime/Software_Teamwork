@@ -8,6 +8,8 @@ import {
   getReportJobRefetchInterval,
   reportKeys,
   useReportJobQuery,
+  useReportSettingsQuery,
+  useUpdateReportSettingsMutation,
 } from './report-generation.queries'
 import type { ReportEvent, ReportJob } from './report-generation.types'
 
@@ -127,5 +129,58 @@ describe('report generation query hooks', () => {
     rerender()
 
     expect(invalidateSpy).toHaveBeenCalledTimes(5)
+  })
+
+  it('reads report settings and invalidates settings after publishing model config', async () => {
+    const patchBodies: unknown[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init)
+        const url = new URL(request.url)
+
+        if (request.method === 'GET' && url.pathname.endsWith('/report-settings')) {
+          return jsonResponse({
+            data: {
+              llm: {
+                model: 'gpt-report-current',
+                profileId: 'mp-current',
+                provider: 'ai-gateway',
+              },
+            },
+            requestId: 'req-settings',
+          })
+        }
+
+        if (request.method === 'PATCH' && url.pathname.endsWith('/report-settings')) {
+          patchBodies.push(await request.clone().json())
+          return jsonResponse({
+            data: { updatedAt: '2026-07-03T08:00:00Z' },
+            requestId: 'req-settings-update',
+          })
+        }
+
+        return jsonResponse({ error: { code: 'not_found', message: 'not found' } }, { status: 404 })
+      }),
+    )
+
+    const queryClient = createQueryClient()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    const settingsHook = renderHook(() => useReportSettingsQuery(), { wrapper })
+
+    await waitFor(() => expect(settingsHook.result.current.isSuccess).toBe(true))
+    expect(settingsHook.result.current.data?.llm?.profileId).toBe('mp-current')
+
+    const mutationHook = renderHook(() => useUpdateReportSettingsMutation(), { wrapper })
+    await mutationHook.result.current.mutateAsync({
+      llm: { profileId: 'mp-chat', provider: 'ai-gateway' },
+    })
+
+    expect(patchBodies).toEqual([{ llm: { profileId: 'mp-chat', provider: 'ai-gateway' } }])
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: reportKeys.settings() })
   })
 })
