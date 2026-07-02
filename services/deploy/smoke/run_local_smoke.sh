@@ -44,7 +44,11 @@ esac
 case "$SMOKE" in
   qa|all)
     echo "=== QA MCP RAG Smoke ==="
-    QA_MCP_RAG_SMOKE=1 go test -v -count=1 -timeout=180s ./... -run TestQAMCPRAGSmoke
+    if [ -n "${AI_GATEWAY_BASE_URL:-}" ]; then
+      QA_MCP_RAG_SMOKE=1 go test -v -count=1 -timeout=180s ./... -run TestQAMCPRAGSmoke
+    else
+      echo "WARNING: AI_GATEWAY_BASE_URL not set; QA RAG smoke requires a real AI Gateway profile. Skipping."
+    fi
     ;;
 esac
 
