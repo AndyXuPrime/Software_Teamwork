@@ -19,6 +19,7 @@ Thumbs.db
 !.env.example
 !.env.*.example
 *.local
+.agents/local/
 
 # Logs
 logs/
