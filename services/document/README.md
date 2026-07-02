@@ -38,9 +38,9 @@ Optional variables:
 | `DOCUMENT_AI_GATEWAY_SERVICE_TOKEN` | empty | Service token sent to AI Gateway profile validation APIs. Falls back to `INTERNAL_SERVICE_TOKEN` when empty. |
 | `DOCUMENT_KNOWLEDGE_SERVICE_URL` | empty | Optional internal Knowledge service base URL. When empty, report generation skips Knowledge retrieval and uses only report/template/request context. |
 | `DOCUMENT_KNOWLEDGE_SERVICE_TOKEN` | empty | Optional service token sent to Knowledge. Falls back to `INTERNAL_SERVICE_TOKEN` when empty. Required when `DOCUMENT_KNOWLEDGE_SERVICE_URL` is set. |
-| `INTERNAL_SERVICE_TOKEN` | empty | Shared internal service token fallback for local/dev deployments. |
+| `INTERNAL_SERVICE_TOKEN` | empty | Shared internal service token fallback for local/dev deployments. Required when `DOCUMENT_MCP_SERVICE_TOKEN` is empty. |
 | `DOCUMENT_MCP_PATH` | `/mcp` | Streamable HTTP MCP endpoint path served by the document process. |
-| `DOCUMENT_MCP_SERVICE_TOKEN` | empty | Optional MCP server token. Falls back to `INTERNAL_SERVICE_TOKEN` when empty. |
+| `DOCUMENT_MCP_SERVICE_TOKEN` | empty | MCP server token. Falls back to `INTERNAL_SERVICE_TOKEN` when empty; one of them must be non-empty or the service refuses to start. |
 | `DOCUMENT_MCP_TOKEN_HEADER` | `Authorization` | Header used by MCP clients. `Authorization` accepts `Bearer <token>`; `X-Service-Token` is also supported when configured. |
 | `DOCUMENT_PANDOC_PATH` | `pandoc` | Reserved path for a future Pandoc-backed rich DOCX worker. The current Dockerfile does not install this CLI. |
 | `DOCUMENT_LIBREOFFICE_PATH` | `soffice` | Reserved path for a future LibreOffice-backed conversion worker. The current Dockerfile does not install this CLI. |

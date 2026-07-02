@@ -78,6 +78,9 @@ func (c Config) Validate() error {
 	if err := validatePath("DOCUMENT_MCP_PATH", c.MCPPath); err != nil {
 		return err
 	}
+	if strings.TrimSpace(c.MCPServiceToken) == "" {
+		return errors.New("DOCUMENT_MCP_SERVICE_TOKEN or INTERNAL_SERVICE_TOKEN is required")
+	}
 	if !validHeaderName(c.MCPTokenHeader) {
 		return errors.New("DOCUMENT_MCP_TOKEN_HEADER is invalid")
 	}

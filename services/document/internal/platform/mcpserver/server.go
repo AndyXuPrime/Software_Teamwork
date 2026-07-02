@@ -39,6 +39,7 @@ func NewHandler(cfg Config) http.Handler {
 	if tokenHeader == "" {
 		tokenHeader = defaultTokenHeader
 	}
+	serviceToken := strings.TrimSpace(cfg.ServiceToken)
 	stream := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		if cfg.ToolService == nil {
 			return nil
@@ -50,11 +51,13 @@ func NewHandler(cfg Config) http.Handler {
 		Logger:       cfg.Logger,
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if token := strings.TrimSpace(cfg.ServiceToken); token != "" {
-			if got := tokenFromHeader(r.Header, tokenHeader); got != token {
-				http.Error(w, "unauthorized MCP request", http.StatusUnauthorized)
-				return
-			}
+		if serviceToken == "" {
+			http.Error(w, "MCP service token is not configured", http.StatusServiceUnavailable)
+			return
+		}
+		if got := tokenFromHeader(r.Header, tokenHeader); got != serviceToken {
+			http.Error(w, "unauthorized MCP request", http.StatusUnauthorized)
+			return
 		}
 		stream.ServeHTTP(w, r)
 	})

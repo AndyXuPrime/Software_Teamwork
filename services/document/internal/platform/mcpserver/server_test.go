@@ -177,6 +177,27 @@ func TestHandlerRejectsInvalidServiceToken(t *testing.T) {
 	}
 }
 
+func TestHandlerRejectsWhenServiceTokenIsNotConfigured(t *testing.T) {
+	server := httptest.NewServer(NewHandler(Config{
+		ToolService: service.NewMCPToolService(service.MCPToolServiceConfig{}),
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, nil)
+	if err != nil {
+		t.Fatalf("NewRequest() failed: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer anything")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do() failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
 func newTestSession(t *testing.T, handler http.Handler, headers http.Header) (*mcp.ClientSession, func()) {
 	t.Helper()
 	server := httptest.NewServer(handler)
