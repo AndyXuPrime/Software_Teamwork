@@ -120,7 +120,11 @@ export function useReportJobQuery(jobId: string | null) {
     enabled: Boolean(jobId),
     refetchInterval: (query) => {
       const status = query.state.data?.status
-      return status === 'pending' || status === 'running' ? 3000 : false
+      if (status === 'pending' || status === 'running') return 3000
+      // Keep polling slowly while failed so the UI picks up asynq automatic
+      // retries (which transition the job back to running before re-completing).
+      if (status === 'failed') return 8000
+      return false
     },
   })
 
@@ -315,9 +319,10 @@ export function useReportEvents(reportId: string | null) {
       // at job start and should not stop polling.
       if (!events || events.length === 0) return 5000
       const latest = events[events.length - 1]
-      if (latest?.eventType === 'job.completed' || latest?.eventType === 'job.failed') {
-        return false
-      }
+      // Only stop on job.completed; job.failed may be followed by an asynq
+      // automatic retry that emits job.running and then job.completed.
+      if (latest?.eventType === 'job.completed') return false
+      if (latest?.eventType === 'job.failed') return 8000
       return 5000
     },
     select: (data) => data,
