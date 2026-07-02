@@ -38,7 +38,9 @@ FROM (
     VALUES
         ('rperm_standard_knowledge_read', 'standard', 'knowledge:read'),
         ('rperm_standard_document_read', 'standard', 'document:read'),
+        ('rperm_standard_document_upload', 'standard', 'document:upload'),
         ('rperm_standard_report_read', 'standard', 'report:read'),
+        ('rperm_standard_report_write', 'standard', 'report:write'),
         ('rperm_standard_qa_use', 'standard', 'qa:use'),
         ('rperm_admin_knowledge_read', 'admin', 'knowledge:read'),
         ('rperm_admin_knowledge_write', 'admin', 'knowledge:write'),
