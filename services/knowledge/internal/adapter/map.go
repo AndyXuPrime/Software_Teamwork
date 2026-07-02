@@ -13,6 +13,16 @@ import (
 
 const defaultMaxUploadBytes = int64(32 << 20)
 
+const (
+	ragflowLayoutDeepDOC        = "DeepDOC"
+	ragflowLayoutPaddleOCR      = "PaddleOCR"
+	ragflowLayoutMinerU         = "MinerU"
+	ragflowLayoutOpenDataLoader = "OpenDataLoader"
+	ragflowLayoutPlainText      = "Plain Text"
+
+	parserConfigTraceKey = "software_teamwork_parser_config"
+)
+
 type knowledgeBaseSummary struct {
 	ID                string          `json:"id"`
 	Name              string          `json:"name"`
@@ -328,7 +338,7 @@ func mapRetrievalChunk(raw map[string]interface{}) knowledgeQueryResult {
 	}
 }
 
-func buildCreateDatasetBody(req createKnowledgeBaseRequest) ([]byte, error) {
+func buildCreateDatasetBody(req createKnowledgeBaseRequest, defaultParserConfig map[string]any) ([]byte, error) {
 	payload := map[string]any{
 		"name": strings.TrimSpace(req.Name),
 	}
@@ -343,6 +353,8 @@ func buildCreateDatasetBody(req createKnowledgeBaseRequest) ([]byte, error) {
 		if err := json.Unmarshal(*req.ChunkStrategy, &cfg); err == nil {
 			payload["parser_config"] = cfg
 		}
+	} else if len(defaultParserConfig) > 0 {
+		payload["parser_config"] = cloneAnyMap(defaultParserConfig)
 	}
 	return json.Marshal(payload)
 }
@@ -368,6 +380,145 @@ func buildUpdateDatasetBody(req updateKnowledgeBaseRequest) ([]byte, error) {
 		return nil, service.ValidationError("request validation failed", map[string]string{"body": "must include at least one supported field"})
 	}
 	return json.Marshal(payload)
+}
+
+func ragflowParserConfigFromSnapshot(snapshot service.ParserConfigSnapshot) map[string]any {
+	defaultParameters := parserParameterObject(snapshot.DefaultParameters)
+	layoutRecognize := ragflowLayoutFromParserConfig(snapshot, defaultParameters)
+	cfg := map[string]any{}
+	for key, value := range defaultParameters {
+		key = normalizeParserParameterKey(key)
+		if key == "" || key == "layout_recognize" || isSensitiveParserParameter(key) {
+			continue
+		}
+		if sanitized, ok := sanitizeParserParameterValue(value); ok {
+			cfg[key] = sanitized
+		}
+	}
+	cfg["layout_recognize"] = layoutRecognize
+	cfg[parserConfigTraceKey] = parserConfigTrace(snapshot, layoutRecognize)
+	return cfg
+}
+
+func ragflowLayoutFromParserConfig(snapshot service.ParserConfigSnapshot, defaultParameters map[string]any) string {
+	switch snapshot.Backend {
+	case service.ParserBackendBuiltin:
+		return ragflowLayoutDeepDOC
+	case service.ParserBackendLocalOCR:
+		return ragflowLayoutPaddleOCR
+	case service.ParserBackendRemoteCompatible:
+		if layout := parserParameterString(defaultParameters, "layout_recognize", "layoutRecognize", "layoutRecognizer"); layout != "" {
+			return layout
+		}
+		return ragflowLayoutPaddleOCR
+	case service.ParserBackendTika, service.ParserBackendUnstructured:
+		return ragflowLayoutPlainText
+	default:
+		return ragflowLayoutDeepDOC
+	}
+}
+
+func parserConfigTrace(snapshot service.ParserConfigSnapshot, layoutRecognize string) map[string]any {
+	trace := map[string]any{
+		"backend":         string(snapshot.Backend),
+		"layoutRecognize": layoutRecognize,
+		"concurrency":     snapshot.Concurrency,
+	}
+	if strings.TrimSpace(snapshot.ParserConfigID) != "" {
+		trace["parserConfigId"] = strings.TrimSpace(snapshot.ParserConfigID)
+	}
+	if len(snapshot.SupportedContentTypes) > 0 {
+		trace["supportedContentTypes"] = append([]string(nil), snapshot.SupportedContentTypes...)
+	}
+	if snapshot.EndpointURL != nil && strings.TrimSpace(*snapshot.EndpointURL) != "" {
+		trace["endpointUrl"] = strings.TrimSpace(*snapshot.EndpointURL)
+	}
+	return trace
+}
+
+func parserParameterObject(raw json.RawMessage) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var params map[string]any
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil
+	}
+	return params
+}
+
+func parserParameterString(params map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value, ok := params[key]
+		if !ok {
+			continue
+		}
+		raw, ok := value.(string)
+		if !ok {
+			continue
+		}
+		if trimmed := strings.TrimSpace(raw); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func normalizeParserParameterKey(key string) string {
+	switch strings.TrimSpace(key) {
+	case "layoutRecognize", "layoutRecognizer":
+		return "layout_recognize"
+	default:
+		return strings.TrimSpace(key)
+	}
+}
+
+func isSensitiveParserParameter(key string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	for _, marker := range []string{"secret", "password", "credential", "api_key", "apikey", "access_key", "accesskey", "private_key", "privatekey", "access_token", "accesstoken", "auth_token", "authtoken", "refresh_token", "refreshtoken", "bearer_token", "bearertoken"} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return normalized == "token"
+}
+
+func sanitizeParserParameterValue(value any) (any, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, value := range typed {
+			key = normalizeParserParameterKey(key)
+			if key == "" || isSensitiveParserParameter(key) {
+				continue
+			}
+			if sanitized, ok := sanitizeParserParameterValue(value); ok {
+				out[key] = sanitized
+			}
+		}
+		return out, true
+	case []any:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			if sanitized, ok := sanitizeParserParameterValue(item); ok {
+				out = append(out, sanitized)
+			}
+		}
+		return out, true
+	default:
+		return value, true
+	}
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 func buildUpdateDocumentBody(tags []string) ([]byte, error) {

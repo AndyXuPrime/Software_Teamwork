@@ -58,7 +58,12 @@ func (s *Server) handleCreateKnowledgeBase(w http.ResponseWriter, r *http.Reques
 		writeAppError(w, r, service.ValidationError("request validation failed", map[string]string{"name": "is required"}))
 		return
 	}
-	payload, err := buildCreateDatasetBody(body)
+	parserConfig, err := s.resolveCreateParserConfig(r.Context(), body)
+	if err != nil {
+		writeAppError(w, r, err)
+		return
+	}
+	payload, err := buildCreateDatasetBody(body, parserConfig)
 	if err != nil {
 		writeAppError(w, r, err)
 		return
@@ -69,6 +74,17 @@ func (s *Server) handleCreateKnowledgeBase(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusCreated, knowledgeBaseFromVendor(created), reqCtx.RequestID)
+}
+
+func (s *Server) resolveCreateParserConfig(ctx context.Context, body createKnowledgeBaseRequest) (map[string]any, error) {
+	if body.ChunkStrategy != nil || s.parserConfigs == nil {
+		return nil, nil
+	}
+	snapshot, err := s.parserConfigs.ResolveParserConfig(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	return ragflowParserConfigFromSnapshot(snapshot), nil
 }
 
 func (s *Server) handleGetKnowledgeBase(w http.ResponseWriter, r *http.Request) {
