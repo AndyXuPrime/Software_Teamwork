@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createReportJobAttempt, deleteReport, deleteReportTemplate } from './report-generation.api'
+import {
+  createReportJobAttempt,
+  deleteReport,
+  deleteReportTemplate,
+  getReportSettings,
+  updateReportSettings,
+} from './report-generation.api'
 
 describe('report generation API wrappers', () => {
   it('treats report and template DELETE 204 responses as success', async () => {
@@ -56,5 +62,70 @@ describe('report generation API wrappers', () => {
       jobId: 'job-real',
       status: 'running',
     })
+  })
+
+  it('reads and updates report generation settings through the gateway contract', async () => {
+    const patchBodies: unknown[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (request.method === 'GET' && url.pathname.endsWith('/report-settings')) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              file: { defaultFormat: 'docx', defaultNumberingMode: 'global' },
+              llm: {
+                model: 'gpt-report',
+                profileId: 'mp-current',
+                provider: 'ai-gateway',
+                timeoutSeconds: 60,
+              },
+            },
+            requestId: 'req-settings',
+          }),
+          {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          },
+        )
+      }
+
+      if (request.method === 'PATCH' && url.pathname.endsWith('/report-settings')) {
+        patchBodies.push(await request.clone().json())
+        return new Response(
+          JSON.stringify({
+            data: { updatedAt: '2026-07-03T08:00:00Z' },
+            requestId: 'req-settings-update',
+          }),
+          {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          },
+        )
+      }
+
+      return new Response(JSON.stringify({ error: { code: 'not_found', message: 'not found' } }), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 404,
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(getReportSettings()).resolves.toMatchObject({
+      llm: {
+        model: 'gpt-report',
+        profileId: 'mp-current',
+        provider: 'ai-gateway',
+      },
+    })
+
+    await expect(
+      updateReportSettings({ llm: { profileId: 'mp-chat', provider: 'ai-gateway' } }),
+    ).resolves.toEqual({ updatedAt: '2026-07-03T08:00:00Z' })
+
+    expect(patchBodies).toEqual([{ llm: { profileId: 'mp-chat', provider: 'ai-gateway' } }])
+    expect(patchBodies[0]).not.toHaveProperty('apiKey')
+    expect(patchBodies[0]).not.toHaveProperty('baseUrl')
   })
 })

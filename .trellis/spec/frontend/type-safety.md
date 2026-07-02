@@ -441,3 +441,102 @@ const payload: components['schemas']['CreateQALLMConnectionTestRequest'] = {
   timeoutSeconds,
 }
 ```
+
+## Scenario: Report Generation Model Settings
+
+### 1. Scope / Trigger
+
+- Trigger: frontend pages that let an admin choose the model profile used by
+  Document/report generation.
+- Applies to `apps/web/src/features/reports/` and
+  `apps/web/src/pages/reports/`.
+- Browser code must use Gateway `/api/v1/report-settings` and
+  `/api/v1/admin/model-profiles`; it must not call AI Gateway internal
+  `/internal/v1/**` routes or try to mutate process environment variables such
+  as `DOCUMENT_AI_GATEWAY_PROFILE_ID`.
+
+### 2. Signatures
+
+- `GET /api/v1/report-settings` -> `ReportSettings`.
+- `PATCH /api/v1/report-settings` with `UpdateReportSettingsRequest` ->
+  `{ updatedAt: string }`.
+- `GET /api/v1/admin/model-profiles?purpose=chat&enabled=true` ->
+  enabled chat `ModelProfile[]`.
+
+### 3. Contracts
+
+- Report-generation LLM settings may send only
+  `llm.provider: "ai-gateway"` and `llm.profileId` when publishing a selected
+  profile from the UI.
+- Non-admin report writers may see their current user-visible QA/LLM profile
+  reference through `/api/v1/llm-config-versions/current`, but they must not
+  call admin-only `/api/v1/report-settings` or `/api/v1/admin/model-profiles`
+  from the report generation page.
+- Provider `baseUrl`, `apiKey`, secret refs, masked credential placeholders,
+  and provider raw error details remain owned by AI Gateway model profiles and
+  must not appear in report settings payloads.
+- The frontend may display the current `llm.model` returned by Document, but it
+  should treat the selected profile id as the write source. Document validates
+  and enriches the profile reference server-side.
+- `DOCUMENT_AI_GATEWAY_PROFILE_ID` is only a backend startup fallback. Runtime
+  UI changes must persist through `report_settings.llm.profileId`.
+
+### 4. Validation & Error Matrix
+
+| Condition                                    | UI behavior                                                             |
+| -------------------------------------------- | ----------------------------------------------------------------------- |
+| No selected profile id                       | Block publish and show a local validation notice.                       |
+| No enabled chat profiles                     | Show a warning that the admin must create/enable a chat profile first.  |
+| Current profile id missing from enabled list | Show a current-profile fallback option but do not send provider fields. |
+| Gateway `400`, `403`, or `502`               | Show the normalized Gateway error with request id when present.         |
+| Successful `PATCH`                           | Invalidate `reportKeys.settings()` and show a publish success notice.   |
+
+### 5. Good/Base/Bad Cases
+
+- Good: the report page loads enabled chat profiles, writes
+  `{ llm: { provider: "ai-gateway", profileId } }`, and invalidates report
+  settings.
+- Base: the current settings panel shows provider `ai-gateway`, profile id,
+  and model returned by Document.
+- Base: non-admin report writers see a read-only current LLM profile summary
+  while the document-generation publish controls stay hidden.
+- Bad: a report settings form sends `apiKey`, `baseUrl`, or a provider name
+  such as `openai` directly.
+- Bad: a browser action claims to update `DOCUMENT_AI_GATEWAY_PROFILE_ID`.
+
+### 6. Tests Required
+
+- API wrapper test asserting `GET /report-settings` and `PATCH
+/report-settings` use Gateway paths and do not send credential fields.
+- Query hook test asserting report settings invalidation after publish.
+- Page/component test asserting the stale capability warning is absent and the
+  model publish flow sends only `provider: "ai-gateway"` plus `profileId`.
+- Page/component test asserting non-admin report writers do not request
+  `/report-settings` or `/admin/model-profiles`, while still seeing the current
+  `/llm-config-versions/current` profile summary.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+await updateReportSettings({
+  llm: {
+    provider: 'openai',
+    profileId,
+    apiKey: maskedKey,
+    baseUrl: providerUrl,
+  },
+})
+```
+
+#### Correct
+
+```ts
+await updateReportSettings({
+  llm: {
+    provider: 'ai-gateway',
+    profileId,
+  },
+})
+```

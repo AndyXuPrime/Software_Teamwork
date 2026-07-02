@@ -12,6 +12,7 @@ import {
   downloadReportFile,
   getReport,
   getReportJob,
+  getReportSettings,
   getReportStatisticsOverview,
   getReportTemplateStructure,
   listDailyReportStatistics,
@@ -25,6 +26,7 @@ import {
   listSectionVersions,
   updateReportOutline,
   updateReportSection,
+  updateReportSettings,
   updateReportTemplateStructure,
 } from './report-generation.api'
 import type {
@@ -35,6 +37,7 @@ import type {
   ReportJobStatus,
   ReportOutline,
   ReportTemplateStructure,
+  UpdateReportSettingsRequest,
 } from './report-generation.types'
 
 const activeReportPollIntervalMs = 3000
@@ -104,6 +107,7 @@ export const reportKeys = {
   sectionVersions: (reportId: string, sectionId: string) =>
     [...reportKeys.all, reportId, 'sections', sectionId, 'versions'] as const,
   stats: () => [...reportKeys.all, 'statistics'] as const,
+  settings: () => [...reportKeys.all, 'settings'] as const,
   templateStructure: (templateId: string) =>
     [...reportKeys.templates(), templateId, 'structure'] as const,
 }
@@ -292,6 +296,29 @@ export function useReportStatisticsQueries() {
   })
 
   return { overviewQuery, dailyQuery }
+}
+
+type UseReportSettingsQueryOptions = {
+  enabled?: boolean
+}
+
+export function useReportSettingsQuery(options: UseReportSettingsQueryOptions = {}) {
+  return useQuery({
+    queryKey: reportKeys.settings(),
+    queryFn: getReportSettings,
+    enabled: options.enabled ?? true,
+  })
+}
+
+export function useUpdateReportSettingsMutation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (payload: UpdateReportSettingsRequest) => updateReportSettings(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: reportKeys.settings() })
+    },
+  })
 }
 
 export function useReport(reportId: string | null) {

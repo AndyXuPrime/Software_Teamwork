@@ -29,9 +29,12 @@ VALUES
         'placeholder-summer-peak-inspection.docx',
         0,
         '[
-            {"title": "检查概况", "level": 1},
-            {"title": "风险与问题", "level": 1},
-            {"title": "整改建议", "level": 1}
+            {"title": "报告摘要与检查结论", "level": 1},
+            {"title": "检查范围与依据", "level": 1},
+            {"title": "供电负荷与设备运行核查", "level": 1},
+            {"title": "防汛防暑与应急保障", "level": 1},
+            {"title": "隐患问题与整改闭环", "level": 1},
+            {"title": "后续保障建议", "level": 1}
         ]'::jsonb,
         '{
             "styleProfileId": "first-slice-default-docx",
@@ -49,8 +52,11 @@ VALUES
         'placeholder-coal-inventory-audit.docx',
         0,
         '[
-            {"title": "审计概况", "level": 1},
-            {"title": "库存核查", "level": 1},
+            {"title": "审计范围与依据", "level": 1},
+            {"title": "库存账实核查", "level": 1},
+            {"title": "煤质与计量抽查", "level": 1},
+            {"title": "库存周转与保供风险", "level": 1},
+            {"title": "问题清单与整改建议", "level": 1},
             {"title": "审计结论", "level": 1}
         ]'::jsonb,
         '{

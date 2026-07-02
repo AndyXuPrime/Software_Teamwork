@@ -32,6 +32,18 @@ export function useQASettingsQueries() {
   return { qaConfigQuery, llmConfigQuery }
 }
 
+type UseCurrentQALLMConfigQueryOptions = {
+  enabled?: boolean
+}
+
+export function useCurrentQALLMConfigQuery(options: UseCurrentQALLMConfigQueryOptions = {}) {
+  return useQuery({
+    queryKey: qaSettingsKeys.llmCurrent(),
+    queryFn: getCurrentQALLMConfigVersion,
+    enabled: options.enabled ?? true,
+  })
+}
+
 export function useCreateQAConfigVersionMutation() {
   const queryClient = useQueryClient()
 

@@ -415,11 +415,9 @@ curl -X POST http://localhost:8086/internal/v1/chat/completions \
   -d '{"profile_id":"default-chat","model":"deepseek-chat","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-返回包含 `choices` 字段则 provider 正常，之后在前端选择「迎峰度夏检查报告」类型
-（`summer_peak_inspection`）重新提交即可触发大纲生成。
-
-> **注意**：当前仅 `summer_peak_inspection` 报告类型支持 AI 大纲/正文生成，其他类型
-> 会在 job 执行阶段返回 `unsupported report type` 校验错误。
+返回包含 `choices` 字段则 provider 正常，之后在前端选择「迎峰度夏检查报告」
+（`summer_peak_inspection`）或「煤库存审计报告」（`coal_inventory_audit`）重新提交，
+即可触发大纲生成。正文生成可继续通过报告页面的「正文生成」任务或单章重新生成验证。
 
 ## 手动联调顺序
 
@@ -498,9 +496,10 @@ bodies.
    `QA_AI_GATEWAY_SMOKE=1` service-client test. Use the same request id to
    search `.local/logs/gateway.log`, `.local/logs/qa.log`, and
    `.local/logs/ai-gateway.log`.
-6. Run Document validation for `summer_peak_inspection`: create a report,
-   create an `outline_generation` or `content_generation` job, poll jobs,
-   events, and sections until terminal state, then search
+6. Run Document validation for `summer_peak_inspection` and
+   `coal_inventory_audit`: create a report, create an `outline_generation`,
+   `section_regeneration`, or `content_generation` job, poll jobs, events, and
+   sections until terminal state, then search
    `.local/logs/gateway.log`, `.local/logs/document.log`, and
    `.local/logs/ai-gateway.log` by request id. Rich DOCX
    Pandoc/LibreOffice worker validation is not part of this checklist.
@@ -519,4 +518,4 @@ Acceptance record template:
 | AI Gateway | `/readyz` + real provider smoke | profile status is not `placeholder`; smoke succeeds for configured operations | `.local/logs/ai-gateway.log` |
 | QA | session/message or `QA_AI_GATEWAY_SMOKE=1` | answer path reaches AI Gateway and returns normalized response/error | `.local/logs/gateway.log`, `.local/logs/qa.log`, `.local/logs/ai-gateway.log` |
 | Knowledge | local hashing or AI Gateway embedding/rerank path | selected path is explicitly named; real provider path has profile/model env | `.local/logs/gateway.log`, `.local/logs/knowledge.log`, `.local/logs/ai-gateway.log` |
-| Document | `summer_peak_inspection` report job flow | job/events/sections reach expected terminal state | `.local/logs/gateway.log`, `.local/logs/document.log`, `.local/logs/ai-gateway.log` |
+| Document | `summer_peak_inspection` and `coal_inventory_audit` report job flow | job/events/sections reach expected terminal state | `.local/logs/gateway.log`, `.local/logs/document.log`, `.local/logs/ai-gateway.log` |

@@ -13,7 +13,7 @@
 | 报告记录、大纲、章节 | 已实现 | 可以创建报告、保存大纲、维护章节树和章节版本。 |
 | Report job / attempt / event | 已实现 | 可以创建 job、查询 job、重试、查询 attempts/events。 |
 | asynq worker | 已实现 | worker 会把 job/attempt 从 pending 推进到 running/succeeded/partial_succeeded/failed；`report_file_creation` 执行基础 DOCX 导出，非文件类生成 job 调用 AI Gateway 生成 executor。 |
-| 基础大纲/正文生成 | 已实现 | `summer_peak_inspection` 可通过 AI Gateway chat 生成大纲、章节骨架和逐章节正文；按请求可通过 Knowledge 获取安全检索上下文。 |
+| 基础大纲/正文生成 | 已实现 | `summer_peak_inspection` 和 `coal_inventory_audit` 可通过 AI Gateway chat 生成大纲、章节骨架和逐章节正文；按请求可通过 Knowledge 获取安全检索上下文。 |
 | 报告文件 / DOCX 导出 | 已实现基础闭环 | `POST /report-files` 创建元数据和任务；worker 使用内置 `SimpleDOCXGenerator` 从已保存章节生成基础 DOCX 并通过 File Service 保存，content endpoint 只读取已成功文件。 |
 | settings / statistics / operation logs | 已实现 | 支持 settings 持久化、AI Gateway profile 校验、统计查询和脱敏操作日志读写。 |
 
@@ -37,7 +37,7 @@
 
 | jobType | 目标语义 | 当前 worker 行为 |
 | --- | --- | --- |
-| `outline_generation` | 根据报告、模板、材料和上下文生成新大纲。 | 对 `summer_peak_inspection` 调用 AI Gateway chat，写入 `ReportOutline` 并创建章节骨架。 |
+| `outline_generation` | 根据报告、模板、材料和上下文生成新大纲。 | 对 `summer_peak_inspection` 和 `coal_inventory_audit` 调用 AI Gateway chat，写入 `ReportOutline` 并创建章节骨架。 |
 | `outline_regeneration` | 基于现有报告重新生成大纲版本。 | 同大纲生成，创建新的大纲版本并记录事件。 |
 | `content_generation` | 根据当前大纲逐章生成正文。 | 逐章调用 AI Gateway chat，保存 `ReportSection` 和 `ReportSectionVersion`，更新进度。 |
 | `content_regeneration` | 重新生成全文正文。 | 同正文生成；部分章节失败时保留已成功章节并进入 `partial_succeeded`。 |
@@ -157,5 +157,5 @@ GET /api/v1/reports/{reportId}/events
 
 - 不能承诺未配置 PostgreSQL、Redis、File Service 和 document worker 的一键本地环境可以生成 DOCX。
 - 不能承诺未配置 AI Gateway profile 的环境可以生成 AI 大纲或正文。
-- 不能承诺 `coal_inventory_audit` 已经完成 AI 生成业务策略。
+- 不能承诺新增的第三类报告类型已经完成 AI 生成业务策略。
 - 不能承诺 Pandoc/LibreOffice 富 DOCX 工具链已经落地。
