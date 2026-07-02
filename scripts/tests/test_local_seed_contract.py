@@ -49,6 +49,11 @@ class LocalSeedContractTests(unittest.TestCase):
                 "default-chat\nhttp://localhost:11434/v1\n",
                 encoding="utf-8",
             )
+            (root / "deploy" / "seeds" / "003-qa-document-mcp.sql").write_text(
+                "\\connect qa_system\n"
+                "INSERT INTO mcp_servers (alias) VALUES ('document') ON CONFLICT (alias) DO UPDATE;\n",
+                encoding="utf-8",
+            )
             (root / "deploy" / "README.md").write_text(
                 "deploy/.env.example 是唯一默认配置来源\n"
                 "cp deploy/.env.example deploy/.env\n"
@@ -65,6 +70,8 @@ class LocalSeedContractTests(unittest.TestCase):
                 "goose@v3.27.1\n"
                 "psql\n"
                 "001-local-demo-seed.sql\n"
+                "002-ai-gateway-model-profiles.sql\n"
+                "003-qa-document-mcp.sql\n"
                 "--wait\n"
                 "--wait-timeout\n"
                 "initialize_qdrant_collection\n"
@@ -138,6 +145,21 @@ class LocalSeedContractTests(unittest.TestCase):
 
         self.assertIssueContains(issues, "host.docker.internal")
         self.assertIssueContains(issues, "http://localhost:11434/v1")
+
+    def test_verifier_reports_incomplete_document_mcp_seed(self) -> None:
+        verifier = load_verifier()
+
+        issues = verifier.validate_seed_003(
+            """
+            \\connect qa_system
+            INSERT INTO mcp_servers (alias, token_encrypted)
+            VALUES ('document', NULL)
+            ON CONFLICT (alias) DO UPDATE;
+            """
+        )
+
+        self.assertIssueContains(issues, "http://localhost:8085/mcp")
+        self.assertIssueContains(issues, "33333333-3333-4333-8333-333333333601")
 
     def test_verifier_reports_missing_auth_qa_settings_permissions(self) -> None:
         verifier = load_verifier()

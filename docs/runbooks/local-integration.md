@@ -64,6 +64,48 @@ curl --noproxy '*' -fsS http://localhost:8080/readyz
 `ai-gateway /readyz` 在 placeholder profile 下返回 `503 degraded` 是预期行为。
 这表示真实 provider credential 尚未配置，不表示进程失败。
 
+## Document MCP 注册与工具发现
+
+`dev-up.sh` 在 QA 数据库插入 `mcp_servers.alias=document` 的非敏感元数据；
+`deploy/.env` 提供 `MCP_SERVER_TOKEN`。`run-backend.sh` 在宿主机启动 Document
+`http://localhost:8085/mcp` 和 QA，根级 Compose 不启动这两个业务服务容器。
+
+确认 seed：
+
+```bash
+psql "$QA_DATABASE_URL" -c \
+  "select alias, transport, endpoint_url, token_encrypted is null as token_from_env, enabled from mcp_servers where alias = 'document';"
+```
+
+fresh local volume 的预期值为 `document`、`streamable_http`、
+`http://localhost:8085/mcp`、`token_from_env=true`、`enabled=true`。已有管理员配置不会被
+seed 覆盖；同名记录被显式禁用时，环境 bootstrap 也不会把它重新启用。
+
+运行现有 9 个工具的发现与调用 smoke：
+
+```bash
+cd services/qa
+QA_DOCUMENT_MCP_SMOKE=1 \
+go test ./internal/platform/mcpclient -run '^TestDocumentMCPReportToolsSmoke$' -count=1 -v
+```
+
+该 smoke 验证 `tools/list`、`document__` 前缀、默认白名单、生成 job accepted/status、
+DOCX export/result 安全摘要及无权限结果。真实模型 provider 仍不可用时，可以验证 MCP
+client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue #510 的
+`document__generate_report_from_content` 合并前不在当前 9 工具验收范围内。
+
+常见失败：
+
+| 现象 | 排查 |
+| --- | --- |
+| QA 日志 `connection failed` | 检查 Document 已启动、`MCP_SERVER_URL=http://localhost:8085/mcp`。 |
+| Document 返回 `401` | 检查 `MCP_SERVER_TOKEN` 与 `DOCUMENT_MCP_SERVICE_TOKEN`/`INTERNAL_SERVICE_TOKEN` 一致，header 均为 `Authorization`。 |
+| `tools/list` 成功但模型看不到工具 | 检查 active QA config 的 `enabledToolNames`；默认只放行 5 个常用 `document__...` 工具。 |
+| job 一直 pending/running | 查 `.local/logs/document.log`、Redis/asynq worker、AI Gateway profile；不要在 MCP HTTP 调用中做无界等待。 |
+
+精确工具参数、返回结构和 Agent 多轮流程见
+[Document MCP 工具契约](../services/document/docs/mcp-tools.md)。
+
 ## 谁负责什么
 
 - `dev-up.sh`：infra pull/up、等待 Compose health checks、Qdrant collection

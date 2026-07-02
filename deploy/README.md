@@ -82,7 +82,9 @@ runtime 仍会下载几十个 Python 包。
   Compose health checks 通过。
 - 创建或校验 `QDRANT_COLLECTION`，向量维度来自 `EMBEDDING_DIMENSION`。
 - 在宿主机执行各服务 goose migration。
-- 用 `psql` 应用本地 demo seed。
+- 用 `psql` 依次应用本地 demo 数据、AI Gateway profile 和 QA Document MCP
+  注册 seed。Document MCP seed 只保存 endpoint/alias 等非敏感元数据；token 来自
+  `deploy/.env` 的 `MCP_SERVER_TOKEN`。
 
 `./scripts/local/run-backend.sh`：
 
@@ -102,6 +104,9 @@ curl --noproxy '*' -fsS http://localhost:8080/readyz
 `http://localhost:8086/readyz` 在 placeholder profile 下返回 `503 degraded` 是预期行为，
 表示还没配置真实模型 provider credential，不代表 AI Gateway 进程失败。
 默认本地模型 profile 的 OpenAI-compatible 地址是 `http://localhost:11434/v1`。
+Document MCP 的默认 endpoint 是 `http://localhost:8085/mcp`，QA 将其工具暴露为
+`document__<tool>`；完整工具参数和 Agent 工作流见
+[Document MCP 工具契约](../docs/services/document/docs/mcp-tools.md)。
 
 ## 排障入口
 

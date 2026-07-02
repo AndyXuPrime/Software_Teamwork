@@ -369,8 +369,12 @@ func (s *ConfigService) LoadRuntimeConfiguration(ctx context.Context) (RuntimeCo
 	if err != nil {
 		return RuntimeConfiguration{}, err
 	}
-	servers := make([]RuntimeMCPConfig, 0, len(records))
+	servers := make([]RuntimeMCPConfig, 0, len(records)+1)
+	bootstrapMatched := false
 	for _, record := range records {
+		if s.bootstrap.MCPServer != nil && record.Alias == s.bootstrap.MCPServer.Alias {
+			bootstrapMatched = true
+		}
 		if !record.Enabled {
 			continue
 		}
@@ -378,9 +382,12 @@ func (s *ConfigService) LoadRuntimeConfiguration(ctx context.Context) (RuntimeCo
 		if err != nil {
 			return RuntimeConfiguration{}, err
 		}
+		if s.bootstrap.MCPServer != nil && record.Alias == s.bootstrap.MCPServer.Alias && server.Token == "" {
+			server.Token = s.bootstrap.MCPServer.Token
+		}
 		servers = append(servers, server)
 	}
-	if len(records) == 0 && s.bootstrap.MCPServer != nil {
+	if !bootstrapMatched && s.bootstrap.MCPServer != nil {
 		servers = append(servers, *s.bootstrap.MCPServer)
 	}
 	agentConfig := NormalizeAgentConfig(qaConfig.Agent)
