@@ -361,7 +361,7 @@ const adminSettingsRoute = createRoute({
 const adminStatsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'stats',
-  beforeLoad: requireAuth(systemAdminAccess),
+  beforeLoad: requireAuth({ any: ['qa:use'] }),
   component: StatsOverviewPage,
 })
 
