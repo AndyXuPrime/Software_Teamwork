@@ -301,30 +301,9 @@ go run ./cmd/server
 拉取最新 develop 后如果点击"生成大纲"一直失败，根本原因就是 AI Gateway 没有指向可用的
 LLM provider。
 
-按以下任一方案配置后重试即可。
+按以下步骤配置后重试即可。
 
-#### 方案 A：本机 Ollama
-
-先安装 [Ollama](https://ollama.com) 并拉取一个支持对话的模型，例如：
-
-```bash
-ollama pull qwen2.5:7b
-```
-
-Ollama 默认监听 `http://localhost:11434`，Docker 内通过 `host.docker.internal:11434`
-访问。seed 的 `default-chat` profile 已指向该地址，只需把 model 改成你实际拉取的名字：
-
-```bash
-# 获取管理员 token（本地默认值）
-ADMIN_TOKEN="atk_v1_Z4EHKs54YdxqTTXuYTjBaRnYNL7XO6sIGw4WBd7DMRo"
-
-curl -X PATCH http://localhost:8080/api/v1/admin/model-profiles/default-chat \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"qwen2.5:7b"}'
-```
-
-#### 方案 B：OpenAI 兼容 provider（以 DeepSeek 为例）
+#### 配置 OpenAI 兼容 provider（以 DeepSeek 为例）
 
 将 `default-chat` profile 指向 DeepSeek，然后在管理端「模型配置」页面的 Credentials
 表单里填入 API key（**不要把 key 写进任何文件或命令行历史**）：
