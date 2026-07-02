@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 30
-- **Last Active**: 2026-07-02
+- **Total Sessions**: 31
+- **Last Active**: 2026-07-03
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1095 | Active |
+| `journal-1.md` | ~1130 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 31 | 2026-07-03 | Report generation model settings and seed fix | `41ecfad`, `79428f0`, `3c54db5` | `Liutest/fix/report-generation-config` |
 | 30 | 2026-07-02 | Cover QA session delete 204 response | `8df6ec0` | `Liutest/test/qa-session-delete-204` |
 | 29 | 2026-07-02 | Improve model profile LLM config UX | `9af374b` | `Liutest/feat/model-profile-llm-config-ux` |
 | 28 | 2026-07-02 | Fix model profile form validation | `db68dce`, `2b10410` | `Frontend/fix/model-profile-form-validation` |
