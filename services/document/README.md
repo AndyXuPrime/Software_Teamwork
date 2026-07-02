@@ -9,13 +9,13 @@ report type/template/material/report/outline/section APIs, the report
 job/attempt/event state machine, report file creation, report settings, report
 statistics, and operation logs. DOCX export currently uses the in-process Go
 `SimpleDOCXGenerator`. Basic AI outline and section-content orchestration is
-implemented for the fixed `summer_peak_inspection` report type through AI
-Gateway chat calls, with optional Knowledge retrieval context when configured
-and requested. A stateless Streamable HTTP Document MCP server is implemented
-at `/mcp` for safe report generation, status, template schema, result, and basic
-DOCX export tool calls. QA discovery and an env-gated cross-service smoke are
-implemented; the Pandoc/LibreOffice rich DOCX conversion toolchain remains
-future work.
+implemented for the fixed `summer_peak_inspection` and `coal_inventory_audit`
+report types through AI Gateway chat calls, with optional Knowledge retrieval
+context when configured and requested. A stateless Streamable HTTP Document MCP
+server is implemented at `/mcp` for safe report generation, status, template
+schema, result, and basic DOCX export tool calls. QA discovery and an env-gated
+cross-service smoke are implemented; the Pandoc/LibreOffice rich DOCX
+conversion toolchain remains future work.
 
 ## Local Configuration
 
@@ -76,10 +76,11 @@ Gateway exposes these document-owned report routes under `/api/v1`. The service
 local paths below omit that prefix. Implemented routes call the document service
 layer. Job routes persist state and drive the worker state machine; file export
 jobs currently produce basic DOCX packages through the in-process Go generator.
-Generation jobs for `summer_peak_inspection` call AI Gateway for outline and
-section content and persist the generated outline, sections, section versions,
-progress, and events. The richer Pandoc/LibreOffice toolchain remains a future
-host-run worker dependency and is not required by the current service.
+Generation jobs for `summer_peak_inspection` and `coal_inventory_audit` call AI
+Gateway for outline and section content and persist the generated outline,
+sections, section versions, progress, and events. The richer Pandoc/LibreOffice
+toolchain remains a future host-run worker dependency and is not required by
+the current service.
 
 | Method | Local path | Operation ID | Status |
 | --- | --- | --- | --- |

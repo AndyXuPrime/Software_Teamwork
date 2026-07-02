@@ -27,7 +27,7 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | 文档状态 | active | README、需求、数据模型、前端 API 设计和 OpenAPI 存在。 |
-| 代码状态 | partial | Go service、PostgreSQL repository、`pgx/v5@v5.9.2`、模板/材料/报告/大纲/章节 API、report jobs/attempts/events、report files/content、基础内置 DOCX 导出、asynq worker 状态机、report settings、statistics、operation logs、`summer_peak_inspection` 基础 AI 大纲/正文生成编排和服务内 Document MCP 工具适配层已实现；剩余缺口为远程 MCP server/QA 端到端 smoke、更多报告类型生成策略和 Pandoc/LibreOffice 富 DOCX 工具链。 |
+| 代码状态 | partial | Go service、PostgreSQL repository、`pgx/v5@v5.9.2`、模板/材料/报告/大纲/章节 API、report jobs/attempts/events、report files/content、基础内置 DOCX 导出、asynq worker 状态机、report settings、statistics、operation logs、`summer_peak_inspection` 与 `coal_inventory_audit` 基础 AI 大纲/正文生成编排和服务内 Document MCP 工具适配层已实现；剩余缺口为远程 MCP server/QA 端到端 smoke、新增报告类型定制生成策略和 Pandoc/LibreOffice 富 DOCX 工具链。 |
 | 契约对齐 | partial | Gateway active document paths 有 43 个；当前 Document active routes 已由服务处理。report job 请求体已按 gateway 的 `target/requirements/materialIds/options` 形态接入；report file content 只有在文件 `succeeded` 且 File Service 已保存内容后可读取。 |
 | 数据持久化 | postgres | runtime 使用 PostgreSQL；模板/材料底层文件通过 File Service client。 |
 | 测试状态 | partial | service、HTTP、repository tests 存在；集成测试依赖 `DOCUMENT_TEST_DATABASE_URL`。 |
@@ -45,7 +45,7 @@
 | 大纲和章节 | `internal/service/report_service.go`、`internal/service/outline.go` | Document README | outline/report service tests | 支持大纲版本、章节树、编号、章节版本。 |
 | report jobs / attempts / events | `internal/http/job_handlers.go`、`internal/service/job_service.go` | Gateway / Document OpenAPI | job service/http tests | 支持创建任务、查询任务、重试、列出尝试和事件。 |
 | asynq client / worker 状态机 | `internal/worker/client.go`、`internal/worker/worker.go`、`cmd/server/main.go` | 技术基线 / Document README | worker/job tests | 创建任务时入队，worker 更新 job/attempt running/succeeded/failed/partial_succeeded；`report_file_creation` 执行基础 DOCX 导出，非文件类生成 job 调用报告生成 executor。 |
-| AI 大纲/正文生成编排 | `internal/service/report_generation_service.go`、`internal/platform/aigateway/chat_client.go`、`cmd/server/main.go` | Document README / AI Gateway internal API | generation service / AI Gateway client / worker tests | `summer_peak_inspection` 可通过 AI Gateway chat 生成大纲，创建章节骨架，再逐章节生成正文和章节版本；部分失败保留已成功章节。 |
+| AI 大纲/正文生成编排 | `internal/service/report_generation_service.go`、`internal/platform/aigateway/chat_client.go`、`cmd/server/main.go` | Document README / AI Gateway internal API | generation service / AI Gateway client / worker tests | `summer_peak_inspection` 和 `coal_inventory_audit` 可通过 AI Gateway chat 生成大纲，创建章节骨架，再逐章节生成正文和章节版本；部分失败保留已成功章节。 |
 | Knowledge 检索上下文 client | `internal/platform/knowledgeclient/client.go`、`internal/service/report_generation_service.go` | Knowledge internal API / 服务边界 | knowledge client / generation service tests | 当 job payload 的 `options` 或 `retrieval` 包含 `knowledgeBaseIds` 且配置了 Knowledge URL 时调用 `/internal/v1/knowledge-queries`；prompt 只使用安全 `contentPreview`。 |
 | report files / content | `internal/http/report_files.go`、`internal/service/report_file_service.go`、`internal/worker/worker.go` | Gateway / Document OpenAPI | report file service/http/worker tests | `POST /report-files` 创建文件元数据和异步任务；`report_file_creation` worker 使用内置 `SimpleDOCXGenerator` 从已保存章节生成基础 DOCX，上传 File Service 后 content endpoint 可读取。 |
 | report settings | `internal/http/admin_handlers.go`、`internal/service/admin_service.go`、`internal/repository/admin.go` | Gateway / Document OpenAPI | HTTP/service/repository tests | 持久化 AI Gateway profile 引用、默认模板和文件默认值；`PATCH` 仅 admin/super_admin。 |
@@ -60,7 +60,7 @@
 | 缺口 | 文档来源 | 影响范围 | 建议任务 |
 | --- | --- | --- | --- |
 | Document MCP remote server / QA end-to-end smoke | Document README / requirements / #125 | QA / tool integration | 服务内工具适配层已实现；远程 MCP server 包装、QA Host 真实调用和跨服务 smoke 仍需共享联调任务补齐。 |
-| 更多报告类型生成策略 | Document README / requirements | worker / report content | 当前基础 AI 闭环覆盖 `summer_peak_inspection`；`coal_inventory_audit` 仍需补业务 prompt、模板和验收样例后再开放。 |
+| 新增报告类型生成策略 | Document README / requirements | worker / report content | 当前基础 AI 闭环覆盖 `summer_peak_inspection` 和 `coal_inventory_audit`；新增第三类报告仍需补业务 prompt、模板和验收样例后再开放。 |
 | Pandoc rich DOCX generation（运行时接入） | Document README / 技术基线 / C-011 | rich DOCX | Pandoc CLI 作为后续 host-run 工具链候选；调用边界、smoke 验证和 fallback 策略见 [rich-docx-worker.md](rich-docx-worker.md)；当前不得承诺富 DOCX 转换已可用。 |
 
 ## 5. 文档与实现出入
@@ -92,7 +92,7 @@ Document 侧输出给 QA/MCP 调用方时必须满足：
 | 项目 | 当前用途 | 退出条件 | 关联任务 |
 | --- | --- | --- | --- |
 | `handleNotImplemented` helper | 历史占位 helper；当前 active routes 不再挂到该 handler | 删除未使用 helper，或后续新增 pending route 前同步 route coverage 和状态文档 | cleanup follow-up |
-| generation fixed-type scope | 首个 AI 生成闭环只覆盖 `summer_peak_inspection` | `coal_inventory_audit` 有业务 prompt、模板和样例验收后再开放 | follow-up |
+| generation fixed-type scope | 首期 AI 生成闭环覆盖 `summer_peak_inspection` 和 `coal_inventory_audit` | 新增第三类报告有业务 prompt、模板和样例验收后再开放 | follow-up |
 | fake repositories in tests | service/http 单元测试 | 保留测试用 | 无 |
 | env-gated repository integration tests | 无 DB 环境跳过 | CI 提供 `DOCUMENT_TEST_DATABASE_URL` | testing required checks 分阶段升级任务 |
 
@@ -123,7 +123,7 @@ Document 侧输出给 QA/MCP 调用方时必须满足：
 | 任务 | 类型 | 优先级 | 依据 | 说明 |
 | --- | --- | --- | --- | --- |
 | 补 Document MCP 远程包装和 QA smoke | 测试 / runbook | P0 | 服务内 MCP 工具适配层已实现，#125 仍未关闭 | 将服务内工具适配层接入约定的 MCP transport 或 QA Host，并用真实请求上下文验证权限、脱敏输出和操作日志。 |
-| 补更多报告类型生成策略 | 新任务 | P1 | 需求覆盖两类固定报告 | 在 `coal_inventory_audit` 的模板、prompt 和样例验收准备好后接入 AI 生成。 |
+| 补新增报告类型生成策略 | 新任务 | P1 | 当前两类固定报告已接入基础 AI 生成 | 新增第三类报告需要先准备模板、prompt 和样例验收，再接入 AI 生成。 |
 | 补 AI Gateway / Knowledge 跨服务 smoke | 测试 / runbook | P1 | 基础 AI 生成已在服务内闭环 | 用可控 AI Gateway fixture 和 Knowledge fixture 验证请求头、任务进度、脱敏错误和 partial_succeeded。 |
 | 补 report files/content 跨服务 smoke | 测试 / runbook | P1 | 基础 DOCX 导出已在服务内闭环 | 用 PostgreSQL、Redis、File Service 和 document worker 验证 `POST /report-files` 到 content endpoint 的完整链路。 |
 | 回写富 DOCX 预留配置状态 | 回写文档 | P1 | Pandoc/LibreOffice env 当前要求但未使用 | 防部署误判。 |
