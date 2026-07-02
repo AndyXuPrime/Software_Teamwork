@@ -243,6 +243,7 @@ QA runtime 可按以下方式接入 Document MCP endpoint：
 MCP_TRANSPORT=streamable_http
 MCP_SERVER_ALIAS=document
 MCP_SERVER_URL=http://document:8085/mcp
+# 必须与 DOCUMENT_MCP_SERVICE_TOKEN 一致；默认 Compose 会把该 token 对齐到 INTERNAL_SERVICE_TOKEN。
 MCP_SERVER_TOKEN=${INTERNAL_SERVICE_TOKEN}
 MCP_SERVER_TOKEN_HEADER=Authorization
 ```
@@ -269,7 +270,7 @@ Document 相关接口使用项目统一错误码：
 - 服务代码放在 `services/document/`，使用独立 Go module；通用数据库、迁移、HTTP、配置、日志、测试和观测规则见 [技术选型基线](../../architecture/technology-decisions.md)。
 - 启动时必须校验 PostgreSQL、Redis、file client、AI Gateway 配置、监听地址和 MCP endpoint/token header；Knowledge 服务配置是可选项，仅在生成请求要求检索上下文时使用；`DOCUMENT_PANDOC_PATH` 和 `DOCUMENT_LIBREOFFICE_PATH` 是富 DOCX 工具链预留配置，工具链选型已由 C-011 固定（见 [rich-docx-worker.md](docs/rich-docx-worker.md)），当前 Dockerfile 不安装对应 CLI。
 - Gateway 只做公开入口、认证上下文、统一 envelope、错误归一化和路由转发，不承载报告生成业务逻辑。
-- Document MCP endpoint 必须配置非空 `DOCUMENT_MCP_SERVICE_TOKEN` 或 `INTERNAL_SERVICE_TOKEN`；未配置时服务启动失败，避免 `/mcp` 在宿主机映射端口上无鉴权开放。
+- Document MCP endpoint 必须配置非空 `DOCUMENT_MCP_SERVICE_TOKEN` 或 `INTERNAL_SERVICE_TOKEN`；默认 Compose 会把 `DOCUMENT_MCP_SERVICE_TOKEN` 对齐到 `INTERNAL_SERVICE_TOKEN`，若单独覆盖则 QA `MCP_SERVER_TOKEN` 必须使用同一个值；未配置时服务启动失败，避免 `/mcp` 在宿主机映射端口上无鉴权开放。
 - Redis 只通过 `asynq` 承载任务队列和短期协调；PostgreSQL 中的 `ReportJob`、`ReportJobAttempt`、`ReportEvent` 是权威业务状态。
 - 任务最多自动重试 3 次，失败后保留最近尝试摘要；手动重试通过 `report-jobs/{jobId}/attempts` 创建新资源。
 - 当前大纲/正文生成由 worker 通过 AI Gateway chat 完成，不保存 provider base URL/API key，不直连 provider；当前 DOCX 创建由 worker 调用内置 `SimpleDOCXGenerator` 完成，生成后通过 file 服务保存底层对象；富 DOCX 工具链（`pandoc/core:3.10`）已由 C-011 固定选型，Dockerfile 接入时必须同步更新部署和技术基线。

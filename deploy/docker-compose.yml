@@ -408,7 +408,7 @@ services:
       DOCUMENT_AI_GATEWAY_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}
       DOCUMENT_MCP_PATH: ${DOCUMENT_MCP_PATH:-/mcp}
-      DOCUMENT_MCP_SERVICE_TOKEN: ${DOCUMENT_MCP_SERVICE_TOKEN:-local-dev-document-mcp-token-change-me}
+      DOCUMENT_MCP_SERVICE_TOKEN: ${DOCUMENT_MCP_SERVICE_TOKEN:-${INTERNAL_SERVICE_TOKEN:-local-dev-internal-service-token-change-me}}
       DOCUMENT_MCP_TOKEN_HEADER: ${DOCUMENT_MCP_TOKEN_HEADER:-Authorization}
       DOCUMENT_PANDOC_PATH: pandoc
       DOCUMENT_LIBREOFFICE_PATH: soffice
