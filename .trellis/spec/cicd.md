@@ -865,11 +865,13 @@ Rules:
   probes with `--profile all --clean-env`.
 - Docker policy docs/spec changes, including `deploy/README.md`, should trigger
   the lightweight policy checker even when Compose itself did not change.
-- Local startup scripts and local seed contract files must trigger Docker/deploy
-  checks. The policy job must run shell syntax checks for `scripts/local/*.sh`
-  and `python3 scripts/verify_local_seed_contract.py`.
+- Local startup scripts, local seed SQL, and local seed contract files must
+  trigger Docker/deploy checks. The policy job must run shell syntax checks for
+  `scripts/local/*.sh` and `python3 scripts/verify_local_seed_contract.py`.
 - Business-service Docker artifacts must not be introduced into the current
-  repository baseline.
+  repository baseline. The Docker/deploy detect job and policy checker must
+  reject business-service Dockerfiles, service-level Compose files, and
+  non-root deploy Compose files.
 
 ---
 
@@ -882,7 +884,7 @@ Required local sequence:
 
 1. Copy local defaults with `cp deploy/.env.example deploy/.env`.
 2. Run `./scripts/local/dev-up.sh` to pull/start infra, wait for health, apply
-   host migrations, and apply local seed.
+   Qdrant collection initialization, host migrations, and local seed.
 3. Run `./scripts/local/run-backend.sh` to start Auth, File, Parser, Knowledge,
    AI Gateway, QA, Document, and Gateway as host processes.
 4. Run `cd apps/web && bun install && bun run dev` for the frontend.

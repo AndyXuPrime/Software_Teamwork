@@ -149,17 +149,17 @@ Document deletion is also soft-delete-first:
 
 ## Local Integration Notes
 
-The default local service path uses PostgreSQL, File Service, Parser Service,
-Redis/asynq, local hashing embeddings, and an in-memory vector index. This is
-enough for upload handoff, ingestion worker processing, delete-cleanup worker
-processing, chunk listing, original content reads, and seeded/fake-backed
-contract tests.
+The repository local integration path uses PostgreSQL, File Service, Parser
+Service, Redis/asynq, Qdrant, and local hashing embeddings. Run
+`./scripts/local/dev-up.sh` from the repository root before starting Knowledge;
+it starts Qdrant and creates or verifies `QDRANT_COLLECTION` with
+`EMBEDDING_DIMENSION`.
 
-Real Qdrant and AI Gateway integration is optional:
+Single-service debugging may still leave `QDRANT_URL` empty to use the in-memory
+vector index.
 
-- Leave `QDRANT_URL` empty to use the in-memory vector index.
-- Set `QDRANT_URL=http://qdrant:6333` and `QDRANT_COLLECTION=knowledge_chunks`
-  only after the collection exists and Qdrant is healthy.
+AI Gateway integration is optional:
+
 - Leave `EMBEDDING_PROVIDER=local_hashing` for deterministic local runs.
 - Set `EMBEDDING_PROVIDER=ai_gateway`, `AI_GATEWAY_BASE_URL`, and
   `AI_GATEWAY_SERVICE_TOKEN` only when the optional AI Gateway profile is

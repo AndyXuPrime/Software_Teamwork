@@ -76,9 +76,11 @@ jobs:
               /^deploy\/.*docker-compose[^/]*\.ya?ml$/u;
             const rootDeployComposeFile = 'deploy/docker-compose.yml';
             const rootDeployComposeDependencyPattern =
-              /^deploy\/(?:\.env\.example|postgres\/init\/.+)$/u;
+              /^deploy\/(?:\.env\.example|postgres\/init\/.+|seeds\/.+)$/u;
             const workflowPath = '.github/workflows/docker-deploy-checks.yml';
             const localStartupScriptPattern = /^scripts\/local\/[^/]+\.sh$/u;
+            const dockerArtifactPattern =
+              /^(?:(?:services|apps)\/.*(?:Dockerfile(?:\..*)?|(?:docker-compose|compose)[^/]*\.ya?ml)|deploy\/(?!docker-compose\.yml$).*(?:docker-compose|compose)[^/]*\.ya?ml)$/u;
             const dockerPolicyPaths = new Set([
               'README.md',
               'AGENTS.md',
@@ -139,7 +141,10 @@ jobs:
             const files = [...changedFiles];
             const workflowChanged = files.includes(workflowPath);
             const dockerPolicyChanged = files.some(
-              (file) => dockerPolicyPaths.has(file) || localStartupScriptPattern.test(file)
+              (file) =>
+                dockerPolicyPaths.has(file) ||
+                localStartupScriptPattern.test(file) ||
+                dockerArtifactPattern.test(file)
             );
             const fullDockerCheckChanged = workflowChanged;
             const composeFiles = new Set();

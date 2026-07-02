@@ -76,6 +76,7 @@ admin / LocalDemoAdmin#12345
 - 校验 `deploy/docker-compose.yml`。
 - 拉取并启动 `postgres`、`redis`、`qdrant`、`minio`、`minio-init`，并等待
   Compose health checks 通过。
+- 创建或校验 `QDRANT_COLLECTION`，向量维度来自 `EMBEDDING_DIMENSION`。
 - 在宿主机执行各服务 goose migration。
 - 用 `psql` 应用本地 demo seed。
 

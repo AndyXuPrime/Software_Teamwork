@@ -60,7 +60,8 @@ curl --noproxy '*' -fsS http://localhost:8080/readyz
 
 ## 谁负责什么
 
-- `dev-up.sh`：infra pull/up、等待 Compose health checks、migration、demo seed。
+- `dev-up.sh`：infra pull/up、等待 Compose health checks、Qdrant collection
+  初始化、migration、demo seed。
 - `run-backend.sh`：Parser uv 依赖准备、后端进程启动、日志和进程组 PID。uv 的
   Python 包索引来自 `deploy/.env` 里的 `UV_DEFAULT_INDEX`，不走 Docker 镜像源。
 - `stop-backend.sh`：按 `.local/run/` 中记录的进程组停止后端，避免只杀掉
@@ -86,6 +87,8 @@ Parser uv 依赖慢：
 后端没起来：
 
 - 先看 `.local/logs/<service>.log`。
+- Knowledge ingestion 到 embedding/index 阶段失败时，先确认
+  `QDRANT_URL`、`QDRANT_COLLECTION` 和 `EMBEDDING_DIMENSION` 与 dev-up 初始化一致。
 - Auth、File、Knowledge、QA、Document、AI Gateway 优先查数据库和 migration。
 - Gateway 优先查 Redis、Auth URL 和下游服务端口。
 - File/Knowledge/Parser 内部调用 `401` 时，检查 `INTERNAL_SERVICE_TOKEN` 是否一致。

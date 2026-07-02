@@ -61,7 +61,16 @@ class LocalSeedContractTests(unittest.TestCase):
             )
             (root / "scripts" / "local").mkdir(parents=True)
             (root / "scripts" / "local" / "dev-up.sh").write_text(
-                "goose@v3.27.1\npsql\n001-local-demo-seed.sql\n--wait\n--wait-timeout\n",
+                "goose@v3.27.1\n"
+                "psql\n"
+                "001-local-demo-seed.sql\n"
+                "--wait\n"
+                "--wait-timeout\n"
+                "initialize_qdrant_collection\n"
+                "QDRANT_URL\n"
+                "QDRANT_COLLECTION\n"
+                "EMBEDDING_DIMENSION\n"
+                "Cosine\n",
                 encoding="utf-8",
             )
             (root / "scripts" / "local" / "run-backend.sh").write_text(

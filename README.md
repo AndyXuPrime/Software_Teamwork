@@ -170,7 +170,8 @@ PaddleOCR 依赖；它影响 uv，不影响 Docker。第一次启动仍会下载
 之后会走 uv 缓存。
 
 `./scripts/local/dev-up.sh` 会拉取并启动 `postgres`、`redis`、`qdrant`、`minio`、
-`minio-init`，等待基础设施健康后执行本机 migration 和 demo seed。
+`minio-init`，等待基础设施健康后创建/校验 Knowledge 的 Qdrant collection，
+再执行本机 migration 和 demo seed。
 `./scripts/local/run-backend.sh` 会启动 `auth`、`file`、`parser`、`knowledge`、
 `ai-gateway`、`qa`、`document` 和 `gateway`，日志在 `.local/logs/`。
 

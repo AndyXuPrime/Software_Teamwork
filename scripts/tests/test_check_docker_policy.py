@@ -89,6 +89,24 @@ class DockerPolicyTests(unittest.TestCase):
         self.assertIssueContains(issues, "POSTGRES_IMAGE")
         self.assertIssueContains(issues, "must not use latest")
 
+    def test_business_docker_artifacts_are_reported(self) -> None:
+        issues = self.verify(
+            files={
+                "services/auth/Dockerfile": "FROM golang:1.25\n",
+                "services/parser/docker-compose.yml": "services: {}\n",
+                "deploy/docker-compose.production.yml": "services: {}\n",
+                "deploy/compose.preview.yml": "services: {}\n",
+            }
+        )
+
+        self.assertIssueContains(issues, "services/auth/Dockerfile")
+        self.assertIssueContains(issues, "business service Dockerfile")
+        self.assertIssueContains(issues, "services/parser/docker-compose.yml")
+        self.assertIssueContains(issues, "service-level Compose file")
+        self.assertIssueContains(issues, "deploy/docker-compose.production.yml")
+        self.assertIssueContains(issues, "deploy/compose.preview.yml")
+        self.assertIssueContains(issues, "non-root deploy Compose file")
+
     def verify(self, *, files: dict[str, str]) -> list[str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

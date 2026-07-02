@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -43,12 +44,53 @@ DISALLOWED_LOCAL_COMPOSE_SERVICES = (
     "ai-gateway",
     "gateway",
 )
+IGNORED_SCAN_DIRS = {
+    ".git",
+    ".local",
+    ".venv",
+    "__pycache__",
+    "node_modules",
+    "dist",
+    "build",
+}
+DISALLOWED_BUSINESS_DOCKER_ARTIFACTS = (
+    (
+        re.compile(r"^(?:services|apps)/.*/Dockerfile(?:\..*)?$"),
+        "business service Dockerfile",
+    ),
+    (
+        re.compile(r"^(?:services|apps)/.*(?:docker-compose|compose)[^/]*\.ya?ml$"),
+        "service-level Compose file",
+    ),
+    (
+        re.compile(r"^deploy/.*(?:docker-compose|compose)[^/]*\.ya?ml$"),
+        "non-root deploy Compose file",
+    ),
+)
 
 
 def verify_docker_policy(root: Path) -> list[str]:
     issues: list[str] = []
+    issues.extend(validate_no_business_docker_artifacts(root))
     issues.extend(validate_compose_file(root, root / LOCAL_COMPOSE_FILE))
     issues.extend(validate_env_example(root))
+    return issues
+
+
+def validate_no_business_docker_artifacts(root: Path) -> list[str]:
+    issues: list[str] = []
+    for current_root, dirs, files in os.walk(root):
+        dirs[:] = [directory for directory in dirs if directory not in IGNORED_SCAN_DIRS]
+        current = Path(current_root)
+        for filename in files:
+            path = current / filename
+            rel = path.relative_to(root).as_posix()
+            if rel == LOCAL_COMPOSE_FILE.as_posix():
+                continue
+            for pattern, label in DISALLOWED_BUSINESS_DOCKER_ARTIFACTS:
+                if pattern.match(rel):
+                    issues.append(f"{rel}: {label} is not allowed; local Docker is infra-only")
+                    break
     return issues
 
 
