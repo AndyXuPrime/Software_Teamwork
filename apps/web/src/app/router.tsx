@@ -137,6 +137,7 @@ const knowledgeWriteAccess: PermissionRequirement = { any: ['knowledge:write'] }
 const adminAccess: PermissionRequirement = {
   any: [
     'system:admin',
+    'qa:use',
     'report:read',
     'report:write',
     'reports:write',
