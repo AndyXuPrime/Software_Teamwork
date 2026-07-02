@@ -29,10 +29,13 @@ Infrastructure dependencies:
 - Redis for cache, sessions, lightweight queues, or short-lived coordination.
 - Qdrant for vector search.
 - MinIO for object storage.
+- `services/knowledge-runtime/` for Knowledge-owned RAGFlow parsing, chunking,
+  embedding, indexing, and retrieval support.
 
-`services/parser/` is a backend runtime boundary but is not a Go microservice in
-the PaddleOCR implementation path. Keep PaddleOCR runtime code in a Python
-service and let Go services call it over the documented internal HTTP API.
+The old standalone `services/parser/` runtime is retired. Do not restore it for
+document ingestion work; route Knowledge document parsing through
+`services/knowledge` and its `services/knowledge-runtime` runtime API/worker
+boundary.
 
 ---
 

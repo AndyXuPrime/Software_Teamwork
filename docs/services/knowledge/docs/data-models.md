@@ -266,7 +266,7 @@ fixture 规则：
 - Qdrant hit 找不到对应 `document_chunks` 或 hydrate 后文档不可见时，跳过该 hit，不把内部不一致暴露给前端。
 - 无有效命中时返回 `results: []` 和 `trace.hitCount: 0`，不得返回 500。
 - fake embedding/rerank adapter 可以返回固定向量、固定 score 或固定重排序顺序，但公开响应和 trace 字段必须符合 gateway OpenAPI。
-- 真实 A-11 worker 只负责生产同样形态的数据；不能要求 A-12/A-14 在单元或契约测试中启动 Parser service、真实 embedding provider 或真实 Qdrant。
+- 真实 A-11 worker 只负责生产同样形态的数据；不能要求 A-12/A-14 在单元或契约测试中启动 RAGFlow runtime、真实 embedding provider 或真实 Qdrant。
 
 ## 7. 枚举与状态机
 

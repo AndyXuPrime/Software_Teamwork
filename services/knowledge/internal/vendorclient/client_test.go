@@ -96,6 +96,43 @@ func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 	}
 }
 
+func TestGetDatasetDocumentScansAllPages(t *testing.T) {
+	var requested []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/datasets/kb_1/documents" {
+			t.Fatalf("unexpected vendor request: %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)
+		}
+		requested = append(requested, r.URL.RawQuery)
+		switch r.URL.Query().Get("page") {
+		case "1":
+			writeTestVendorJSON(w, `{"code":0,"data":{"total":101,"docs":[{"id":"doc_001","name":"first.txt","kb_id":"kb_1"}]}}`)
+		case "2":
+			writeTestVendorJSON(w, `{"code":0,"data":{"total":101,"docs":[{"id":"doc_101","name":"target.txt","kb_id":"kb_1"}]}}`)
+		default:
+			t.Fatalf("unexpected page query: %s", r.URL.RawQuery)
+		}
+	}))
+	defer server.Close()
+
+	client := New(server.URL, time.Second)
+	doc, err := client.GetDatasetDocument(context.Background(), "tenant_1", "kb_1", "doc_101")
+	if err != nil {
+		t.Fatalf("GetDatasetDocument: %v", err)
+	}
+	if doc["name"] != "target.txt" {
+		t.Fatalf("document name = %v, want target.txt", doc["name"])
+	}
+	want := []string{"page=1&page_size=100", "page=2&page_size=100"}
+	if len(requested) != len(want) {
+		t.Fatalf("queries = %#v, want %#v", requested, want)
+	}
+	for i := range want {
+		if requested[i] != want[i] {
+			t.Fatalf("query[%d] = %q, want %q", i, requested[i], want[i])
+		}
+	}
+}
+
 func writeTestVendorJSON(w http.ResponseWriter, body string) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = io.WriteString(w, body)

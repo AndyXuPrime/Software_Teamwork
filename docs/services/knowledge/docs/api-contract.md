@@ -139,13 +139,13 @@ PostgreSQL 行和 Qdrant 最小 payload：
 
 A-12 的 `knowledge-queries` 实现可以在单元测试和契约测试中直接 seed
 上述文档、chunk 和 vector hit fixture，或使用 fake Qdrant/AI Gateway adapter。
-这类测试不要求 A-11 worker、真实 Parser service、真实 Qdrant 或真实 embedding profile
+这类测试不要求 A-11 worker、真实 RAGFlow runtime、真实 Qdrant 或真实 embedding profile
 已经可运行。无命中、低分、无权限、文档未 `ready` 或已删除时，必须按本契约返回
 稳定空结果或统一错误 envelope。
 
 A-14 的 active operation 契约测试、错误 envelope 测试和 request id 测试可以使用
 seeded repository、fake file client、fake parser client、fake queue、fake vector index 和 fake AI Gateway。
-只有跨服务 smoke 或“上传 -> worker -> Parser -> Qdrant -> 检索”的端到端验收需要等待
+只有跨服务 smoke 或“上传 -> runtime worker -> 解析/切块/索引 -> 检索”的端到端验收需要等待
 A-11 runtime。端到端 smoke 可以登记为 integration follow-up，不应阻塞 A-14
 对公开契约、路由、错误和状态流转的测试收口。
 

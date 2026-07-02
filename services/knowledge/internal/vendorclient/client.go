@@ -249,13 +249,19 @@ func (c *Client) GetDocument(ctx context.Context, userID, documentID string) (ma
 }
 
 func (c *Client) GetDatasetDocument(ctx context.Context, userID, datasetID, documentID string) (map[string]interface{}, error) {
-	items, _, err := c.ListDocuments(ctx, userID, datasetID, 1, 100)
-	if err != nil {
-		return nil, err
-	}
-	for _, item := range items {
-		if strings.TrimSpace(fmt.Sprint(item["id"])) == documentID {
-			return item, nil
+	const pageSize = 100
+	for page := 1; ; page++ {
+		items, total, err := c.ListDocuments(ctx, userID, datasetID, page, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			if strings.TrimSpace(fmt.Sprint(item["id"])) == documentID {
+				return item, nil
+			}
+		}
+		if len(items) == 0 || int64(page*pageSize) >= total {
+			break
 		}
 	}
 	return nil, &APIError{Code: 404, Message: "document not found"}

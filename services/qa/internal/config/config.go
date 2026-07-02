@@ -65,9 +65,6 @@ type Config struct {
 	AttachmentMaxPerSession  int
 	AttachmentProcessTimeout time.Duration
 	FileServiceURL           string
-	ParserServiceBaseURL     string
-	ParserServiceToken       string
-	ParserServiceTimeout     time.Duration
 }
 
 func Load() (Config, error) {
@@ -153,14 +150,6 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.FileServiceURL = envOr("FILE_SERVICE_BASE_URL", "http://localhost:8082")
-	cfg.ParserServiceBaseURL = envOr("PARSER_SERVICE_BASE_URL", "http://localhost:8087")
-	cfg.ParserServiceToken = strings.TrimSpace(os.Getenv("PARSER_SERVICE_TOKEN"))
-	if cfg.ParserServiceToken == "" {
-		cfg.ParserServiceToken = serviceToken
-	}
-	if cfg.ParserServiceTimeout, err = durationEnv("PARSER_SERVICE_TIMEOUT", cfg.AttachmentProcessTimeout); err != nil {
-		return Config{}, err
-	}
 	if cfg.SettingsOpen, err = boolEnv("QA_SETTINGS_OPEN", false); err != nil {
 		return Config{}, err
 	}
@@ -187,9 +176,6 @@ func (c Config) Validate() error {
 		return err
 	}
 	if err := validateHTTPURL("FILE_SERVICE_BASE_URL", c.FileServiceURL); err != nil {
-		return err
-	}
-	if err := validateHTTPURL("PARSER_SERVICE_BASE_URL", c.ParserServiceBaseURL); err != nil {
 		return err
 	}
 	if err := validateHTTPURL("AI_GATEWAY_URL", c.AIGatewayURL); err != nil {

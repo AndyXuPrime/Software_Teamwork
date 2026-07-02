@@ -491,119 +491,90 @@ non-owner PATCH response run -> 404 not_found
 owned message with no citations -> authorize message -> 200 []
 ```
 
-## Scenario: Parser Runtime Internal API
+## Scenario: Knowledge Runtime Internal API
 
 ### 1. Scope / Trigger
 
-- Trigger: adding or changing the internal parser runtime used by Knowledge
-  ingestion.
-- Applies to `services/parser/`, Knowledge parser clients under
-  `services/knowledge/internal/platform/parser`, parser runtime configuration,
+- Trigger: adding or changing the RAGFlow-based runtime API/worker used by
+  Knowledge ingestion and retrieval.
+- Applies to `services/knowledge-runtime/`, Knowledge vendor runtime clients
+  under `services/knowledge/internal/vendorclient`, runtime parser configuration,
   and docs that describe document parsing ownership.
 
 ### 2. Signatures
 
-- Parser internal route:
-  - `GET /healthz`
-  - `GET /readyz`
-  - `POST /internal/v1/parsed-documents`
+- Runtime operational routes:
+  - `GET /api/v1/system/healthz`
+  - `GET /api/v1/system/ping`
+- Runtime adapter routes:
+  - dataset, document, chunk, retrieval, provider/model, system, and task routes
+    explicitly allowed by `services/knowledge-runtime/api/apps/route_registry.py`
 - Knowledge environment keys:
-  - `PARSER_SERVICE_BASE_URL`
-  - `PARSER_SERVICE_TOKEN`
-  - `PARSER_SERVICE_TIMEOUT`
+  - `VENDOR_RUNTIME_URL`
+  - `KNOWLEDGE_AUTO_START_INGESTION`
+  - runtime/storage/search keys required by the `knowledge-v2` profile
 
 ### 3. Contracts
 
-Parser request body:
+Knowledge owns knowledge-base and document business state, permissions, public
+response envelopes, parser-config administration, and adapter error mapping.
+`services/knowledge-runtime` owns document parsing, chunking, embedding/index
+work, retrieval support, runtime task execution, and vendor storage/search
+details. Runtime routes must be registered through an explicit allowlist; do not
+expose upstream RAGFlow login/JWT/API-token, UI, file-management, or MCP
+surfaces as product APIs.
 
-```json
-{
-  "documentName": "scan.pdf",
-  "contentType": "application/pdf",
-  "sizeBytes": 12345,
-  "dataBase64": "..."
-}
-```
-
-Parser response body uses the project envelope:
-
-```json
-{
-  "data": {
-    "content": "normalized parsed text",
-    "title": "optional title",
-    "backend": "paddleocr"
-  },
-  "requestId": "req_123"
-}
-```
-
-Parser readiness response uses the same project envelope. `data.status` is
-`ok` for `/healthz`, `ready` for a ready parser backend, and `not_ready` for a
-backend dependency/runtime state that prevents parse requests. A not-ready
-response should include a short sanitized `data.reason`; readiness checks must
-not load PP-StructureV3/PaddleOCR models unless explicit startup warm-up is
-configured.
-
-Knowledge owns ingestion job state, chunking, embedding, Qdrant writes, and
-retrieval. Parser owns document byte parsing and backend adapter details such
-as PaddleOCR model loading and parser concurrency. The Parser runtime target is
-Python/PaddleOCR; Go services should remain HTTP callers and should not embed
-document parsing logic, PaddleOCR, or PaddlePaddle inference dependencies.
-Parser may parse lightweight text and Office OpenXML formats locally before
-routing PDF and image OCR to PaddleOCR, but Knowledge remains responsible for
-ingestion state and chunks.
+The old standalone `services/parser` and `/internal/v1/parsed-documents` API are
+retired. Do not add `PARSER_SERVICE_BASE_URL` or Parser HTTP clients back to
+Knowledge, QA, Gateway, or local integration scripts.
 
 ### 4. Validation & Error Matrix
 
 | Condition | Required handling |
 | --- | --- |
-| Parser returns `400` or `413` | Knowledge treats the document as `parse_failed` and should not retry as an infrastructure outage. |
-| Parser returns `429`, `5xx`, redirect, timeout, or invalid response | Knowledge treats it as `dependency_error` so ingestion retry policy can apply. |
-| Parser returns empty content | Knowledge treats the document as parsing failure. |
-| Parser response includes backend label | Knowledge stores it as `knowledge_documents.parser_backend` when ingestion completes. |
+| Runtime health/ping fails | Knowledge `/readyz` reports runtime dependency failure without leaking internal credentials or raw vendor bodies. |
+| Runtime document parse task fails | Knowledge maps the document to a failed processing state with sanitized error text. |
+| Runtime returns zero chunks for an uploaded document | Treat as ingestion failure; do not mark the document ready. |
+| Runtime retrieval fails or returns invalid shape | Return caller-owned `dependency_error`; do not forward raw vendor `{code, message}` envelopes. |
+| Runtime returns valid retrieval hits | Hydrate and normalize through Knowledge-owned DTOs and permission checks. |
 
 ### 5. Good/Base/Bad Cases
 
-- Good: Knowledge calls parser over HTTP with request/user context headers and
-  no direct PaddleOCR dependency; Parser hosts PaddleOCR in a Python runtime.
-- Base: Knowledge unit tests use fake `service.Parser` implementations, while
-  runtime configuration requires `PARSER_SERVICE_BASE_URL`.
-- Bad: importing parser runtime code into Knowledge, adding PaddleOCR/Python
-  dependencies to the Knowledge Go service, or choosing Go as the PaddleOCR
-  runtime just to match other backend services.
+- Good: Knowledge calls the runtime over HTTP through the vendor client, worker
+  completes parse/chunk/embed/index work, and retrieval returns normalized
+  Knowledge results.
+- Base: Knowledge unit tests use fake vendor runtime clients while runtime E2E
+  is gated by explicit local infrastructure.
+- Bad: restoring `services/parser`, adding a QA/Gateway direct parser client, or
+  exposing upstream RAGFlow auth/UI/MCP surfaces through the product boundary.
 
 ### 6. Tests Required
 
-- Knowledge parser client tests assert path, headers, base64 document payload,
-  sanitized failures, redirect blocking, and error classification.
-- Parser service implementation tests should cover health/readiness,
-  request validation, backend not-ready behavior, and normalized parsed-document
-  response shape.
-- Parser OpenAPI contract tests should assert both the service-local contract
-  and `docs/services/parser/api/internal.openapi.yaml` document `ok`, `ready`,
-  `not_ready`, and the optional not-ready `reason`.
-- Parser service implementation checks are `uv run ruff check .`,
-  `uv run pytest`, and `uv run python -m compileall src tests` from
-  `services/parser`.
-- Ingestion tests should assert parser validation failures become
-  `parse_failed`, while parser infrastructure failures remain retryable
-  dependency errors.
+- Knowledge vendor client/adapter tests assert route paths, propagated tenant
+  headers, redirect blocking, sanitized failures, and error classification.
+- Runtime route registry tests assert only the allowlisted API modules are
+  registered.
+- Targeted runtime tests cover config utilities and changed parser/chunking
+  surfaces.
+- `knowledge-v2` Compose config and Docker policy checks must pass when runtime
+  deployment wiring changes.
+- Real PDF E2E should prove upload -> parse/chunk/embed/index -> retrieval when
+  `DL_T_673-1999.pdf` is available.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```text
-knowledge worker -> import PaddleOCR adapter -> parse bytes in Knowledge process
-parser service -> Go+cgo wrapper around stale PaddleOCR bindings
+qa -> parser /internal/v1/parsed-documents
+knowledge -> services/parser -> chunk/embed/index in Knowledge
 ```
 
 #### Correct
 
 ```text
-knowledge worker -> parser /internal/v1/parsed-documents -> chunk/embed/index in Knowledge
-parser service -> Python/PaddleOCR backend behind the HTTP contract
+knowledge adapter -> services/knowledge-runtime API
+knowledge-runtime worker -> parse/chunk/embed/index -> retrieval support
 ```
 
 ## Scenario: Internal Service Contract API
