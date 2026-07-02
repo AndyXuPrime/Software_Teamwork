@@ -12,6 +12,8 @@ import (
 
 const (
 	DefaultHTTPAddr        = ":8085"
+	DefaultMCPPath         = "/mcp"
+	DefaultMCPTokenHeader  = "Authorization"
 	DefaultShutdownTimeout = 10 * time.Second
 	DefaultPandocPath      = "pandoc"
 	DefaultLibreOfficePath = "soffice"
@@ -28,6 +30,9 @@ type Config struct {
 	AIGatewayServiceToken string
 	KnowledgeServiceURL   string
 	KnowledgeServiceToken string
+	MCPPath               string
+	MCPServiceToken       string
+	MCPTokenHeader        string
 	PandocPath            string
 	LibreOfficePath       string
 	ShutdownTimeout       time.Duration
@@ -45,6 +50,9 @@ func Load() (Config, error) {
 		AIGatewayServiceToken: firstEnv("DOCUMENT_AI_GATEWAY_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
 		KnowledgeServiceURL:   strings.TrimSpace(os.Getenv("DOCUMENT_KNOWLEDGE_SERVICE_URL")),
 		KnowledgeServiceToken: firstEnv("DOCUMENT_KNOWLEDGE_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
+		MCPPath:               envOr("DOCUMENT_MCP_PATH", DefaultMCPPath),
+		MCPServiceToken:       firstEnv("DOCUMENT_MCP_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
+		MCPTokenHeader:        envOr("DOCUMENT_MCP_TOKEN_HEADER", DefaultMCPTokenHeader),
 		PandocPath:            envOr("DOCUMENT_PANDOC_PATH", DefaultPandocPath),
 		LibreOfficePath:       envOr("DOCUMENT_LIBREOFFICE_PATH", DefaultLibreOfficePath),
 		ShutdownTimeout:       DefaultShutdownTimeout,
@@ -66,6 +74,12 @@ func Load() (Config, error) {
 func (c Config) Validate() error {
 	if strings.TrimSpace(c.HTTPAddr) == "" {
 		return errors.New("DOCUMENT_HTTP_ADDR is required")
+	}
+	if err := validatePath("DOCUMENT_MCP_PATH", c.MCPPath); err != nil {
+		return err
+	}
+	if !validHeaderName(c.MCPTokenHeader) {
+		return errors.New("DOCUMENT_MCP_TOKEN_HEADER is invalid")
 	}
 	if strings.TrimSpace(c.DatabaseURL) == "" {
 		return errors.New("DOCUMENT_DATABASE_URL is required")
@@ -157,4 +171,25 @@ func firstEnv(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func validatePath(name, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" || !strings.HasPrefix(value, "/") || strings.Contains(value, " ") {
+		return fmt.Errorf("%s must be an absolute HTTP path", name)
+	}
+	return nil
+}
+
+func validHeaderName(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if !(r >= 'A' && r <= 'Z') && !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') && r != '-' {
+			return false
+		}
+	}
+	return true
 }
