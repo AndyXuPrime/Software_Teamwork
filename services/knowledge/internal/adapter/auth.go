@@ -12,11 +12,15 @@ func (s *Server) requireServiceToken(w http.ResponseWriter, r *http.Request) boo
 	if !strings.HasPrefix(r.URL.Path, "/internal/v1/") {
 		return true
 	}
-	if strings.TrimSpace(s.cfg.ServiceToken) == "" || !secureTokenEqual(r.Header.Get("X-Service-Token"), s.cfg.ServiceToken) {
+	if !s.AuthorizeServiceToken(r.Header.Get("X-Service-Token")) {
 		writeAppError(w, r, service.NewError(service.CodeUnauthorized, "service authentication required", nil))
 		return false
 	}
 	return true
+}
+
+func (s *Server) AuthorizeServiceToken(token string) bool {
+	return strings.TrimSpace(s.cfg.ServiceToken) != "" && secureTokenEqual(token, s.cfg.ServiceToken)
 }
 
 func (s *Server) gatewayContext(w http.ResponseWriter, r *http.Request) (service.RequestContext, bool) {

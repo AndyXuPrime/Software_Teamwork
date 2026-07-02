@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 20
-- **Last Active**: 2026-07-01
+- **Total Sessions**: 15
+- **Last Active**: 2026-06-29
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~675 | Active |
+| `journal-1.md` | ~506 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,11 +29,6 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
-| 20 | 2026-07-01 | Archive ragflow-runtime-vendor | `7563b29`, `f85b84a`, `805ea5a`, `181dc08` | `L1nggTeam/feat/ragflow-runtime-vendor` |
-| 19 | 2026-07-01 | Knowledge MCP Server (Phases A–C) | `f85b84a` | `L1nggTeam/feat/ragflow-runtime-vendor` |
-| 18 | 2026-07-01 | Phase 4 deepdoc ingestion | `11507f5` | `L1nggTeam/feat/ragflow-runtime-vendor` |
-| 17 | 2026-07-01 | Phase 3b parser-config bridge | `c2fd2b1` | `L1nggTeam/feat/ragflow-runtime-vendor` |
-| 16 | 2026-07-01 | Phase 3 contract adapter routes | `68999fb`, `5f0c488` | `L1nggTeam/feat/ragflow-runtime-vendor` |
 | 15 | 2026-06-29 | Knowledge document upload ingestion job | `2a6774c` | `L1nggTeam/feat/knowledge-upload-ingestion-job` |
 | 14 | 2026-06-29 | Label service documentation paths | `f3839e0` | `L1nggTeam/chore/github-auto-labels` |
 | 13 | 2026-06-29 | Implement Knowledge core API | `3d4046b` | `L1nggTeam/feat/knowledge-core-api` |

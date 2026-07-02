@@ -770,6 +770,49 @@ func TestStreamableHTTPHandlerForwardsCallerHeaders(t *testing.T) {
 	}
 }
 
+func TestStreamableHTTPHandlerRejectsMissingServiceToken(t *testing.T) {
+	state := newFakeVendorState()
+	vendor := startFakeVendor(t, state)
+	defer vendor.Close()
+
+	adapterServer := adapter.NewServer(adapterconfig.Config{
+		ServiceVersion:   "test",
+		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
+	}, nil)
+	httpServer := httptest.NewServer(kmcp.NewStreamableHTTPHandler(adapterServer, nil))
+	defer httpServer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "test-client", Version: "0.1.0"}, nil)
+	transport := &sdkmcp.StreamableClientTransport{
+		Endpoint: httpServer.URL,
+		HTTPClient: &http.Client{
+			Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				r.Header.Set("X-User-Id", "usr_http")
+				r.Header.Set("X-User-Permissions", service.PermissionKnowledgeRead)
+				return http.DefaultTransport.RoundTrip(r)
+			}),
+		},
+	}
+	session, err := client.Connect(ctx, transport, nil)
+	if err == nil {
+		defer session.Close()
+		for _, toolErr := range session.Tools(ctx, nil) {
+			if toolErr == nil {
+				t.Fatal("Tools() succeeded without X-Service-Token")
+			}
+			return
+		}
+		t.Fatal("Tools() returned no error without X-Service-Token")
+	}
+	if !strings.Contains(err.Error(), "401") && !strings.Contains(strings.ToLower(err.Error()), "unauthorized") {
+		t.Fatalf("connect error = %v, want unauthorized", err)
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {

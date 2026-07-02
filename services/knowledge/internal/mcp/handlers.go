@@ -25,12 +25,6 @@ type toolHandlers struct {
 
 func (h *toolHandlers) effectiveCaller() CallerContext {
 	caller := h.caller
-	if strings.TrimSpace(caller.UserID) == "" {
-		caller.UserID = "mcp_anonymous"
-	}
-	if strings.TrimSpace(caller.Permissions) == "" {
-		caller.Permissions = service.PermissionKnowledgeRead
-	}
 	if strings.TrimSpace(caller.RequestID) == "" {
 		caller.RequestID = newRequestID()
 	}
