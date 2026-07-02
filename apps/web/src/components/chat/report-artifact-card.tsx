@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 
 type ReportArtifactCardProps = {
   artifact: QAReportArtifact
-  onDownload?: (downloadPath: string, filename: string) => void
+  onDownload?: (reportFileId: string, filename: string) => void
 }
 
 function getJobStatusVariant(
@@ -73,8 +73,8 @@ export default function ReportArtifactCard({ artifact, onDownload }: ReportArtif
     summary.length > MAX_SUMMARY_LENGTH ? summary.slice(0, MAX_SUMMARY_LENGTH) + '…' : summary
 
   const handleDownload = () => {
-    if (!canDownload(artifact) || !artifact.downloadPath) return
-    onDownload?.(artifact.downloadPath, artifact.filename ?? 'report.docx')
+    if (!canDownload(artifact) || !artifact.reportFileId) return
+    onDownload?.(artifact.reportFileId, artifact.filename ?? 'report.docx')
   }
 
   const reportUrl = artifact.reportId

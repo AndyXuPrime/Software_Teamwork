@@ -279,9 +279,11 @@ export function ChatPage() {
 
   // ── Report artifact download handler ──
   const handleArtifactDownload = useCallback(
-    async (downloadPath: string, filename: string) => {
+    async (reportFileId: string, filename: string) => {
       try {
-        const blob = await gatewayFileRequest(downloadPath)
+        const blob = await gatewayFileRequest(
+          `/report-files/${encodeURIComponent(reportFileId)}/content`,
+        )
         const url = URL.createObjectURL(blob)
         downloadFromUrl(url, filename)
         setTimeout(() => URL.revokeObjectURL(url), 1000)

@@ -360,9 +360,10 @@ export function parseReportArtifact(raw: unknown): QAReportArtifact | null {
   const filename = getString(raw, 'filename')
   if (filename) artifact.filename = filename
   const downloadPath = getString(raw, 'downloadPath')
-  if (downloadPath) artifact.downloadPath = downloadPath
+  if (downloadPath && /^\/api\/v1\/report-files\/[^/]+\/content$/.test(downloadPath))
+    artifact.downloadPath = downloadPath
   const detailPath = getString(raw, 'detailPath')
-  if (detailPath) artifact.detailPath = detailPath
+  if (detailPath && /^\/api\/v1\/reports\/[^/]+$/.test(detailPath)) artifact.detailPath = detailPath
   const reportStatus = getString(raw, 'reportStatus')
   if (reportStatus) artifact.reportStatus = reportStatus
 
