@@ -63,12 +63,8 @@ function requireAuth(requirement?: PermissionRequirement) {
 async function redirectToReportHome() {
   const store = await restoreAuthForRoute()
 
-  if (canAccess(store.user, reportWriteAccess)) {
-    throw redirect({ to: '/reports/generate' })
-  }
-
   if (canAccess(store.user, reportAccess)) {
-    throw redirect({ to: '/reports/records' })
+    throw redirect({ to: '/reports/generate' })
   }
 
   throw redirect({ to: '/forbidden' })
