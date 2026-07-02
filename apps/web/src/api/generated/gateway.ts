@@ -1136,7 +1136,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get current QA config version */
+        /**
+         * Get current QA config version
+         * @description Returns the active QA runtime configuration including the global Agent system prompt. Requires qa:settings:read permission. The full systemPrompt is returned in admin QA config endpoints only; it must never appear in SSE events, QA chat responses, logs, metrics, tool call summaries, or error messages.
+         */
         get: operations["getCurrentQAConfigVersion"];
         put?: never;
         post?: never;
@@ -1157,7 +1160,7 @@ export interface paths {
         put?: never;
         /**
          * Create QA config version
-         * @description Creates a versioned QA runtime configuration so historical answers remain traceable to the retrieval and Agent settings used at generation time.
+         * @description Creates a versioned QA runtime configuration so historical answers remain traceable to the retrieval, Agent settings, and system prompt used at generation time. Requires qa:settings:write permission. The created version (including systemPrompt) is returned on success. The published system prompt becomes active for the next question; in-flight answer generations continue using their previously acquired snapshot.
          */
         post: operations["createQAConfigVersion"];
         delete?: never;
@@ -2678,6 +2681,8 @@ export interface components {
             enabledToolNames?: string[];
             llm?: components["schemas"]["QALLMConfigVersion"];
             agent?: components["schemas"]["QAAgentConfig"];
+            /** @description Global Agent system prompt. Returned only in admin QA config endpoints (requires qa:settings:read). Must not appear in SSE events, QA chat responses, logs, metrics, tool call summaries, or error messages. Server validates 1–20000 bytes (octet_length, not character count); multi-byte UTF-8 characters count toward the byte limit. */
+            systemPrompt?: string;
             isActive: boolean;
             /** Format: date-time */
             createdAt: string;
@@ -2704,6 +2709,8 @@ export interface components {
             enabledToolNames?: string[];
             llm?: components["schemas"]["CreateQALLMConfigVersionRequest"];
             agent?: components["schemas"]["QAAgentConfig"];
+            /** @description Global Agent system prompt. Optional on create; if omitted, the current active version's prompt is inherited so that only changing retrieval/agent settings does not clear the existing prompt. Server validates 1–20000 bytes (octet_length, not character count) after trimming; multi-byte UTF-8 characters count toward the byte limit. Clients should apply the same byte-length check before submitting to avoid 400 validation errors. */
+            systemPrompt?: string;
             /** @default true */
             activate: boolean;
         };
@@ -3008,7 +3015,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Gateway is ready to serve traffic. */
+            /** @description Gateway lightweight readiness passed. This checks the Gateway session cache dependency, Auth readiness, and owner service base URL configuration; it does not prove owner-service business workflows or external provider calls are available. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5283,6 +5290,7 @@ export interface operations {
                     "application/json": components["schemas"]["QAConfigVersionResponse"];
                 };
             };
+            403: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };
