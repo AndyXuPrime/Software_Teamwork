@@ -216,7 +216,7 @@ const reportsIndexRoute = createRoute({
 const reportGenerateRoute = createRoute({
   getParentRoute: () => reportsRoute,
   path: 'generate',
-  beforeLoad: requireAuth(reportWriteAccess),
+  beforeLoad: requireAuth(reportAccess),
   component: ReportGeneratePage,
 })
 
