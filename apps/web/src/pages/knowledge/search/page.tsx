@@ -261,6 +261,7 @@ export function KnowledgeSearchPage() {
       </div>
 
       <div
+        inert={!showAdvanced}
         className={cn(
           'overflow-hidden transition-[max-height,opacity] duration-300 ease-out',
           showAdvanced ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0',
