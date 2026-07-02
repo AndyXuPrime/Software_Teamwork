@@ -318,7 +318,7 @@ Ollama 默认监听 `http://localhost:11434`，Docker 内通过 `host.docker.int
 # 获取管理员 token（本地默认值）
 ADMIN_TOKEN="atk_v1_Z4EHKs54YdxqTTXuYTjBaRnYNL7XO6sIGw4WBd7DMRo"
 
-curl -X PATCH http://localhost:8080/api/v1/admin/ai-gateway/model-profiles/default-chat \
+curl -X PATCH http://localhost:8080/api/v1/admin/model-profiles/default-chat \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"qwen2.5:7b"}'
@@ -332,7 +332,7 @@ curl -X PATCH http://localhost:8080/api/v1/admin/ai-gateway/model-profiles/defau
 ```bash
 ADMIN_TOKEN="atk_v1_Z4EHKs54YdxqTTXuYTjBaRnYNL7XO6sIGw4WBd7DMRo"
 
-curl -X PATCH http://localhost:8080/api/v1/admin/ai-gateway/model-profiles/default-chat \
+curl -X PATCH http://localhost:8080/api/v1/admin/model-profiles/default-chat \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"baseUrl":"https://api.deepseek.com/v1","model":"deepseek-chat"}'
@@ -349,13 +349,13 @@ API key 通过管理端 UI 配置（Admin → 模型配置 → default-chat → 
 # AI Gateway 健康检查
 curl -fs http://localhost:8086/readyz && echo "ok"
 
-# 快速冒烟：直接调 chat completions（替换 TOKEN 为内部服务 token）
+# 快速冒烟：直接调 chat completions（model 填你实际配置的模型名）
 INTERNAL_TOKEN="local-dev-internal-service-token-change-me"
 curl -X POST http://localhost:8086/internal/v1/chat/completions \
   -H "X-Service-Token: $INTERNAL_TOKEN" \
-  -H "X-Caller-Service: smoke" \
+  -H "X-Caller-Service: document" \
   -H "Content-Type: application/json" \
-  -d '{"profile_id":"default-chat","model":"","messages":[{"role":"user","content":"hi"}]}'
+  -d '{"profile_id":"default-chat","model":"deepseek-chat","messages":[{"role":"user","content":"hi"}]}'
 ```
 
 返回包含 `choices` 字段则 provider 正常，之后在前端选择「迎峰度夏检查报告」类型
