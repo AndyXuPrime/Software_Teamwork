@@ -129,7 +129,7 @@ const menuItems: AdminNavigationItem[] = [
     key: 'settings',
     label: '系统设置',
     path: '/admin/settings',
-    requirement: { any: ['system:admin', 'admin:model-profile:write'] },
+    requirement: { any: ['system:admin'] },
   },
 ]
 
