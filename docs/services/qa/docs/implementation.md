@@ -52,6 +52,7 @@
 | QA -> Document MCP report tools smoke | `services/qa/internal/platform/mcpclient/document_mcp_smoke_test.go`、`docs/runbooks/local-integration.md` | #451 / B-017 | `QA_DOCUMENT_MCP_SMOKE=1 go test ./internal/platform/mcpclient -run '^TestDocumentMCPReportToolsSmoke$' -count=1 -v` | 默认 skip；显式启用时连接 C-023 的 Document Streamable HTTP MCP endpoint，验证 `tools/list`、`document__*` 前缀、默认白名单、outline job accepted/running、status 查询、DOCX export/get_result 的 `reportArtifact`、无权限摘要和可选 Gateway 下载探针。普通 CI 不依赖真实 Document worker。 |
 | MCP client/tooling | `services/qa/internal/platform/mcpclient`、`localtools` | QA README | platform tests | 支持 runtime Streamable HTTP、测试专用 exact-spec allowlisted stdio、内置工具。runtime 配置拒绝 stdio；包内 stdio 测试只映射代码内批准的 command spec 到固定 executable + argv，不把配置中的 executable/argv 直接传入 `exec.Command`；内置命令工具不再通过 shell 执行用户字符串，只运行 path-free diagnostic command，文件访问必须走 workspace-bounded file tools。 |
 | PostgreSQL schema/repository | `services/qa/migrations/*.sql`、`internal/repository` | QA 数据模型 | repository tests | 有 integration tests，但依赖 `QA_TEST_DATABASE_URL`。分页、事件游标等写入 sqlc `int4` 参数前在 repository 层做 `int32` 范围校验，避免上层绕过时溢出。 |
+| System prompt 版本化 | `services/qa/migrations/0014_versioned_system_prompt.sql`、`internal/service/settings.go`、`internal/repository/` | [S-048] / [B-018] | settings/service/repository tests | `system_prompt` 纳入 `qa_config_versions` 原子版本化；运行时从 active config 读取，空时回退 `AGENT_SYSTEM_PROMPT`；审计仅存长度元数据；发布触发 runtime reload。 |
 
 ## 4. 未实现
 
