@@ -33,7 +33,18 @@ func TestQAMCPRAGSmoke(t *testing.T) {
 	client := smokeHTTPClient()
 	session := createSmokeSession(t, ctx, client, cfg.gatewayBaseURL, cfg.username, cfg.password, requestID)
 
-	// Basic Gateway→QA contract checks always run.
+	// Verify seed data is accessible without model calls.
+	t.Run("knowledge_tool_available", func(t *testing.T) {
+		assertKnowledgeToolAvailable(t, ctx, client, cfg, session, requestID)
+	})
+
+	// All message-sending tests require AI Gateway with a real provider
+	// profile. Local seed uses placeholder profiles; skip if not configured.
+	if cfg.aiGatewayBaseURL == "" {
+		t.Skip("AI_GATEWAY_BASE_URL not set; QA message tests require a real AI Gateway profile")
+	}
+	assertHTTPReady(t, ctx, "ai-gateway", cfg.aiGatewayBaseURL)
+
 	t.Run("qa_response_envelope", func(t *testing.T) {
 		assertQAResponseEnvelope(t, ctx, client, cfg, session, requestID)
 	})
@@ -41,13 +52,7 @@ func TestQAMCPRAGSmoke(t *testing.T) {
 		assertQANoSensitiveLeaks(t, ctx, client, cfg, session, requestID)
 	})
 
-	// RAG sub-test requires AI Gateway with real provider profile.
-	// Local seed uses placeholder profiles; skip if not configured.
 	t.Run("qa_rag_knowledge_response", func(t *testing.T) {
-		if cfg.aiGatewayBaseURL == "" {
-			t.Skip("AI_GATEWAY_BASE_URL not set; RAG requires a real AI Gateway profile")
-		}
-		assertHTTPReady(t, ctx, "ai-gateway", cfg.aiGatewayBaseURL)
 		kbID := assertKnowledgeToolAvailable(t, ctx, client, cfg, session, requestID)
 		assertQAKnowledgeRAGResponse(t, ctx, client, cfg, session, kbID, requestID)
 	})
