@@ -32,7 +32,6 @@ const menuItems: AdminNavigationItem[] = [
   {
     key: 'system',
     label: '系统管理',
-    requirement: { any: ['system:admin'] },
     children: [{ key: 'styles', label: '样式管理', path: '/admin/styles' }],
   },
   {
@@ -124,7 +123,7 @@ const menuItems: AdminNavigationItem[] = [
     key: 'stats',
     label: 'QA 统计',
     path: '/admin/stats',
-    requirement: { any: ['system:admin'] },
+    requirement: { any: ['qa:use', 'system:admin'] },
   },
   {
     key: 'settings',
