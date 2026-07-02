@@ -139,9 +139,9 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
   `.env.example` 中的 `admin` / `LocalDemoAdmin#12345` 或显式
   `GATEWAY_SMOKE_USERNAME` / `GATEWAY_SMOKE_PASSWORD`。
 - Gateway Knowledge route 返回 `401`：Gateway session cache/Redis 可能不可用；查
-  `docker compose logs gateway redis auth`。
+  `.local/logs/gateway.log`、`.local/logs/auth.log`，并确认 Redis infra 已启动。
 - Gateway Knowledge route 返回 `502`：Knowledge owner route 或 service token 配置异常；
-  查 `docker compose logs gateway knowledge` 并用相同 `X-Request-Id` 搜索。
+  查 `.local/logs/gateway.log` 和 `.local/logs/knowledge.log` 并用相同 `X-Request-Id` 搜索。
 
 ### Gateway -> Knowledge -> QA RAG 端到端 smoke
 
@@ -161,35 +161,34 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
 
 前置要求：
 
-- 根级 Compose 需要带 `--profile ai` 启动，使 AI Gateway、migration 和 placeholder
-  profile seed 可用。
+- 已按本手册“启动命令”使用 `./scripts/local/dev-up.sh` 启动 infra、migration 和
+  seed，并用 `./scripts/local/run-backend.sh` 在宿主机启动后端服务。
 - `QA_SETTINGS_OPEN=true` 只建议在本地 smoke 环境启用，用于允许测试通过 Gateway
-  创建本轮 QA/LLM config versions。也可改用具备 `qa:settings:write` 权限或
-  `QA_ADMIN_USER_IDS` 的账号。
+  创建本轮 QA/LLM config versions；需要在启动后端前写入 `deploy/.env`。
+  也可改用具备 `qa:settings:write` 权限或 `QA_ADMIN_USER_IDS` 的账号。
 - `QA_SMOKE_CHAT_PROFILE_ID` 和 `QA_SMOKE_CHAT_MODEL` 必须指向 AI Gateway 中可实际
   调用的 chat profile/model。`.env.example` 的 `default-chat` /
-  `local-placeholder-chat` 只在 `host.docker.internal:11434/v1` 后面有可用
+  `local-placeholder-chat` 只在 `localhost:11434/v1` 后面有可用
   OpenAI-compatible provider 时可用；真实 provider 或受控 stub provider 仍需显式配置。
 - 默认 Knowledge 使用 local hashing embedding 和 in-memory vector index。需要证明
-  Qdrant runtime 查询时，在启动前设置 `KNOWLEDGE_QDRANT_URL=http://qdrant:6333`。
+  Qdrant runtime 查询时，在启动前通过 `deploy/.env` 设置宿主机可访问的 Qdrant URL。
   需要真实 AI Gateway embedding/rerank 时，再设置 `EMBEDDING_PROVIDER=ai_gateway`、
-  `KNOWLEDGE_AI_GATEWAY_BASE_URL=http://ai-gateway:8086`、embedding profile/model
+  `KNOWLEDGE_AI_GATEWAY_BASE_URL=http://127.0.0.1:8086`、embedding profile/model
   和 `RERANK_MODEL` / `RERANK_PROFILE_ID`。
 
 启动本地栈：
 
 ```bash
-cd deploy
-cp .env.example .env
-# 可选：中国大陆 Docker 构建 overlay
-# cat .env.china.example >> .env
-QA_SETTINGS_OPEN=true DOCKER_BUILDKIT=1 docker compose --env-file .env --profile ai up -d --build gateway ai-gateway
+cp deploy/.env.example deploy/.env
+# 如需运行本 smoke，可先在 deploy/.env 中设置 QA_SETTINGS_OPEN=true。
+./scripts/local/dev-up.sh
+./scripts/local/run-backend.sh
 ```
 
 运行 smoke：
 
 ```bash
-cd ../services/knowledge
+cd services/knowledge
 GATEWAY_RAG_E2E_SMOKE=1 \
 GATEWAY_BASE_URL='http://127.0.0.1:8080' \
 FILE_SERVICE_BASE_URL='http://127.0.0.1:8082' \
@@ -225,24 +224,24 @@ chunks、jobs、documents、knowledge base 的顺序删除本轮 Knowledge Postg
 
 | 阶段 | 典型失败 | 排查 |
 | --- | --- | --- |
-| File | `File stage: gateway document upload returned HTTP ...` | 查 `docker compose logs gateway file`，确认 File ready、`INTERNAL_SERVICE_TOKEN` 一致、上传大小未超限。不要打印 multipart body 或 object key。 |
-| Parser | `Parser stage: ready document did not record parserBackend` 或文档状态 `failed` | 查 `docker compose logs knowledge parser`，确认 Parser ready、`PARSER_SERVICE_TOKEN` 一致；Markdown fixture 不需要真实 OCR 模型下载。 |
-| Knowledge ingestion | `document ... did not become ready` 或 `chunkCount = 0` | 查 `docker compose logs knowledge redis postgres qdrant`；检查 `processing_jobs` 状态、Redis/asynq 投递和 Qdrant/local vector 配置。 |
-| Knowledge retrieval | `Knowledge retrieval stage: ...`、无 expected hit 或 rerank trace 异常 | 查 `docker compose logs gateway knowledge ai-gateway qdrant`；确认 `knowledge-queries` 返回 ready 文档 chunk，`rerank=true` 在无 `RERANK_MODEL` 时只证明 no-op fallback trace。 |
-| AI Gateway | QA message 返回 `502`、model error 或 provider unavailable | 查 `docker compose logs qa ai-gateway`；确认 chat profile enabled、model exact-match、credential/provider 可用。不要粘贴 provider 原始错误 body 或 API key。 |
+| File | `File stage: gateway document upload returned HTTP ...` | 查 `.local/logs/gateway.log` 和 `.local/logs/file.log`，确认 File ready、`INTERNAL_SERVICE_TOKEN` 一致、上传大小未超限。不要打印 multipart body 或 object key。 |
+| Parser | `Parser stage: ready document did not record parserBackend` 或文档状态 `failed` | 查 `.local/logs/knowledge.log` 和 `.local/logs/parser.log`，确认 Parser ready、`PARSER_SERVICE_TOKEN` 一致；Markdown fixture 不需要真实 OCR 模型下载。 |
+| Knowledge ingestion | `document ... did not become ready` 或 `chunkCount = 0` | 查 `.local/logs/knowledge.log`，并确认 PostgreSQL、Redis、Qdrant infra 处于 healthy；检查 `processing_jobs` 状态、Redis/asynq 投递和 Qdrant/local vector 配置。 |
+| Knowledge retrieval | `Knowledge retrieval stage: ...`、无 expected hit 或 rerank trace 异常 | 查 `.local/logs/gateway.log`、`.local/logs/knowledge.log` 和 `.local/logs/ai-gateway.log`；确认 `knowledge-queries` 返回 ready 文档 chunk，`rerank=true` 在无 `RERANK_MODEL` 时只证明 no-op fallback trace。 |
+| AI Gateway | QA message 返回 `502`、model error 或 provider unavailable | 查 `.local/logs/qa.log` 和 `.local/logs/ai-gateway.log`；确认 chat profile enabled、model exact-match、credential/provider 可用。不要粘贴 provider 原始错误 body 或 API key。 |
 | QA | QA config POST `403/400`、answer 未完成、无 citation | 确认 `QA_SETTINGS_OPEN=true` 或账号具备 `qa:settings:write`；确认模型支持 OpenAI-compatible tool/function calling，并且 QA config 只启用 `search_knowledge`。 |
 
 如果只需要验证 Knowledge ingestion 和 retrieval，不要运行本 RAG smoke；先使用上面的
 `KNOWLEDGE_INGESTION_SMOKE` 或 `GATEWAY_KNOWLEDGE_OWNER_SMOKE` 缩小范围。
 
-### QA + Auth + Gateway 局部环境
+### QA + Auth + Gateway 宿主机联调检查
 
 ```bash
-cd services/qa
-docker compose up
+./scripts/local/dev-up.sh
+./scripts/local/run-backend.sh
 ```
 
-该 Compose 适合验证 Auth、QA、Gateway 的基础 ready 状态和 QA 非 provider 依赖路径：
+该路径适合验证 Auth、QA、Gateway 的基础 ready 状态和 QA 非 provider 依赖路径：
 
 ```bash
 curl -fsS http://localhost:8081/readyz
@@ -250,26 +249,33 @@ curl -fsS http://localhost:8084/readyz
 curl -fsS http://localhost:8080/readyz
 ```
 
-注意：默认 `AI_GATEWAY_URL` 指向 Compose 网络内的 `http://ai-gateway:8086/internal/v1/chat/completions`，但该 Compose 没有 `ai-gateway` 服务。触发真实 LLM 调用、LLM connection test 或 Agent Run 时，需要额外启动 AI Gateway 并改写 `QA_AI_GATEWAY_URL`。
+日志查看 `.local/logs/auth.log`、`.local/logs/qa.log`、`.local/logs/gateway.log`。
+触发真实 LLM 调用、LLM connection test 或 Agent Run 时，确保宿主机 `ai-gateway`
+已由 `run-backend.sh` 启动，并且 `deploy/.env` 中的 profile/provider 配置可用。
 
-### Document 局部环境
+### Document 宿主机联调检查
 
 ```bash
-cd services/document
-docker compose up
+./scripts/local/dev-up.sh
+./scripts/local/run-backend.sh
 ```
 
-该 Compose 适合验证 Document PostgreSQL、Redis、migration、job enqueue 和 worker 状态机：
+该路径适合验证 Document PostgreSQL、Redis、migration、job enqueue 和 worker 状态机：
 
 ```bash
 curl -fsS http://localhost:8085/readyz
 ```
 
-注意：模板、材料和报告文件 bytes 需要 File Service；真实大纲/正文生成需要 AI Gateway。当前基础 DOCX 导出使用 Document 内置 `SimpleDOCXGenerator`，不需要 Pandoc/LibreOffice；Pandoc/LibreOffice 仅是后续富 DOCX worker 工具链。当前 Compose 只给 File/AI Gateway 下游设置 URL，不启动这些下游服务，所以 Document-only 环境不能完整读取生成文件内容。Document worker 会执行 `report_file_creation` 的基础 DOCX 导出；其他大纲/正文生成类 job 仍只完成 job/attempt 状态流转。
+注意：模板、材料和报告文件 bytes 需要 File Service；真实大纲/正文生成需要 AI Gateway。
+当前基础 DOCX 导出使用 Document 内置 `SimpleDOCXGenerator`，不需要 Pandoc/LibreOffice；
+Pandoc/LibreOffice 仅是后续富 DOCX worker 工具链。日志查看
+`.local/logs/document.log`、`.local/logs/file.log` 和 `.local/logs/ai-gateway.log`。
+Document worker 会执行 `report_file_creation` 的基础 DOCX 导出；其他大纲/正文生成类
+job 依赖可用的 AI Gateway chat profile/provider。
 
 ### AI Gateway host-run
 
-PR #487 之后 AI Gateway 作为本机进程运行（不再有 `--profile ai` Docker 服务）。
+PR #487 之后 AI Gateway 作为本机进程运行（不再有 AI Gateway Docker 业务服务）。
 `dev-up.sh` 会自动执行 ai-gateway migration 并写入本地 placeholder profile；`run-backend.sh`
 会随其他服务一起启动 ai-gateway。
 
@@ -381,8 +387,8 @@ curl -X POST http://localhost:8086/internal/v1/chat/completions \
 
 | 场景 | 检查 | 当前预期 |
 | --- | --- | --- |
-| Auth/Gateway/QA 局部环境 | 各服务 `GET /readyz` + 目标 Gateway API smoke | Gateway `/readyz` 只证明 Redis/Auth 和 owner URL 配置；QA `GET /readyz` 证明 QA 进程与自身依赖 ready；真实 AI 调用仍可能因 AI Gateway profile/provider 未配置失败。 |
-| Document 局部环境 | 创建 report job 后查询 job/attempt/events | 非文件生成类任务会入队并由 worker 推进为 succeeded；不会生成真实 AI 大纲/正文。若额外提供 File Service，`report_file_creation` 可生成基础 DOCX 并通过 content endpoint 读取成功文件。 |
+| Auth/Gateway/QA 宿主机联调检查 | 各服务 `GET /readyz` + 目标 Gateway API smoke | Gateway `/readyz` 只证明 Redis/Auth 和 owner URL 配置；QA `GET /readyz` 证明 QA 进程与自身依赖 ready；真实 AI 调用仍可能因 AI Gateway profile/provider 未配置失败。 |
+| Document 宿主机联调检查 | 创建 report job 后查询 job/attempt/events | 非文件生成类任务会入队并由 worker 推进为 succeeded；不会生成真实 AI 大纲/正文。若额外提供 File Service，`report_file_creation` 可生成基础 DOCX 并通过 content endpoint 读取成功文件。 |
 | AI Gateway profile | 创建 chat/embedding/rerank profile，调用对应内部 endpoint | fake provider 和兼容 provider 应返回 OpenAI-style body；真实 provider 需手工验证。 |
 | Gateway contract | `python3 scripts/verify_gateway_active_api.py` | active path、owner、security 和 owner map 不漂移。 |
 | Parser PaddleOCR model | `PARSER_PADDLEOCR_SMOKE=1 PARSER_PADDLEOCR_ALLOW_DOWNLOAD=1 uv run pytest -m paddleocr_smoke -s` | 只在本机具备 PaddleOCR extra 和可用模型下载/缓存时运行；验证真实模型加载和最小 fixture OCR 非空。 |
@@ -441,17 +447,19 @@ bodies.
 5. Run QA validation by creating a Gateway session, creating a QA session, and
    sending a message through Gateway public `/api/v1/**` or the documented
    `QA_AI_GATEWAY_SMOKE=1` service-client test. Use the same request id to
-   search `docker compose logs gateway qa ai-gateway`.
+   search `.local/logs/gateway.log`, `.local/logs/qa.log`, and
+   `.local/logs/ai-gateway.log`.
 6. Run Document validation for `summer_peak_inspection`: create a report,
    create an `outline_generation` or `content_generation` job, poll jobs,
    events, and sections until terminal state, then search
-   `docker compose logs gateway document ai-gateway` by request id. Rich DOCX
+   `.local/logs/gateway.log`, `.local/logs/document.log`, and
+   `.local/logs/ai-gateway.log` by request id. Rich DOCX
    Pandoc/LibreOffice worker validation is not part of this checklist.
 7. Run Knowledge validation in the intended mode. The default local path uses
    local hashing embeddings and no-op/empty rerank configuration; do not count
    it as real AI Gateway embedding/rerank. For real provider validation set
    `EMBEDDING_PROVIDER=ai_gateway`,
-   `KNOWLEDGE_AI_GATEWAY_BASE_URL=http://ai-gateway:8086`, and the embedding or
+   `KNOWLEDGE_AI_GATEWAY_BASE_URL=http://127.0.0.1:8086`, and the embedding or
    rerank profile/model env vars, then inspect Knowledge and AI Gateway logs by
    request id.
 
@@ -459,7 +467,7 @@ Acceptance record template:
 
 | Area | Command or request | Expected proof | Logs |
 | --- | --- | --- | --- |
-| AI Gateway | `/readyz` + real provider smoke | profile status is not `placeholder`; smoke succeeds for configured operations | `docker compose logs ai-gateway` |
-| QA | session/message or `QA_AI_GATEWAY_SMOKE=1` | answer path reaches AI Gateway and returns normalized response/error | `docker compose logs gateway qa ai-gateway` |
-| Knowledge | local hashing or AI Gateway embedding/rerank path | selected path is explicitly named; real provider path has profile/model env | `docker compose logs gateway knowledge ai-gateway qdrant` |
-| Document | `summer_peak_inspection` report job flow | job/events/sections reach expected terminal state | `docker compose logs gateway document ai-gateway redis` |
+| AI Gateway | `/readyz` + real provider smoke | profile status is not `placeholder`; smoke succeeds for configured operations | `.local/logs/ai-gateway.log` |
+| QA | session/message or `QA_AI_GATEWAY_SMOKE=1` | answer path reaches AI Gateway and returns normalized response/error | `.local/logs/gateway.log`, `.local/logs/qa.log`, `.local/logs/ai-gateway.log` |
+| Knowledge | local hashing or AI Gateway embedding/rerank path | selected path is explicitly named; real provider path has profile/model env | `.local/logs/gateway.log`, `.local/logs/knowledge.log`, `.local/logs/ai-gateway.log` |
+| Document | `summer_peak_inspection` report job flow | job/events/sections reach expected terminal state | `.local/logs/gateway.log`, `.local/logs/document.log`, `.local/logs/ai-gateway.log` |
