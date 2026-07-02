@@ -23,6 +23,7 @@ See `../knowledge-runtime/README.md` for host-run vendor runtime wiring.
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `VENDOR_RUNTIME_URL` | yes | `http://127.0.0.1:9380` | RAGFlow vendor HTTP base URL. |
+| `VENDOR_RUNTIME_SERVICE_TOKEN` | yes | - | Token forwarded to the runtime as `X-Service-Token`; must match `KNOWLEDGE_RUNTIME_SERVICE_TOKEN`. |
 | `KNOWLEDGE_SERVICE_TOKEN` / `INTERNAL_SERVICE_TOKEN` | yes | - | Shared service token required on `/internal/v1/**` via `X-Service-Token`. |
 | `DATABASE_URL` | no | - | PostgreSQL for parser-config admin; omit to return `502` on those routes. |
 | `KNOWLEDGE_HTTP_ADDR` | no | `:8083` | HTTP listen address. |
@@ -93,7 +94,8 @@ RAGFlow tables in the same PostgreSQL database when vendor PG is enabled.
 
 Root Compose only starts shared infrastructure. Start the vendor Python API
 (:9380) and task executor on the host, then run the adapter with
-`VENDOR_RUNTIME_URL` pointing at that runtime as documented in
+`VENDOR_RUNTIME_URL` and `VENDOR_RUNTIME_SERVICE_TOKEN` pointing at that runtime
+as documented in
 `../knowledge-runtime/README.md`.
 
 `services/parser` is retired; document parsing uses vendor deepdoc.

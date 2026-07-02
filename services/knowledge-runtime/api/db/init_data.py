@@ -50,6 +50,14 @@ def init_runtime_data():
 
 
 def init_env_default_models():
+    _init_env_default_models_for_tenants(None)
+
+
+def init_env_default_models_for_tenant(tenant_id):
+    _init_env_default_models_for_tenants([tenant_id])
+
+
+def _init_env_default_models_for_tenants(tenant_ids):
     embedding_model = os.getenv("KNOWLEDGE_RUNTIME_EMBEDDING_MODEL", "").strip()
     embedding_factory = os.getenv("KNOWLEDGE_RUNTIME_EMBEDDING_FACTORY", "").strip()
     embedding_base_url = os.getenv("KNOWLEDGE_RUNTIME_EMBEDDING_BASE_URL", "").strip()
@@ -61,6 +69,7 @@ def init_env_default_models():
         api_key=model_api_key,
         base_url=embedding_base_url,
         tenant_field="embd_id",
+        tenant_ids=tenant_ids,
     )
 
     rerank_model = os.getenv("KNOWLEDGE_RUNTIME_RERANK_MODEL", "").strip()
@@ -73,14 +82,19 @@ def init_env_default_models():
         api_key=model_api_key,
         base_url=rerank_base_url,
         tenant_field="rerank_id",
+        tenant_ids=tenant_ids,
     )
 
 
-def _ensure_env_default_model(model_name, provider_name, model_type, api_key, base_url, tenant_field):
+def _ensure_env_default_model(model_name, provider_name, model_type, api_key, base_url, tenant_field, tenant_ids=None):
     if not model_name or not provider_name or provider_name == "Builtin":
         return
 
-    for tenant in TenantService.model.select():
+    tenants = TenantService.model.select()
+    if tenant_ids:
+        tenants = tenants.where(TenantService.model.id.in_(tenant_ids))
+
+    for tenant in tenants:
         provider = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant.id, provider_name)
         if not provider:
             TenantModelProviderService.insert(tenant_id=tenant.id, provider_name=provider_name)

@@ -8,6 +8,7 @@ import (
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-service-token")
+	t.Setenv("VENDOR_RUNTIME_SERVICE_TOKEN", "runtime-service-token")
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -28,9 +29,13 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ServiceToken != "test-service-token" {
 		t.Fatalf("ServiceToken=%q", cfg.ServiceToken)
 	}
+	if cfg.VendorRuntimeToken != "runtime-service-token" {
+		t.Fatalf("VendorRuntimeToken=%q", cfg.VendorRuntimeToken)
+	}
 }
 
 func TestLoadRequiresServiceToken(t *testing.T) {
+	t.Setenv("VENDOR_RUNTIME_SERVICE_TOKEN", "runtime-service-token")
 	t.Setenv("KNOWLEDGE_SERVICE_TOKEN", "")
 	t.Setenv("INTERNAL_SERVICE_TOKEN", "")
 
@@ -40,9 +45,20 @@ func TestLoadRequiresServiceToken(t *testing.T) {
 	}
 }
 
+func TestLoadRequiresVendorRuntimeServiceToken(t *testing.T) {
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-service-token")
+	t.Setenv("VENDOR_RUNTIME_SERVICE_TOKEN", "")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "VENDOR_RUNTIME_SERVICE_TOKEN") {
+		t.Fatalf("Load() error = %v, want vendor runtime token requirement", err)
+	}
+}
+
 func TestLoadKnowledgeServiceTokenOverridesSharedToken(t *testing.T) {
 	t.Setenv("KNOWLEDGE_SERVICE_TOKEN", "knowledge-token")
 	t.Setenv("INTERNAL_SERVICE_TOKEN", "shared-token")
+	t.Setenv("VENDOR_RUNTIME_SERVICE_TOKEN", "runtime-service-token")
 
 	cfg, err := Load()
 	if err != nil {

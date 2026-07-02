@@ -93,11 +93,15 @@ Knowledge 文档上传、解析、切块、embedding、索引和检索通过 RAG
 
 ```text
 VENDOR_RUNTIME_URL=http://127.0.0.1:9380
+VENDOR_RUNTIME_SERVICE_TOKEN=local-dev-runtime-service-token-change-me
+KNOWLEDGE_RUNTIME_SERVICE_TOKEN=local-dev-runtime-service-token-change-me
 KNOWLEDGE_AUTO_START_INGESTION=true
 DOC_ENGINE=elasticsearch
 ```
 
 runtime API 和 worker 在宿主机启动；本地默认使用 `http://127.0.0.1:9380`。
+tenant-scoped runtime API 需要 `X-Service-Token`，由 Knowledge adapter 使用
+`VENDOR_RUNTIME_SERVICE_TOKEN` 自动转发。
 不要再启动 `services/parser`，也不要把 runtime 放回根级 Compose。
 
 ## 快速确认
@@ -130,6 +134,9 @@ Seeded local resources:
 | Document | material `22222222-2222-4222-8222-222222222201`, report `22222222-2222-4222-8222-222222222301`, outline `22222222-2222-4222-8222-222222222401` |
 | QA | conversation `33333333-3333-4333-8333-333333333301`, user message `33333333-3333-4333-8333-333333333401`, assistant message `33333333-3333-4333-8333-333333333402` |
 | AI Gateway | optional placeholder profiles `default-chat`, `default-embedding`, and `default-rerank` |
+
+`minio-init` 会创建两个本地 bucket：`software-teamwork-local` 供 File service
+使用，`software-teamwork-knowledge` 供 RAGFlow Knowledge runtime 使用。
 
 `001-local-demo-seed.sql` 里的本地管理员密码 hash 是
 `LOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345` 对应的 `argon2id` PHC 字符串，
@@ -229,5 +236,5 @@ uv sync --python 3.13 --frozen
 | `auth /readyz` returns `postgres unavailable` | Auth migration or PostgreSQL failed | `docker compose logs postgres`; check `.local/logs/auth.log` |
 | Knowledge upload/query returns `502 dependency_error` | RAGFlow runtime unreachable or ES/MinIO not ready | Check `VENDOR_RUNTIME_URL`, runtime API, worker, Elasticsearch, and MinIO |
 | QA message call fails on model invocation | AI Gateway profile is not running, fake local credential is still in use, or host provider is not listening on `host.docker.internal:11434` | Check `.local/logs/ai-gateway.log` and `.local/logs/qa.log` |
-| MinIO bucket missing | `minio-init` did not complete | `docker compose logs minio minio-init` |
+| MinIO bucket missing | `minio-init` did not complete or one of `software-teamwork-local` / `software-teamwork-knowledge` is absent | `docker compose logs minio minio-init` |
 | Host port conflict | Another local process uses a default port | Change the matching `*_PORT` in `deploy/.env` |

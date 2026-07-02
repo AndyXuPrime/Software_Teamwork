@@ -155,7 +155,7 @@ GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 \
 GATEWAY_BASE_URL='http://127.0.0.1:8080' \
 KNOWLEDGE_SERVICE_BASE_URL='http://127.0.0.1:8083' \
 FILE_SERVICE_BASE_URL='http://127.0.0.1:8082' \
-PARSER_SERVICE_BASE_URL='http://127.0.0.1:8087' \
+VENDOR_RUNTIME_URL='http://127.0.0.1:9380' \
 KNOWLEDGE_TEST_DATABASE_URL='postgres://knowledge_app:knowledge_app_dev@127.0.0.1:5432/knowledge_system?sslmode=disable' \
 KNOWLEDGE_REDIS_ADDR='127.0.0.1:6379' \
 GATEWAY_SMOKE_USERNAME='admin' \
@@ -165,7 +165,7 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
 
 该测试会：
 
-- `GET /readyz` 检查 File、Parser 和 Knowledge。
+- `GET /readyz` 检查 File、Knowledge 和 RAGFlow runtime 可达性。
 - 使用 `KNOWLEDGE_TEST_DATABASE_URL` ping Knowledge PostgreSQL。
 - 使用 `KNOWLEDGE_REDIS_ADDR` 发送 Redis `PING`。
 - 调用带伪造 `X-User-*` 但无 Bearer token 的 `GET /api/v1/knowledge-bases`，
@@ -179,8 +179,8 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
 常见失败：
 
 - `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 requires ...`：缺必填 env；失败只列 key，不列值。
-- `parser readyz request failed` 或 Docker 报缺 `software-teamwork-local-parser:latest`：
-  先按上面的 Parser 镜像构建/缓存前置条件处理。
+- `vendor ping failed` 或 Knowledge readiness 返回 `vendor_runtime_ok=false`：
+  先确认 `VENDOR_RUNTIME_URL` 指向 `http://127.0.0.1:9380`，runtime API 已在宿主机启动。
 - Gateway session 返回 `401`：确认 `seed-local` 已完成，并使用
   `.env.example` 中的 `admin` / `LocalDemoAdmin#12345` 或显式
   `GATEWAY_SMOKE_USERNAME` / `GATEWAY_SMOKE_PASSWORD`。
@@ -238,7 +238,7 @@ cd services/knowledge
 GATEWAY_RAG_E2E_SMOKE=1 \
 GATEWAY_BASE_URL='http://127.0.0.1:8080' \
 FILE_SERVICE_BASE_URL='http://127.0.0.1:8082' \
-PARSER_SERVICE_BASE_URL='http://127.0.0.1:8087' \
+VENDOR_RUNTIME_URL='http://127.0.0.1:9380' \
 KNOWLEDGE_SERVICE_BASE_URL='http://127.0.0.1:8083' \
 QA_SERVICE_BASE_URL='http://127.0.0.1:8084' \
 AI_GATEWAY_BASE_URL='http://127.0.0.1:8086' \
@@ -271,8 +271,8 @@ chunks、jobs、documents、knowledge base 的顺序删除本轮 Knowledge Postg
 | 阶段 | 典型失败 | 排查 |
 | --- | --- | --- |
 | File | `File stage: gateway document upload returned HTTP ...` | 查 `.local/logs/gateway.log` 和 `.local/logs/file.log`，确认 File ready、`INTERNAL_SERVICE_TOKEN` 一致、上传大小未超限。不要打印 multipart body 或 object key。 |
-| Parser | `Parser stage: ready document did not record parserBackend` 或文档状态 `failed` | 查 `.local/logs/knowledge.log` 和 `.local/logs/parser.log`，确认 Parser ready、`PARSER_SERVICE_TOKEN` 一致；Markdown fixture 不需要真实 OCR 模型下载。 |
-| Knowledge ingestion | `document ... did not become ready` 或 `chunkCount = 0` | 查 `.local/logs/knowledge.log`，并确认 PostgreSQL、Redis、Qdrant infra 处于 healthy；检查 `processing_jobs` 状态、Redis/asynq 投递和 Qdrant/local vector 配置。 |
+| Knowledge runtime | `Parser stage: ready document did not record parserBackend` 或文档状态 `failed` | 查 `.local/logs/knowledge.log` 和 runtime API/worker 终端日志，确认 `VENDOR_RUNTIME_URL`、`VENDOR_RUNTIME_SERVICE_TOKEN`、`KNOWLEDGE_RUNTIME_SERVICE_TOKEN` 一致；Markdown fixture 不需要真实 OCR 模型下载。 |
+| Knowledge ingestion | `document ... did not become ready` 或 `chunkCount = 0` | 查 `.local/logs/knowledge.log` 和 runtime worker 日志，并确认 PostgreSQL、Redis、MinIO、Elasticsearch 处于 healthy；检查 runtime task 状态和对象存储 bucket。 |
 | Knowledge retrieval | `Knowledge retrieval stage: ...`、无 expected hit 或 rerank trace 异常 | 查 `.local/logs/gateway.log`、`.local/logs/knowledge.log` 和 `.local/logs/ai-gateway.log`；确认 `knowledge-queries` 返回 ready 文档 chunk，`rerank=true` 在无 `RERANK_MODEL` 时只证明 no-op fallback trace。 |
 | AI Gateway | QA message 返回 `502`、model error 或 provider unavailable | 查 `.local/logs/qa.log` 和 `.local/logs/ai-gateway.log`；确认 chat profile enabled、model exact-match、credential/provider 可用。不要粘贴 provider 原始错误 body 或 API key。 |
 | QA | QA config POST `403/400`、answer 未完成、无 citation | 确认 `QA_SETTINGS_OPEN=true` 或账号具备 `qa:settings:write`；确认模型支持 OpenAI-compatible tool/function calling，并且 QA config 只启用 `search_knowledge`。 |
@@ -435,11 +435,11 @@ curl -X POST http://localhost:8086/internal/v1/chat/completions \
 | Document 宿主机联调检查 | 创建 report job 后查询 job/attempt/events | 非文件生成类任务会入队并由 worker 推进为 succeeded；不会生成真实 AI 大纲/正文。若额外提供 File Service，`report_file_creation` 可生成基础 DOCX 并通过 content endpoint 读取成功文件。 |
 | AI Gateway profile | 创建 chat/embedding/rerank profile，调用对应内部 endpoint | fake provider 和兼容 provider 应返回 OpenAI-style body；真实 provider 需手工验证。 |
 | Gateway contract | `python3 scripts/verify_gateway_active_api.py` | active path、owner、security 和 owner map 不漂移。 |
-| Parser PaddleOCR model | `PARSER_PADDLEOCR_SMOKE=1 PARSER_PADDLEOCR_ALLOW_DOWNLOAD=1 uv run pytest -m paddleocr_smoke -s` | 只在本机具备 PaddleOCR extra 和可用模型下载/缓存时运行；验证真实模型加载和最小 fixture OCR 非空。 |
 | File PostgreSQL + MinIO | `FILE_MINIO_POSTGRES_SMOKE=1 ... go test ./internal/integration -run TestFileMinIOPostgresSmoke -count=1 -v` | 只在真实 PostgreSQL/MinIO 可用时运行；验证 upload、metadata、content read、delete 和清理状态。 |
-| Knowledge ingestion real deps | `KNOWLEDGE_INGESTION_SMOKE=1 ... go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v` | 只在 PostgreSQL/File/Parser/Qdrant 可用时运行；验证 fixture 上传、解析、切片、embedding、Qdrant point 写入和状态更新。 |
-| Gateway -> Knowledge owner route | `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v` | 只在 Gateway/Auth/Redis/Knowledge/File/Parser/PostgreSQL 可用时运行；验证伪造 `X-User-*` 未认证请求被拒绝，并用 KB `createdBy` 断言 Gateway 注入真实 session user。 |
-| Gateway -> Knowledge -> QA RAG | `GATEWAY_RAG_E2E_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayRAGE2ESmoke$' -count=1 -v` | 只在 Gateway/Auth/Redis/File/Parser/Knowledge/QA/AI Gateway 和可用 chat profile/provider 可用时运行；验证上传、ingestion ready、`knowledge-queries` 命中、QA answer 和 citation 摘要。 |
+| Knowledge runtime route/config | `cd services/knowledge-runtime && PYTHONPATH=. uv run --no-project --with pytest --with pytest-asyncio --with filelock --with ruamel-yaml python -m pytest test/routes/test_config_utils.py test/routes/test_route_registry.py test/routes/test_gateway_auth.py -q` | 验证 runtime 配置脱敏、路由 allowlist、service token 和 clean DB provisioning 纯逻辑。 |
+| Knowledge ingestion real deps | `KNOWLEDGE_INGESTION_SMOKE=1 ... go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v` | 只在 PostgreSQL/File/Knowledge runtime/Redis/MinIO/Elasticsearch 可用时运行；验证 fixture 上传、解析、切片、embedding、索引写入和状态更新。 |
+| Gateway -> Knowledge owner route | `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v` | 只在 Gateway/Auth/Redis/Knowledge/File/PostgreSQL 和 Knowledge runtime 可用时运行；验证伪造 `X-User-*` 未认证请求被拒绝，并用 KB `createdBy` 断言 Gateway 注入真实 session user。 |
+| Gateway -> Knowledge -> QA RAG | `GATEWAY_RAG_E2E_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayRAGE2ESmoke$' -count=1 -v` | 只在 Gateway/Auth/Redis/File/Knowledge/Knowledge runtime/QA/AI Gateway 和可用 chat profile/provider 可用时运行；验证上传、ingestion ready、`knowledge-queries` 命中、QA answer 和 citation 摘要。 |
 | 前端 Gateway 类型 | `bun run --cwd apps/web api:generate` 后检查 diff | 生成类型应与 Gateway OpenAPI 保持同步。 |
 
 ## 已知缺口
@@ -449,8 +449,8 @@ curl -X POST http://localhost:8086/internal/v1/chat/completions \
 | 根级跨服务 smoke 缺失 | 即使使用 `deploy/docker-compose.yml` 启动本地/演示基线，也不能自动证明 Auth/Gateway/File/Knowledge/QA/Document/AI Gateway 链路可用。 | #125 |
 | 跨服务契约测试和 E2E smoke 缺失 | 不能自动证明前端 -> Gateway -> 多服务链路可用。 | #125 |
 | Gateway `/readyz` 非完整依赖诊断 | `/readyz` 不请求所有 owner service `/readyz`，也不执行业务级 smoke；它通过不等于 Knowledge/QA/Document/AI Gateway 全链路可用。 | #353、#125、#352 |
-| Parser 真实 OCR smoke 不在普通 CI 中运行 | Parser 已有 env-gated 真实 PaddleOCR 模型 smoke，但 CI 仍使用 fake OCR backend；真实模型、OCR 质量和部署资源需要在具备模型的本地或部署环境手动记录。 | #125 |
-| Knowledge/QA RAG smoke 仍为显式 opt-in | File 自身 PostgreSQL + MinIO smoke 已有；Knowledge ingestion 真实依赖 smoke 已覆盖 File/Parser/PostgreSQL/Qdrant 写入和状态更新；Gateway -> Knowledge -> QA RAG smoke 已提供最小验收样例，但依赖可用 AI Gateway chat profile/provider，且不覆盖 MCP、前端或 #125 完整一键 E2E。 | #125、#152、#154、#304 |
+| Knowledge runtime 真实解析/检索 smoke 不在普通 CI 中运行 | CI 覆盖 route/config/auth/provisioning 和语法门禁；真实 PDF 解析、OCR 质量、embedding、Elasticsearch/MinIO/Redis 组合仍需在具备依赖的本地或部署环境手动记录。 | #125 |
+| Knowledge/QA RAG smoke 仍为显式 opt-in | File 自身 PostgreSQL + MinIO smoke 已有；Knowledge ingestion 真实依赖 smoke 覆盖 File/Knowledge runtime/PostgreSQL/Redis/MinIO/Elasticsearch 写入和状态更新；Gateway -> Knowledge -> QA RAG smoke 已提供最小验收样例，但依赖可用 AI Gateway chat profile/provider，且不覆盖 MCP、前端或 #125 完整一键 E2E。 | #125、#152、#154、#304 |
 | 生产部署基线缺失 | 当前 `deploy/docker-compose.yml` 是本地/演示基线，不能直接当生产部署。 | #150 |
 | Document 真实 AI 生成和富 DOCX 工具链未落地 | 报告 job 状态机和基础 DOCX 导出可用；真实大纲/正文生成、Pandoc/LibreOffice 富 DOCX 转换和跨服务内容读取 smoke 仍需补齐。 | #160、#223 |
 | Document 跨服务 smoke 仍缺失 | settings/statistics/logs 已在服务端落地，但管理端、Gateway、File Service、Document worker 串联 smoke 仍未一键化。 | #159、#221 |
@@ -462,7 +462,7 @@ curl -X POST http://localhost:8086/internal/v1/chat/completions \
 - 只改文档：至少执行 `git diff --check`，并检查新增链接、相对路径和实现事实。
 - 改后端服务：执行对应服务 `go test ./...` 和 `go build ./cmd/server`；QA 还要 `go build ./cmd/agent`。
 - 改 migration：执行 goose apply；如果服务有 env-gated repository integration tests，尽量使用本地 PostgreSQL 跑一遍。
-- 改 Parser 契约或运行时：检查 `docs/services/parser/api/internal.openapi.yaml`、`services/parser/api/openapi.yaml`（实现本地副本）、Parser README、Knowledge ingestion 文档和 `parser-service.yml` 是否一致；运行 `cd services/parser && uv run ruff check . && uv run pytest && uv run python -m compileall src tests`。如触碰 PaddleOCR runtime 或部署资源，尽量追加 `PARSER_PADDLEOCR_SMOKE=1` 的真实模型 smoke，并在 PR 记录中区分 fake OCR 与真实模型结果。
+- 改 Knowledge runtime 契约或运行时：检查 `services/knowledge-runtime/README.md`、Knowledge adapter 文档和本 runbook 是否一致；运行 runtime targeted pytest、`python -m compileall api common rag deploy`、Knowledge adapter `go test ./...` / `go build ./cmd/adapter`。如触碰真实解析、embedding、Elasticsearch、Redis 或 MinIO 组合，尽量追加真实 PDF E2E，并在 PR 记录中区分 unit/contract 检查与真实依赖 smoke。
 - 改 Gateway OpenAPI：执行 `python3 scripts/verify_gateway_active_api.py`，前端类型相关改动还要执行 `bun run --cwd apps/web api:generate` 并检查生成 diff。
 - 改前端：执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`bun run --cwd apps/web build`、`bun run --cwd apps/web test:unit`；关键页面改动再跑 `bun run --cwd apps/web test:e2e`。
 

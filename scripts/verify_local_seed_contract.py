@@ -16,6 +16,7 @@ CLEANUP_SEED = Path("deploy/seeds/099-local-demo-cleanup.sql")
 DEPLOY_README = Path("deploy/README.md")
 LOCAL_RUNBOOK = Path("docs/runbooks/local-integration.md")
 ENV_EXAMPLE = Path("deploy/.env.example")
+GITIGNORE = Path(".gitignore")
 AUTH_MIGRATIONS_DIR = Path("services/auth/migrations")
 DEV_UP_SCRIPT = Path("scripts/local/dev-up.sh")
 RUN_BACKEND_SCRIPT = Path("scripts/local/run-backend.sh")
@@ -206,6 +207,7 @@ def verify_local_seed_contract(root: Path) -> list[str]:
     dev_up_script = read_required(root, DEV_UP_SCRIPT, issues)
     run_backend_script = read_required(root, RUN_BACKEND_SCRIPT, issues)
     stop_backend_script = read_required(root, STOP_BACKEND_SCRIPT, issues)
+    gitignore = read_required(root, GITIGNORE, issues)
 
     issues.extend(validate_seed_001(seed_001))
     issues.extend(validate_seed_002(seed_002))
@@ -222,6 +224,7 @@ def verify_local_seed_contract(root: Path) -> list[str]:
             stop_backend_script,
         )
     )
+    issues.extend(validate_gitignore(gitignore))
     issues.extend(validate_forbidden_content(root))
     return issues
 
@@ -362,6 +365,16 @@ def validate_docs(
     for token in REQUIRED_STOP_BACKEND_TOKENS:
         if token not in stop_backend_script:
             issues.append(f"{STOP_BACKEND_SCRIPT} missing backend stop token `{token}`")
+    return issues
+
+
+def validate_gitignore(content: str) -> list[str]:
+    if not content:
+        return []
+    issues: list[str] = []
+    for token in ["/.local/"]:
+        if token not in content:
+            issues.append(f"{GITIGNORE} missing local runtime ignore token `{token}`")
     return issues
 
 

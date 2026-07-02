@@ -28,11 +28,23 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
+      - name: Compile runtime Python sources
+        run: >
+          uv run --no-project
+          --python 3.13
+          python -m compileall
+          -q
+          api
+          common
+          rag
+          deploy
+
       - name: Run targeted pytest
         env:
           PYTHONPATH: .
         run: >
           uv run --no-project
+          --python 3.13
           --with pytest
           --with pytest-asyncio
           --with filelock
@@ -40,4 +52,5 @@ jobs:
           python -m pytest
           test/routes/test_config_utils.py
           test/routes/test_route_registry.py
+          test/routes/test_gateway_auth.py
           -q

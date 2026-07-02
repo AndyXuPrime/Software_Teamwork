@@ -34,6 +34,8 @@ from api.utils.api_utils import server_error_response, get_json_result, build_er
 from api.constants import API_VERSION
 from common.exceptions import ModelException
 from api.route_registry import collect_runtime_page_paths
+from api.utils.gateway_auth import SERVICE_TOKEN_HEADER, service_token_is_valid
+from api.utils.gateway_identity import normalize_gateway_principal_id
 
 settings.init_settings()
 
@@ -128,12 +130,25 @@ def _load_user(auth_types=None):
     g.auth_type = None
     g.auth_error_message = None
 
+    if not service_token_is_valid(request.headers):
+        g.auth_error_message = f"Invalid or missing {SERVICE_TOKEN_HEADER}"
+        return None
+
     try:
-        user = UserService.query(id=tenant_id, status=StatusEnum.VALID.value)
+        runtime_tenant_id = normalize_gateway_principal_id(tenant_id)
+        user = UserService.query(id=runtime_tenant_id, status=StatusEnum.VALID.value)
         if user:
             g.auth_type = AUTH_GATEWAY
             g.user = user[0]
             return user[0]
+
+        from api.db.services.gateway_tenant_service import ensure_gateway_tenant
+
+        provisioned_user = ensure_gateway_tenant(tenant_id)
+        if provisioned_user:
+            g.auth_type = AUTH_GATEWAY
+            g.user = provisioned_user
+            return provisioned_user
         g.auth_error_message = f"Tenant not found for {GATEWAY_TENANT_HEADER}"
     except Exception as exc:
         logging.warning("load_user from gateway tenant header failed: %s", exc)

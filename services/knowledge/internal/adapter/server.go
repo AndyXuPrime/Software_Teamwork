@@ -36,7 +36,7 @@ func NewServer(cfg adapterconfig.Config, logger *slog.Logger, opts ...Option) *S
 	s := &Server{
 		cfg:            cfg,
 		logger:         logger,
-		vendor:         vendorclient.New(cfg.VendorRuntimeURL, 60*time.Second),
+		vendor:         vendorclient.New(cfg.VendorRuntimeURL, 60*time.Second, cfg.VendorRuntimeToken),
 		maxUploadBytes: defaultMaxUploadBytes,
 		mux:            http.NewServeMux(),
 	}

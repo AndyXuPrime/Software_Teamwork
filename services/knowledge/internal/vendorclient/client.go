@@ -17,16 +17,18 @@ import (
 const vendorCodeSuccess = 0
 
 type Client struct {
-	baseURL string
-	http    *http.Client
+	baseURL      string
+	serviceToken string
+	http         *http.Client
 }
 
-func New(baseURL string, timeout time.Duration) *Client {
+func New(baseURL string, timeout time.Duration, serviceToken string) *Client {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
 	return &Client{
-		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		baseURL:      strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		serviceToken: strings.TrimSpace(serviceToken),
 		http: &http.Client{
 			Timeout: timeout,
 		},
@@ -428,6 +430,9 @@ func (c *Client) newRequest(ctx context.Context, userID, method, path string, bo
 	userID = strings.TrimSpace(userID)
 	req.Header.Set("X-Tenant-Id", userID)
 	req.Header.Set("X-User-Id", userID)
+	if c.serviceToken != "" {
+		req.Header.Set("X-Service-Token", c.serviceToken)
+	}
 	return req, nil
 }
 

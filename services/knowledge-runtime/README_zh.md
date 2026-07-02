@@ -8,7 +8,7 @@
 
 | 服务 | 端口 | 入口 | 职责 |
 | --- | --- | --- | --- |
-| `knowledge-runtime-api` | `:9380` | `api/ragflow_server.py` | 数据集/文档/检索 HTTP API |
+| `knowledge-runtime-api` | `127.0.0.1:9380` | `api/ragflow_server.py` | 数据集/文档/检索 HTTP API |
 | `knowledge-runtime-worker` | n/a | `rag/svr/task_executor.py` | deepdoc 解析、分块、嵌入（Redis 队列） |
 
 共用 PostgreSQL（`knowledge_system`）、MinIO（`software-teamwork-knowledge`）、Elasticsearch、Redis。
@@ -16,7 +16,7 @@
 
 ## 已裁剪的产品面
 
-上游 Web UI、Agent、Admin、Chat、用户注册/登录、Go HTTP 运行时、容器内 nginx、vendor 自带 docker-compose 等已移除。运行时信任 Gateway 注入的 `X-Tenant-Id` / `X-User-Id`。
+上游 Web UI、Agent、Admin、Chat、用户注册/登录、Go HTTP 运行时、容器内 nginx、vendor 自带 docker-compose 等已移除。运行时仅在 `X-Service-Token` 匹配 `KNOWLEDGE_RUNTIME_SERVICE_TOKEN` 后才信任 Gateway 注入的 `X-Tenant-Id` / `X-User-Id`。
 
 ## 主要目录
 
@@ -35,6 +35,7 @@
 
 | 变量 | 说明 |
 |------|------|
+| `KNOWLEDGE_RUNTIME_SERVICE_TOKEN` | runtime 受保护路由校验的内部 token，需要与 adapter 的 `VENDOR_RUNTIME_SERVICE_TOKEN` 一致 |
 | `KNOWLEDGE_RUNTIME_MODEL_API_KEY` | embedding/rerank provider API key |
 | `KNOWLEDGE_RUNTIME_EMBEDDING_FACTORY` | embedding provider factory，例如 `SILICONFLOW` |
 | `KNOWLEDGE_RUNTIME_EMBEDDING_MODEL` | embedding model id |
@@ -46,7 +47,7 @@
 ## 本地验证
 
 ```bash
-PYTHONPATH=. uv run --no-project --with pytest --with pytest-asyncio --with filelock --with ruamel-yaml python -m pytest test/routes/test_config_utils.py test/routes/test_route_registry.py -q
+PYTHONPATH=. uv run --no-project --with pytest --with pytest-asyncio --with filelock --with ruamel-yaml python -m pytest test/routes/test_config_utils.py test/routes/test_route_registry.py test/routes/test_gateway_auth.py -q
 ```
 
 ## 许可证

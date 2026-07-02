@@ -7,7 +7,7 @@ The Knowledge **contract adapter** lives separately in `services/knowledge/cmd/a
 
 | Service | Port | Entry | Role |
 | --- | --- | --- | --- |
-| `knowledge-runtime-api` | `:9380` | `api/ragflow_server.py` | Dataset/document/search HTTP API |
+| `knowledge-runtime-api` | `127.0.0.1:9380` | `api/ragflow_server.py` | Dataset/document/search HTTP API |
 | `knowledge-runtime-worker` | n/a | `rag/svr/task_executor.py` | deepdoc parse, chunk, embed (Redis queue) |
 
 Both share PostgreSQL (`knowledge_system`), MinIO (`software-teamwork-knowledge`), Elasticsearch, and Redis.
@@ -23,6 +23,7 @@ Requires Python 3.13 + [uv](https://github.com/astral-sh/uv):
 cd services/knowledge-runtime
 uv sync --python 3.13 --frozen
 export PYTHONPATH=.
+set -a && . ../../deploy/.env && set +a
 # Edit conf/service_conf.yaml hosts for localhost (postgres, redis, minio, es)
 
 # Terminal 1 — API
@@ -36,12 +37,18 @@ Adapter (separate module):
 
 ```bash
 cd services/knowledge
-VENDOR_RUNTIME_URL=http://127.0.0.1:9380 go run ./cmd/adapter
+set -a && . ../../deploy/.env && set +a
+go run ./cmd/adapter
 ```
 
 ## Configuration
 
 - Local dev: edit `conf/service_conf.yaml` and point hosts at localhost
+- Runtime auth: tenant-scoped API routes require `X-Service-Token` matching
+  `KNOWLEDGE_RUNTIME_SERVICE_TOKEN`; the Go adapter sends
+  `VENDOR_RUNTIME_SERVICE_TOKEN`.
+- Object storage: root `minio-init` creates both `software-teamwork-local`
+  (File service) and `software-teamwork-knowledge` (Knowledge runtime).
 - Model credentials: set `KNOWLEDGE_RUNTIME_MODEL_API_KEY` in your local shell or
   untracked env file. Use `KNOWLEDGE_RUNTIME_EMBEDDING_FACTORY`,
   `KNOWLEDGE_RUNTIME_EMBEDDING_MODEL`, `KNOWLEDGE_RUNTIME_EMBEDDING_BASE_URL`,

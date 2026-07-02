@@ -13,19 +13,21 @@ import (
 
 func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 	type call struct {
-		method string
-		path   string
-		query  string
-		tenant string
+		method       string
+		path         string
+		query        string
+		tenant       string
+		serviceToken string
 	}
 
 	var calls []call
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, call{
-			method: r.Method,
-			path:   r.URL.Path,
-			query:  r.URL.RawQuery,
-			tenant: r.Header.Get("X-Tenant-Id"),
+			method:       r.Method,
+			path:         r.URL.Path,
+			query:        r.URL.RawQuery,
+			tenant:       r.Header.Get("X-Tenant-Id"),
+			serviceToken: r.Header.Get("X-Service-Token"),
 		})
 
 		switch {
@@ -63,7 +65,7 @@ func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, time.Second)
+	client := New(server.URL, time.Second, "runtime-token")
 	ctx := context.Background()
 
 	if err := client.Ping(ctx); err != nil {
@@ -93,13 +95,13 @@ func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 
 	expected := []call{
 		{method: http.MethodGet, path: "/api/v1/system/ping"},
-		{method: http.MethodGet, path: "/api/v1/datasets", query: "page=2&page_size=10", tenant: "tenant_1"},
-		{method: http.MethodPost, path: "/api/v1/datasets/kb_1/documents", query: "type=local", tenant: "tenant_1"},
-		{method: http.MethodPost, path: "/api/v1/datasets/kb_1/documents/parse", tenant: "tenant_1"},
-		{method: http.MethodGet, path: "/api/v1/datasets/kb_1/documents", query: "page=1&page_size=100", tenant: "tenant_1"},
-		{method: http.MethodGet, path: "/api/v1/datasets/kb_1/documents/doc_1/chunks", query: "page=1&page_size=20", tenant: "tenant_1"},
-		{method: http.MethodPost, path: "/api/v1/datasets/search", tenant: "tenant_1"},
-		{method: http.MethodDelete, path: "/api/v1/datasets/kb_1/documents", tenant: "tenant_1"},
+		{method: http.MethodGet, path: "/api/v1/datasets", query: "page=2&page_size=10", tenant: "tenant_1", serviceToken: "runtime-token"},
+		{method: http.MethodPost, path: "/api/v1/datasets/kb_1/documents", query: "type=local", tenant: "tenant_1", serviceToken: "runtime-token"},
+		{method: http.MethodPost, path: "/api/v1/datasets/kb_1/documents/parse", tenant: "tenant_1", serviceToken: "runtime-token"},
+		{method: http.MethodGet, path: "/api/v1/datasets/kb_1/documents", query: "page=1&page_size=100", tenant: "tenant_1", serviceToken: "runtime-token"},
+		{method: http.MethodGet, path: "/api/v1/datasets/kb_1/documents/doc_1/chunks", query: "page=1&page_size=20", tenant: "tenant_1", serviceToken: "runtime-token"},
+		{method: http.MethodPost, path: "/api/v1/datasets/search", tenant: "tenant_1", serviceToken: "runtime-token"},
+		{method: http.MethodDelete, path: "/api/v1/datasets/kb_1/documents", tenant: "tenant_1", serviceToken: "runtime-token"},
 	}
 
 	if len(calls) != len(expected) {
@@ -130,7 +132,7 @@ func TestGetDatasetDocumentScansAllPages(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, time.Second)
+	client := New(server.URL, time.Second, "runtime-token")
 	doc, err := client.GetDatasetDocument(context.Background(), "tenant_1", "kb_1", "doc_101")
 	if err != nil {
 		t.Fatalf("GetDatasetDocument: %v", err)

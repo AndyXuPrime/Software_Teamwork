@@ -3,7 +3,7 @@
 # API and worker scripts under deploy/api and deploy/worker.
 
 ragflow:
-  host: 0.0.0.0
+  host: 127.0.0.1
   http_port: 9380
 
 postgres:

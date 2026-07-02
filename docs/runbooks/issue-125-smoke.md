@@ -2,7 +2,7 @@
 
 This runbook is the single entry point for S-008 / issue #125 smoke execution.
 It composes existing targeted smoke tests without claiming that unavailable
-provider, parser, Docker, or seed dependencies passed.
+provider, Knowledge runtime, Docker, or seed dependencies passed.
 
 ## Start Local Stack
 
@@ -16,13 +16,13 @@ cp deploy/.env.example deploy/.env
 
 Docker only starts the infrastructure services listed in
 `deploy/docker-compose.yml`: `postgres`, `redis`, `qdrant`, `minio`, and
-`minio-init`. Auth, File, Parser, Knowledge, AI Gateway, QA, Document, and
+`minio-init`. Auth, File, Knowledge, AI Gateway, QA, Document, and
 Gateway run on the host through `run-backend.sh`; do not use Compose profiles,
 business-service containers, or `--build` for this smoke.
 
 For mainland China networks, keep the pinned registry rewrite and
 `UV_DEFAULT_INDEX` defaults copied from `deploy/.env.example`. If image pulls or
-Parser dependency downloads are blocked, use
+Knowledge runtime dependency downloads are blocked, use
 [`Docker 基础设施镜像拉取环境`](./docker-image-pull-environment.md) and record the
 blocked dependency instead of marking the full smoke as passed.
 
@@ -165,6 +165,6 @@ bash scripts/run_issue_125_smoke.sh --all
 | Auth/Gateway/Redis full | `blocked: auth migration apply failed` | Check PostgreSQL is healthy, `AUTH_GATEWAY_REDIS_DATABASE_URL` points at the Auth database, and `deploy/postgres/init/001-create-databases.sql` ran for a fresh volume. |
 | Auth/Gateway/Redis full | `blocked: postgres/redis infrastructure did not become healthy` | Check Docker daemon state, registry rewrite/image pulls, and `docker compose -f deploy/docker-compose.yml --env-file deploy/.env ps`. |
 | File owner | `no knowledge bases available` | Run local seed or create a knowledge base through Gateway first. |
-| Parser/Knowledge | Parser dependency preparation or startup fails | Check `.local/logs/parser.log`, `UV_DEFAULT_INDEX`, and Parser runtime prerequisites; record the blocked dependency if it cannot be prepared. |
+| Knowledge runtime | Runtime dependency preparation or startup fails | Check Knowledge runtime API/worker logs, `UV_DEFAULT_INDEX`, `VENDOR_RUNTIME_URL`, and runtime prerequisites; record the blocked dependency if it cannot be prepared. |
 | QA RAG | AI Gateway/provider unavailable | Check #234 profile seed/provider setup; placeholder profiles are not real provider proof. |
 | Document MCP | `initialize MCP session` / unauthorized | Check Document `/mcp`, `MCP_SERVER_TOKEN`, `DOCUMENT_MCP_SERVICE_TOKEN`, and token header. |
