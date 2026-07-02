@@ -12,10 +12,19 @@ ALTER TABLE qa_config_versions
     CHECK (octet_length(system_prompt) <= 20000);
 
 -- Migrate existing system_prompt from qa_runtime_settings into the current
--- active qa_config_versions row. Only migrate if the old value is within the
--- 20000-byte limit (octet_length, not char length, to match the CHECK constraint).
--- Oversized values are left unmigrated; the runtime falls back to the bootstrap
--- AGENT_SYSTEM_PROMPT, and the admin can recreate the prompt via the API.
+-- active qa_config_versions row.
+--
+-- Trade-off for oversized legacy prompts:
+--   The new CHECK constraint limits system_prompt to 20000 bytes (octet_length).
+--   goose does not support DO blocks (RAISE NOTICE / RAISE EXCEPTION), so we
+--   cannot explicitly fail or warn when the old prompt exceeds the limit.
+--   We use octet_length guard to migrate only valid values and leave oversized
+--   ones unmigrated. The runtime then falls back to AGENT_SYSTEM_PROMPT.
+--
+--   In practice, qa_runtime_settings.system_prompt is seeded from the
+--   AGENT_SYSTEM_PROMPT environment variable and is never expected to exceed
+--   20000 bytes. If it does, the admin must publish a compliant prompt via
+--   the QA config API after migration.
 UPDATE qa_config_versions
 SET system_prompt = runtime.value
 FROM (

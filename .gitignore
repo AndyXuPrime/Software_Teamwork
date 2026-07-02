@@ -121,8 +121,10 @@ reports/rendered_pages/
 !*.example.key
 !*.example.crt
 
-# Trellis local workspace files (task state, journals)
-.trellis/tasks/
+# Trellis local workspace files (active task state — not for version control;
+# archive tasks under .trellis/tasks/archive/ are committed and tracked)
+.trellis/tasks/*
+!.trellis/tasks/archive/
 .trellis/.developer
 
 # Local archives and backups
