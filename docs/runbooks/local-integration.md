@@ -330,6 +330,18 @@ curl -X PATCH http://localhost:8080/api/v1/admin/model-profiles/default-chat \
 API key 通过管理端 UI 配置（Admin → 模型配置 → default-chat → 更新凭证），
 不经过命令行，避免泄漏到 shell 历史。
 
+> **Docker 网络注意**：ai-gateway 容器调用 `api.deepseek.com` 等外部 provider
+> 时走容器内网络，不继承宿主机代理。如果所在网络不能直连外网，需要在
+> `deploy/.env` 中配置容器代理（`host.docker.internal` 指向宿主机）：
+>
+> ```bash
+> AI_GATEWAY_HTTP_PROXY=http://host.docker.internal:7897
+> AI_GATEWAY_HTTPS_PROXY=http://host.docker.internal:7897
+> ```
+>
+> 配置后重启 ai-gateway 容器：`docker compose --profile ai restart ai-gateway`。
+> 端口号改成本机实际代理端口。
+
 #### 验证
 
 配置完成后确认 profile 可用：
