@@ -84,7 +84,8 @@ admin / LocalDemoAdmin#12345
 - 用 uv 准备 Parser 运行依赖，包括 PaddleOCR extra；Python 包下载走
   `deploy/.env` 里的 `UV_DEFAULT_INDEX`，不是 Docker registry。
 - 按顺序启动 `auth`、`file`、`parser`、`knowledge`、`ai-gateway`、`qa`、`document`、`gateway`。
-- 日志写入 `.local/logs/`，PID 写入 `.local/run/`。
+- 日志写入 `.local/logs/`，进程组 leader PID 写入 `.local/run/`，供
+  `stop-backend.sh` 停掉 `go run` / `uv run` 及其子进程。
 
 ## 快速确认
 
@@ -95,6 +96,7 @@ curl --noproxy '*' -fsS http://localhost:8080/readyz
 
 `http://localhost:8086/readyz` 在 placeholder profile 下返回 `503 degraded` 是预期行为，
 表示还没配置真实模型 provider credential，不代表 AI Gateway 进程失败。
+默认本地模型 profile 的 OpenAI-compatible 地址是 `http://localhost:11434/v1`。
 
 ## 排障入口
 

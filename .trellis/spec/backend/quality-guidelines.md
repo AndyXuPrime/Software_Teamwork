@@ -281,6 +281,9 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - Because `run-backend.sh` uses `uv sync --frozen`, `services/parser/uv.lock`
   must be generated from the same `UV_DEFAULT_INDEX` baseline and must not lock
   packages to `https://pypi.org/simple` or `https://files.pythonhosted.org`.
+- Host-run backend processes should be started in managed process groups and
+  stopped by process group so `go run` or `uv run` wrapper processes do not
+  leave child service binaries listening on local ports.
 - `dev-up.sh` must wait for Compose infrastructure health before running host
   migrations or seed SQL, for example with `docker compose up --wait`.
 - Compose must include practical health checks for infrastructure containers.
@@ -312,6 +315,9 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - AI Gateway runs on the host. It may still report provider readiness as degraded
   while seeded placeholder credentials are present; use `/healthz` for process
   startup and `/readyz` only for real provider readiness.
+- Seeded local AI Gateway model profiles must use a host-resolvable base URL,
+  currently `http://localhost:11434/v1`; do not use container-only names such as
+  `host.docker.internal` in the host-run default path.
 
 ### 4. Validation & Error Matrix
 
@@ -323,6 +329,8 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | Compose contains `build:` | Remove it; repository Docker must stay pull-only infra. |
 | Docker policy checker fails | Fix the Compose/docs/script regression or update `scripts/check_docker_policy.py` and the runbook in the same PR when the policy intentionally changes. |
 | Parser uv lock points at official PyPI while `deploy/.env.example` uses a mirror | Regenerate `services/parser/uv.lock` with `UV_DEFAULT_INDEX` before merging; do not rely on the startup script to rewrite locks. |
+| `stop-backend.sh` only kills the wrapper PID | Start host services in a managed process group and stop the whole group; verify the script does not leave `go run` or `uv run` child services bound to ports. |
+| Seeded local AI Gateway profile uses `host.docker.internal` | Replace it with `http://localhost:11434/v1` for the host-run default path. |
 | Required Docker image is unavailable locally | Document `docker compose pull <service>` commands and report Docker runtime validation as skipped. |
 | Same component appears with multiple Docker tags | Use the documented baseline or record the reason in the implementation document. |
 | Compose infrastructure image pull is slow or blocked | Prefer explicit registry rewrite through pinned `*_IMAGE` values in `deploy/.env.example`; if using daemon mirror, prove it with `scripts/check_docker_environment.py`; use Docker daemon proxy only when registry rewrite and mirror paths are unavailable. |

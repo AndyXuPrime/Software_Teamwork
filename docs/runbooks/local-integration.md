@@ -43,9 +43,10 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env down -v
 
 - 前端：`http://localhost:5173`
 - Gateway：`http://localhost:8080`
+- 本机 OpenAI-compatible 模型服务默认地址：`http://localhost:11434/v1`
 - 默认 demo 管理员：`admin` / `LocalDemoAdmin#12345`
 - 后端日志：`.local/logs/*.log`
-- 后端 PID：`.local/run/*.pid`
+- 后端进程组 PID：`.local/run/*.pid`
 
 快速确认：
 
@@ -60,9 +61,10 @@ curl --noproxy '*' -fsS http://localhost:8080/readyz
 ## 谁负责什么
 
 - `dev-up.sh`：infra pull/up、等待 Compose health checks、migration、demo seed。
-- `run-backend.sh`：Parser uv 依赖准备、后端进程启动、日志和 PID。uv 的 Python
-  包索引来自 `deploy/.env` 里的 `UV_DEFAULT_INDEX`，不走 Docker 镜像源。
-- `stop-backend.sh`：停止 `.local/run/` 中记录的后端进程。
+- `run-backend.sh`：Parser uv 依赖准备、后端进程启动、日志和进程组 PID。uv 的
+  Python 包索引来自 `deploy/.env` 里的 `UV_DEFAULT_INDEX`，不走 Docker 镜像源。
+- `stop-backend.sh`：按 `.local/run/` 中记录的进程组停止后端，避免只杀掉
+  `go run` / `uv run` wrapper 后留下真实服务占用端口。
 - `deploy/.env`：本地配置。脚本不生成、不改写、不维护第二套默认值。
 
 ## 故障判断

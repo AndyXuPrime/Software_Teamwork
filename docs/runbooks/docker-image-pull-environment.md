@@ -93,7 +93,9 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env pull minio-in
 对象存储服务是 `minio`。
 
 `ai-gateway /readyz` 返回 `503 degraded` 不是 Docker 问题。默认 seed 写入的是
-placeholder provider credential；`/healthz` 成功表示服务进程可用。
+placeholder provider credential；`/healthz` 成功表示服务进程可用。host-run
+默认模型 profile 指向宿主机 `http://localhost:11434/v1`，不需要
+`host.docker.internal`。
 
 ## 策略检查
 

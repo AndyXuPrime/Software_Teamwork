@@ -903,6 +903,12 @@ Runtime rules:
 - Treat `services/parser/uv.lock` as part of the local startup contract because
   `run-backend.sh` uses `uv sync --frozen`; Docker/deploy checks should run the
   local seed/startup contract when that lock file changes.
+- Host-run process management is part of the local startup contract:
+  `run-backend.sh` should start service commands in managed process groups and
+  `stop-backend.sh` should stop those process groups, not just wrapper PIDs.
+- Seeded local AI Gateway profiles should use `http://localhost:11434/v1` for
+  the host-run default path; container-only hostnames such as
+  `host.docker.internal` must fail the local seed/startup contract.
 - Use named volumes for PostgreSQL, Qdrant, and MinIO persistence.
 - Keep frontend and browser traffic routed through Gateway.
 - Health checks for infra stay in Compose; service health checks are host-run

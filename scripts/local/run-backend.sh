@@ -11,6 +11,11 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+if ! command -v setsid >/dev/null 2>&1; then
+  echo "setsid is required to manage host-run service process groups" >&2
+  exit 1
+fi
+
 # deploy/.env is copied by the user from deploy/.env.example. The script does
 # not own defaults; it only exposes that file to host child processes.
 set -a
@@ -25,13 +30,17 @@ start() {
   dir="$2"
   shift 2
 
-  if [[ -f "$RUN_DIR/$name.pid" ]] && kill -0 "$(cat "$RUN_DIR/$name.pid")" 2>/dev/null; then
-    echo "$name already running"
-    return
+  if [[ -f "$RUN_DIR/$name.pid" ]]; then
+    pid="$(cat "$RUN_DIR/$name.pid")"
+    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 -- "-$pid" 2>/dev/null; then
+      echo "$name already running"
+      return
+    fi
   fi
+  rm -f "$RUN_DIR/$name.pid"
 
   echo "starting $name"
-  (cd "$dir" && exec "$@") >"$LOG_DIR/$name.log" 2>&1 &
+  (cd "$dir" && exec setsid "$@") >"$LOG_DIR/$name.log" 2>&1 &
   echo "$!" >"$RUN_DIR/$name.pid"
 }
 

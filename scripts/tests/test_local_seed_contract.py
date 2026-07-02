@@ -45,7 +45,7 @@ class LocalSeedContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (root / "deploy" / "seeds" / "002-ai-gateway-model-profiles.sql").write_text(
-                "default-chat\n",
+                "default-chat\nhttp://localhost:11434/v1\n",
                 encoding="utf-8",
             )
             (root / "deploy" / "README.md").write_text(
@@ -65,9 +65,16 @@ class LocalSeedContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (root / "scripts" / "local" / "run-backend.sh").write_text(
+                "setsid\n"
                 "uv sync --frozen --group dev --extra paddleocr\n"
                 "uv run --frozen parser-service\n"
                 "auth\nfile\nparser\nknowledge\nai-gateway\nqa\ndocument\ngateway\n",
+                encoding="utf-8",
+            )
+            (root / "scripts" / "local" / "stop-backend.sh").write_text(
+                'kill -0 -- "-$pid"\n'
+                'kill -TERM -- "-$pid"\n'
+                'kill -KILL -- "-$pid"\n',
                 encoding="utf-8",
             )
             (root / "docs" / "runbooks" / "local-integration.md").write_text(
@@ -92,6 +99,27 @@ class LocalSeedContractTests(unittest.TestCase):
 
         self.assertIssueContains(issues, "https://pypi.org/simple")
         self.assertIssueContains(issues, "https://files.pythonhosted.org")
+
+    def test_verifier_reports_container_only_ai_gateway_seed_url(self) -> None:
+        verifier = load_verifier()
+
+        issues = verifier.validate_seed_002(
+            """
+            default-chat
+            default-embedding
+            default-rerank
+            host.docker.internal
+            cred-local-chat
+            cred-local-embedding
+            cred-local-rerank
+            local-demo-key-v1
+            ON CONFLICT
+            ON CONFLICT
+            """
+        )
+
+        self.assertIssueContains(issues, "host.docker.internal")
+        self.assertIssueContains(issues, "http://localhost:11434/v1")
 
     def test_verifier_reports_missing_auth_qa_settings_permissions(self) -> None:
         verifier = load_verifier()

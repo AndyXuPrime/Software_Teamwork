@@ -175,7 +175,8 @@ PaddleOCR 依赖；它影响 uv，不影响 Docker。第一次启动仍会下载
 `ai-gateway`、`qa`、`document` 和 `gateway`，日志在 `.local/logs/`。
 
 `ai-gateway /readyz` 在 placeholder credential 下返回 `503 degraded` 是预期行为，
-不代表服务没起。完整排障见 [deploy/README.md](deploy/README.md) 和
+不代表服务没起。默认本地模型 profile 指向宿主机 `http://localhost:11434/v1`。
+完整排障见 [deploy/README.md](deploy/README.md) 和
 [Docker 镜像拉取环境与镜像源](docs/runbooks/docker-image-pull-environment.md)。
 
 单个 Go 服务可以直接调试：

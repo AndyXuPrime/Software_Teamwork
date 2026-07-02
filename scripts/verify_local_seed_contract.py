@@ -18,6 +18,7 @@ ENV_EXAMPLE = Path("deploy/.env.example")
 AUTH_MIGRATIONS_DIR = Path("services/auth/migrations")
 DEV_UP_SCRIPT = Path("scripts/local/dev-up.sh")
 RUN_BACKEND_SCRIPT = Path("scripts/local/run-backend.sh")
+STOP_BACKEND_SCRIPT = Path("scripts/local/stop-backend.sh")
 PARSER_UV_LOCK = Path("services/parser/uv.lock")
 
 REQUIRED_SEED_001_TOKENS = {
@@ -52,10 +53,15 @@ REQUIRED_AI_TOKENS = [
     "default-chat",
     "default-embedding",
     "default-rerank",
+    "http://localhost:11434/v1",
     "cred-local-chat",
     "cred-local-embedding",
     "cred-local-rerank",
     "local-demo-key-v1",
+]
+
+FORBIDDEN_AI_TOKENS = [
+    "host.docker.internal",
 ]
 
 REQUIRED_AUTH_MIGRATION_TOKENS = {
@@ -107,6 +113,7 @@ REQUIRED_DEV_UP_TOKENS = [
 ]
 
 REQUIRED_RUN_BACKEND_TOKENS = [
+    "setsid",
     "uv sync --frozen --group dev --extra paddleocr",
     "uv run --frozen parser-service",
     "auth",
@@ -117,6 +124,12 @@ REQUIRED_RUN_BACKEND_TOKENS = [
     "qa",
     "document",
     "gateway",
+]
+
+REQUIRED_STOP_BACKEND_TOKENS = [
+    'kill -0 -- "-$pid"',
+    'kill -TERM -- "-$pid"',
+    'kill -KILL -- "-$pid"',
 ]
 
 REQUIRED_ENV_TOKENS = [
@@ -167,13 +180,23 @@ def verify_local_seed_contract(root: Path) -> list[str]:
     env_example = read_required(root, ENV_EXAMPLE, issues)
     dev_up_script = read_required(root, DEV_UP_SCRIPT, issues)
     run_backend_script = read_required(root, RUN_BACKEND_SCRIPT, issues)
+    stop_backend_script = read_required(root, STOP_BACKEND_SCRIPT, issues)
     parser_uv_lock = read_required(root, PARSER_UV_LOCK, issues)
 
     issues.extend(validate_seed_001(seed_001))
     issues.extend(validate_seed_002(seed_002))
     issues.extend(validate_cleanup_seed(cleanup_seed))
     issues.extend(validate_auth_migrations(auth_migrations))
-    issues.extend(validate_docs(deploy_readme, runbook, env_example, dev_up_script, run_backend_script))
+    issues.extend(
+        validate_docs(
+            deploy_readme,
+            runbook,
+            env_example,
+            dev_up_script,
+            run_backend_script,
+            stop_backend_script,
+        )
+    )
     issues.extend(validate_parser_uv_lock(parser_uv_lock))
     issues.extend(validate_forbidden_content(root))
     return issues
@@ -233,6 +256,9 @@ def validate_seed_002(content: str) -> list[str]:
     for token in REQUIRED_AI_TOKENS:
         if token not in content:
             issues.append(f"{SEED_002} missing AI placeholder token `{token}`")
+    for token in FORBIDDEN_AI_TOKENS:
+        if token in content:
+            issues.append(f"{SEED_002} must not use container-only host token `{token}`")
     if content.count("ON CONFLICT") < 2:
         issues.append(f"{SEED_002} should use ON CONFLICT for model profiles and credentials")
     return issues
@@ -273,6 +299,7 @@ def validate_docs(
     env_example: str,
     dev_up_script: str,
     run_backend_script: str,
+    stop_backend_script: str,
 ) -> list[str]:
     issues: list[str] = []
     combined = "\n".join([deploy_readme, runbook, env_example])
@@ -291,6 +318,9 @@ def validate_docs(
     for token in REQUIRED_RUN_BACKEND_TOKENS:
         if token not in run_backend_script:
             issues.append(f"{RUN_BACKEND_SCRIPT} missing backend startup token `{token}`")
+    for token in REQUIRED_STOP_BACKEND_TOKENS:
+        if token not in stop_backend_script:
+            issues.append(f"{STOP_BACKEND_SCRIPT} missing backend stop token `{token}`")
     return issues
 
 
@@ -318,6 +348,7 @@ def validate_forbidden_content(root: Path) -> list[str]:
         ENV_EXAMPLE,
         DEV_UP_SCRIPT,
         RUN_BACKEND_SCRIPT,
+        STOP_BACKEND_SCRIPT,
     ]:
         path = root / relative
         if not path.exists():
