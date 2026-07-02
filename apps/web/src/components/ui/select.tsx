@@ -176,7 +176,7 @@ function SelectTrigger({ className, children, id, ...props }: SelectTriggerProps
       disabled={disabled}
       aria-expanded={open}
       aria-haspopup="listbox"
-      aria-activedescendant={activeDescendant ?? ''}
+      aria-activedescendant={activeDescendant}
       onClick={() => {
         setOpen(!open)
         setHighlightedIndex(-1)
@@ -224,7 +224,7 @@ function SelectValue({ placeholder, className }: SelectValueProps) {
 type SelectContentProps = React.ComponentProps<'div'>
 
 function SelectContent({ className, children, ...props }: SelectContentProps) {
-  const { open, setOpen, setHighlightedIndex, highlightedIndex, onValueChange, itemsRef } =
+  const { open, setOpen, setHighlightedIndex, highlightedIndex, onValueChange, itemsRef, listRef } =
     useSelectContext()
   const innerRef = React.useRef<HTMLDivElement | null>(null)
   const [contentHeight, setContentHeight] = React.useState(0)
@@ -242,26 +242,40 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
   React.useEffect(() => {
     if (!open) return
     const handleKey = (e: KeyboardEvent) => {
-      const items = itemsRef.current.filter((v) => v !== undefined)
+      const items = itemsRef.current.filter((v): v is string => v !== undefined)
+      const findNext = (from: number, dir: 1 | -1): number => {
+        let i = from + dir
+        while (i >= 0 && i < items.length) {
+          const el = listRef.current?.querySelector(`[data-value="${CSS.escape(items[i]!)}"]`)
+          if (el && !el.hasAttribute('data-disabled')) return i
+          i += dir
+        }
+        return -1
+      }
       if (e.key === 'Tab') {
         setOpen(false)
         return
       }
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        setHighlightedIndex((prev) => Math.min(prev + 1, items.length - 1))
+        const next = findNext(highlightedIndex, 1)
+        if (next >= 0) setHighlightedIndex(next)
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
-        setHighlightedIndex((prev) => Math.max(prev - 1, 0))
+        const prev = findNext(highlightedIndex + 1, -1) // +1 because we search backward from current-1
+        if (prev >= 0) setHighlightedIndex(prev)
       } else if (e.key === 'Enter' && highlightedIndex >= 0) {
         e.preventDefault()
-        const itemValue = items[highlightedIndex]
-        if (itemValue !== undefined) onValueChange(itemValue)
+        const itemValue = items[highlightedIndex]!
+        if (itemValue !== undefined) {
+          const el = listRef.current?.querySelector(`[data-value="${CSS.escape(itemValue)}"]`)
+          if (!el?.hasAttribute('data-disabled')) onValueChange(itemValue)
+        }
       }
     }
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
-  }, [open, highlightedIndex, onValueChange, itemsRef, setHighlightedIndex])
+  }, [open, highlightedIndex, onValueChange, itemsRef, setHighlightedIndex, listRef])
 
   return (
     <div
@@ -406,6 +420,7 @@ function SelectItem({
       data-slot="select-item"
       data-value={value}
       data-highlighted={highlightedIndex === index || undefined}
+      data-disabled={disabled || undefined}
       onMouseEnter={onMouseEnterItem}
       onClick={() => {
         if (!disabled) {
