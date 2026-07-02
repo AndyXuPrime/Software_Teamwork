@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	DefaultPath        = "/mcp"
-	defaultTokenHeader = "Authorization"
-	serverName         = "document-mcp"
-	serverVersion      = "0.1.0"
+	DefaultPath                = "/mcp"
+	DefaultMaxRequestBodyBytes = int64(64 << 10)
+	defaultTokenHeader         = "Authorization"
+	serverName                 = "document-mcp"
+	serverVersion              = "0.1.0"
 )
 
 type ToolService interface {
@@ -31,7 +32,11 @@ type Config struct {
 	ToolService  ToolService
 	ServiceToken string
 	TokenHeader  string
-	Logger       *slog.Logger
+	// MaxRequestBodyBytes bounds MCP JSON-RPC request bodies before the SDK
+	// decodes tool arguments. This protects content tools from oversized input
+	// while the tool layer still stores only bounded excerpts.
+	MaxRequestBodyBytes int64
+	Logger              *slog.Logger
 }
 
 func NewHandler(cfg Config) http.Handler {
@@ -40,6 +45,10 @@ func NewHandler(cfg Config) http.Handler {
 		tokenHeader = defaultTokenHeader
 	}
 	serviceToken := strings.TrimSpace(cfg.ServiceToken)
+	maxRequestBodyBytes := cfg.MaxRequestBodyBytes
+	if maxRequestBodyBytes <= 0 {
+		maxRequestBodyBytes = DefaultMaxRequestBodyBytes
+	}
 	stream := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		if cfg.ToolService == nil {
 			return nil
@@ -58,6 +67,13 @@ func NewHandler(cfg Config) http.Handler {
 		if got := tokenFromHeader(r.Header, tokenHeader); got != serviceToken {
 			http.Error(w, "unauthorized MCP request", http.StatusUnauthorized)
 			return
+		}
+		if r.ContentLength > maxRequestBodyBytes {
+			http.Error(w, "MCP request body too large; limit is "+strconv.FormatInt(maxRequestBodyBytes, 10)+" bytes", http.StatusRequestEntityTooLarge)
+			return
+		}
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 		}
 		stream.ServeHTTP(w, r)
 	})

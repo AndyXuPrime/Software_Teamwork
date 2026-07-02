@@ -16,6 +16,8 @@ const (
 	ToolSearchSessionAttachments     = "search_session_attachments"
 	maxAttachmentResultSize          = 8192
 	maxAttachmentContentExcerptRunes = 1500
+	maxAttachmentReportSourceBytes   = 20_000
+	maxAttachmentReportSourceChunks  = 200
 )
 
 type SessionAttachmentHit struct {
@@ -77,6 +79,10 @@ func (c *AttachmentToolClient) ListTools(_ context.Context) ([]agent.ToolDefinit
 						"maximum":     20,
 						"description": "Maximum number of chunks to return.",
 					},
+					"include_report_source": map[string]any{
+						"type":        "boolean",
+						"description": "When true, include a bounded report_source_excerpt aggregated from bound ready attachment chunks for document report generation.",
+					},
 				},
 				"required":             []string{"query"},
 				"additionalProperties": false,
@@ -94,9 +100,10 @@ func (c *AttachmentToolClient) CallTool(ctx context.Context, name string, argume
 
 func (c *AttachmentToolClient) searchSessionAttachments(ctx context.Context, arguments json.RawMessage) (agent.ToolResult, error) {
 	var input struct {
-		Query         string   `json:"query"`
-		AttachmentIDs []string `json:"attachment_ids"`
-		Limit         *int     `json:"limit"`
+		Query               string   `json:"query"`
+		AttachmentIDs       []string `json:"attachment_ids"`
+		Limit               *int     `json:"limit"`
+		IncludeReportSource bool     `json:"include_report_source"`
 	}
 	if err := decodeToolArguments(arguments, &input); err != nil {
 		return toolFailure("invalid_arguments", err.Error()), nil
@@ -147,7 +154,16 @@ func (c *AttachmentToolClient) searchSessionAttachments(ctx context.Context, arg
 	if startCitationNo <= 0 {
 		startCitationNo = 1
 	}
-	return agent.ToolResult{Content: generateAttachmentSearchSummary(results, startCitationNo)}, nil
+	content := generateAttachmentSearchSummary(results, startCitationNo)
+	if input.IncludeReportSource {
+		sourceChunks, err := c.searcher.SearchSessionAttachments(toolCtx, userID, sessionID, targetIDs, "", maxAttachmentReportSourceChunks)
+		if err != nil {
+			return toolFailure("search_failed", "session attachment report source failed"), nil
+		}
+		source := buildAttachmentReportSource(sourceChunks, maxAttachmentReportSourceBytes)
+		content = addAttachmentReportSource(content, source)
+	}
+	return agent.ToolResult{Content: content}, nil
 }
 
 func generateAttachmentSearchSummary(results []SessionAttachmentHit, startCitationNo int) string {
@@ -212,6 +228,121 @@ func marshalAttachmentSearchSummary(results []SessionAttachmentHit, totalHits, s
 	}
 	payload, _ := json.Marshal(summary)
 	return payload
+}
+
+type attachmentReportSource struct {
+	Excerpt            string
+	AttachmentCount    int
+	ChunkCount         int
+	OriginalBytes      int
+	ExcerptBytes       int
+	ContentBudgetBytes int
+	Truncated          bool
+}
+
+func buildAttachmentReportSource(chunks []SessionAttachmentHit, maxBytes int) attachmentReportSource {
+	source := attachmentReportSource{ContentBudgetBytes: maxBytes}
+	if maxBytes <= 0 || len(chunks) == 0 {
+		return source
+	}
+	attachments := map[string]struct{}{}
+	var b strings.Builder
+	for _, chunk := range chunks {
+		content := strings.TrimSpace(chunk.Content)
+		if content == "" {
+			content = strings.TrimSpace(chunk.ContentPreview)
+		}
+		if content == "" {
+			continue
+		}
+		attachments[chunk.AttachmentID] = struct{}{}
+		source.ChunkCount++
+		part := formatAttachmentReportSourceChunk(chunk, content)
+		if b.Len() > 0 {
+			part = "\n\n" + part
+		}
+		source.OriginalBytes += len([]byte(part))
+		if source.Truncated {
+			continue
+		}
+		remaining := maxBytes - b.Len()
+		if remaining <= 0 {
+			source.Truncated = true
+			continue
+		}
+		if len([]byte(part)) > remaining {
+			truncated, _ := truncateUTF8ByBytes(part, remaining)
+			b.WriteString(truncated)
+			source.Truncated = true
+			continue
+		}
+		b.WriteString(part)
+	}
+	source.AttachmentCount = len(attachments)
+	source.Excerpt = strings.TrimSpace(b.String())
+	source.ExcerptBytes = len([]byte(source.Excerpt))
+	return source
+}
+
+func formatAttachmentReportSourceChunk(chunk SessionAttachmentHit, content string) string {
+	labels := []string{}
+	if filename := truncateString(chunk.Filename, 100); filename != "" {
+		labels = append(labels, "文件："+filename)
+	}
+	if chunk.PageNumber > 0 {
+		labels = append(labels, fmt.Sprintf("页码：%d", chunk.PageNumber))
+	}
+	if section := truncateString(chunk.SectionPath, 100); section != "" {
+		labels = append(labels, "章节："+section)
+	}
+	if chunk.ChunkIndex > 0 {
+		labels = append(labels, fmt.Sprintf("片段：%d", chunk.ChunkIndex))
+	}
+	if len(labels) == 0 {
+		return content
+	}
+	return "【附件摘录：" + strings.Join(labels, "，") + "】\n" + content
+}
+
+func addAttachmentReportSource(content string, source attachmentReportSource) string {
+	var summary map[string]any
+	if err := json.Unmarshal([]byte(content), &summary); err != nil {
+		summary = map[string]any{"hit_count": 0, "message": "Attachment search summary unavailable"}
+	}
+	summary["report_source"] = map[string]any{
+		"attachment_count":     source.AttachmentCount,
+		"chunk_count":          source.ChunkCount,
+		"original_bytes":       source.OriginalBytes,
+		"excerpt_bytes":        source.ExcerptBytes,
+		"content_budget_bytes": source.ContentBudgetBytes,
+		"truncated":            source.Truncated,
+	}
+	if source.Excerpt != "" {
+		summary["report_source_excerpt"] = source.Excerpt
+	}
+	payload, _ := json.Marshal(summary)
+	return string(payload)
+}
+
+func truncateUTF8ByBytes(text string, limit int) (string, bool) {
+	if limit <= 0 {
+		return "", len(text) > 0
+	}
+	if len([]byte(text)) <= limit {
+		return text, false
+	}
+	var builder strings.Builder
+	builder.Grow(limit)
+	used := 0
+	for _, r := range text {
+		size := len(string(r))
+		if used+size > limit {
+			break
+		}
+		builder.WriteRune(r)
+		used += size
+	}
+	return builder.String(), true
 }
 
 type attachmentResultBudget struct {

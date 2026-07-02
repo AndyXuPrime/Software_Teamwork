@@ -10,10 +10,14 @@ import (
 )
 
 type attachmentSearcherStub struct {
-	results []SessionAttachmentHit
+	results       []SessionAttachmentHit
+	reportResults []SessionAttachmentHit
 }
 
-func (s attachmentSearcherStub) SearchSessionAttachments(context.Context, string, string, []string, string, int) ([]SessionAttachmentHit, error) {
+func (s attachmentSearcherStub) SearchSessionAttachments(_ context.Context, _ string, _ string, _ []string, query string, _ int) ([]SessionAttachmentHit, error) {
+	if strings.TrimSpace(query) == "" && s.reportResults != nil {
+		return s.reportResults, nil
+	}
 	return s.results, nil
 }
 
@@ -125,6 +129,47 @@ func TestAttachmentToolClientKeepsUsableResultsWhenLongExcerptsHitResultBudget(t
 		if strings.TrimSpace(item.ContentExcerpt) == "" {
 			t.Fatalf("result contained an empty content excerpt: %s", result.Content)
 		}
+	}
+}
+
+func TestAttachmentToolClientIncludesReportSourceFromBoundAttachments(t *testing.T) {
+	client, err := NewAttachmentToolClient(AttachmentToolConfig{Searcher: attachmentSearcherStub{
+		results: []SessionAttachmentHit{{
+			AttachmentID: "att-1", ChunkID: "chunk-1", Filename: "inspection.pdf", ContentPreview: "matched overload", Content: "matched overload evidence",
+		}},
+		reportResults: []SessionAttachmentHit{{
+			AttachmentID: "att-1", ChunkID: "chunk-1", Filename: "inspection.pdf", Content: "matched overload evidence", PageNumber: 1, ChunkIndex: 1,
+		}, {
+			AttachmentID: "att-1", ChunkID: "chunk-2", Filename: "inspection.pdf", Content: "unmatched transformer cooling note", PageNumber: 2, ChunkIndex: 2,
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := contextutil.WithUserID(context.Background(), "user-1")
+	ctx = contextutil.WithSessionID(ctx, "sess-1")
+	ctx = contextutil.WithMessageAttachmentIDs(ctx, []string{"att-1"})
+
+	result, err := client.CallTool(ctx, ToolSearchSessionAttachments, json.RawMessage(`{"query":"overload","include_report_source":true}`))
+	if err != nil || result.IsError {
+		t.Fatalf("CallTool() = %+v err=%v", result, err)
+	}
+	var decoded struct {
+		ReportSourceExcerpt string `json:"report_source_excerpt"`
+		ReportSource        struct {
+			AttachmentCount int  `json:"attachment_count"`
+			ChunkCount      int  `json:"chunk_count"`
+			Truncated       bool `json:"truncated"`
+		} `json:"report_source"`
+	}
+	if err := json.Unmarshal([]byte(result.Content), &decoded); err != nil {
+		t.Fatalf("decode result: %v\n%s", err, result.Content)
+	}
+	if !strings.Contains(decoded.ReportSourceExcerpt, "matched overload evidence") || !strings.Contains(decoded.ReportSourceExcerpt, "unmatched transformer cooling note") {
+		t.Fatalf("report source excerpt did not include bounded content across chunks: %s", decoded.ReportSourceExcerpt)
+	}
+	if decoded.ReportSource.AttachmentCount != 1 || decoded.ReportSource.ChunkCount != 2 || decoded.ReportSource.Truncated {
+		t.Fatalf("report source metadata = %+v", decoded.ReportSource)
 	}
 }
 

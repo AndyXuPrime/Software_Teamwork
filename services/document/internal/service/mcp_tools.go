@@ -920,7 +920,7 @@ func exportDOCXSchema() map[string]any {
 
 func reportFromContentSchema() map[string]any {
 	return objectSchema([]any{"content"}, map[string]any{
-		"content":       map[string]any{"type": "string", "description": "Source content used to create a bounded report-generation context."},
+		"content":       map[string]any{"type": "string", "description": "Source content used to create a bounded report-generation context. Only a UTF-8 safe excerpt is retained for asynchronous generation.", "x-max-source-content-bytes": documentMCPMaxSourceContentBytes},
 		"document_name": map[string]any{"type": "string", "description": "Optional display name for the generated report."},
 		"instructions":  map[string]any{"type": "string", "description": "Optional generation instructions stored only as length summary in logs."},
 	})

@@ -154,6 +154,9 @@ func generateAttachmentSearchArgumentsSummary(args map[string]any) map[string]an
 	if ids, ok := args["attachment_ids"].([]any); ok {
 		summary["attachment_count"] = len(ids)
 	}
+	if includeReportSource, ok := args["include_report_source"].(bool); ok {
+		summary["include_report_source"] = includeReportSource
+	}
 	return summary
 }
 

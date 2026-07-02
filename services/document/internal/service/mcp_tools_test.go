@@ -45,6 +45,11 @@ func TestMCPToolServiceListToolsDefinesStableSchemas(t *testing.T) {
 	}
 	assertSchemaRequires(t, seen[DocumentMCPToolGenerateReportOutline].InputSchema, "reportId")
 	assertSchemaRequires(t, seen[DocumentMCPToolGenerateReportFromContent].InputSchema, "content")
+	contentProperties := seen[DocumentMCPToolGenerateReportFromContent].InputSchema["properties"].(map[string]any)
+	contentSchema := contentProperties["content"].(map[string]any)
+	if contentSchema["x-max-source-content-bytes"] != documentMCPMaxSourceContentBytes {
+		t.Fatalf("content schema = %+v, want source content byte limit", contentSchema)
+	}
 	assertSchemaRequires(t, seen[DocumentMCPToolRegenerateReportSection].InputSchema, "reportId", "sectionId")
 	assertSchemaRequires(t, seen[DocumentMCPToolGetGenerationStatus].InputSchema, "jobId")
 	assertSchemaRequires(t, seen[DocumentMCPToolGetTemplateSchema].InputSchema, "templateId")
