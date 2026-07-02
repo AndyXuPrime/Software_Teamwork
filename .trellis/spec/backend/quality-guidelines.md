@@ -276,6 +276,10 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   from Docker registry rewrite and should not be handled in Docker policy.
 - Runtime Python dependency changes belong under `services/knowledge-runtime`;
   the default local backend startup path must not depend on `services/parser`.
+- Host-run Go module downloads should use `GOPROXY` and `GOSUMDB` from
+  `deploy/.env.example` for mainland China developer networks. This covers
+  `dev-up.sh` goose migrations and `run-backend.sh` Go service startups; it is
+  separate from Docker registry rewrite and Knowledge runtime `UV_DEFAULT_INDEX`.
 - Host-run backend processes should be started in managed process groups and
   stopped by process group so `go run` or `uv run` wrapper processes do not
   leave child service binaries listening on local ports.
@@ -328,6 +332,7 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | Compose contains `build:` | Remove it; repository Docker must stay pull-only infra. |
 | Docker policy checker fails | Fix the Compose/docs/script regression or update `scripts/check_docker_policy.py` and the runbook in the same PR when the policy intentionally changes. |
 | Retired parser paths or env keys reappear in startup scripts | Remove the parser dependency and route document parsing through `services/knowledge-runtime`. |
+| Go service startup logs show `Get "https://proxy.golang.org/...": i/o timeout` | Confirm the copied `deploy/.env` contains the repository `GOPROXY` / `GOSUMDB` defaults; if the mirror is unavailable, override only local `deploy/.env` or enterprise shell config. Do not hard-code script-level fallbacks. |
 | `stop-backend.sh` only kills the wrapper PID | Start host services in a managed process group and stop the whole group; verify the script does not leave `go run` or `uv run` child services bound to ports. |
 | Seeded local AI Gateway profile uses `host.docker.internal` | Replace it with `http://localhost:11434/v1` for the host-run default path. |
 | Required Docker image is unavailable locally | Document `docker compose pull <service>` commands and report Docker runtime validation as skipped. |
@@ -360,7 +365,8 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - Run `python3 scripts/check_docker_policy.py` and the policy/environment unit
   tests when Compose, Docker docs, image tags, or Docker scripts change.
 - Run the local seed contract checker and its unit tests when seed SQL, seed
-  docs, startup scripts, or Knowledge runtime startup defaults change.
+  docs, startup scripts, Knowledge runtime startup defaults, or host-run Go
+  module proxy defaults change.
 - Search Docker and docs for duplicate image tags such as `redis:7` vs
   `redis:7-alpine`, and MinIO server/client tags before declaring version
   cleanup complete.

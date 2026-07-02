@@ -159,6 +159,8 @@ REQUIRED_STOP_BACKEND_TOKENS = [
 
 REQUIRED_ENV_TOKENS = [
     "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple",
+    "GOPROXY=https://goproxy.cn,direct",
+    "GOSUMDB=sum.golang.google.cn",
     "MCP_TRANSPORT=streamable_http",
     "MCP_SERVER_ALIAS=document",
     "MCP_SERVER_URL=http://localhost:8085/mcp",

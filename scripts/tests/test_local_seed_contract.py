@@ -34,6 +34,8 @@ class LocalSeedContractTests(unittest.TestCase):
                 "LOCAL_SUPER_ADMIN_USERNAME=superadmin\n"
                 "LOCAL_SUPER_ADMIN_PASSWORD=LocalDemoAdmin#12345\n"
                 "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple\n"
+                "GOPROXY=https://goproxy.cn,direct\n"
+                "GOSUMDB=sum.golang.google.cn\n"
                 "DOCKER_IMAGE_REGISTRY_PREFIX=docker.m.daocloud.io/library/\n"
                 "RAGFLOW_DEPS_IMAGE=docker.m.daocloud.io/infiniflow/ragflow_deps:51ce6aab\n"
                 "VENDOR_RUNTIME_URL=http://127.0.0.1:9380\n"

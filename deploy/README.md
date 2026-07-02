@@ -82,6 +82,20 @@ superadmin / LocalDemoAdmin#12345
 从 `deploy/.env` 删除 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`QDRANT_IMAGE`、
 `MINIO_IMAGE` 和 `MINIO_MC_IMAGE` 这几行即可回到 Compose 里的 Docker Hub pinned tags。
 
+`UV_DEFAULT_INDEX` 控制宿主机 uv 在解析或重锁依赖时使用的 Python 包索引，默认使用
+清华 PyPI 镜像以加速 Knowledge runtime 依赖准备。`services/parser` 已退役，默认路径
+不再准备 standalone Parser；解析、切块、embedding、索引和检索通过
+`services/knowledge-runtime` 完成。无法访问清华源的环境应先按网络/代理路径解决；如必须
+使用 PyPI 或自建源，需要确保 Knowledge runtime lock/config 与本地启动契约同步。
+
+`GOPROXY` 和 `GOSUMDB` 控制宿主机 Go 工具链下载模块和校验数据库的路径，默认使用
+`https://goproxy.cn,direct` 和 `sum.golang.google.cn`，用于 `dev-up.sh` 中的
+goose migration 以及 `run-backend.sh` 中的 Go 服务 `go run`。如果
+`.local/logs/auth.log`、`.local/logs/gateway.log` 等日志出现
+`Get "https://proxy.golang.org/...": i/o timeout`，确认当前 `deploy/.env` 是否包含这
+两行；旧环境需要从 `deploy/.env.example` 手动补入。无法访问该 Go 镜像的环境可以在
+本机 `deploy/.env` 中改为企业代理或 Go 默认值。
+
 ## 脚本职责
 
 `./scripts/local/dev-up.sh`：
@@ -99,6 +113,8 @@ superadmin / LocalDemoAdmin#12345
 
 - 按顺序启动 `auth`、`file`、`knowledge`、`ai-gateway`、`qa`、`document`、`gateway`。
 - Knowledge 运行 `cmd/adapter`，并通过 `VENDOR_RUNTIME_URL` 调用 RAGFlow runtime。
+- Go 服务启动使用宿主机 `go run`；Go 模块下载走 `deploy/.env` 里的
+  `GOPROXY` / `GOSUMDB`，不是 Docker registry，也不是 `UV_DEFAULT_INDEX`。
 - 日志写入 `.local/logs/`，进程组 leader PID 写入 `.local/run/`，供
   `stop-backend.sh` 停掉 `go run` 及其子进程。
 

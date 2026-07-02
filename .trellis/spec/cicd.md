@@ -884,7 +884,7 @@ Required local sequence:
 1. Copy local defaults with `cp deploy/.env.example deploy/.env`.
 2. Run `./scripts/local/dev-up.sh` to pull/start infra, wait for health, apply
    Qdrant collection initialization, host migrations, and local seed.
-3. Run `./scripts/local/run-backend.sh` to start Auth, File, Parser, Knowledge,
+3. Run `./scripts/local/run-backend.sh` to start Auth, File, Knowledge,
    AI Gateway, QA, Document, and Gateway as host processes.
 4. Run `cd apps/web && bun install && bun run dev` for the frontend.
 
@@ -902,6 +902,10 @@ Runtime rules:
   path.
 - Treat `services/knowledge-runtime/**` and its host-run API/worker scripts as
   the local runtime contract for Knowledge parsing and retrieval changes.
+- Keep `GOPROXY` and `GOSUMDB` in `deploy/.env.example` as the default host-run
+  Go module proxy/checksum settings for mainland China developer networks. They
+  affect `dev-up.sh` goose migrations and `run-backend.sh` Go service startup,
+  not Docker image pulls or Knowledge runtime uv downloads.
 - Host-run process management is part of the local startup contract:
   `run-backend.sh` should start service commands in managed process groups and
   `stop-backend.sh` should stop those process groups, not just wrapper PIDs.

@@ -36,7 +36,15 @@ import { useChatStore } from '@/stores/chat-store'
 // ══════════════════════════════════════════════════════════════════════════════
 
 function nextId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2)
+  const cryptoSource = globalThis.crypto
+  if (typeof cryptoSource?.randomUUID === 'function') {
+    return cryptoSource.randomUUID()
+  }
+  if (typeof cryptoSource?.getRandomValues !== 'function') {
+    throw new Error('Secure random generator unavailable')
+  }
+  const bytes = cryptoSource.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 function toSessionListItem(s: QASession, messages: QAMessage[]): QASessionListItem {

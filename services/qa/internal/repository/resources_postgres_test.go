@@ -135,3 +135,40 @@ func TestToolCallEventPayloadCarriesModelInvocationID(t *testing.T) {
 		t.Fatalf("modelInvocationId=%q", got)
 	}
 }
+
+func TestMarshalCitationMetadataNormalizesAttachmentID(t *testing.T) {
+	raw, err := marshalCitationMetadata(service.Citation{
+		AttachmentID: " attachment-canonical ",
+		Metadata: map[string]any{
+			"attachmentId":  "spoofed",
+			"attachment_id": "legacy",
+			"keep":          "value",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["attachmentId"] != "attachment-canonical" {
+		t.Fatalf("attachmentId=%v, want canonical attachment id", got["attachmentId"])
+	}
+	if _, ok := got["attachment_id"]; ok {
+		t.Fatalf("attachment_id should be removed: %v", got)
+	}
+	if got["keep"] != "value" {
+		t.Fatalf("metadata keep=%v, want value", got["keep"])
+	}
+}
+
+func TestMarshalCitationMetadataHandlesNilMetadata(t *testing.T) {
+	raw, err := marshalCitationMetadata(service.Citation{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "{}" {
+		t.Fatalf("metadata json=%s, want {}", raw)
+	}
+}
