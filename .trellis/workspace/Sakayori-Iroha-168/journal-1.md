@@ -282,17 +282,32 @@ Clarified Gateway /readyz as lightweight readiness, separated owner-service busi
 
 ### Main Changes
 
-(Add details)
+- Recorded decision C for issue #353: Gateway `/readyz` remains a lightweight readiness gate for Redis session cache, Auth `/readyz`, and required owner service base URL configuration.
+- Documented that Gateway `/readyz` does not fan out to owner-service `/readyz` endpoints and does not prove Knowledge, QA, Document, AI Gateway provider, upload, retrieval, QA answer, or report-generation workflows.
+- Updated Gateway docs, OpenAPI contracts, deployment runbooks, and backend spec language to use `503 dependency_error` for Gateway readiness dependency failures.
+- Populated archived Trellis implementation/check context manifests with the actual specs and architecture documents used.
+- Addressed PR review findings by aligning malformed non-empty owner URL wording with current implementation, fixing deploy troubleshooting status, and adding service-local/internal OpenAPI `503` error responses.
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
-| `8736b13c` | (see git log) |
+| `7ee5551e` | docs(gateway): clarify readyz semantics |
+| `114f9755` | chore(task): archive 07-02-issue-353-gateway-readyz-semantics |
+| `010788eb` | chore: record journal |
+| `6cd99d8b` | docs(gateway): align readyz spec with implementation |
+| `d0e3a075` | docs(gateway): fix readyz troubleshooting status |
+| `b4a560a1` | docs(gateway): add readyz error contracts |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `git diff --check`
+- [OK] `git diff --check origin/develop...HEAD`
+- [OK] `python3 scripts/verify_gateway_active_api.py`
+- [OK] YAML parse for `docs/services/gateway/api/public.openapi.yaml`, `docs/services/gateway/api/internal.openapi.yaml`, and `services/gateway/api/openapi.yaml`
+- [OK] Local `$ref` resolution check for the same Gateway OpenAPI files
+- [OK] `cd services/gateway && go test ./...`
+- [OK] `cd services/gateway && go build ./cmd/server`
 
 ### Status
 
