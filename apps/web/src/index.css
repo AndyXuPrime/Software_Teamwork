@@ -214,9 +214,9 @@ body {
 .skeleton-shimmer {
   background: linear-gradient(
     90deg,
-    hsl(var(--muted)) 0%,
-    hsl(var(--muted-foreground) / 0.08) 40%,
-    hsl(var(--muted)) 80%
+    var(--muted) 0%,
+    color-mix(in oklch, var(--muted-foreground) 8%, transparent) 40%,
+    var(--muted) 80%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
@@ -228,7 +228,7 @@ input[type='range'].range-slider {
   appearance: none;
   height: 6px;
   border-radius: 9999px;
-  background: hsl(var(--muted));
+  background: var(--muted);
   outline: none;
   cursor: pointer;
 }
@@ -238,9 +238,9 @@ input[type='range'].range-slider::-webkit-slider-thumb {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: hsl(var(--primary));
-  border: 2px solid hsl(var(--background));
-  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);
+  background: var(--primary);
+  border: 2px solid var(--background);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 20%, transparent);
   transition:
     transform 0.15s ease,
     box-shadow 0.15s ease;
@@ -248,15 +248,15 @@ input[type='range'].range-slider::-webkit-slider-thumb {
 }
 input[type='range'].range-slider::-webkit-slider-thumb:hover {
   transform: scale(1.2);
-  box-shadow: 0 0 0 4px hsl(var(--primary) / 0.3);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--primary) 30%, transparent);
 }
 input[type='range'].range-slider::-moz-range-thumb {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: hsl(var(--primary));
-  border: 2px solid hsl(var(--background));
-  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);
+  background: var(--primary);
+  border: 2px solid var(--background);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 20%, transparent);
   transition:
     transform 0.15s ease,
     box-shadow 0.15s ease;
@@ -272,7 +272,11 @@ input[type='range'].range-slider::-moz-range-thumb {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle, hsl(var(--foreground) / 0.15) 10%, transparent 10.1%);
+  background: radial-gradient(
+    circle,
+    color-mix(in oklch, var(--foreground) 15%, transparent) 10%,
+    transparent 10.1%
+  );
   background-position: center;
   background-repeat: no-repeat;
   opacity: 0;
