@@ -1,0 +1,32 @@
+{
+  "id": "ragflow-parser-config-adapter",
+  "name": "ragflow-parser-config-adapter",
+  "title": "Adapt parser configs for RAGFlow knowledge runtime",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "Sakayori-Iroha-168",
+  "assignee": "Sakayori-Iroha-168",
+  "createdAt": "2026-07-02",
+  "completedAt": "2026-07-02",
+  "branch": "fix/ragflow-parser-config-adapter",
+  "base_branch": "develop",
+  "worktree_path": null,
+  "commit": "daf787b0",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "deploy/docker-compose.yml",
+    "services/knowledge/internal/adapter/handlers.go",
+    "services/knowledge/internal/adapter/map.go",
+    "services/knowledge/internal/adapter/map_test.go",
+    "services/knowledge/internal/adapter/contract_test.go"
+  ],
+  "notes": "",
+  "meta": {}
+}
