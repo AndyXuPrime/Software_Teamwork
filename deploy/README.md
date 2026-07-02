@@ -89,28 +89,44 @@ superadmin / LocalDemoAdmin#12345
 ## Knowledge / RAGFlow
 
 Knowledge 文档上传、解析、切块、embedding、索引和检索通过 RAGFlow runtime 完成。
-本地 Knowledge adapter 读取：
+默认本地栈只启动 Knowledge adapter；真实 ingestion/retrieval 需要显式启动 runtime
+及其外部依赖。本地 Knowledge adapter 读取：
 
 ```text
 VENDOR_RUNTIME_URL=http://127.0.0.1:9380
 VENDOR_RUNTIME_SERVICE_TOKEN=local-dev-runtime-service-token-change-me
 KNOWLEDGE_RUNTIME_SERVICE_TOKEN=local-dev-runtime-service-token-change-me
-KNOWLEDGE_AUTO_START_INGESTION=true
-DOC_ENGINE=elasticsearch
+KNOWLEDGE_AUTO_START_INGESTION=false
 ```
 
-runtime API 和 worker 在宿主机启动；本地默认使用 `http://127.0.0.1:9380`。
-tenant-scoped runtime API 需要 `X-Service-Token`，由 Knowledge adapter 使用
-`VENDOR_RUNTIME_SERVICE_TOKEN` 自动转发。
+runtime API 和 worker 在宿主机启动；本地默认 adapter 使用
+`http://127.0.0.1:9380`。tenant-scoped runtime API 需要 `X-Service-Token`，
+由 Knowledge adapter 使用 `VENDOR_RUNTIME_SERVICE_TOKEN` 自动转发。
 不要再启动 `services/parser`，也不要把 runtime 放回根级 Compose。
+
+启用真实 ingestion 前，需要先准备：
+
+- 可访问的 doc engine。当前 vendored RAGFlow runtime 默认支持
+  `DOC_ENGINE=elasticsearch`，但根级 Compose 不启动 Elasticsearch；请使用宿主机
+  或外部 Elasticsearch，并让 `services/knowledge-runtime/conf/service_conf.yaml`
+  的 `es.hosts` 指向它。
+- 可用的 embedding provider。设置 `KNOWLEDGE_RUNTIME_EMBEDDING_FACTORY`、
+  `KNOWLEDGE_RUNTIME_EMBEDDING_MODEL`、`KNOWLEDGE_RUNTIME_EMBEDDING_BASE_URL` 和
+  `KNOWLEDGE_RUNTIME_MODEL_API_KEY`；只有可信本地 provider 才可显式设置
+  `KNOWLEDGE_RUNTIME_ALLOW_EMPTY_MODEL_API_KEY=1`。
+- 将 `KNOWLEDGE_AUTO_START_INGESTION=true` 写入本地 `deploy/.env`。
 
 ## 快速确认
 
 ```bash
 curl --noproxy '*' -fsS http://localhost:8080/healthz
 curl --noproxy '*' -fsS http://localhost:8080/readyz
-curl --noproxy '*' -fsS http://localhost:8083/readyz
+curl --noproxy '*' -fsS http://localhost:8083/healthz
 ```
+
+`http://localhost:8083/readyz` 在 runtime 未启动或 runtime 外部依赖未配置时返回
+`503 degraded` 是预期行为；真实 ingestion/retrieval 配好后再用它确认 Knowledge
+adapter 到 runtime 的链路。
 
 `http://localhost:8086/readyz` 在 placeholder profile 下返回 `503 degraded` 是预期行为，
 表示还没配置真实模型 provider credential，不代表 AI Gateway 进程失败。
@@ -222,6 +238,9 @@ Knowledge 路由依赖 `VENDOR_RUNTIME_URL` 指向 RAGFlow runtime。runtime 负
 ```bash
 cd services/knowledge-runtime
 uv sync --python 3.13 --frozen
+set -a && . ../../deploy/.env && set +a
+# Ensure Elasticsearch is reachable at conf/service_conf.yaml es.hosts first.
+# Then set a real embedding provider in your shell or local deploy/.env.
 ./deploy/api/run-local.sh
 ./deploy/worker/run-local.sh
 ```

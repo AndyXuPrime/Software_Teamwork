@@ -18,4 +18,6 @@ if [[ ! -f "$RAGFLOW_CONF" ]]; then
   exit 1
 fi
 
+uv run python deploy/check_runtime_dependencies.py
+
 exec uv run python rag/svr/task_executor.py -i "$WORKER_ID" -t common

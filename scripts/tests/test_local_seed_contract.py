@@ -37,8 +37,8 @@ class LocalSeedContractTests(unittest.TestCase):
                 "DOCKER_IMAGE_REGISTRY_PREFIX=docker.m.daocloud.io/library/\n"
                 "RAGFLOW_DEPS_IMAGE=docker.m.daocloud.io/infiniflow/ragflow_deps:51ce6aab\n"
                 "VENDOR_RUNTIME_URL=http://127.0.0.1:9380\n"
-                "KNOWLEDGE_AUTO_START_INGESTION=true\n"
-                "DOC_ENGINE=elasticsearch\n",
+                "KNOWLEDGE_AUTO_START_INGESTION=false\n"
+                "# DOC_ENGINE=elasticsearch\n",
                 encoding="utf-8",
             )
             (root / ".gitignore").write_text("/.local/\n*.pid\n", encoding="utf-8")
@@ -126,7 +126,7 @@ class LocalSeedContractTests(unittest.TestCase):
             stop_backend_script="",
         )
 
-        self.assertIssueContains(issues, "DOC_ENGINE=elasticsearch")
+        self.assertIssueContains(issues, "# DOC_ENGINE=elasticsearch")
         self.assertIssueContains(issues, "go run ./cmd/adapter")
 
     def test_verifier_reports_missing_local_runtime_gitignore(self) -> None:
