@@ -141,22 +141,6 @@ body {
   background: var(--border);
 }
 
-/* ===== Message fade-in animation ===== */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.message-enter {
-  animation: fadeInUp 0.3s ease-out;
-}
-
 /* ===== Toast notification slide-in ===== */
 @keyframes slideDown {
   from {
@@ -169,24 +153,24 @@ body {
   }
 }
 
-.toast-enter {
-  animation: slideDown 0.3s ease-out;
-}
-
-/* ===== Toast exit animation ===== */
-@keyframes toast-out {
-  from {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  to {
+@keyframes notify-pop {
+  0% {
+    transform: scale(0.95);
     opacity: 0;
-    transform: translateY(-8px) scale(0.96);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
   }
 }
 
-.toast-exit {
-  animation: toast-out 0.25s ease-in forwards;
+.toast-enter {
+  animation:
+    slideDown 0.3s ease-out,
+    notify-pop 0.4s ease-out;
 }
 
 /* ===== Page transition loading circle ===== */
@@ -301,6 +285,18 @@ input[type='range'].range-slider::-moz-range-thumb {
   transform: scale(4);
   opacity: 1;
   transition: 0s;
+}
+
+/* ===== Fade in up (suggested prompts stagger) ===== */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ===== Message entrance stagger animation ===== */
