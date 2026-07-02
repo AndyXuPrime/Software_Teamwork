@@ -48,7 +48,11 @@ function isJobFailed(status: string | undefined): boolean {
 }
 
 function canDownload(artifact: QAReportArtifact): boolean {
-  return artifact.fileStatus === 'succeeded' && Boolean(artifact.reportFileId)
+  return (
+    artifact.fileStatus === 'succeeded' &&
+    Boolean(artifact.reportFileId) &&
+    Boolean(artifact.downloadPath)
+  )
 }
 
 const MAX_TITLES = 5
