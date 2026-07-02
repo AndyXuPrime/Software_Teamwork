@@ -66,6 +66,8 @@ const EMPTY_FORM: ModelProfileFormValues = {
   baseUrl: '',
   model: '',
   apiKey: '',
+  enabled: true,
+  isDefault: false,
   timeoutMs: 60000,
   maxTokens: 0,
   dimension: 0,
@@ -159,6 +161,8 @@ export function ModelProfilesPage() {
       baseUrl: profile.baseUrl,
       model: profile.model,
       apiKey: '',
+      enabled: profile.enabled,
+      isDefault: profile.isDefault,
       timeoutMs: profile.timeoutMs,
       maxTokens: (profile.defaultParameters?.max_tokens as number) ?? 0,
       dimension: (profile.dimensions as number) ?? 0,
@@ -338,11 +342,14 @@ export function ModelProfilesPage() {
                     )}
                   </td>
                   <td className="px-4 py-2.5">
-                    {profile.enabled ? (
-                      <Badge variant="default">启用</Badge>
-                    ) : (
-                      <Badge variant="secondary">禁用</Badge>
-                    )}
+                    <div className="flex flex-wrap gap-1">
+                      {profile.enabled ? (
+                        <Badge variant="default">启用</Badge>
+                      ) : (
+                        <Badge variant="secondary">禁用</Badge>
+                      )}
+                      {profile.isDefault && <Badge variant="outline">默认</Badge>}
+                    </div>
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-1">
@@ -498,6 +505,25 @@ export function ModelProfilesPage() {
                 </label>
               </div>
             )}
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={form.enabled}
+                  onChange={(e) => updateField('enabled', e.target.checked)}
+                />
+                启用
+              </label>
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={form.isDefault}
+                  onChange={(e) => updateField('isDefault', e.target.checked)}
+                />
+                设为默认模型
+              </label>
+            </div>
 
             {/* Conditional: dimension (embedding) */}
             {form.purpose === 'embedding' && (
@@ -729,6 +755,25 @@ export function ModelProfilesPage() {
                 </label>
               </div>
             )}
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={form.enabled}
+                  onChange={(e) => updateField('enabled', e.target.checked)}
+                />
+                启用
+              </label>
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={form.isDefault}
+                  onChange={(e) => updateField('isDefault', e.target.checked)}
+                />
+                设为默认模型
+              </label>
+            </div>
 
             {/* Conditional: dimension (embedding) */}
             {form.purpose === 'embedding' && (
