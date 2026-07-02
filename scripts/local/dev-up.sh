@@ -21,7 +21,7 @@ compose=(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE")
 
 "${compose[@]}" config --quiet
 "${compose[@]}" pull
-"${compose[@]}" up -d
+"${compose[@]}" up -d --wait --wait-timeout "${LOCAL_INFRA_WAIT_TIMEOUT_SECONDS:-180}"
 
 for item in \
   "auth:$AUTH_DATABASE_URL" \

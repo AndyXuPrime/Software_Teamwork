@@ -278,6 +278,11 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - Host-run uv package downloads should use `UV_DEFAULT_INDEX` from
   `deploy/.env.example` for mainland China developer networks. This is separate
   from Docker registry rewrite and should not be handled in Docker policy.
+- Because `run-backend.sh` uses `uv sync --frozen`, `services/parser/uv.lock`
+  must be generated from the same `UV_DEFAULT_INDEX` baseline and must not lock
+  packages to `https://pypi.org/simple` or `https://files.pythonhosted.org`.
+- `dev-up.sh` must wait for Compose infrastructure health before running host
+  migrations or seed SQL, for example with `docker compose up --wait`.
 - Compose must include practical health checks for infrastructure containers.
 - PostgreSQL health checks must probe TCP readiness, e.g.
   `pg_isready -h localhost -U postgres -d postgres`.
@@ -314,8 +319,10 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | --- | --- |
 | Compose YAML or env interpolation is invalid | `docker compose ... config --quiet` must fail before merge. |
 | Compose service list includes anything other than the five infra services | Remove the service or update policy only if the team explicitly changes the Docker boundary. |
+| Host migrations or seed run before PostgreSQL/init scripts are ready | Add or restore an infra health wait in `scripts/local/dev-up.sh`; do not rely on plain `docker compose up -d`. |
 | Compose contains `build:` | Remove it; repository Docker must stay pull-only infra. |
 | Docker policy checker fails | Fix the Compose/docs/script regression or update `scripts/check_docker_policy.py` and the runbook in the same PR when the policy intentionally changes. |
+| Parser uv lock points at official PyPI while `deploy/.env.example` uses a mirror | Regenerate `services/parser/uv.lock` with `UV_DEFAULT_INDEX` before merging; do not rely on the startup script to rewrite locks. |
 | Required Docker image is unavailable locally | Document `docker compose pull <service>` commands and report Docker runtime validation as skipped. |
 | Same component appears with multiple Docker tags | Use the documented baseline or record the reason in the implementation document. |
 | Compose infrastructure image pull is slow or blocked | Prefer explicit registry rewrite through pinned `*_IMAGE` values in `deploy/.env.example`; if using daemon mirror, prove it with `scripts/check_docker_environment.py`; use Docker daemon proxy only when registry rewrite and mirror paths are unavailable. |
@@ -345,8 +352,8 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   when local startup scripts change.
 - Run `python3 scripts/check_docker_policy.py` and the policy/environment unit
   tests when Compose, Docker docs, image tags, or Docker scripts change.
-- Run the local seed contract checker and its unit tests when seed SQL or seed
-  docs change.
+- Run the local seed contract checker and its unit tests when seed SQL, seed
+  docs, startup scripts, or Parser uv lock sources change.
 - Search Docker and docs for duplicate image tags such as `redis:7` vs
   `redis:7-alpine`, and MinIO server/client tags before declaring version
   cleanup complete.

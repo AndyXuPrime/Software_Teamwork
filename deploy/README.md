@@ -66,14 +66,16 @@ admin / LocalDemoAdmin#12345
 
 `UV_DEFAULT_INDEX` 控制宿主机 `uv sync` 使用的 Python 包索引，默认使用清华 PyPI
 镜像以加速 Parser 首次准备 PaddleOCR 依赖。需要直连 PyPI 时，从 `deploy/.env`
-删除 `UV_DEFAULT_INDEX` 这一行即可。
+删除 `UV_DEFAULT_INDEX` 这一行即可。首次准备 OCR runtime 仍会下载几十个 Python
+包；如果 `uv.lock` 锁回官方 PyPI URL，`scripts/verify_local_seed_contract.py` 会报错。
 
 ## 脚本职责
 
 `./scripts/local/dev-up.sh`：
 
 - 校验 `deploy/docker-compose.yml`。
-- 拉取并启动 `postgres`、`redis`、`qdrant`、`minio`、`minio-init`。
+- 拉取并启动 `postgres`、`redis`、`qdrant`、`minio`、`minio-init`，并等待
+  Compose health checks 通过。
 - 在宿主机执行各服务 goose migration。
 - 用 `psql` 应用本地 demo seed。
 
