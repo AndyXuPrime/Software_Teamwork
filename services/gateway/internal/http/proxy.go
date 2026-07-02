@@ -31,7 +31,7 @@ func (s *Server) handleProxy(route routeSpec) http.HandlerFunc {
 			return
 		}
 
-		if route.requiresAdmin() && !hasAdminRouteAccess(authContext, route.AdminPermissions) {
+		if route.requiresAdmin() && !hasAdminRouteAccess(authContext, route.AdminPermissions, strings.HasPrefix(route.Pattern, "/api/v1/admin/")) {
 			response.WriteError(w, http.StatusForbidden, response.ErrorDetail{
 				Code:      response.CodeForbidden,
 				Message:   "forbidden",

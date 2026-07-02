@@ -195,12 +195,18 @@ func bearerToken(value string) (string, bool) {
 	return strings.TrimSpace(parts[1]), true
 }
 
-func hasAdminRouteAccess(entry service.SessionCacheEntry, allowedPermissions []string) bool {
-	for _, role := range entry.Roles {
-		if strings.EqualFold(strings.TrimSpace(role), "admin") {
-			return true
+func hasAdminRouteAccess(entry service.SessionCacheEntry, allowedPermissions []string, isAdminPath bool) bool {
+	// For /api/v1/admin/ routes, the "admin" role is sufficient by itself
+	// (backward-compatible with existing admin route conventions).
+	if isAdminPath {
+		for _, role := range entry.Roles {
+			if strings.EqualFold(strings.TrimSpace(role), "admin") {
+				return true
+			}
 		}
 	}
+	// For non-admin-prefix routes with explicit permissions (e.g. QA config),
+	// require a matching permission — "admin" role alone is not enough.
 	for _, permission := range entry.Permissions {
 		permission = strings.TrimSpace(permission)
 		for _, allowed := range allowedPermissions {
