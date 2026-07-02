@@ -306,11 +306,21 @@ LLM provider。
 #### 配置 OpenAI 兼容 provider（以 DeepSeek 为例）
 
 将 `default-chat` profile 指向 DeepSeek，然后在管理端「模型配置」页面的 Credentials
-表单里填入 API key（**不要把 key 写进任何文件或命令行历史**）：
+表单里填入 API key（**不要把 key 写进任何文件或命令行历史**）。
+
+先用 seed 写入的 admin 账号登录并提取 session token（token 是动态签发的，不要硬编码）：
 
 ```bash
-ADMIN_TOKEN="atk_v1_Z4EHKs54YdxqTTXuYTjBaRnYNL7XO6sIGw4WBd7DMRo"
+ADMIN_TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"LocalDemoAdmin#12345"}' \
+  | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+echo "token: $ADMIN_TOKEN"
+```
 
+再更新 profile：
+
+```bash
 curl -X PATCH http://localhost:8080/api/v1/admin/model-profiles/default-chat \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
