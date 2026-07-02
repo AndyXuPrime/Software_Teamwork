@@ -164,7 +164,7 @@
 
 1. Knowledge adapter 创建 RAGFlow dataset，并把项目 parser config 映射为 RAGFlow `parser_config`。
 2. Knowledge adapter 上传文档到 runtime dataset。
-3. `knowledge-runtime-worker` 读取任务，执行 PDF 解析、版面/OCR、切块、embedding 和索引写入。
+3. 宿主机 runtime worker 读取任务，执行 PDF 解析、版面/OCR、切块、embedding 和索引写入。
 4. Knowledge adapter 轮询 runtime 文档状态和 chunks，并把结果映射成项目内部文档/chunk/检索响应。
 5. Knowledge 保持 gateway-facing 权限、错误 envelope、request id 和敏感信息脱敏规则。
 
