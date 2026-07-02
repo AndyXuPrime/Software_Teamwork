@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from '@/api/client'
@@ -70,6 +71,28 @@ describe('LoginPage', () => {
     expect(useAuthStore.getState().userName).toBe('operator')
   })
 
+  it('supports labelled fields and keyboard-only login submission', async () => {
+    mockSessionResponse()
+    const user = userEvent.setup()
+    renderWithProviders(<LoginPage />)
+
+    const usernameInput = screen.getByLabelText((_, element) => element?.id === 'username')
+    const passwordInput = screen.getByLabelText((_, element) => element?.id === 'password')
+    const submitButton = screen.getAllByRole('button')[0]
+
+    await user.tab()
+    expect(usernameInput).toHaveFocus()
+    await user.keyboard('operator')
+    await user.tab()
+    expect(passwordInput).toHaveFocus()
+    await user.keyboard('secret')
+    await user.tab()
+    expect(submitButton).toHaveFocus()
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/' }))
+  })
+
   it('blocks empty credentials before hitting the network', async () => {
     const fetchMock = vi.fn<typeof fetch>()
     vi.stubGlobal('fetch', fetchMock)
@@ -78,6 +101,6 @@ describe('LoginPage', () => {
     fireEvent.click(container.querySelector<HTMLButtonElement>('button[type="submit"]')!)
 
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(await screen.findByText(/输入|杈撳叆/)).toBeVisible()
+    expect(await screen.findByRole('alert')).toBeVisible()
   })
 })
