@@ -85,22 +85,7 @@ VALUES
         now(),
         now()
     )
-ON CONFLICT (id) DO UPDATE
-SET name = EXCLUDED.name,
-    provider = EXCLUDED.provider,
-    base_url = EXCLUDED.base_url,
-    model = EXCLUDED.model,
-    enabled = EXCLUDED.enabled,
-    is_default = EXCLUDED.is_default,
-    timeout_ms = EXCLUDED.timeout_ms,
-    api_key_configured = EXCLUDED.api_key_configured,
-    supports_streaming = EXCLUDED.supports_streaming,
-    dimensions = EXCLUDED.dimensions,
-    top_n = EXCLUDED.top_n,
-    default_parameters_json = EXCLUDED.default_parameters_json,
-    credential_id = EXCLUDED.credential_id,
-    updated_by_user_id = EXCLUDED.updated_by_user_id,
-    updated_at = now();
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO provider_credentials (
     id,
