@@ -123,3 +123,36 @@ Addressed both Codex findings for PR #300, completed Trellis audit records, and 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: QA Document MCP integration
+
+**Date**: 2026-07-03
+**Task**: QA Document MCP integration
+**Branch**: `Special/deploy/qa-document-mcp-integration`
+
+### Summary
+
+Registered host-run Document MCP metadata and env credentials for QA, fixed alias-aware runtime token merging, documented all current Document tools and Agent workflow, and added seed/runtime contract tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f8695cf` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
