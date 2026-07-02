@@ -304,6 +304,7 @@ export function KnowledgeChunksPage({ documentId, onNavigateBack }: KnowledgeChu
                     <Button
                       variant="outline"
                       size="icon-sm"
+                      className="hover:scale-105 active:scale-95 transition-transform"
                       disabled={page <= 1}
                       onClick={() => setPage((p) => p - 1)}
                       aria-label="上一页"
@@ -313,6 +314,7 @@ export function KnowledgeChunksPage({ documentId, onNavigateBack }: KnowledgeChu
                     <Button
                       variant="outline"
                       size="icon-sm"
+                      className="hover:scale-105 active:scale-95 transition-transform"
                       disabled={page >= totalPages}
                       onClick={() => setPage((p) => p + 1)}
                       aria-label="下一页"

@@ -169,7 +169,7 @@ export function KnowledgeSearchPage() {
 
       {/* Search input */}
       <div className="mb-4">
-        <div className="relative">
+        <div className="search-expand relative">
           <Search
             aria-hidden="true"
             className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"

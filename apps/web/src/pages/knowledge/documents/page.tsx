@@ -563,7 +563,7 @@ export function KnowledgeDocumentsPage({
         <>
           {/* Search & filter bar */}
           <div className="mb-4 flex gap-2">
-            <div className="relative flex-1">
+            <div className="search-expand relative flex-1">
               <Search
                 aria-hidden="true"
                 className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
@@ -769,6 +769,7 @@ export function KnowledgeDocumentsPage({
                     <Button
                       variant="outline"
                       size="icon-sm"
+                      className="hover:scale-105 active:scale-95 transition-transform"
                       disabled={page <= 1}
                       onClick={() => setPage((p) => p - 1)}
                       aria-label="上一页"
@@ -778,6 +779,7 @@ export function KnowledgeDocumentsPage({
                     <Button
                       variant="outline"
                       size="icon-sm"
+                      className="hover:scale-105 active:scale-95 transition-transform"
                       disabled={page >= totalPages}
                       onClick={() => setPage((p) => p + 1)}
                       aria-label="下一页"
