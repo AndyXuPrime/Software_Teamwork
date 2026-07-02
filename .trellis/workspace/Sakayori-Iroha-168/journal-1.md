@@ -316,3 +316,38 @@ Clarified Gateway /readyz as lightweight readiness, separated owner-service busi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Adapt RAGFlow parser config mapping
+
+**Date**: 2026-07-02
+**Task**: Adapt RAGFlow parser config mapping
+**Branch**: `fix/ragflow-parser-config-adapter`
+
+### Summary
+
+Mapped Knowledge parser configs to RAGFlow parser_config on knowledge-base creation, added adapter tests, and passed OCR provider env vars through the knowledge-v2 runtime compose services.
+
+### Main Changes
+
+- Added parser config mapping into the adapter knowledge-base creation path.
+- Added adapter tests for RAGFlow parser_config payload behavior.
+- Passed OCR provider environment variables through the knowledge-v2 runtime compose services.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `daf787b0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
