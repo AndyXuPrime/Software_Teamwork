@@ -13,6 +13,10 @@ type settingsRepositoryStub struct {
 	activeQAConfigVersion QAConfigVersion
 	activeQAConfigErr     error
 	createdAgent          AgentConfig
+	createdRetrieval      RetrievalSettings
+	createdKBIDs          []string
+	createdPrompt         string
+	createCount           int
 	createCalled          bool
 }
 
@@ -30,9 +34,13 @@ func (r *settingsRepositoryStub) GetActiveQAConfigVersion(context.Context) (QACo
 	return QAConfigVersion{ID: "qa-config"}, nil
 }
 
-func (r *settingsRepositoryStub) CreateQAConfigVersion(_ context.Context, _ string, _ RetrievalSettings, _ []string, agent AgentConfig) error {
+func (r *settingsRepositoryStub) CreateQAConfigVersion(_ context.Context, _ string, retrieval RetrievalSettings, kbIDs []string, agent AgentConfig, prompt string) error {
 	r.createCalled = true
+	r.createCount++
 	r.createdAgent = agent
+	r.createdRetrieval = retrieval
+	r.createdKBIDs = kbIDs
+	r.createdPrompt = prompt
 	return nil
 }
 
@@ -248,6 +256,176 @@ func TestTestLLMConnectionRejectsStoredDirectProviderEscape(t *testing.T) {
 	}
 	if tester.called {
 		t.Fatal("LLM tester was called for unsafe stored endpoint")
+	}
+}
+
+func TestRuntimePromptFromActiveQAConfigVersion(t *testing.T) {
+	repository := &settingsRepositoryStub{
+		activeQAConfigVersion: QAConfigVersion{
+			ID:           "qa-config-v2",
+			SystemPrompt: "You are a test QA agent.",
+		},
+	}
+	svc, err := NewConfigService(repository, settingsCipherStub{}, BootstrapSettings{SystemPrompt: "bootstrap prompt"}, &settingsLLMTesterStub{}, settingsMCPTesterStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := svc.runtimePrompt(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prompt != "You are a test QA agent." {
+		t.Fatalf("prompt=%q, want %q", prompt, "You are a test QA agent.")
+	}
+}
+
+func TestRuntimePromptFallsBackToBootstrapWhenConfigMissing(t *testing.T) {
+	repository := &settingsRepositoryStub{
+		activeQAConfigErr: NewError(CodeNotFound, "QA configuration not found", errors.New("no rows")),
+	}
+	svc, err := NewConfigService(repository, settingsCipherStub{}, BootstrapSettings{SystemPrompt: "bootstrap prompt"}, &settingsLLMTesterStub{}, settingsMCPTesterStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := svc.runtimePrompt(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prompt != "bootstrap prompt" {
+		t.Fatalf("prompt=%q, want %q", prompt, "bootstrap prompt")
+	}
+}
+
+func TestRuntimePromptFallsBackToBootstrapWhenConfigHasEmptyPrompt(t *testing.T) {
+	repository := &settingsRepositoryStub{
+		activeQAConfigVersion: QAConfigVersion{
+			ID:           "qa-config-v1",
+			SystemPrompt: "",
+		},
+	}
+	svc, err := NewConfigService(repository, settingsCipherStub{}, BootstrapSettings{SystemPrompt: "bootstrap fallback"}, &settingsLLMTesterStub{}, settingsMCPTesterStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := svc.runtimePrompt(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prompt != "bootstrap fallback" {
+		t.Fatalf("prompt=%q, want bootstrap fallback", prompt)
+	}
+}
+
+func TestUpdateSettingsCreatesQAConfigVersionForPromptChange(t *testing.T) {
+	repository := &settingsRepositoryStub{
+		activeQAConfigVersion: QAConfigVersion{
+			ID: "qa-config-v1",
+			Agent: AgentConfig{
+				MaxIterations: 5, ToolTimeoutSeconds: 10, ModelTimeoutSeconds: 60,
+				OverallTimeoutSeconds: 120, EnabledToolNames: []string{"search_knowledge"},
+			},
+			SystemPrompt: "Old system prompt.",
+		},
+	}
+	svc, err := NewConfigService(repository, settingsCipherStub{}, BootstrapSettings{}, &settingsLLMTesterStub{}, settingsMCPTesterStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newPrompt := "New versioned system prompt."
+	_, err = svc.UpdateSettings(context.Background(), "user-1", "request-1", UpdateQASettingsInput{
+		SystemPrompt: &newPrompt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !repository.createCalled {
+		t.Fatal("CreateQAConfigVersion was not called for prompt change")
+	}
+}
+
+func TestUpdateSettingsRejectsEmptyPrompt(t *testing.T) {
+	repository := &settingsRepositoryStub{}
+	svc, err := NewConfigService(repository, settingsCipherStub{}, BootstrapSettings{}, &settingsLLMTesterStub{}, settingsMCPTesterStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := "   "
+	_, err = svc.UpdateSettings(context.Background(), "user-1", "request-1", UpdateQASettingsInput{
+		SystemPrompt: &prompt,
+	})
+	var appErr *AppError
+	if !errors.As(err, &appErr) || appErr.Code != CodeValidation || appErr.Fields["systemPrompt"] == "" {
+		t.Fatalf("expected validation error for empty prompt, got %v", err)
+	}
+}
+
+func TestUpdateSettingsRejectsOversizedPrompt(t *testing.T) {
+	repository := &settingsRepositoryStub{}
+	svc, err := NewConfigService(repository, settingsCipherStub{}, BootstrapSettings{}, &settingsLLMTesterStub{}, settingsMCPTesterStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	large := make([]byte, 20001)
+	for i := range large {
+		large[i] = 'x'
+	}
+	prompt := string(large)
+	_, err = svc.UpdateSettings(context.Background(), "user-1", "request-1", UpdateQASettingsInput{
+		SystemPrompt: &prompt,
+	})
+	var appErr *AppError
+	if !errors.As(err, &appErr) || appErr.Code != CodeValidation || appErr.Fields["systemPrompt"] == "" {
+		t.Fatalf("expected validation error for oversized prompt, got %v", err)
+	}
+}
+
+func TestUpdateSettingsMergesRetrievalAndPromptIntoSingleVersion(t *testing.T) {
+	repository := &settingsRepositoryStub{
+		activeQAConfigVersion: QAConfigVersion{
+			ID: "qa-config-v1",
+			Agent: AgentConfig{
+				MaxIterations: 5, ToolTimeoutSeconds: 10, ModelTimeoutSeconds: 60,
+				OverallTimeoutSeconds: 120, EnabledToolNames: []string{"search_knowledge"},
+			},
+			SystemPrompt: "Old prompt.",
+		},
+	}
+	svc, err := NewConfigService(repository, settingsCipherStub{}, BootstrapSettings{}, &settingsLLMTesterStub{}, settingsMCPTesterStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newPrompt := "New merged prompt."
+	_, err = svc.UpdateSettings(context.Background(), "user-1", "request-1", UpdateQASettingsInput{
+		Retrieval: &RetrievalSettings{TopK: 10, ScoreThreshold: .8, RerankThreshold: .3, RerankTopN: 5},
+		SystemPrompt: &newPrompt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if repository.createCount != 1 {
+		t.Fatalf("createCount=%d, want 1 (single merged version)", repository.createCount)
+	}
+	if repository.createdRetrieval.TopK != 10 {
+		t.Fatalf("retrieval.TopK=%d, want %d", repository.createdRetrieval.TopK, 10)
+	}
+	if repository.createdPrompt != newPrompt {
+		t.Fatalf("prompt=%q, want %q", repository.createdPrompt, newPrompt)
+	}
+}
+
+func TestSettingsAuditDataDoesNotLeakFullPrompt(t *testing.T) {
+	settings := QASettings{
+		SystemPrompt: "This is a secret system prompt that must not appear in audit logs.",
+	}
+	data := settingsAuditData(settings)
+	if _, hasPrompt := data["systemPrompt"]; hasPrompt {
+		t.Fatal("audit data must not contain full systemPrompt text")
+	}
+	length, ok := data["systemPromptLength"].(int)
+	if !ok || length != len(settings.SystemPrompt) {
+		t.Fatalf("audit data systemPromptLength=%v, want %d", data["systemPromptLength"], len(settings.SystemPrompt))
 	}
 }
 

@@ -257,6 +257,7 @@ type QAConfigVersion struct {
 	KnowledgeBases          []ConfigKnowledgeBase `json:"knowledgeBases"`
 	Retrieval               RetrievalSettings     `json:"retrieval"`
 	Agent                   AgentConfig           `json:"agent"`
+	SystemPrompt            string                `json:"systemPrompt"`
 	MaxIterations           int                   `json:"maxIterations,omitempty"`
 	ToolTimeoutSeconds      int                   `json:"toolTimeoutSeconds,omitempty"`
 	ModelTimeoutSeconds     int                   `json:"modelTimeoutSeconds,omitempty"`
@@ -271,6 +272,7 @@ type CreateQAConfigVersionInput struct {
 	DefaultKnowledgeBaseIDs []string              `json:"defaultKnowledgeBaseIds,omitempty"`
 	KnowledgeBases          []ConfigKnowledgeBase `json:"knowledgeBases,omitempty"`
 	Retrieval               RetrievalSettings     `json:"retrieval,omitempty"`
+	SystemPrompt            *string               `json:"systemPrompt,omitempty"`
 	TopK                    int                   `json:"topK,omitempty"`
 	SimilarityThreshold     float64               `json:"similarityThreshold,omitempty"`
 	UseRerank               bool                  `json:"useRerank,omitempty"`
@@ -644,6 +646,12 @@ func (s *ResourceService) CreateQAConfigVersion(ctx context.Context, userID stri
 	}
 	if len(input.KnowledgeBases) > 50 || len(input.DefaultKnowledgeBaseIDs) > 50 {
 		fields["knowledgeBases"] = "must not contain more than 50 items"
+	}
+	if input.SystemPrompt != nil {
+		prompt := strings.TrimSpace(*input.SystemPrompt)
+		if prompt == "" || len(prompt) > 20000 {
+			fields["systemPrompt"] = "must be between 1 and 20000 bytes"
+		}
 	}
 	if len(fields) > 0 {
 		return QAConfigVersion{}, ValidationError(fields)
