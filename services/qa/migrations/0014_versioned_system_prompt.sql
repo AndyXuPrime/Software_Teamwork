@@ -37,9 +37,13 @@ BEGIN
     WHERE key = 'system_prompt';
 
     -- If we have both an active config and a runtime prompt, migrate it.
-    -- Only migrate if the old prompt is within the 20000-byte limit.
-    IF v_active_id IS NOT NULL AND v_runtime_prompt IS NOT NULL
-       AND octet_length(v_runtime_prompt) <= 20000 THEN
+    -- If the old prompt exceeds 20000 bytes, truncate to fit the CHECK constraint
+    -- rather than silently falling back to the bootstrap prompt.
+    IF v_active_id IS NOT NULL AND v_runtime_prompt IS NOT NULL THEN
+        IF octet_length(v_runtime_prompt) > 20000 THEN
+            RAISE NOTICE 'system_prompt exceeds 20000 bytes (%), truncating', octet_length(v_runtime_prompt);
+            v_runtime_prompt := left(v_runtime_prompt, 20000);
+        END IF;
         UPDATE qa_config_versions
         SET system_prompt = v_runtime_prompt
         WHERE id = v_active_id

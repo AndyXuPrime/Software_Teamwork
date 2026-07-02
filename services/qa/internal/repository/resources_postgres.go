@@ -304,7 +304,7 @@ func (r *Postgres) CreateQAConfigVersionResource(ctx context.Context, userID str
 	replacedActiveID := ""
 	systemPrompt := ""
 	if input.SystemPrompt != nil {
-		systemPrompt = *input.SystemPrompt
+		systemPrompt = strings.TrimSpace(*input.SystemPrompt)
 	} else if activate {
 		// Inherit active prompt before deactivating.
 		var activePrompt string
