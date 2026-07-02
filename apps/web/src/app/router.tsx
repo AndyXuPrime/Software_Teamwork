@@ -212,7 +212,7 @@ const reportsIndexRoute = createRoute({
 const reportGenerateRoute = createRoute({
   getParentRoute: () => reportsRoute,
   path: 'generate',
-  beforeLoad: requireAuth(reportAccess),
+  beforeLoad: requireAuth(reportWriteAccess),
   component: ReportGeneratePage,
 })
 
@@ -350,7 +350,7 @@ const adminQARetrievalTestRoute = createRoute({
 const adminSettingsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'settings',
-  beforeLoad: requireAuth({ any: ['system:admin', 'admin:model-profile:write'] }),
+  beforeLoad: requireAuth({ any: ['system:admin'] }),
   component: SystemSettings,
 })
 
