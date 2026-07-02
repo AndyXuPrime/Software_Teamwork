@@ -5,6 +5,17 @@ import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
+/** Recursively extract text content from React children for label registration. */
+function extractText(node: React.ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (!node) return ''
+  if (Array.isArray(node)) return node.map(extractText).join('')
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) {
+    return extractText(node.props.children)
+  }
+  return ''
+}
+
 // ── Context ──
 
 type SelectContextValue = {
@@ -16,7 +27,7 @@ type SelectContextValue = {
   triggerRef: React.RefObject<HTMLButtonElement | null>
   listRef: React.RefObject<HTMLDivElement | null>
   highlightedIndex: number
-  setHighlightedIndex: (i: number) => void
+  setHighlightedIndex: React.Dispatch<React.SetStateAction<number>>
   itemsRef: React.MutableRefObject<string[]>
   disabled?: boolean
 }
@@ -48,7 +59,14 @@ function Select({ value: controlledValue, onValueChange, disabled, children }: S
   const itemsRef = React.useRef<string[]>([])
   const rootRef = React.useRef<HTMLDivElement | null>(null)
 
-  const value = controlledValue ?? internalValue
+  const value = controlledValue !== undefined ? controlledValue : internalValue
+
+  // Sync internal value when controlled value is cleared externally
+  React.useEffect(() => {
+    if (controlledValue === undefined || controlledValue === '') {
+      setInternalValue(undefined)
+    }
+  }, [controlledValue])
 
   const handleValueChange = React.useCallback(
     (v: string) => {
@@ -185,7 +203,8 @@ function SelectValue({ placeholder, className }: SelectValueProps) {
 type SelectContentProps = React.ComponentProps<'div'>
 
 function SelectContent({ className, children, ...props }: SelectContentProps) {
-  const { open, setHighlightedIndex } = useSelectContext()
+  const { open, setHighlightedIndex, highlightedIndex, onValueChange, itemsRef } =
+    useSelectContext()
   const innerRef = React.useRef<HTMLDivElement | null>(null)
   const [contentHeight, setContentHeight] = React.useState(0)
 
@@ -198,11 +217,34 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
     }
   }, [open, children, setHighlightedIndex])
 
+  // Keyboard navigation within the open list
+  React.useEffect(() => {
+    if (!open) return
+    const handleKey = (e: KeyboardEvent) => {
+      const items = itemsRef.current.filter(Boolean)
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlightedIndex((prev) => Math.min(prev + 1, items.length - 1))
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlightedIndex((prev) => Math.max(prev - 1, 0))
+      } else if (e.key === 'Enter' && highlightedIndex >= 0) {
+        e.preventDefault()
+        const itemValue = items[highlightedIndex]
+        if (itemValue) onValueChange(itemValue)
+      }
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [open, highlightedIndex, onValueChange, itemsRef, setHighlightedIndex])
+
   return (
     <div
       data-slot="select-content"
       className={cn('absolute top-full left-0 z-50 min-w-full w-fit', className)}
       role="listbox"
+      hidden={!open}
+      aria-hidden={!open || undefined}
       {...props}
     >
       <div
@@ -295,16 +337,12 @@ function SelectItem({
   } = useSelectContext()
   const isSelected = selectedValue === value
 
-  // Register label
+  // Register label — extract text from children (handles both plain strings
+  // and <SelectItemText> wrappers for compound expressions)
   React.useEffect(() => {
-    if (typeof children === 'string') {
-      labelMap.current.set(value, children)
-    }
-    // Register this item's value in itemsRef
-    if (index >= 0 && value) {
-      // itemsRef gets updated externally; let's use a different approach
-    }
-  }, [value, children, labelMap, index])
+    const text = extractText(children)
+    if (text) labelMap.current.set(value, text)
+  }, [value, children, labelMap])
 
   // Register / unregister item value
   React.useEffect(() => {
