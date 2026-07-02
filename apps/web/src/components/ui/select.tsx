@@ -31,6 +31,7 @@ type SelectContextValue = {
   highlightedIndex: number
   setHighlightedIndex: React.Dispatch<React.SetStateAction<number>>
   itemsRef: React.MutableRefObject<string[]>
+  nextItemIndex: React.MutableRefObject<number>
   disabled?: boolean
 }
 
@@ -60,6 +61,7 @@ function Select({ value: controlledValue, onValueChange, disabled, children }: S
   const triggerRef = React.useRef<HTMLButtonElement | null>(null)
   const listRef = React.useRef<HTMLDivElement | null>(null)
   const itemsRef = React.useRef<string[]>([])
+  const nextItemIndex = React.useRef(0)
   const rootRef = React.useRef<HTMLDivElement | null>(null)
 
   const registerLabel = React.useCallback((val: string, label: string) => {
@@ -127,6 +129,7 @@ function Select({ value: controlledValue, onValueChange, disabled, children }: S
         highlightedIndex,
         setHighlightedIndex,
         itemsRef,
+        nextItemIndex,
         disabled,
       }}
     >
@@ -306,17 +309,6 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
 function SelectContentInner({ children }: { children: React.ReactNode }) {
   const { setHighlightedIndex, listRef } = useSelectContext()
 
-  const handleMouseEnterItem = React.useCallback(
-    (e: React.MouseEvent<HTMLElement>, index: number) => {
-      const item = e.currentTarget
-      const list = item.closest<HTMLElement>('[data-slot="select-content-inner"]')
-      if (!list) return
-      list.style.setProperty('--slider-offset', `${item.offsetTop}px`)
-      setHighlightedIndex(index)
-    },
-    [setHighlightedIndex],
-  )
-
   const handleMouseLeave = React.useCallback(() => {
     setHighlightedIndex(-1)
   }, [setHighlightedIndex])
@@ -338,20 +330,7 @@ function SelectContentInner({ children }: { children: React.ReactNode }) {
           hover:before:translate-y-[var(--slider-offset)]"
         role="presentation"
       >
-        {(() => {
-          let itemIndex = 0
-          return React.Children.map(children, (child) => {
-            if (!React.isValidElement(child)) return child
-            // Only count SelectItem children for consistent indexing
-            const isSelectItem =
-              typeof child.type === 'function' && child.type.name === 'SelectItem'
-            const idx = isSelectItem ? itemIndex++ : -1
-            return React.cloneElement(child, {
-              onMouseEnterItem: (e: React.MouseEvent<HTMLElement>) => handleMouseEnterItem(e, idx),
-              index: idx,
-            } as Record<string, unknown>)
-          })
-        })()}
+        {children}
       </div>
     </div>
   )
@@ -362,27 +341,30 @@ function SelectContentInner({ children }: { children: React.ReactNode }) {
 type SelectItemProps = React.ComponentProps<'div'> & {
   value: string
   disabled?: boolean
-  onMouseEnterItem?: (e: React.MouseEvent<HTMLElement>) => void
-  index?: number
 }
 
-function SelectItem({
-  className,
-  children,
-  value,
-  disabled,
-  onMouseEnterItem,
-  index = -1,
-  ...props
-}: SelectItemProps) {
+function SelectItem({ className, children, value, disabled, ...props }: SelectItemProps) {
   const {
     value: selectedValue,
     onValueChange,
     registerLabel,
     highlightedIndex,
+    setHighlightedIndex,
     itemsRef,
+    nextItemIndex,
   } = useSelectContext()
   const isSelected = selectedValue === value
+  const itemIndexRef = React.useRef(-1)
+
+  // Self-register: assign a sequential index independent of render order
+  React.useEffect(() => {
+    itemIndexRef.current = nextItemIndex.current++
+    itemsRef.current[itemIndexRef.current] = value
+    return () => {
+      delete itemsRef.current[itemIndexRef.current]
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Register label — extract text from children (handles both plain strings
   // and <SelectItemText> wrappers for compound expressions)
@@ -391,18 +373,7 @@ function SelectItem({
     if (text) registerLabel(value, text)
   }, [value, children, registerLabel])
 
-  // Register / unregister item value
-  React.useEffect(() => {
-    const items = itemsRef.current
-    if (index >= 0) {
-      items[index] = value
-    }
-    return () => {
-      if (index >= 0) {
-        delete items[index]
-      }
-    }
-  }, [value, index, itemsRef])
+  // (Item registration now handled by self-register effect above)
 
   const content =
     typeof children === 'string' ? (
@@ -420,9 +391,16 @@ function SelectItem({
       aria-selected={isSelected}
       data-slot="select-item"
       data-value={value}
-      data-highlighted={highlightedIndex === index || undefined}
+      data-highlighted={highlightedIndex === itemIndexRef.current || undefined}
       data-disabled={disabled || undefined}
-      onMouseEnter={onMouseEnterItem}
+      onMouseEnter={(e: React.MouseEvent<HTMLElement>) => {
+        const idx = itemIndexRef.current
+        if (idx >= 0) {
+          const list = e.currentTarget.closest<HTMLElement>('[data-slot="select-content-inner"]')
+          if (list) list.style.setProperty('--slider-offset', `${e.currentTarget.offsetTop}px`)
+          setHighlightedIndex(idx)
+        }
+      }}
       onClick={() => {
         if (!disabled) {
           if (typeof children === 'string') {
