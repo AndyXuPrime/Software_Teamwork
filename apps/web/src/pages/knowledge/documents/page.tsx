@@ -27,6 +27,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   formatGatewayCapabilityError,
   getGatewayCapabilityIssue,
   useDeleteDocument,
@@ -478,23 +485,21 @@ export function KnowledgeDocumentsPage({
         <StateBlock
           action={
             !isKbListLoading && (
-              <select
-                className="h-9 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                value=""
-                onChange={(e) => {
-                  const id = e.target.value
-                  if (id) setActiveKbId(id)
-                }}
+              <Select
+                value={activeKbId || undefined}
+                onValueChange={(value) => setActiveKbId(String(value))}
               >
-                <option value="" disabled>
-                  选择知识库…
-                </option>
-                {(kbListData?.items ?? []).map((kb) => (
-                  <option key={kb.id} value={kb.id}>
-                    {kb.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="h-9 w-auto min-w-[180px]">
+                  <SelectValue placeholder="选择知识库…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(kbListData?.items ?? []).map((kb) => (
+                    <SelectItem key={kb.id} value={kb.id}>
+                      {kb.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )
           }
           className="mb-6"
