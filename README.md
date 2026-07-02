@@ -129,6 +129,22 @@ cp deploy/.env.example deploy/.env
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d postgres redis qdrant minio minio-init
 ```
 
+> **AI/模型功能提示：** 默认基础依赖不会启动 AI Gateway。如需使用管理端模型配置、QA 真实模型调用、报告 AI 大纲/正文生成、真实 embedding/rerank 或 AI Gateway provider smoke，还需要启动 AI Gateway profile：
+>
+> ```bash
+> cd deploy
+> docker compose --env-file .env --profile ai up -d --build ai-gateway
+> ```
+>
+> 或一次性启动包含 AI Gateway 的本地后端栈：
+>
+> ```bash
+> cd deploy
+> docker compose --env-file .env --profile ai up -d --build
+> ```
+>
+> `gateway /readyz` 只代表 gateway 和基础依赖 ready；使用 AI/模型功能时还要检查 `http://localhost:8086/readyz`。本地 seed 的 AI profiles 是 placeholder，不等于真实 provider 已可用。
+
 完整本地后端栈见 [deploy/README.md](deploy/README.md)。Docker 镜像源、BuildKit cache、Go sumdb 和 Alpine/Debian/PyPI/uv 镜像配置见 [Docker 构建环境与镜像源](docs/runbooks/docker-build-environment.md)。
 
 启动前端：
