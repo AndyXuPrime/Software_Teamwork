@@ -15,6 +15,8 @@ const baseForm: ModelProfileFormValues = {
   apiKey: 'sk-local-test',
   baseUrl: 'https://api.example.invalid/v1',
   dimension: 0,
+  enabled: true,
+  isDefault: false,
   maxTokens: 0,
   model: 'test-model',
   name: 'test profile',
@@ -29,6 +31,19 @@ describe('model profile form helpers', () => {
   it('omits max_tokens from create and update payloads by default', () => {
     expect(buildCreateModelProfileRequest(baseForm)).not.toHaveProperty('defaultParameters')
     expect(buildUpdateModelProfileRequest(baseForm)).not.toHaveProperty('defaultParameters')
+  })
+
+  it('passes status and default controls through create and update payloads', () => {
+    const form: ModelProfileFormValues = { ...baseForm, enabled: false, isDefault: true }
+
+    expect(buildCreateModelProfileRequest(form)).toMatchObject({
+      enabled: false,
+      isDefault: true,
+    })
+    expect(buildUpdateModelProfileRequest(form)).toMatchObject({
+      enabled: false,
+      isDefault: true,
+    })
   })
 
   it('does not emit max_tokens even when the local input is positive', () => {

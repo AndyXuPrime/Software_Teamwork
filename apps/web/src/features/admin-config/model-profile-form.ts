@@ -13,6 +13,8 @@ export type ModelProfileFormValues = {
   baseUrl: string
   model: string
   apiKey: string
+  enabled: boolean
+  isDefault: boolean
   timeoutMs: number
   maxTokens: number
   dimension: number
@@ -90,8 +92,8 @@ export function buildCreateModelProfileRequest(
     baseUrl: form.baseUrl.trim(),
     model: form.model.trim(),
     apiKey: form.apiKey.trim(),
-    enabled: true,
-    isDefault: false,
+    enabled: form.enabled,
+    isDefault: form.isDefault,
     timeoutMs: normalizedTimeout(form.timeoutMs),
     supportsStreaming: form.purpose === 'chat' ? form.supportsStreaming : false,
   }
@@ -108,6 +110,8 @@ export function buildUpdateModelProfileRequest(
     provider: form.provider,
     baseUrl: form.baseUrl.trim(),
     model: form.model.trim(),
+    enabled: form.enabled,
+    isDefault: form.isDefault,
     timeoutMs: normalizedTimeout(form.timeoutMs),
     ...(form.purpose === 'chat' ? { supportsStreaming: form.supportsStreaming } : {}),
   }
