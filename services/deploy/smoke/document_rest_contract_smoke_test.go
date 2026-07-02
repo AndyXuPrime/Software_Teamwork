@@ -136,6 +136,7 @@ func assertSeedReportRead(t *testing.T, ctx context.Context, client *http.Client
 	if envelope.Data.Status != "generated" {
 		t.Fatalf("expected seed report status=generated, got %q", envelope.Data.Status)
 	}
+	assertNoLeakedInternals(t, body)
 }
 
 func assertSeedReportOutlineRead(t *testing.T, ctx context.Context, client *http.Client, cfg documentSmokeConfig, session smokeSession, requestID string) {

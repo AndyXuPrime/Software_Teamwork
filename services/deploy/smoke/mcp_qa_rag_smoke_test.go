@@ -31,6 +31,12 @@ func TestQAMCPRAGSmoke(t *testing.T) {
 
 	requestID := "req_qa_mcp_rag_smoke_" + shortID(newSmokeRunID())
 	client := smokeHTTPClient()
+	// QA message tests need longer timeout than smokeHTTPClient's 10s
+	// because real AI Gateway/provider can exceed that.
+	qaClient := &http.Client{
+		Timeout:       120 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	session := createSmokeSession(t, ctx, client, cfg.gatewayBaseURL, cfg.username, cfg.password, requestID)
 
 	// Verify seed data is accessible without model calls.
@@ -46,10 +52,10 @@ func TestQAMCPRAGSmoke(t *testing.T) {
 	assertHTTPReady(t, ctx, "ai-gateway", cfg.aiGatewayBaseURL)
 
 	t.Run("qa_response_envelope", func(t *testing.T) {
-		assertQAResponseEnvelope(t, ctx, client, cfg, session, requestID)
+		assertQAResponseEnvelope(t, ctx, qaClient, cfg, session, requestID)
 	})
 	t.Run("no_sensitive_leaks", func(t *testing.T) {
-		assertQANoSensitiveLeaks(t, ctx, client, cfg, session, requestID)
+		assertQANoSensitiveLeaks(t, ctx, qaClient, cfg, session, requestID)
 	})
 
 	t.Run("qa_rag_knowledge_response", func(t *testing.T) {
@@ -247,6 +253,18 @@ func assertToolCallsRecorded(t *testing.T, ctx context.Context, client *http.Cli
 	}
 	if len(tcEnvelope.Data) == 0 {
 		t.Fatal("tool-calls response is empty; expected at least one knowledge search tool call")
+	}
+	hasKnowledgeTool := false
+	for _, tc := range tcEnvelope.Data {
+		if name, _ := tc["toolName"].(string); name != "" {
+			if strings.Contains(strings.ToLower(name), "knowledge") || strings.Contains(strings.ToLower(name), "search") {
+				hasKnowledgeTool = true
+				break
+			}
+		}
+	}
+	if !hasKnowledgeTool {
+		t.Fatal("tool-calls did not include a knowledge search tool")
 	}
 	t.Logf("tool-calls recorded for response run %s (count=%d)", responseRunID, len(tcEnvelope.Data))
 }
