@@ -14,7 +14,10 @@ import (
 	"time"
 )
 
-const qaMCPRAGSmokeGate = "QA_MCP_RAG_SMOKE"
+const (
+	qaMCPRAGSmokeGate        = "QA_MCP_RAG_SMOKE"
+	qaMCPRAGRealProviderGate = "QA_MCP_RAG_REAL_PROVIDER"
+)
 
 func TestQAMCPRAGSmoke(t *testing.T) {
 	if os.Getenv(qaMCPRAGSmokeGate) != "1" {
@@ -45,9 +48,13 @@ func TestQAMCPRAGSmoke(t *testing.T) {
 	})
 
 	// All message-sending tests require AI Gateway with a real provider
-	// profile. Local seed uses placeholder profiles; skip if not configured.
+	// profile. Local seed uses placeholder profiles, so require an explicit
+	// gate instead of treating a host-run AI Gateway URL as provider proof.
+	if os.Getenv(qaMCPRAGRealProviderGate) != "1" {
+		t.Skip("set QA_MCP_RAG_REAL_PROVIDER=1 and AI_GATEWAY_BASE_URL to run QA message tests with a real AI Gateway provider")
+	}
 	if cfg.aiGatewayBaseURL == "" {
-		t.Skip("AI_GATEWAY_BASE_URL not set; QA message tests require a real AI Gateway profile")
+		t.Fatalf("%s=1 requires AI_GATEWAY_BASE_URL", qaMCPRAGRealProviderGate)
 	}
 	assertHTTPReady(t, ctx, "ai-gateway", cfg.aiGatewayBaseURL)
 
@@ -116,7 +123,7 @@ func assertKnowledgeToolAvailable(t *testing.T, ctx context.Context, client *htt
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 65536))
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 listing knowledge bases, got %d: %s", resp.StatusCode, string(body))
+		t.Fatalf("expected 200 listing knowledge bases, got %d: %s", resp.StatusCode, responseBodySummary(body))
 	}
 	var envelope struct {
 		Data []struct {
@@ -188,12 +195,15 @@ func assertQAKnowledgeRAGResponse(t *testing.T, ctx context.Context, client *htt
 	defer r.Body.Close()
 	if r.StatusCode != http.StatusOK {
 		data, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
-		t.Fatalf("send qa message returned %d: %s", r.StatusCode, string(data))
+		t.Fatalf("send qa message returned %d: %s", r.StatusCode, responseBodySummary(data))
 	}
 
-	// Parse SSE stream — verify expected event types appear.
+	// Parse SSE stream — verify expected event types and safe evidence appear.
 	seen := map[string]bool{}
 	var responseRunID string
+	var assistantMessageID string
+	var answerText string
+	var citationCount int
 	scanner := bufio.NewScanner(r.Body)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -204,20 +214,39 @@ func assertQAKnowledgeRAGResponse(t *testing.T, ctx context.Context, client *htt
 			eventType := strings.TrimPrefix(line, "event: ")
 			seen[eventType] = true
 		}
-		if strings.HasPrefix(line, "data: ") && responseRunID == "" {
+		if strings.HasPrefix(line, "data: ") {
 			dataStr := strings.TrimPrefix(line, "data: ")
 			var payload struct {
-				ResponseRunID string `json:"responseRunId"`
+				ResponseRunID      string `json:"responseRunId"`
+				AssistantMessageID string `json:"assistantMessageId"`
+				MessageID          string `json:"messageId"`
+				Text               string `json:"text"`
+				Citation           any    `json:"citation"`
 			}
-			if err := json.Unmarshal([]byte(dataStr), &payload); err == nil && payload.ResponseRunID != "" {
-				responseRunID = payload.ResponseRunID
+			if err := json.Unmarshal([]byte(dataStr), &payload); err == nil {
+				if responseRunID == "" && payload.ResponseRunID != "" {
+					responseRunID = payload.ResponseRunID
+				}
+				if assistantMessageID == "" {
+					if payload.AssistantMessageID != "" {
+						assistantMessageID = payload.AssistantMessageID
+					} else if payload.MessageID != "" && seen["answer.completed"] {
+						assistantMessageID = payload.MessageID
+					}
+				}
+				if payload.Text != "" {
+					answerText += payload.Text
+				}
+				if payload.Citation != nil {
+					citationCount++
+				}
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatalf("SSE stream scanner error: %v", err)
 	}
-	required := []string{"message.created", "answer.completed"}
+	required := []string{"message.created", "tool.completed", "citation.delta", "answer.delta", "answer.completed"}
 	for _, event := range required {
 		if !seen[event] {
 			t.Errorf("SSE stream is missing expected event %q, seen=%v", event, seen)
@@ -226,7 +255,17 @@ func assertQAKnowledgeRAGResponse(t *testing.T, ctx context.Context, client *htt
 	if responseRunID == "" {
 		t.Fatal("SSE stream did not include a responseRunId; cannot verify tool-calls")
 	}
+	if assistantMessageID == "" {
+		t.Fatal("SSE stream did not include an assistant message id; cannot verify citation snapshots")
+	}
+	if strings.TrimSpace(answerText) == "" {
+		t.Fatal("SSE stream did not include non-empty answer.delta text")
+	}
+	if citationCount == 0 {
+		t.Fatal("SSE stream did not include citation.delta evidence")
+	}
 	assertToolCallsRecorded(t, ctx, client, cfg, session, responseRunID, requestID)
+	assertCitationsRecorded(t, ctx, client, cfg, session, assistantMessageID, requestID)
 }
 
 func assertToolCallsRecorded(t *testing.T, ctx context.Context, client *http.Client, cfg qaSmokeConfig, session smokeSession, responseRunID, requestID string) {
@@ -241,7 +280,7 @@ func assertToolCallsRecorded(t *testing.T, ctx context.Context, client *http.Cli
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 65536))
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("tool-calls returned %d: %s", resp.StatusCode, string(body))
+		t.Fatalf("tool-calls returned %d: %s", resp.StatusCode, responseBodySummary(body))
 	}
 	assertNoLeakedInternals(t, body)
 	// Verify at least one tool call is recorded.
@@ -258,6 +297,7 @@ func assertToolCallsRecorded(t *testing.T, ctx context.Context, client *http.Cli
 	for _, tc := range tcEnvelope.Data {
 		if name, _ := tc["toolName"].(string); name != "" {
 			if strings.Contains(strings.ToLower(name), "knowledge") || strings.Contains(strings.ToLower(name), "search") {
+				assertKnowledgeToolSummary(t, tc)
 				hasKnowledgeTool = true
 				break
 			}
@@ -267,6 +307,75 @@ func assertToolCallsRecorded(t *testing.T, ctx context.Context, client *http.Cli
 		t.Fatal("tool-calls did not include a knowledge search tool")
 	}
 	t.Logf("tool-calls recorded for response run %s (count=%d)", responseRunID, len(tcEnvelope.Data))
+}
+
+func assertKnowledgeToolSummary(t *testing.T, tc map[string]any) {
+	t.Helper()
+	if status, _ := tc["status"].(string); status != "completed" {
+		t.Fatalf("knowledge tool status=%q, want completed", status)
+	}
+	args, _ := tc["argumentsSummary"].(map[string]any)
+	if args == nil {
+		t.Fatalf("knowledge tool call missing argumentsSummary; keys=%v", mapKeys(tc))
+	}
+	if _, ok := args["query_length"]; !ok {
+		t.Fatalf("knowledge tool argumentsSummary missing query_length; keys=%v", mapKeys(args))
+	}
+	result, _ := tc["resultSummary"].(map[string]any)
+	if result == nil {
+		t.Fatalf("knowledge tool call missing resultSummary; keys=%v", mapKeys(tc))
+	}
+	if stringField(result, "tool") == "" {
+		t.Fatalf("knowledge tool resultSummary missing tool name; keys=%v", mapKeys(result))
+	}
+	if _, ok := result["citation_count"]; !ok {
+		t.Fatalf("knowledge tool resultSummary missing citation_count; keys=%v", mapKeys(result))
+	}
+}
+
+func assertCitationsRecorded(t *testing.T, ctx context.Context, client *http.Client, cfg qaSmokeConfig, session smokeSession, assistantMessageID, requestID string) {
+	t.Helper()
+	req := gatewayAuthRequest(http.MethodGet,
+		cfg.gatewayBaseURL+"/api/v1/messages/"+assistantMessageID+"/citations",
+		session.AccessToken, requestID+"_cit", nil)
+	resp, err := client.Do(req.WithContext(ctx))
+	if err != nil {
+		t.Fatalf("citations request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 65536))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("citations returned %d: %s", resp.StatusCode, responseBodySummary(body))
+	}
+	assertNoLeakedInternals(t, body)
+	var envelope struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("decode citations: %v", err)
+	}
+	if len(envelope.Data) == 0 {
+		t.Fatal("citations response is empty; expected at least one citation snapshot")
+	}
+	for _, citation := range envelope.Data {
+		if stringField(citation, "documentId") == "" &&
+			stringField(citation, "chunkId") == "" &&
+			stringField(citation, "contentPreview") == "" &&
+			stringField(citation, "text") == "" {
+			t.Fatalf("citation snapshot has no source evidence; keys=%v", mapKeys(citation))
+		}
+	}
+}
+
+func stringField(values map[string]any, key string) string {
+	if values == nil {
+		return ""
+	}
+	value, ok := values[key].(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(value)
 }
 
 // assertQAResponseEnvelope creates a new QA session, sends a non-streaming
@@ -309,7 +418,7 @@ func assertQAResponseEnvelope(t *testing.T, ctx context.Context, client *http.Cl
 	defer r.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 65536))
 	if r.StatusCode != http.StatusOK {
-		t.Fatalf("non-streaming ask returned %d: %s", r.StatusCode, string(body))
+		t.Fatalf("non-streaming ask returned %d: %s", r.StatusCode, responseBodySummary(body))
 	}
 	var envelope struct {
 		Data struct {
@@ -320,7 +429,7 @@ func assertQAResponseEnvelope(t *testing.T, ctx context.Context, client *http.Cl
 		RequestID string `json:"requestId"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		t.Fatalf("decode ask envelope: %v body=%s", err, string(body))
+		t.Fatalf("decode ask envelope: %v %s", err, responseBodySummary(body))
 	}
 	if envelope.RequestID == "" {
 		t.Fatal("response missing requestId")
@@ -372,7 +481,7 @@ func assertQANoSensitiveLeaks(t *testing.T, ctx context.Context, client *http.Cl
 	defer r.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 65536))
 	if r.StatusCode != http.StatusOK {
-		t.Fatalf("no-leak request returned %d: %s", r.StatusCode, string(body))
+		t.Fatalf("no-leak request returned %d: %s", r.StatusCode, responseBodySummary(body))
 	}
 	for _, forbidden := range []string{
 		"prompt", "<|begin_of_text|>", "system prompt",

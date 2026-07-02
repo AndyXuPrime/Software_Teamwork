@@ -9,6 +9,10 @@ Docker infra -> host backend -> frontend
 不要启动业务服务容器，不要使用 `--build`，不要手工 export 一长串变量。
 `deploy/.env.example` 是默认配置来源；用户复制成 `deploy/.env` 后，脚本只读取它。
 
+Issue #125 的 MCP 与跨服务 smoke 汇总入口见
+[`Issue #125 MCP and Cross-Service Smoke`](./issue-125-smoke.md)。只有对应 slice
+在当前环境实际通过后，才能在 PR 或验收记录中声明完整跨服务 smoke 通过。
+
 ## 启动命令
 
 ```bash

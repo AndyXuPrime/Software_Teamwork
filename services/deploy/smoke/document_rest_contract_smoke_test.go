@@ -92,14 +92,14 @@ func assertReportTypesList(t *testing.T, ctx context.Context, client *http.Clien
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 65536))
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(body))
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, responseBodySummary(body))
 	}
 	var envelope struct {
 		Data      json.RawMessage `json:"data"`
 		RequestID string          `json:"requestId"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		t.Fatalf("decode report types: %v body=%s", err, string(body))
+		t.Fatalf("decode report types: %v %s", err, responseBodySummary(body))
 	}
 	if envelope.RequestID != requestID+"_rt" {
 		t.Fatalf("requestId mismatch: want=%q got=%q", requestID+"_rt", envelope.RequestID)
@@ -117,7 +117,7 @@ func assertSeedReportRead(t *testing.T, ctx context.Context, client *http.Client
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 65536))
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 for seed report, got %d: %s", resp.StatusCode, string(body))
+		t.Fatalf("expected 200 for seed report, got %d: %s", resp.StatusCode, responseBodySummary(body))
 	}
 	var envelope struct {
 		Data struct {
@@ -151,7 +151,7 @@ func assertSeedReportOutlineRead(t *testing.T, ctx context.Context, client *http
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 65536))
 	// Accept 200 or 404 (seed report may not have outlines in all environments)
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 200 or 404 for outlines, got %d: %s", resp.StatusCode, string(body))
+		t.Fatalf("expected 200 or 404 for outlines, got %d: %s", resp.StatusCode, responseBodySummary(body))
 	}
 }
 
@@ -165,7 +165,7 @@ func assertMissingReportReturns404(t *testing.T, ctx context.Context, client *ht
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 404 for nonexistent report, got %d: %s", resp.StatusCode, string(body))
+		t.Fatalf("expected 404 for nonexistent report, got %d: %s", resp.StatusCode, responseBodySummary(body))
 	}
 	// Error envelope should contain error code and requestId
 	var errEnv struct {
@@ -176,13 +176,13 @@ func assertMissingReportReturns404(t *testing.T, ctx context.Context, client *ht
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(body, &errEnv); err != nil {
-		t.Fatalf("404 response is not valid JSON error envelope: %v body=%s", err, string(body))
+		t.Fatalf("404 response is not valid JSON error envelope: %v %s", err, responseBodySummary(body))
 	}
 	if errEnv.Error.Code == "" {
-		t.Fatalf("404 error envelope missing code: %s", string(body))
+		t.Fatalf("404 error envelope missing code: %s", responseBodySummary(body))
 	}
 	if errEnv.Error.Message == "" {
-		t.Fatalf("404 error envelope missing message: %s", string(body))
+		t.Fatalf("404 error envelope missing message: %s", responseBodySummary(body))
 	}
 	if errEnv.Error.RequestID != requestID+"_nf" {
 		t.Fatalf("404 error requestId mismatch: want=%q got=%q", requestID+"_nf", errEnv.Error.RequestID)
@@ -199,7 +199,7 @@ func assertDocumentResponseNoLeaks(t *testing.T, ctx context.Context, client *ht
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 65536))
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(body))
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, responseBodySummary(body))
 	}
 	lower := strings.ToLower(string(body))
 	for _, forbidden := range []string{
