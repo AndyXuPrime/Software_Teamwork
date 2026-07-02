@@ -3,9 +3,13 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/service/tools"
 )
 
 type ResponseRun struct {
@@ -41,7 +45,6 @@ type Citation struct {
 	DocName                 string          `json:"docName,omitempty"`
 	KnowledgeBaseID         string          `json:"knowledgeBaseId,omitempty"`
 	ChunkID                 string          `json:"chunkId,omitempty"`
-	AttachmentID            string          `json:"attachmentId,omitempty"`
 	SectionPath             string          `json:"sectionPath,omitempty"`
 	Text                    string          `json:"text,omitempty"`
 	ContentPreview          string          `json:"contentPreview,omitempty"`
@@ -50,6 +53,7 @@ type Citation struct {
 	Score                   *float64        `json:"score,omitempty"`
 	RerankScore             *float64        `json:"rerankScore,omitempty"`
 	ChunkType               string          `json:"chunkType,omitempty"`
+	AttachmentID            string          `json:"attachmentId,omitempty"`
 	IsSourceAvailable       bool            `json:"isSourceAvailable"`
 	SourceUnavailableReason string          `json:"-"`
 	Metadata                map[string]any  `json:"metadata"`
@@ -75,7 +79,6 @@ func NormalizeCitation(item Citation) Citation {
 	item.DocName = item.DocumentName
 	item.KnowledgeBaseID = strings.TrimSpace(item.KnowledgeBaseID)
 	item.ChunkID = strings.TrimSpace(item.ChunkID)
-	item.AttachmentID = strings.TrimSpace(item.AttachmentID)
 	item.SectionPath = strings.TrimSpace(item.SectionPath)
 	item.Text = strings.TrimSpace(item.Text)
 	item.ContentPreview = strings.TrimSpace(firstNonBlank(item.ContentPreview, item.Text))
@@ -93,7 +96,7 @@ func NormalizeCitation(item Citation) Citation {
 	if item.IsSourceAvailable {
 		if item.DocumentID != "" {
 			item.Source.DownloadEndpoint = "/api/v1/documents/" + item.DocumentID + "/content"
-		}
+			}
 	} else {
 		if item.SourceUnavailableReason == "" {
 			item.SourceUnavailableReason = citationSourceUnavailableReason
@@ -217,7 +220,9 @@ func DefaultAgentConfig() AgentConfig {
 		ToolTimeoutSeconds:    10,
 		ModelTimeoutSeconds:   60,
 		OverallTimeoutSeconds: 120,
-		EnabledToolNames: append([]string{"search_knowledge", "search_session_attachments"}, tools.DefaultDocumentReportToolNames...),
+		EnabledToolNames: append([]string{
+			"search_knowledge", "search_session_attachments",
+		}, tools.DefaultDocumentReportToolNames...),
 	}
 }
 
@@ -259,6 +264,7 @@ type QAConfigVersion struct {
 	EnabledToolNames        []string              `json:"enabledToolNames,omitempty"`
 	IsActive                bool                  `json:"isActive"`
 	CreatedAt               time.Time             `json:"createdAt"`
+	ReplacedActiveVersionID string                `json:"-"`
 }
 
 type CreateQAConfigVersionInput struct {
@@ -280,16 +286,17 @@ type CreateQAConfigVersionInput struct {
 }
 
 type LLMConfigVersion struct {
-	ID             string    `json:"id"`
-	VersionNo      int       `json:"versionNo"`
-	Provider       string    `json:"provider"`
-	ProfileID      string    `json:"profileId"`
-	ModelName      string    `json:"modelName"`
-	TimeoutSeconds int       `json:"timeoutSeconds"`
-	Temperature    float64   `json:"temperature"`
-	MaxTokens      int       `json:"maxTokens"`
-	IsActive       bool      `json:"isActive"`
-	CreatedAt      time.Time `json:"createdAt"`
+	ID                      string    `json:"id"`
+	VersionNo               int       `json:"versionNo"`
+	Provider                string    `json:"provider"`
+	ProfileID               string    `json:"profileId"`
+	ModelName               string    `json:"modelName"`
+	TimeoutSeconds          int       `json:"timeoutSeconds"`
+	Temperature             float64   `json:"temperature"`
+	MaxTokens               int       `json:"maxTokens"`
+	IsActive                bool      `json:"isActive"`
+	CreatedAt               time.Time `json:"createdAt"`
+	ReplacedActiveVersionID string    `json:"-"`
 }
 
 type CreateLLMConfigVersionInput struct {
@@ -401,8 +408,10 @@ type ResourceRepository interface {
 	ListToolCalls(context.Context, string, string) ([]AgentToolCall, error)
 	GetActiveQAConfigVersion(context.Context) (QAConfigVersion, error)
 	CreateQAConfigVersionResource(context.Context, string, CreateQAConfigVersionInput) (QAConfigVersion, error)
+	RestoreQAConfigActiveVersion(context.Context, string, string) error
 	GetActiveLLMConfigVersion(context.Context) (LLMConfigVersion, error)
 	CreateLLMConfigVersionResource(context.Context, string, CreateLLMConfigVersionInput) (LLMConfigVersion, error)
+	RestoreLLMConfigActiveVersion(context.Context, string, string) error
 	SaveLLMConnectionTest(context.Context, string, LLMProfileTestResult) (LLMProfileTestResult, error)
 	SaveRetrievalTestRun(context.Context, string, RetrievalTestInput, []RetrievalTestResult, time.Duration, error) (RetrievalTestRun, error)
 	GetRetrievalTestRun(context.Context, string, string) (RetrievalTestRun, error)
@@ -426,6 +435,9 @@ type KnowledgeStatsProvider interface {
 
 type ActiveRunCanceller interface{ CancelActiveRun(string) }
 
+const configActivationPostCommitTimeout = 30 * time.Second
+const configReloadRollbackTimeout = 5 * time.Second
+
 type ResourceService struct {
 	repository     ResourceRepository
 	retriever      KnowledgeRetriever
@@ -435,6 +447,8 @@ type ResourceService struct {
 	bootstrap      RuntimeLLMConfig
 	canceller      ActiveRunCanceller
 	now            func() time.Time
+	reloadMu       sync.RWMutex
+	reloader       RuntimeReloader
 }
 
 func NewResourceService(repository ResourceRepository, retriever KnowledgeRetriever, tester LLMConnectionTester, bootstrap RuntimeLLMConfig, canceller ActiveRunCanceller) (*ResourceService, error) {
@@ -444,6 +458,34 @@ func NewResourceService(repository ResourceRepository, retriever KnowledgeRetrie
 	sourceChecker, _ := retriever.(CitationSourceChecker)
 	statsProvider, _ := retriever.(KnowledgeStatsProvider)
 	return &ResourceService{repository: repository, retriever: retriever, sourceChecker: sourceChecker, knowledgeStats: statsProvider, llmTester: tester, bootstrap: bootstrap, canceller: canceller, now: time.Now}, nil
+}
+
+func (s *ResourceService) SetReloader(reloader RuntimeReloader) {
+	s.reloadMu.Lock()
+	defer s.reloadMu.Unlock()
+	s.reloader = reloader
+}
+
+func (s *ResourceService) reloadRuntime(ctx context.Context) error {
+	s.reloadMu.RLock()
+	reloader := s.reloader
+	s.reloadMu.RUnlock()
+	if reloader == nil {
+		return nil
+	}
+	return reloader.Reload(ctx)
+}
+
+func shouldActivateConfig(activate *bool) bool {
+	return activate == nil || *activate
+}
+
+func configActivationContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), configActivationPostCommitTimeout)
+}
+
+func configRollbackContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), configReloadRollbackTimeout)
 }
 
 func (s *ResourceService) GetResponseRun(ctx context.Context, userID, id string) (ResponseRun, error) {
@@ -568,7 +610,7 @@ func (s *ResourceService) CreateQAConfigVersion(ctx context.Context, userID stri
 		fields["retrieval.topK"] = "must be between 1 and 100"
 	}
 	threshold := input.Retrieval.ScoreThreshold
-	if threshold == 0 {
+	if !input.Retrieval.HasScoreThreshold() {
 		threshold = input.SimilarityThreshold
 	}
 	if threshold < 0 || threshold > 1 {
@@ -606,7 +648,28 @@ func (s *ResourceService) CreateQAConfigVersion(ctx context.Context, userID stri
 	if len(fields) > 0 {
 		return QAConfigVersion{}, ValidationError(fields)
 	}
-	return s.repository.CreateQAConfigVersionResource(ctx, userID, input)
+	activate := shouldActivateConfig(input.Activate)
+	version, err := s.repository.CreateQAConfigVersionResource(ctx, userID, input)
+	if err != nil {
+		if activate {
+			if rollbackErr := s.rollbackQAConfigActivation(ctx, version); rollbackErr != nil {
+				err = fmt.Errorf("%w; rollback active QA config: %v", err, rollbackErr)
+			}
+		}
+		return QAConfigVersion{}, err
+	}
+	if activate {
+		reloadCtx, cancel := configActivationContext(ctx)
+		err := s.reloadRuntime(reloadCtx)
+		cancel()
+		if err != nil {
+			if rollbackErr := s.rollbackQAConfigActivation(ctx, version); rollbackErr != nil {
+				err = fmt.Errorf("%w; rollback active QA config: %v", err, rollbackErr)
+			}
+			return QAConfigVersion{}, NewError(CodeDependency, "runtime reload failed", err)
+		}
+	}
+	return version, nil
 }
 func (s *ResourceService) GetActiveLLMConfigVersion(ctx context.Context) (LLMConfigVersion, error) {
 	return s.repository.GetActiveLLMConfigVersion(ctx)
@@ -615,7 +678,46 @@ func (s *ResourceService) CreateLLMConfigVersion(ctx context.Context, userID str
 	if fields := validateLLMProfile(input.Provider, input.ProfileID, input.ModelName, input.TimeoutSeconds, input.Temperature, input.MaxTokens); len(fields) > 0 {
 		return LLMConfigVersion{}, ValidationError(fields)
 	}
-	return s.repository.CreateLLMConfigVersionResource(ctx, userID, input)
+	activate := shouldActivateConfig(input.Activate)
+	version, err := s.repository.CreateLLMConfigVersionResource(ctx, userID, input)
+	if err != nil {
+		if activate {
+			if rollbackErr := s.rollbackLLMConfigActivation(ctx, version); rollbackErr != nil {
+				err = fmt.Errorf("%w; rollback active LLM config: %v", err, rollbackErr)
+			}
+		}
+		return LLMConfigVersion{}, err
+	}
+	if activate {
+		reloadCtx, cancel := configActivationContext(ctx)
+		err := s.reloadRuntime(reloadCtx)
+		cancel()
+		if err != nil {
+			if rollbackErr := s.rollbackLLMConfigActivation(ctx, version); rollbackErr != nil {
+				err = fmt.Errorf("%w; rollback active LLM config: %v", err, rollbackErr)
+			}
+			return LLMConfigVersion{}, NewError(CodeDependency, "runtime reload failed", err)
+		}
+	}
+	return version, nil
+}
+
+func (s *ResourceService) rollbackQAConfigActivation(ctx context.Context, version QAConfigVersion) error {
+	if version.ID == "" {
+		return nil
+	}
+	rollbackCtx, cancel := configRollbackContext(ctx)
+	defer cancel()
+	return s.repository.RestoreQAConfigActiveVersion(rollbackCtx, version.ID, version.ReplacedActiveVersionID)
+}
+
+func (s *ResourceService) rollbackLLMConfigActivation(ctx context.Context, version LLMConfigVersion) error {
+	if version.ID == "" {
+		return nil
+	}
+	rollbackCtx, cancel := configRollbackContext(ctx)
+	defer cancel()
+	return s.repository.RestoreLLMConfigActiveVersion(rollbackCtx, version.ID, version.ReplacedActiveVersionID)
 }
 func (s *ResourceService) TestLLMConnection(ctx context.Context, userID string, input LLMProfileTestInput) (LLMProfileTestResult, error) {
 	if fields := validateLLMProfile(input.Provider, input.ProfileID, input.ModelName, input.TimeoutSeconds, 0, 0); len(fields) > 0 {
