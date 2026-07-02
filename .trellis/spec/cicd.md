@@ -23,10 +23,8 @@ services/ai-gateway/
 deploy/docker-compose.yml
 ```
 
-Current Docker target: local infrastructure Compose by default, plus explicit
-profiles for approved runtime exceptions. `knowledge-v2` may build and run the
-RAGFlow Knowledge runtime API/worker because the parser/chunking/embedding/index
-worker is part of the new Knowledge runtime boundary.
+Current Docker target: local infrastructure Compose only. Business services and
+the RAGFlow Knowledge runtime API/worker run on the host.
 
 ---
 
@@ -902,8 +900,8 @@ Runtime rules:
   package index for mainland China developer networks. It affects Python
   dependency downloads only; Docker registry rewrite remains the Compose image
   path.
-- Treat `services/knowledge-runtime/**` and the `knowledge-v2` Compose profile
-  as the local runtime contract for Knowledge parsing and retrieval changes.
+- Treat `services/knowledge-runtime/**` and its host-run API/worker scripts as
+  the local runtime contract for Knowledge parsing and retrieval changes.
 - Host-run process management is part of the local startup contract:
   `run-backend.sh` should start service commands in managed process groups and
   `stop-backend.sh` should stop those process groups, not just wrapper PIDs.

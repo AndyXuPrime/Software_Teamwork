@@ -79,7 +79,7 @@
 | 前端 SSE | `fetch` stream wrapper | Web 标准 | 标准库 / 协议 | QA 消息创建使用 POST + `text/event-stream`，支持 `AbortController`。 |
 | 前端测试 | Vitest + React Testing Library + Playwright | Vitest `4.1.9`；Testing Library 见前端明细；Playwright `1.61.1` | 已固定 | 已加入 `apps/web/package.json` 和 `.github/workflows/frontend.yml`。 |
 | 前端代码质量 | ESLint Flat Config + Prettier | ESLint `9.39.4`，Prettier `3.9.0` | 已固定 | 插件版本见前端明细。 |
-| Knowledge RAGFlow runtime | Python vendored runtime + worker | `services/knowledge-runtime` vendored snapshot | 已固定 | 通过 `knowledge-v2` Compose profile 运行 runtime API 和 worker；解析、切块、embedding、索引和检索支持均在该 runtime 内完成。 |
+| Knowledge RAGFlow runtime | Python vendored runtime + worker | `services/knowledge-runtime` vendored snapshot | 已固定 | runtime API 和 worker 通过宿主机 Python/uv 启动；解析、切块、embedding、索引和检索支持均在该 runtime 内完成。 |
 | 后端语言 | Go | `go 1.25` | 已固定 | 项目 Go 服务基线固定为 1.25；已落地服务 module 应保持一致。 |
 | 后端 HTTP 路由 | Go `net/http` / `http.ServeMux` | Go `1.25` 标准库 | 已固定 | 不默认引入 `gin`/`chi`。 |
 | 后端日志 | Go `log/slog` | Go `1.25` 标准库 | 已固定 | 生产默认 JSON 结构化日志。 |
@@ -103,7 +103,7 @@
 | API 版本前缀 | `/api/v1` / `/internal/v1` | `v1` | 已固定 | 公开入口以 gateway OpenAPI 为准；内部服务使用服务级契约。 |
 | 后端测试 | Go `testing` + `httptest` | Go `1.25` 标准库 | 已固定 | 默认不引入 BDD 测试框架。 |
 | CI | GitHub Actions | `actions/github-script@v7`；runner `ubuntu-latest`；Bun `1.3.12`；Go `1.25.x` | 部分已固定 | 已有协作类 workflow、前端 check/build/unit/E2E smoke、Go service path-filtered build/test、goose migration apply、Docker/Compose config、Gateway contract 和 API type drift workflow。 |
-| Docker 镜像与构建源策略 | 中国大陆默认显式 registry rewrite；Compose 保留 Docker Hub fallback | `deploy/.env.example` 默认写入 DaoCloud registry rewrite，优先级为 `registry rewrite > daemon mirror > proxy`；Compose 基础镜像可用 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`QDRANT_IMAGE`、`MINIO_IMAGE`、`MINIO_MC_IMAGE` 覆盖；RAGFlow runtime deps 镜像用 `RAGFLOW_DEPS_IMAGE` 单独覆盖；`scripts/check_docker_policy.py` 做 CI 策略守门，`scripts/check_docker_environment.py` 做本机网络诊断 | 已固定 | 仓库 Docker 默认只跑基础设施，Knowledge RAGFlow runtime 通过 `knowledge-v2` profile 运行；不得为提速默认关闭 Go checksum verification，不得把 Compose 镜像改成 `latest`，不得把业务服务放回默认 Docker 路径。 |
+| Docker 镜像与构建源策略 | 中国大陆默认显式 registry rewrite；Compose 保留 Docker Hub fallback | `deploy/.env.example` 默认写入 DaoCloud registry rewrite，优先级为 `registry rewrite > daemon mirror > proxy`；Compose 基础镜像可用 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`QDRANT_IMAGE`、`MINIO_IMAGE`、`MINIO_MC_IMAGE` 覆盖；`scripts/check_docker_policy.py` 做 CI 策略守门，`scripts/check_docker_environment.py` 做本机网络诊断 | 已固定 | 仓库 Docker 只跑基础设施；Knowledge RAGFlow runtime 走宿主机 Python/uv 启动；不得为提速默认关闭 Go checksum verification，不得把 Compose 镜像改成 `latest`，不得把业务服务放回 Docker 路径。 |
 | 观测 | `slog` + Prometheus metrics；关键链路 OpenTelemetry tracing | `github.com/prometheus/client_golang@v1.23.2`；`go.opentelemetry.io/otel@v1.44.0`；`go.opentelemetry.io/otel/sdk@v1.44.0`；`go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.44.0`；`go.opentelemetry.io/otel/exporters/prometheus@v0.66.0` | 已选型，待固定 | 第一阶段先保证结构化日志和低基数字段指标；首次落地 metrics/tracing 时必须写入对应服务 `go.mod` 并同步本文状态。 |
 | DOCX 生成 | Document worker 当前使用内置 Go `SimpleDOCXGenerator`；Pandoc 作为富 DOCX 候选工具链；LibreOffice 暂不引入，保留后续候选 | 内置 Go 生成器：标准库；Pandoc CLI 版本后续在富 DOCX 任务中固定；LibreOffice：暂不引入 | 已固定（当前路径） | 当前路径为内置 Go `SimpleDOCXGenerator`；富 DOCX worker 的运行方式不属于当前本地 Docker 基线。 |
 | MCP 集成 | 官方 MCP Go SDK；暂不拆独立 sidecar | `github.com/modelcontextprotocol/go-sdk@v1.1.0` | 已固定 | QA 负责工具白名单、权限、参数校验、超时和脱敏记录；SDK 升级或 sidecar 化另开兼容性任务。 |

@@ -22,10 +22,15 @@ type fakeVendorState struct {
 	datasets    map[string]map[string]any
 	documents   map[string]map[string]any
 	parseCalls  []string
-	deleteCalls []string
+	deleteCalls []deleteCall
 	failParse   bool
 	searchBody  []byte
 	createBody  []byte
+}
+
+type deleteCall struct {
+	datasetID  string
+	documentID string
 }
 
 func newFakeVendorState() *fakeVendorState {
@@ -126,10 +131,19 @@ func startFakeVendor(t *testing.T, state *fakeVendorState) *httptest.Server {
 				"data": map[string]any{"total": 0, "chunks": []any{}},
 			})
 			return
-		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v1/documents/"):
-			docID := strings.TrimPrefix(r.URL.Path, "/api/v1/documents/")
-			state.deleteCalls = append(state.deleteCalls, docID)
-			delete(state.documents, docID)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v1/datasets/") && strings.HasSuffix(r.URL.Path, "/documents"):
+			kbID := strings.TrimPrefix(r.URL.Path, "/api/v1/datasets/")
+			kbID = strings.TrimSuffix(kbID, "/documents")
+			var body struct {
+				IDs []string `json:"ids"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode delete body: %v", err)
+			}
+			for _, docID := range body.IDs {
+				state.deleteCalls = append(state.deleteCalls, deleteCall{datasetID: kbID, documentID: docID})
+				delete(state.documents, docID)
+			}
 			w.WriteHeader(http.StatusOK)
 			return
 		default:
@@ -349,6 +363,39 @@ func TestAdapterKnowledgeQueryForwardsDocumentIDs(t *testing.T) {
 	}
 }
 
+func TestAdapterDeleteDocumentUsesDatasetScopedRuntimeRoute(t *testing.T) {
+	state := newFakeVendorState()
+	state.datasets["kb_fake_1"] = map[string]any{"id": "kb_fake_1", "name": "Boiler"}
+	state.documents["doc_fake_1"] = map[string]any{
+		"id": "doc_fake_1", "kb_id": "kb_fake_1", "dataset_id": "kb_fake_1", "name": "notes.txt",
+	}
+	vendor := startFakeVendor(t, state)
+	defer vendor.Close()
+
+	server := NewServer(adapterconfig.Config{
+		ServiceVersion:   "test",
+		VendorRuntimeURL: vendor.URL,
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodDelete, "/internal/v1/documents/doc_fake_1", nil)
+	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-User-Permissions", "knowledge:write")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if len(state.deleteCalls) != 1 || state.deleteCalls[0] != (deleteCall{datasetID: "kb_fake_1", documentID: "doc_fake_1"}) {
+		t.Fatalf("deleteCalls=%v", state.deleteCalls)
+	}
+	if _, ok := state.documents["doc_fake_1"]; ok {
+		t.Fatal("document should be removed after delete")
+	}
+}
+
 func TestAdapterDocumentUploadRollsBackWhenParseFails(t *testing.T) {
 	state := newFakeVendorState()
 	state.failParse = true
@@ -379,7 +426,7 @@ func TestAdapterDocumentUploadRollsBackWhenParseFails(t *testing.T) {
 
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	if len(state.deleteCalls) != 1 || state.deleteCalls[0] != "doc_fake_1" {
+	if len(state.deleteCalls) != 1 || state.deleteCalls[0] != (deleteCall{datasetID: "kb_fake_1", documentID: "doc_fake_1"}) {
 		t.Fatalf("deleteCalls=%v", state.deleteCalls)
 	}
 	if _, ok := state.documents["doc_fake_1"]; ok {

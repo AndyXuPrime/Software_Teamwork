@@ -2,6 +2,7 @@ package vendorclient
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -45,6 +46,17 @@ func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 			writeTestVendorJSON(w, `{"code":0,"data":{"total":0,"chunks":[]}}`)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/datasets/search":
 			writeTestVendorJSON(w, `{"code":0,"data":{"total":0,"chunks":[]}}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/datasets/kb_1/documents":
+			var body struct {
+				IDs []string `json:"ids"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode delete body: %v", err)
+			}
+			if len(body.IDs) != 1 || body.IDs[0] != "doc_1" {
+				t.Fatalf("delete body ids=%v, want [doc_1]", body.IDs)
+			}
+			writeTestVendorJSON(w, `{"code":0,"data":{"deleted":1}}`)
 		default:
 			t.Fatalf("unexpected vendor request: %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)
 		}
@@ -75,6 +87,9 @@ func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 	if _, err := client.RetrievalSearch(ctx, "tenant_1", []byte(`{"question":"hello","dataset_ids":["kb_1"]}`)); err != nil {
 		t.Fatalf("RetrievalSearch: %v", err)
 	}
+	if err := client.DeleteDocument(ctx, "tenant_1", "kb_1", "doc_1"); err != nil {
+		t.Fatalf("DeleteDocument: %v", err)
+	}
 
 	expected := []call{
 		{method: http.MethodGet, path: "/api/v1/system/ping"},
@@ -84,6 +99,7 @@ func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 		{method: http.MethodGet, path: "/api/v1/datasets/kb_1/documents", query: "page=1&page_size=100", tenant: "tenant_1"},
 		{method: http.MethodGet, path: "/api/v1/datasets/kb_1/documents/doc_1/chunks", query: "page=1&page_size=20", tenant: "tenant_1"},
 		{method: http.MethodPost, path: "/api/v1/datasets/search", tenant: "tenant_1"},
+		{method: http.MethodDelete, path: "/api/v1/datasets/kb_1/documents", tenant: "tenant_1"},
 	}
 
 	if len(calls) != len(expected) {

@@ -25,8 +25,7 @@
 | `api/` | Python REST API 与 DB 服务（adapter 调用面） |
 | `deepdoc/` | 文档解析器与视觉模型 |
 | `rag/` | 分块、嵌入、检索、GraphRAG、任务执行 |
-| `docker/` | 容器 entrypoint |
-| `conf/` | 运行时配置（compose 覆盖见 `service_conf.compose.yaml`） |
+| `conf/` | 宿主机运行时配置（`service_conf.yaml`） |
 | `common/data_source/` | 多源连接器参考代码（默认不启用） |
 | `docs/` | parser/RAG 参考文档 |
 
@@ -47,8 +46,7 @@
 ## 本地验证
 
 ```bash
-bash -n docker/entrypoint.sh
-python3 -m py_compile api/apps/__init__.py rag/prompts/generator.py
+PYTHONPATH=. uv run --no-project --with pytest --with pytest-asyncio --with filelock --with ruamel-yaml python -m pytest test/routes/test_config_utils.py test/routes/test_route_registry.py -q
 ```
 
 ## 许可证

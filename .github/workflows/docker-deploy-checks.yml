@@ -232,7 +232,6 @@ jobs:
           compose_file="$COMPOSE_FILE"
           if [ "$compose_file" = "deploy/docker-compose.yml" ]; then
             docker compose -f "$compose_file" --env-file deploy/.env.example config --quiet
-            docker compose -f "$compose_file" --env-file deploy/.env.example --profile knowledge-v2 config --quiet
           else
             docker compose -f "$compose_file" config --quiet
           fi

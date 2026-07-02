@@ -138,3 +138,6 @@ reports/rendered_pages/
 # Vendored upstream source snapshots.
 !services/knowledge-runtime/bin/
 !services/knowledge-runtime/bin/.gitkeep
+
+# Local PDF fixture for manual Knowledge runtime smoke tests.
+DL_T_673-1999.pdf

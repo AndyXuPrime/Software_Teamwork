@@ -16,7 +16,7 @@ goose PostgreSQL tables when `DATABASE_URL` is set.
 - Logging: `log/slog`
 - Parser-config storage: `pgx` + `sqlc` (optional)
 
-See `runtime/README.md` for vendor runtime wiring and compose profiles.
+See `../knowledge-runtime/README.md` for host-run vendor runtime wiring.
 
 ## Configuration
 
@@ -31,8 +31,8 @@ See `runtime/README.md` for vendor runtime wiring and compose profiles.
 | `KNOWLEDGE_SHUTDOWN_TIMEOUT` | no | `10s` | Graceful shutdown timeout. |
 
 Upload storage and vector retrieval are configured in the vendor runtime
-(`services/knowledge-runtime/conf/service_conf.compose.yaml`): MinIO bucket
-`software-teamwork-knowledge`, doc engine `elasticsearch` (default in compose).
+(`services/knowledge-runtime/conf/service_conf.yaml`): MinIO bucket
+`software-teamwork-knowledge`, doc engine `elasticsearch`.
 Knowledge does not call File Service, Qdrant, Redis, or `services/parser`.
 
 ## Implemented Routes
@@ -87,9 +87,10 @@ RAGFlow tables in the same PostgreSQL database when vendor PG is enabled.
 
 ## Local Integration Notes
 
-Default compose runs the adapter against `VENDOR_RUNTIME_URL`. Start the vendor
-Python API (:9380) and task executor locally, plus `knowledge-v2` profile services
-(Elasticsearch, MinIO bucket init) as documented in `runtime/README.md`.
+Root Compose only starts shared infrastructure. Start the vendor Python API
+(:9380) and task executor on the host, then run the adapter with
+`VENDOR_RUNTIME_URL` pointing at that runtime as documented in
+`../knowledge-runtime/README.md`.
 
 `services/parser` is retired; document parsing uses vendor deepdoc.
 

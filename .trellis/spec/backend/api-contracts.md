@@ -512,7 +512,7 @@ owned message with no citations -> authorize message -> 200 []
 - Knowledge environment keys:
   - `VENDOR_RUNTIME_URL`
   - `KNOWLEDGE_AUTO_START_INGESTION`
-  - runtime/storage/search keys required by the `knowledge-v2` profile
+  - runtime/storage/search keys required by host-run Knowledge runtime startup
 
 ### 3. Contracts
 
@@ -556,7 +556,7 @@ Knowledge, QA, Gateway, or local integration scripts.
   registered.
 - Targeted runtime tests cover config utilities and changed parser/chunking
   surfaces.
-- `knowledge-v2` Compose config and Docker policy checks must pass when runtime
+- Runtime startup scripts and Docker policy checks must pass when runtime
   deployment wiring changes.
 - Real PDF E2E should prove upload -> parse/chunk/embed/index -> retrieval when
   `DL_T_673-1999.pdf` is available.
@@ -987,8 +987,7 @@ retryable file/vector cleanup
 - Applies to `services/knowledge/cmd/adapter/`,
   `services/knowledge/internal/adapter/`,
   `services/knowledge/internal/vendorclient/`,
-  `services/knowledge/runtime/entrypoint.sh`, and Gateway routes owned by
-  Knowledge.
+  `services/knowledge-runtime/`, and Gateway routes owned by Knowledge.
 
 ### 2. Signatures
 
@@ -1083,7 +1082,7 @@ knowledge-queries -> /api/v1/datasets/search
 
 ### 5. Good/Base/Bad Cases
 
-- Good: `knowledge-v2` Compose wires `VENDOR_RUNTIME_URL`,
+- Good: host-run runtime startup wires `VENDOR_RUNTIME_URL`,
   `KNOWLEDGE_VENDOR_EMBEDDING_ID`, `KNOWLEDGE_VENDOR_RERANK_ID`, and matching
   `KNOWLEDGE_RUNTIME_*` provider env keys; the runtime starts with an explicit
   route allowlist and initializes tenant defaults for embedding and rerank.
@@ -1103,9 +1102,7 @@ knowledge-queries -> /api/v1/datasets/search
   and document metadata is loaded through the dataset document-list endpoint.
 - Docker/Compose checks must include:
   `python3 scripts/check_docker_policy.py`,
-  `docker compose --env-file deploy/.env.example config --quiet`,
-  `docker compose --env-file deploy/.env.example --profile knowledge-v2 config --quiet`,
-  and any affected profile such as `--profile ai`.
+  `docker compose --env-file deploy/.env.example config --quiet`.
 - For real runtime E2E, upload, parse, chunk, and query `DL_T_673-1999.pdf`
   when available; report document readiness, chunk count, query hit count, and
   the fact that no real provider key was committed.

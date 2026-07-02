@@ -203,7 +203,7 @@ func (s *Server) handleUploadDocument(w http.ResponseWriter, r *http.Request) {
 	docID := stringField(uploaded, "id")
 	if s.cfg.AutoStartIngestion && docID != "" {
 		if err := s.vendor.StartDocumentParse(r.Context(), reqCtx.UserID, kbID, []string{docID}); err != nil {
-			if delErr := s.vendor.DeleteDocument(r.Context(), reqCtx.UserID, docID); delErr != nil {
+			if delErr := s.vendor.DeleteDocument(r.Context(), reqCtx.UserID, kbID, docID); delErr != nil {
 				s.logger.WarnContext(r.Context(), "upload parse failed and document cleanup failed",
 					"document_id", docID,
 					"parse_error", err,
@@ -309,7 +309,18 @@ func (s *Server) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
 		writeAppError(w, r, err)
 		return
 	}
-	if err := s.vendor.DeleteDocument(r.Context(), reqCtx.UserID, r.PathValue("documentId")); err != nil {
+	documentID := r.PathValue("documentId")
+	doc, err := s.findDocumentByID(r.Context(), reqCtx.UserID, documentID)
+	if err != nil {
+		writeAppError(w, r, mapVendorError(err))
+		return
+	}
+	kbID := stringField(doc, "kb_id", "dataset_id")
+	if kbID == "" {
+		writeAppError(w, r, service.DependencyError("vendor document is missing dataset id", errors.New("missing dataset id")))
+		return
+	}
+	if err := s.vendor.DeleteDocument(r.Context(), reqCtx.UserID, kbID, documentID); err != nil {
 		writeAppError(w, r, mapVendorError(err))
 		return
 	}

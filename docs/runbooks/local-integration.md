@@ -112,7 +112,7 @@ client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue
 - `dev-up.sh`：infra pull/up、等待 Compose health checks、Qdrant collection
   初始化、migration、demo seed。
 - `run-backend.sh`：后端进程启动、日志和进程组 PID。Knowledge 使用 `cmd/adapter`
-  调用 RAGFlow runtime；runtime API/worker 可通过 `knowledge-v2` profile 启动。
+  调用宿主机 RAGFlow runtime API/worker。
 - `stop-backend.sh`：按 `.local/run/` 中记录的进程组停止后端，避免只杀掉
   `go run` / `uv run` wrapper 后留下真实服务占用端口。
 - `deploy/.env`：本地配置。脚本不生成、不改写、不维护第二套默认值。
@@ -125,12 +125,11 @@ Infra 拉取慢：
 - 已配置 Docker daemon mirror 时，运行 `python3 scripts/check_docker_environment.py --profile all --clean-env`。
 - 代理只作为最后选择；shell proxy、daemon proxy 和 registry rewrite 是三条不同路径。
 
-RAGFlow runtime 构建或启动慢：
+RAGFlow runtime 启动慢：
 
-- 默认保留 `deploy/.env.example` 里的 `DOCKER_IMAGE_REGISTRY_PREFIX` 和
-  `RAGFLOW_DEPS_IMAGE`。
-- runtime Dockerfile 会复用 pinned `infiniflow/ragflow_deps` 镜像；中国大陆网络默认
-  通过显式 DaoCloud registry rewrite 拉取。
+- 默认保留 `deploy/.env.example` 里的 `UV_DEFAULT_INDEX`，让 host-run `uv sync`
+  使用本地可达的 Python 包索引。
+- runtime API 和 worker 走宿主机启动，不通过根级 Docker Compose 构建或运行。
 - 不要恢复 `services/parser`；PDF 解析、切块、embedding、索引和检索由 RAGFlow
   runtime worker 完成。
 
@@ -146,8 +145,8 @@ RAGFlow runtime 构建或启动慢：
 WSL 内存高：
 
 - 先看 `docker stats`。
-- 当前默认 Docker 只跑 infra；启用 `knowledge-v2` profile 后，内存压力主要来自
-  PostgreSQL、Qdrant、MinIO、Elasticsearch、RAGFlow runtime 或本机后端进程。
+- 当前默认 Docker 只跑 infra；内存压力主要来自 PostgreSQL、Qdrant、MinIO、
+  宿主机 RAGFlow runtime 或本机后端进程。
 - 不需要保留环境时先停后端，再执行 `docker compose -f deploy/docker-compose.yml --env-file deploy/.env down -v`。
 
 ```bash

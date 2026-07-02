@@ -12,8 +12,6 @@ from pathlib import Path
 
 SCAN_ROOTS = ("deploy", "services", "apps")
 EXPECTED_ENV_IMAGE_OVERRIDES = {
-    "DOCKER_IMAGE_REGISTRY_PREFIX": "docker.m.daocloud.io/library/",
-    "RAGFLOW_DEPS_IMAGE": "docker.m.daocloud.io/infiniflow/ragflow_deps:51ce6aab",
     "POSTGRES_IMAGE": "docker.m.daocloud.io/library/postgres:16-alpine",
     "REDIS_IMAGE": "docker.m.daocloud.io/library/redis:7-alpine",
     "QDRANT_IMAGE": "docker.m.daocloud.io/qdrant/qdrant:v1.18.2",
@@ -29,14 +27,6 @@ EXPECTED_IMAGE_DEFAULTS = {
 }
 LOCAL_COMPOSE_FILE = Path("deploy/docker-compose.yml")
 ALLOWED_DEFAULT_COMPOSE_SERVICES = ("postgres", "redis", "qdrant", "minio", "minio-init")
-ALLOWED_PROFILE_COMPOSE_SERVICES = {
-    "knowledge-v2": (
-        "knowledge-minio-init",
-        "elasticsearch",
-        "knowledge-runtime-api",
-        "knowledge-runtime-worker",
-    )
-}
 DISALLOWED_DEFAULT_COMPOSE_SERVICES = (
     "migrate-auth",
     "migrate-file",
@@ -78,31 +68,10 @@ DISALLOWED_BUSINESS_DOCKER_ARTIFACTS = (
         "non-root deploy Compose file",
     ),
 )
-ALLOWED_BUSINESS_DOCKER_ARTIFACTS = frozenset(
-    {
-        "services/knowledge/Dockerfile",
-        "services/knowledge-runtime/Dockerfile",
-        "services/knowledge-runtime/Dockerfile_deepdoc_oss",
-        "services/knowledge-runtime/Dockerfile_tei",
-        "services/knowledge-runtime/ragflow_deps/Dockerfile",
-        "services/knowledge-runtime/conf/service_conf.compose.yaml",
-        "services/knowledge/runtime/service_conf.compose.yaml",
-    }
-)
-POLICY_SKIP_COMPOSE_PREFIXES = ("services/knowledge-runtime/docker/",)
-POLICY_SKIP_DOCKERFILES = frozenset(
-    {
-        "services/knowledge-runtime/ragflow_deps/Dockerfile",
-        "services/knowledge-runtime/Dockerfile_deepdoc_oss",
-        "services/knowledge-runtime/Dockerfile_tei",
-    }
-)
 GO_PROXY_ARG = "ARG GOPROXY=https://proxy.golang.org,direct"
 GO_SUMDB_ARG = "ARG GOSUMDB=sum.golang.org"
 GO_PROXY_COMPOSE = "GOPROXY: ${GO_DOCKER_GOPROXY:-https://proxy.golang.org,direct}"
 GO_SUMDB_COMPOSE = "GOSUMDB: ${GO_DOCKER_GOSUMDB:-sum.golang.org}"
-IMAGE_REGISTRY_COMPOSE = "IMAGE_REGISTRY_PREFIX: ${DOCKER_IMAGE_REGISTRY_PREFIX:-}"
-FULL_IMAGE_ARG_FROM_ALLOWLIST = frozenset({"RAGFLOW_DEPS_IMAGE"})
 
 
 def verify_docker_policy(root: Path) -> list[str]:
@@ -124,9 +93,7 @@ def validate_no_business_docker_artifacts(root: Path) -> list[str]:
         for filename in files:
             path = current / filename
             rel = path.relative_to(root).as_posix()
-            if rel == LOCAL_COMPOSE_FILE.as_posix() or rel in ALLOWED_BUSINESS_DOCKER_ARTIFACTS:
-                continue
-            if should_skip_compose(rel):
+            if rel == LOCAL_COMPOSE_FILE.as_posix():
                 continue
             for pattern, label in DISALLOWED_BUSINESS_DOCKER_ARTIFACTS:
                 if pattern.match(rel):
@@ -136,11 +103,11 @@ def validate_no_business_docker_artifacts(root: Path) -> list[str]:
 
 
 def should_skip_dockerfile(rel: str) -> bool:
-    return rel in POLICY_SKIP_DOCKERFILES
+    return False
 
 
 def should_skip_compose(rel: str) -> bool:
-    return rel.startswith(POLICY_SKIP_COMPOSE_PREFIXES)
+    return False
 
 
 def discover_dockerfiles(root: Path) -> list[Path]:
@@ -198,7 +165,7 @@ def validate_dockerfile(root: Path, dockerfile: Path) -> list[str]:
         if image == "scratch":
             continue
         full_image_arg = parse_full_image_arg(image)
-        if "${IMAGE_REGISTRY_PREFIX}" not in image and full_image_arg not in FULL_IMAGE_ARG_FROM_ALLOWLIST:
+        if "${IMAGE_REGISTRY_PREFIX}" not in image:
             issues.append(f"{rel}:{line_no}: base image `{image}` must use ${{IMAGE_REGISTRY_PREFIX}}")
         image_without_prefix = image.replace("${IMAGE_REGISTRY_PREFIX}", "")
         if full_image_arg is not None:
@@ -306,8 +273,8 @@ def validate_compose_file(root: Path, compose_file: Path) -> list[str]:
     if "GOSUMDB=off" in content or re.search(r"GOSUMDB\s*:\s*(?:\$\{[^}]*:-)?off\b", content):
         issues.append(f"{rel}: must not disable Go checksum verification with GOSUMDB=off")
 
-    if "build:" in content and IMAGE_REGISTRY_COMPOSE not in content:
-        issues.append(f"{rel}: Compose builds must pass `{IMAGE_REGISTRY_COMPOSE}`")
+    if "build:" in content:
+        issues.append(f"{rel}: Compose must not use `build:`; local Docker is pull-only infrastructure")
     if "GOPROXY:" in content and GO_PROXY_COMPOSE not in content:
         issues.append(f"{rel}: Go build args must default to `{GO_PROXY_COMPOSE}`")
     if "GOSUMDB:" in content and GO_SUMDB_COMPOSE not in content:
@@ -366,20 +333,13 @@ def validate_local_compose(rel: str, content: str) -> list[str]:
         if service in default_service_set:
             issues.append(f"{rel}: business service `{service}` must run on the host, not in default local Docker")
 
-    allowed_profile_services = {
-        service: profile
-        for profile, profile_services in ALLOWED_PROFILE_COMPOSE_SERVICES.items()
-        for service in profile_services
-    }
     for service, profiles in services.items():
         if service in default_service_set:
             continue
-        expected_profile = allowed_profile_services.get(service)
-        if expected_profile is None:
+        if profiles:
             issues.append(f"{rel}: profile service `{service}` is not allowed by local Docker policy")
-            continue
-        if expected_profile not in profiles:
-            issues.append(f"{rel}: profile service `{service}` must be behind profile `{expected_profile}`")
+        else:
+            issues.append(f"{rel}: unexpected local Docker service `{service}`")
 
     return issues
 

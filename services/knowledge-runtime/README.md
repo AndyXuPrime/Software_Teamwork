@@ -15,31 +15,7 @@ The upstream RAGFlow MCP server/client product surface is intentionally not part
 of this runtime; the project-owned Knowledge MCP bridge lives in
 `services/knowledge`.
 
-## Docker (production)
-
-Build once from this directory, run two compose services with different commands:
-
-```bash
-cd services/knowledge-runtime
-docker build -t knowledge-runtime:local .
-
-# API only
-docker run --rm knowledge-runtime:local ./entrypoint.sh --disable-taskexecutor
-
-# Worker only
-docker run --rm knowledge-runtime:local ./entrypoint.sh --disable-webserver --workers=2
-```
-
-Full stack via root compose (profile `knowledge-v2`):
-
-```bash
-cd deploy
-docker compose --profile knowledge-v2 up -d \
-  elasticsearch knowledge-minio-init \
-  knowledge-runtime-api knowledge-runtime-worker knowledge
-```
-
-## Local development (no Docker image build)
+## Local development
 
 Requires Python 3.13 + [uv](https://github.com/astral-sh/uv):
 
@@ -47,7 +23,6 @@ Requires Python 3.13 + [uv](https://github.com/astral-sh/uv):
 cd services/knowledge-runtime
 uv sync --python 3.13 --frozen
 export PYTHONPATH=.
-cp conf/service_conf.compose.yaml conf/service_conf.yaml
 # Edit conf/service_conf.yaml hosts for localhost (postgres, redis, minio, es)
 
 # Terminal 1 — API
@@ -66,9 +41,7 @@ VENDOR_RUNTIME_URL=http://127.0.0.1:9380 go run ./cmd/adapter
 
 ## Configuration
 
-- Compose overlay: `conf/service_conf.compose.yaml` (used by root `deploy/docker-compose.yml`)
-- Container template: `conf/service_conf.yaml.template` (rendered by `docker/entrypoint.sh`)
-- Local dev: copy compose overlay to `conf/service_conf.yaml` and point hosts at localhost
+- Local dev: edit `conf/service_conf.yaml` and point hosts at localhost
 - Model credentials: set `KNOWLEDGE_RUNTIME_MODEL_API_KEY` in your local shell or
   untracked env file. Use `KNOWLEDGE_RUNTIME_EMBEDDING_FACTORY`,
   `KNOWLEDGE_RUNTIME_EMBEDDING_MODEL`, `KNOWLEDGE_RUNTIME_EMBEDDING_BASE_URL`,

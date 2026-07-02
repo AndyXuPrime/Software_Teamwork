@@ -97,10 +97,8 @@ KNOWLEDGE_AUTO_START_INGESTION=true
 DOC_ENGINE=elasticsearch
 ```
 
-如果 runtime 以 Compose profile 运行，Compose 网络内默认地址应指向
-`http://knowledge-runtime-api:9380`；如果 runtime 在宿主机运行，则使用
-`http://127.0.0.1:9380` 或 Docker host gateway 可达地址。不要再启动
-`services/parser`。
+runtime API 和 worker 在宿主机启动；本地默认使用 `http://127.0.0.1:9380`。
+不要再启动 `services/parser`，也不要把 runtime 放回根级 Compose。
 
 ## 快速确认
 
@@ -212,17 +210,16 @@ curl --noproxy '*' -fsS http://localhost:8080/api/v1/knowledge-queries \
 Knowledge 路由依赖 `VENDOR_RUNTIME_URL` 指向 RAGFlow runtime。runtime 负责 PDF
 解析、切块、embedding、索引和检索；不要再启动 `services/parser`。
 
-如果用 Compose profile 运行 runtime API 和 worker：
+宿主机启动 runtime API 和 worker：
 
 ```bash
-cd deploy
-VENDOR_RUNTIME_URL=http://knowledge-runtime-api:9380 \
-  docker compose --env-file .env --profile knowledge-v2 up -d \
-  elasticsearch knowledge-minio-init knowledge-runtime-api knowledge-runtime-worker
+cd services/knowledge-runtime
+uv sync --python 3.13 --frozen
+./deploy/api/run-local.sh
+./deploy/worker/run-local.sh
 ```
 
-更多 runtime 说明见 [services/knowledge/runtime/README.md](../services/knowledge/runtime/README.md)
-和 [services/knowledge-runtime/README.md](../services/knowledge-runtime/README.md)。
+更多 runtime 说明见 [services/knowledge-runtime/README.md](../services/knowledge-runtime/README.md)。
 
 ## Common Dependency Failures
 

@@ -33,16 +33,6 @@ VALID_GO_DOCKERFILE = textwrap.dedent(
 )
 
 
-VALID_RUNTIME_DOCKERFILE = textwrap.dedent(
-    """
-    ARG IMAGE_REGISTRY_PREFIX=
-    FROM ${IMAGE_REGISTRY_PREFIX}ubuntu:24.04 AS base
-    RUN uv sync --python 3.13 --frozen
-    CMD ["./entrypoint.sh"]
-    """
-)
-
-
 VALID_COMPOSE = textwrap.dedent(
     """
     services:
@@ -56,34 +46,12 @@ VALID_COMPOSE = textwrap.dedent(
         image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-09-07T16-13-09Z}
       minio-init:
         image: ${MINIO_MC_IMAGE:-minio/mc:RELEASE.2025-08-13T08-35-41Z}
-      knowledge-minio-init:
-        profiles: ["knowledge-v2"]
-        image: ${MINIO_MC_IMAGE:-minio/mc:RELEASE.2025-08-13T08-35-41Z}
-      elasticsearch:
-        profiles: ["knowledge-v2"]
-        image: ${ELASTICSEARCH_IMAGE:-docker.elastic.co/elasticsearch/elasticsearch:8.11.3}
-      knowledge-runtime-api:
-        profiles: ["knowledge-v2"]
-        build:
-          context: ../services/knowledge-runtime
-          dockerfile: Dockerfile
-          args:
-            IMAGE_REGISTRY_PREFIX: ${DOCKER_IMAGE_REGISTRY_PREFIX:-}
-      knowledge-runtime-worker:
-        profiles: ["knowledge-v2"]
-        build:
-          context: ../services/knowledge-runtime
-          dockerfile: Dockerfile
-          args:
-            IMAGE_REGISTRY_PREFIX: ${DOCKER_IMAGE_REGISTRY_PREFIX:-}
     """
 )
 
 
 VALID_ENV = textwrap.dedent(
     """
-    DOCKER_IMAGE_REGISTRY_PREFIX=docker.m.daocloud.io/library/
-    RAGFLOW_DEPS_IMAGE=docker.m.daocloud.io/infiniflow/ragflow_deps:51ce6aab
     POSTGRES_IMAGE=docker.m.daocloud.io/library/postgres:16-alpine
     REDIS_IMAGE=docker.m.daocloud.io/library/redis:7-alpine
     QDRANT_IMAGE=docker.m.daocloud.io/qdrant/qdrant:v1.18.2
@@ -99,8 +67,6 @@ class DockerPolicyTests(unittest.TestCase):
             files={
                 "deploy/docker-compose.yml": VALID_COMPOSE,
                 "deploy/.env.example": VALID_ENV,
-                "services/knowledge-runtime/Dockerfile": VALID_RUNTIME_DOCKERFILE,
-                "services/knowledge-runtime/.dockerignore": ".git\n",
             }
         )
 
@@ -127,11 +93,12 @@ class DockerPolicyTests(unittest.TestCase):
 
         self.assertIssueContains(issues, "local Docker default must only define infrastructure services")
         self.assertIssueContains(issues, "business service `parser` must run on the host")
+        self.assertIssueContains(issues, "Compose must not use `build:`")
 
-    def test_profile_services_must_be_allowlisted(self) -> None:
+    def test_profile_services_are_reported(self) -> None:
         compose = VALID_COMPOSE.replace(
-            '  elasticsearch:\n    profiles: ["knowledge-v2"]\n',
-            '  gateway:\n    profiles: ["knowledge-v2"]\n    image: ${GATEWAY_IMAGE:-registry.example.com/gateway:local}\n  elasticsearch:\n    profiles: ["knowledge-v2"]\n',
+            "  minio-init:\n",
+            '  gateway:\n    profiles: ["debug"]\n    image: ${GATEWAY_IMAGE:-registry.example.com/gateway:local}\n  minio-init:\n',
         )
 
         issues = self.verify(files={"deploy/docker-compose.yml": compose})
@@ -164,15 +131,13 @@ class DockerPolicyTests(unittest.TestCase):
         self.assertIssueContains(issues, "must not use latest")
         self.assertIssueContains(issues, "sibling .dockerignore")
 
-    def test_ragflow_uv_sync_does_not_trigger_parser_policy(self) -> None:
+    def test_knowledge_runtime_dockerfile_is_reported_without_parser_policy(self) -> None:
         dockerfile = textwrap.dedent(
             """
             ARG IMAGE_REGISTRY_PREFIX=
-            ARG RAGFLOW_DEPS_IMAGE=infiniflow/ragflow_deps:51ce6aab
-            FROM ${RAGFLOW_DEPS_IMAGE} AS deps
             FROM ${IMAGE_REGISTRY_PREFIX}ubuntu:24.04 AS base
             RUN uv sync --python 3.13 --frozen
-            CMD ["./entrypoint.sh"]
+            CMD ["python", "api/ragflow_server.py"]
             """
         )
 
@@ -185,6 +150,8 @@ class DockerPolicyTests(unittest.TestCase):
 
         parser_issues = [issue for issue in issues if "services/parser is retired" in issue]
         self.assertEqual([], parser_issues)
+        self.assertIssueContains(issues, "services/knowledge-runtime/Dockerfile")
+        self.assertIssueContains(issues, "business service Dockerfile")
 
     def test_parser_dockerfile_is_reported(self) -> None:
         issues = self.verify(

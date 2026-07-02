@@ -1,6 +1,6 @@
-# Local development overlay for knowledge-runtime (PostgreSQL knowledge_system).
-# For Docker/compose, entrypoint renders conf/service_conf.yaml.template instead.
-# Quick start: cp conf/service_conf.compose.yaml conf/service_conf.yaml and edit hosts.
+# Local host-run overlay for knowledge-runtime (PostgreSQL knowledge_system).
+# Edit hosts and credentials for your local infrastructure before starting the
+# API and worker scripts under deploy/api and deploy/worker.
 
 ragflow:
   host: 0.0.0.0

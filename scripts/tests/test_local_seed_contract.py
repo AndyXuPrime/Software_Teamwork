@@ -126,7 +126,7 @@ class LocalSeedContractTests(unittest.TestCase):
             stop_backend_script="",
         )
 
-        self.assertIssueContains(issues, "RAGFLOW_DEPS_IMAGE")
+        self.assertIssueContains(issues, "DOC_ENGINE=elasticsearch")
         self.assertIssueContains(issues, "go run ./cmd/adapter")
 
     def test_verifier_reports_missing_local_runtime_gitignore(self) -> None:

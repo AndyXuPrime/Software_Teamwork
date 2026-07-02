@@ -9,26 +9,15 @@
 # ]
 # ///
 
-# This script downloads every artifact that the `infiniflow/ragflow_deps`
-# Docker image bakes in. Run it from anywhere — the `__main__` block
+# This script downloads runtime artifacts into `ragflow_deps/` for host-run
+# Knowledge runtime development. Run it from anywhere: the `__main__` block
 # chdir's into this file's own directory, so all outputs land under
 # `ragflow_deps/` regardless of the caller's CWD.
 #
-# Build-context relationship: `ragflow_deps/Dockerfile` is built with
-# `ragflow_deps/` as its build context, so the files written here MUST
-# sit at the top of `ragflow_deps/`. The Dockerfile's COPY lines assume
-# top-level paths (`huggingface.co`, `nltk_data`, `cl100k_base.tiktoken`,
-# `*.deb`, `*.jar`, `*.tar.gz`).
-#
 # Typical workflow:
 #
-#   uv run ragflow_deps/download_deps.py            # download
-#   cd ragflow_deps
-#   docker build -f Dockerfile -t infiniflow/ragflow_deps .
-#
-# The main `Dockerfile` (built from the project root) pulls this image
-# via `--mount=type=bind,from=infiniflow/ragflow_deps:latest,...` and
-# is unaffected by where these files live locally.
+#   uv run ragflow_deps/download_deps.py
+#   uv run ragflow_deps/download_deps.py --china-mirrors
 
 import argparse
 import os
@@ -82,7 +71,7 @@ if __name__ == "__main__":
     # Anchor CWD to this file's directory so all relative outputs
     # (huggingface.co/, nltk_data/, *.deb, *.jar, *.tar.gz, etc.) land
     # at the top of ragflow_deps/ regardless of where the user invokes
-    # the script from. This is the build context for `ragflow_deps/Dockerfile`.
+    # the script from.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
     parser = argparse.ArgumentParser(description="Download dependencies with optional China mirror support")

@@ -276,12 +276,17 @@ func (c *Client) UpdateDocument(ctx context.Context, userID, datasetID, document
 	return decodeObject(payload.Data)
 }
 
-func (c *Client) DeleteDocument(ctx context.Context, userID, documentID string) error {
-	path := "/api/v1/documents/" + url.PathEscape(documentID)
-	req, err := c.newRequest(ctx, userID, http.MethodDelete, path, nil)
+func (c *Client) DeleteDocument(ctx context.Context, userID, datasetID, documentID string) error {
+	path := fmt.Sprintf("/api/v1/datasets/%s/documents", url.PathEscape(datasetID))
+	body, err := json.Marshal(map[string][]string{"ids": []string{documentID}})
 	if err != nil {
 		return err
 	}
+	req, err := c.newRequest(ctx, userID, http.MethodDelete, path, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
 	res, err := c.http.Do(req)
 	if err != nil {
 		return err

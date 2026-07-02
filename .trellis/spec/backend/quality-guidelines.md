@@ -37,7 +37,7 @@ go build ./cmd/adapter
 
 - Trigger: changing Knowledge document upload, runtime API/worker wiring,
   parser/chunking/embedding/indexing behavior, retrieval contracts, or
-  `knowledge-v2` Compose wiring.
+  host-run Knowledge runtime startup.
 - Applies to `services/knowledge`, `services/knowledge-runtime`, `deploy/**`,
   and Knowledge runbook entries.
 
@@ -258,13 +258,8 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 
 ### 3. Contracts
 
-- The default root local Compose path stays infrastructure-first. Business
-  services run on the host by default unless a named profile explicitly
-  documents containerized runtime support.
-- `knowledge-v2` is the approved exception for the RAGFlow Knowledge runtime:
-  it may include `knowledge-runtime-api`, `knowledge-runtime-worker`, and their
-  required infrastructure/build wiring because parsing, chunking, embedding,
-  indexing, and retrieval depend on a coordinated Python runtime plus worker.
+- The root local Compose path stays infrastructure-only. Business services and
+  the RAGFlow Knowledge runtime API/worker run on the host.
 - Docs must provide host-run commands for Auth, File, Knowledge, AI Gateway,
   QA, Document, Gateway, and frontend.
 - Frontend and browser-facing documentation must route traffic through gateway;
@@ -327,7 +322,7 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | Condition | Required handling |
 | --- | --- |
 | Compose YAML or env interpolation is invalid | `docker compose ... config --quiet` must fail before merge. |
-| Default Compose service list includes business services outside an approved profile | Remove the service or update policy only if the team explicitly changes the Docker boundary. |
+| Default Compose service list includes business services or profile services | Remove the service or update policy only if the team explicitly changes the Docker boundary. |
 | Host migrations or seed run before PostgreSQL/init scripts are ready | Add or restore an infra health wait in `scripts/local/dev-up.sh`; do not rely on plain `docker compose up -d`. |
 | `QDRANT_URL` is set but the default collection is not created | Add or restore Qdrant collection initialization in `scripts/local/dev-up.sh`; do not make users create `knowledge_chunks` manually for the default path. |
 | Compose contains `build:` | Remove it; repository Docker must stay pull-only infra. |
