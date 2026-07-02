@@ -2,6 +2,7 @@ import { ArrowUpRight } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { replayEvents, streamChat } from '@/api/chat'
+import { gatewayFileRequest } from '@/api/client'
 import { ChatInput, ChatMessages, ChatSidebar } from '@/components/chat'
 import {
   useCreateSession,
@@ -10,9 +11,12 @@ import {
   useSessionMessages,
   useSessions,
 } from '@/features/qa'
+import { parseReportArtifact } from '@/features/qa/capability'
+import { downloadFromUrl } from '@/lib/download'
 import type {
   QACitation,
   QAMessage,
+  QAReportArtifact,
   QASession,
   QASessionListItem,
   QAThinkingStep,
@@ -200,7 +204,26 @@ function createMockAssistantMessage(sessionId: string): QAMessage {
     ],
     status: 'completed',
     createdAt: new Date().toISOString(),
-  }
+    artifacts: [
+      {
+        artifactType: 'report_generation',
+        reportName: '变压器巡检报告',
+        reportType: 'substation_inspection',
+        jobStatus: 'succeeded',
+        reportId: 'rpt_mock_01',
+        fileStatus: 'succeeded',
+        filename: '变压器巡检报告.docx',
+        preview: {
+          title: '变压器巡检报告',
+          summary:
+            '本次巡检覆盖变压器油温、油位、呼吸器及运行声音等关键项目，所有指标均在正常范围内。',
+          outlineTitles: ['巡检概况', '油温与油位检查', '呼吸器状态', '运行声音分析', '结论与建议'],
+          progressPercent: 100,
+          statusText: '报告已生成',
+        },
+      } as QAReportArtifact,
+    ],
+  } as QAMessage & { artifacts?: QAReportArtifact[] }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -253,6 +276,24 @@ export function ChatPage() {
 
   // ── Event replay: track current responseRunId for reconnect recovery ──
   const responseRunIdRef = useRef<string | null>(null)
+
+  // ── Report artifact download handler ──
+  const handleArtifactDownload = useCallback(
+    async (reportFileId: string, filename: string) => {
+      try {
+        const blob = await gatewayFileRequest(
+          `/report-files/${encodeURIComponent(reportFileId)}/content`,
+        )
+        const url = URL.createObjectURL(blob)
+        downloadFromUrl(url, filename)
+        // Revoke after a short delay to allow the browser to start the download
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+      } catch {
+        setError('报告文件下载失败')
+      }
+    },
+    [setError],
+  )
 
   // ── FLIP animation: input box from center → bottom ──
   const inputAreaRef = useRef<HTMLDivElement>(null)
@@ -599,6 +640,33 @@ export function ChatPage() {
             } as QAThinkingStep
           }
           patchAssistant({ thinking: [...steps] })
+
+          // Parse report artifact from tool result
+          const rawResult = (data as Record<string, unknown>).result as
+            Record<string, unknown> | undefined
+          const rawArtifact = rawResult?.reportArtifact
+          const artifact = parseReportArtifact(rawArtifact)
+          if (artifact) {
+            useChatStore.setState((prev) => {
+              const msgs = [...(prev.messagesBySession[uid] ?? [])]
+              const lastIdx = msgs.length - 1
+              const last = lastIdx >= 0 ? msgs[lastIdx] : undefined
+              if (last?.role === 'assistant') {
+                const existing = ((last as Record<string, unknown>).artifacts ??
+                  []) as QAReportArtifact[]
+                msgs[lastIdx] = {
+                  ...last,
+                  artifacts: [
+                    ...existing.filter((a) => a.reportId !== artifact.reportId),
+                    artifact,
+                  ],
+                } as QAMessage
+              }
+              return {
+                messagesBySession: { ...prev.messagesBySession, [uid]: msgs },
+              }
+            })
+          }
         },
         onToolFailed(data) {
           if (!verifySeq(data.seq)) return
@@ -618,6 +686,33 @@ export function ChatPage() {
             } as QAThinkingStep
           }
           patchAssistant({ thinking: [...steps] })
+
+          // Parse report artifact from failed tool result
+          const rawFailedResult = (data as Record<string, unknown>).result as
+            Record<string, unknown> | undefined
+          const rawFailedArtifact = rawFailedResult?.reportArtifact
+          const failedArtifact = parseReportArtifact(rawFailedArtifact)
+          if (failedArtifact) {
+            useChatStore.setState((prev) => {
+              const msgs = [...(prev.messagesBySession[uid] ?? [])]
+              const lastIdx = msgs.length - 1
+              const last = lastIdx >= 0 ? msgs[lastIdx] : undefined
+              if (last?.role === 'assistant') {
+                const existing = ((last as Record<string, unknown>).artifacts ??
+                  []) as QAReportArtifact[]
+                msgs[lastIdx] = {
+                  ...last,
+                  artifacts: [
+                    ...existing.filter((a) => a.reportId !== failedArtifact.reportId),
+                    failedArtifact,
+                  ],
+                } as QAMessage
+              }
+              return {
+                messagesBySession: { ...prev.messagesBySession, [uid]: msgs },
+              }
+            })
+          }
         },
         onAnswerDelta(data) {
           if (!verifySeq(data.seq)) return
@@ -887,6 +982,7 @@ export function ChatPage() {
               streaming={streaming}
               error={error}
               onRetry={lastFailedMsg ? handleRetry : undefined}
+              onArtifactDownload={handleArtifactDownload}
             />
           </div>
         )}

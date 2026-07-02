@@ -1,5 +1,10 @@
 import { ApiError } from '@/api/client'
-import type { QACitation, QAThinkingStep } from '@/lib/types'
+import type {
+  QACitation,
+  QAReportArtifact,
+  QAReportArtifactPreview,
+  QAThinkingStep,
+} from '@/lib/types'
 
 type StreamErrorLike = {
   code?: string
@@ -265,4 +270,130 @@ export function getCitationAvailabilityText(citation: QACitation): string {
   }
 
   return '引用详情以后端 citation snapshot 为准；详情接口未就绪时不展示补全文本。'
+}
+
+// ── Valid jobStatus values ──
+const VALID_JOB_STATUSES = new Set([
+  'accepted',
+  'pending',
+  'running',
+  'succeeded',
+  'failed',
+  'canceled',
+])
+
+const VALID_FILE_STATUSES = new Set(['pending', 'running', 'succeeded', 'failed', 'canceled'])
+
+const VALID_FORMATS = new Set(['docx'])
+
+function getStringArray(record: Record<string, unknown>, key: string): string[] | undefined {
+  const value = record[key]
+  if (!Array.isArray(value)) return undefined
+  const result = value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+  return result.length > 0 ? result : undefined
+}
+
+function parseReportArtifactPreview(raw: unknown): QAReportArtifactPreview | undefined {
+  if (!isRecord(raw)) return undefined
+  const preview: QAReportArtifactPreview = {}
+  const title = getString(raw, 'title')
+  if (title) preview.title = title
+  const summary = getString(raw, 'summary')
+  if (summary) preview.summary = summary
+  const outlineTitles = getStringArray(raw, 'outlineTitles')
+  if (outlineTitles) preview.outlineTitles = outlineTitles
+  const sectionTitles = getStringArray(raw, 'sectionTitles')
+  if (sectionTitles) preview.sectionTitles = sectionTitles
+  const progressPercent = getNumber(raw, 'progressPercent')
+  if (progressPercent != null) preview.progressPercent = progressPercent
+  const statusText = getString(raw, 'statusText')
+  if (statusText) preview.statusText = statusText
+  // Must have at least one meaningful field
+  if (
+    !preview.title &&
+    !preview.summary &&
+    !preview.outlineTitles &&
+    !preview.sectionTitles &&
+    preview.progressPercent == null &&
+    !preview.statusText
+  ) {
+    return undefined
+  }
+  return preview
+}
+
+/**
+ * Parse and validate a report artifact from SSE event data (tool.completed / tool.failed).
+ *
+ * Only fields defined in the QAReportArtifact OpenAPI schema are preserved.
+ * Unknown keys are stripped. Nested `preview` is validated identically.
+ *
+ * Returns `null` when the input is missing required discriminator
+ * `artifactType === 'report_generation'`.
+ */
+export function parseReportArtifact(raw: unknown): QAReportArtifact | null {
+  if (!isRecord(raw)) return null
+  const artifactType = getString(raw, 'artifactType')
+  if (artifactType !== 'report_generation') return null
+
+  const artifact: QAReportArtifact = {
+    artifactType: 'report_generation',
+  }
+
+  const reportId = getString(raw, 'reportId')
+  if (reportId) artifact.reportId = reportId
+  const reportName = getString(raw, 'reportName')
+  if (reportName) artifact.reportName = reportName
+  const reportType = getString(raw, 'reportType')
+  if (reportType) artifact.reportType = reportType
+  const jobId = getString(raw, 'jobId')
+  if (jobId) artifact.jobId = jobId
+  const reportFileId = getString(raw, 'reportFileId')
+  if (reportFileId) artifact.reportFileId = reportFileId
+  const filename = getString(raw, 'filename')
+  if (filename) artifact.filename = filename
+  const downloadPath = getString(raw, 'downloadPath')
+  if (downloadPath) artifact.downloadPath = downloadPath
+  const detailPath = getString(raw, 'detailPath')
+  if (detailPath) artifact.detailPath = detailPath
+  const reportStatus = getString(raw, 'reportStatus')
+  if (reportStatus) artifact.reportStatus = reportStatus
+
+  const fileSize = getNumber(raw, 'fileSize')
+  if (fileSize != null) artifact.fileSize = fileSize
+
+  // Validate enum-constrained fields
+  const rawJobType = getString(raw, 'jobType')
+  if (
+    rawJobType &&
+    /^(outline_generation|outline_regeneration|content_generation|content_regeneration|section_regeneration|report_file_creation)$/.test(
+      rawJobType,
+    )
+  ) {
+    artifact.jobType = rawJobType as QAReportArtifact['jobType']
+  }
+
+  const rawJobStatus = getString(raw, 'jobStatus')
+  if (rawJobStatus && VALID_JOB_STATUSES.has(rawJobStatus)) {
+    artifact.jobStatus = rawJobStatus as QAReportArtifact['jobStatus']
+  }
+
+  const rawFileStatus = getString(raw, 'fileStatus')
+  if (rawFileStatus && VALID_FILE_STATUSES.has(rawFileStatus)) {
+    artifact.fileStatus = rawFileStatus as QAReportArtifact['fileStatus']
+  }
+
+  const rawFormat = getString(raw, 'format')
+  if (rawFormat && VALID_FORMATS.has(rawFormat)) {
+    artifact.format = rawFormat as QAReportArtifact['format']
+  }
+
+  // Validate preview sub-object
+  const preview = parseReportArtifactPreview(raw.preview)
+  if (preview) artifact.preview = preview
+
+  // Must have at least one identifying field beyond artifactType
+  if (!reportId && !reportName && !jobId && !preview) return null
+
+  return artifact
 }
