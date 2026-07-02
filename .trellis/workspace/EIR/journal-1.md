@@ -110,3 +110,69 @@ Standardized Docker build sources and mainland China registry rewrite path, adde
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Docker infra-only local startup
+
+**Date**: 2026-07-02
+**Task**: Docker infra-only local startup
+**Branch**: `Special/chore/docker-infra-only-startup`
+
+### Summary
+
+Rebased onto latest upstream develop, kept infra-only Docker direction, simplified local startup docs and scripts, enforced deploy/.env.example as the single default config source, and validated Docker policy, seed contract, Compose config, service config tests, Parser settings, and workflow syntax.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d69d75d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 10: Guard Docker local startup contracts
+
+**Date**: 2026-07-02
+**Task**: Guard Docker local startup contracts
+**Branch**: `Special/chore/docker-infra-only-startup`
+
+### Summary
+
+Handled review follow-ups for the infra-only local startup PR: Qdrant collection initialization, seed contract CI coverage, and Docker artifact regression guards.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `48a854e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

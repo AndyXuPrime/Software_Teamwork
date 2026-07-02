@@ -13,9 +13,8 @@ implemented for the fixed `summer_peak_inspection` report type through AI
 Gateway chat calls, with optional Knowledge retrieval context when configured
 and requested. A service-local Document MCP tool adapter is implemented for
 safe report generation, status, template schema, result, and basic DOCX export
-tool calls, and the main document process exposes it through a Streamable HTTP
-MCP endpoint for QA/runtime clients. QA end-to-end smoke remains follow-up work.
-The Pandoc/LibreOffice rich DOCX conversion toolchain remains future work.
+tool calls. A remote MCP server/QA end-to-end smoke remains follow-up work. The
+Pandoc/LibreOffice rich DOCX conversion toolchain remains future work.
 
 ## Local Configuration
 
@@ -23,8 +22,8 @@ Required environment variables:
 
 | Variable | Example | Purpose |
 | --- | --- | --- |
-| `DOCUMENT_DATABASE_URL` | `postgres://document_app:document_app_dev@localhost:5435/document_system?sslmode=disable` | PostgreSQL connection string. |
-| `DOCUMENT_REDIS_ADDR` | `localhost:6380` | Redis/asynq queue endpoint. Redis is not the durable job state authority. |
+| `DOCUMENT_DATABASE_URL` | `postgres://document_app:document_app_dev@localhost:5432/document_system?sslmode=disable` | PostgreSQL connection string. |
+| `DOCUMENT_REDIS_ADDR` | `localhost:6379` | Redis/asynq queue endpoint. Redis is not the durable job state authority. |
 | `DOCUMENT_FILE_SERVICE_URL` | `http://localhost:8082` | Internal file service base URL for later template/material/report-file bytes. |
 | `DOCUMENT_FILE_SERVICE_TOKEN` | empty | Service token sent to File Service when request context has no `X-Service-Token`. Falls back to `INTERNAL_SERVICE_TOKEN` when empty. |
 | `DOCUMENT_AI_GATEWAY_URL` | `http://localhost:8086` | Internal AI Gateway base URL for report settings validation and report generation chat calls. Must target `localhost`, loopback, or `ai-gateway` on port `8086`. |
@@ -38,45 +37,30 @@ Optional variables:
 | `DOCUMENT_AI_GATEWAY_SERVICE_TOKEN` | empty | Service token sent to AI Gateway profile validation APIs. Falls back to `INTERNAL_SERVICE_TOKEN` when empty. |
 | `DOCUMENT_KNOWLEDGE_SERVICE_URL` | empty | Optional internal Knowledge service base URL. When empty, report generation skips Knowledge retrieval and uses only report/template/request context. |
 | `DOCUMENT_KNOWLEDGE_SERVICE_TOKEN` | empty | Optional service token sent to Knowledge. Falls back to `INTERNAL_SERVICE_TOKEN` when empty. Required when `DOCUMENT_KNOWLEDGE_SERVICE_URL` is set. |
-| `INTERNAL_SERVICE_TOKEN` | empty | Shared internal service token fallback for local/dev deployments. Required when `DOCUMENT_MCP_SERVICE_TOKEN` is empty. |
-| `DOCUMENT_MCP_PATH` | `/mcp` | Streamable HTTP MCP endpoint path served by the document process. |
-| `DOCUMENT_MCP_SERVICE_TOKEN` | empty | MCP server token. Falls back to `INTERNAL_SERVICE_TOKEN` when empty; Compose defaults keep it aligned with `INTERNAL_SERVICE_TOKEN`. If overridden separately, QA `MCP_SERVER_TOKEN` must use the same value. |
-| `DOCUMENT_MCP_TOKEN_HEADER` | `Authorization` | Header used by MCP clients. `Authorization` accepts `Bearer <token>`; `X-Service-Token` is also supported when configured. |
-| `DOCUMENT_PANDOC_PATH` | `pandoc` | Reserved path for a future Pandoc-backed rich DOCX worker. The current Dockerfile does not install this CLI. |
-| `DOCUMENT_LIBREOFFICE_PATH` | `soffice` | Reserved path for a future LibreOffice-backed conversion worker. The current Dockerfile does not install this CLI. |
+| `INTERNAL_SERVICE_TOKEN` | empty | Shared internal service token fallback for local/dev deployments. |
+| `DOCUMENT_PANDOC_PATH` | `pandoc` | Reserved path for a future Pandoc-backed rich DOCX worker. The current host-run baseline does not require this CLI. |
+| `DOCUMENT_LIBREOFFICE_PATH` | `soffice` | Reserved path for a future LibreOffice-backed conversion worker. The current host-run baseline does not require this CLI. |
 | `DOCUMENT_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown timeout. |
 
 ## Run
 
-Docker Compose starts PostgreSQL, Redis, applies goose migrations, and then
-starts the document service. Default values are embedded in `docker-compose.yml`;
-copy `.env.example` to `.env` only when local ports or downstream service URLs
-need to be changed. Compose uses `DOCUMENT_COMPOSE_FILE_SERVICE_URL` and
-`DOCUMENT_COMPOSE_AI_GATEWAY_URL` for container-network downstream overrides, so
-host-run `localhost` examples do not leak into the container by accident:
+For normal local development, start repository infra, migrations, seed, and all
+host-run backend services from the repository root:
 
-```powershell
-# Optional: Copy-Item .env.example .env
-docker compose up --build
+```bash
+cp deploy/.env.example deploy/.env
+./scripts/local/dev-up.sh
+./scripts/local/run-backend.sh
 ```
 
-For a host process pointed at the same Compose dependencies:
-
-```powershell
-$env:DOCUMENT_DATABASE_URL = "postgres://document_app:document_app_dev@localhost:5435/document_system?sslmode=disable"
-$env:DOCUMENT_REDIS_ADDR = "localhost:6380"
-$env:DOCUMENT_FILE_SERVICE_URL = "http://localhost:8082"
-$env:DOCUMENT_AI_GATEWAY_URL = "http://localhost:8086"
-$env:DOCUMENT_AI_GATEWAY_PROFILE_ID = "default-chat"
-go run ./cmd/server
-```
+For Document-only code changes, run service checks from `services/document`.
+The root `deploy/.env` values are the default local configuration source.
 
 Operational routes:
 
 ```text
 GET /healthz
 GET /readyz
-POST /mcp
 ```
 
 Both JSON responses use the project envelope: `{ "data": ..., "requestId": "..." }`.
@@ -91,7 +75,7 @@ jobs currently produce basic DOCX packages through the in-process Go generator.
 Generation jobs for `summer_peak_inspection` call AI Gateway for outline and
 section content and persist the generated outline, sections, section versions,
 progress, and events. The richer Pandoc/LibreOffice toolchain remains a future
-worker dependency and is not installed in the current service image.
+host-run worker dependency and is not required by the current service.
 
 | Method | Local path | Operation ID | Status |
 | --- | --- | --- | --- |
@@ -160,24 +144,9 @@ business IDs, and records operation logs with `requestSource=mcp` and
 `toolName=<tool>`. It does not directly access repositories, File object keys,
 MinIO, Qdrant, or model providers.
 
-The document process serves these tools over Streamable HTTP at
-`DOCUMENT_MCP_PATH` (default `/mcp`). The handler uses the project MCP Go SDK in
-stateless HTTP mode and maps `tools/list` / `tools/call` to the service-layer
-adapter above. A QA runtime example is:
-
-```env
-MCP_TRANSPORT=streamable_http
-MCP_SERVER_ALIAS=document
-MCP_SERVER_URL=http://document:8085/mcp
-# Must match DOCUMENT_MCP_SERVICE_TOKEN; default Compose sets that token to INTERNAL_SERVICE_TOKEN.
-MCP_SERVER_TOKEN=${INTERNAL_SERVICE_TOKEN}
-MCP_SERVER_TOKEN_HEADER=Authorization
-```
-
 `export_report_docx` uses the current basic DOCX report-file path. It must not
-be treated as Pandoc/LibreOffice rich DOCX support. Cross-service QA smoke and
-frontend report preview/download remain owned by their QA/frontend follow-up
-tasks.
+be treated as Pandoc/LibreOffice rich DOCX support. A remote MCP server wrapper
+and cross-service QA smoke are still pending on the shared MCP smoke work.
 
 ## Migrations
 

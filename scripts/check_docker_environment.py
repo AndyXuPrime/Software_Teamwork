@@ -34,9 +34,6 @@ OUTBOUND_PROXY_ENV_KEYS = (
 LOCALHOST_NO_PROXY_ENTRIES = ("localhost", "127.0.0.1", "::1")
 
 CHINA_IMAGES = {
-    "alpine runtime": "docker.m.daocloud.io/library/alpine:3.22",
-    "go builder": "docker.m.daocloud.io/library/golang:1.25-alpine",
-    "parser python": "docker.m.daocloud.io/library/python:3.12-slim",
     "postgres": "docker.m.daocloud.io/library/postgres:16-alpine",
     "redis": "docker.m.daocloud.io/library/redis:7-alpine",
     "qdrant": "docker.m.daocloud.io/qdrant/qdrant:v1.18.2",
@@ -45,9 +42,6 @@ CHINA_IMAGES = {
 }
 
 DEFAULT_IMAGES = {
-    "alpine runtime": "alpine:3.22",
-    "go builder": "golang:1.25-alpine",
-    "parser python": "python:3.12-slim",
     "postgres": "postgres:16-alpine",
     "redis": "redis:7-alpine",
     "qdrant": "qdrant/qdrant:v1.18.2",
@@ -56,9 +50,6 @@ DEFAULT_IMAGES = {
 }
 
 DOCKER_HUB_DIRECT_IMAGES = {
-    "alpine runtime": "registry-1.docker.io/library/alpine:3.22",
-    "go builder": "registry-1.docker.io/library/golang:1.25-alpine",
-    "parser python": "registry-1.docker.io/library/python:3.12-slim",
     "postgres": "registry-1.docker.io/library/postgres:16-alpine",
     "redis": "registry-1.docker.io/library/redis:7-alpine",
     "qdrant": "registry-1.docker.io/qdrant/qdrant:v1.18.2",
@@ -123,12 +114,12 @@ def main() -> int:
     print("\nRecommendation")
     if args.profile in ("china", "all"):
         print(
-            "- For mainland China, use deploy/.env.china.example as an explicit registry/package-source overlay."
+            "- For mainland China, keep the pinned *_IMAGE entries from deploy/.env.example."
         )
         print(
             "- Do not rely on docker.m.daocloud.io as a daemon registry-mirror unless manifest probes prove mirror-mode works."
         )
-    print("- Keep Go checksum verification enabled; do not use GO_DOCKER_GOSUMDB=off as a normal fix.")
+    print("- Keep root Compose infra-only; business services run on the host.")
     return 1 if failed else 0
 
 

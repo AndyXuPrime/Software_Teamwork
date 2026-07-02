@@ -127,7 +127,7 @@ func assertKnowledgeToolAvailable(t *testing.T, ctx context.Context, client *htt
 		t.Fatalf("decode knowledge bases: %v", err)
 	}
 	if len(envelope.Data) == 0 {
-		t.Skip("no knowledge bases available; seed-local required for RAG smoke")
+		t.Skip("no knowledge bases available; local seed required for RAG smoke")
 	}
 	return envelope.Data[0].ID
 }

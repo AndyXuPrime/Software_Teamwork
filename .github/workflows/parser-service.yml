@@ -34,7 +34,6 @@ jobs:
             const watched = new Set([
               'services/parser/pyproject.toml',
               'services/parser/uv.lock',
-              'services/parser/Dockerfile',
             ]);
 
             let files = [];

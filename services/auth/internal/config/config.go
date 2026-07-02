@@ -39,8 +39,8 @@ func Load() (Config, error) {
 		ServiceVersion:   stringValue("AUTH_SERVICE_VERSION", DefaultServiceVersion),
 		Environment:      stringValue("AUTH_ENV", DefaultEnvironment),
 		DatabaseURL:      strings.TrimSpace(os.Getenv("AUTH_DATABASE_URL")),
-		ServiceToken:     strings.TrimSpace(os.Getenv("AUTH_INTERNAL_SERVICE_TOKEN")),
-		TokenHashSecret:  strings.TrimSpace(os.Getenv("AUTH_TOKEN_HASH_SECRET")),
+		ServiceToken:     firstNonEmptyEnv("AUTH_INTERNAL_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
+		TokenHashSecret:  firstNonEmptyEnv("AUTH_TOKEN_HASH_SECRET", "TOKEN_HASH_SECRET"),
 		TokenKeyVersion:  stringValue("AUTH_TOKEN_HASH_KEY_VERSION", DefaultTokenKeyVersion),
 		DefaultRoleCode:  stringValue("AUTH_DEFAULT_ROLE_CODE", DefaultRoleCode),
 		SessionTTL:       DefaultSessionTTL,
@@ -102,6 +102,15 @@ func stringValue(key string, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func firstNonEmptyEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func parseDurationOrSeconds(raw string) (time.Duration, error) {

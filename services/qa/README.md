@@ -39,8 +39,10 @@ the command tool is disabled by default.
 
 ## Configuration
 
-Copy `.env.example` values into your process environment. The service does not
-load `.env` files and never stores tokens in source code.
+The normal local startup path is the repository root `deploy/.env` plus
+`./scripts/local/dev-up.sh` and `./scripts/local/run-backend.sh`. QA itself does
+not load `.env` files and never stores tokens in source code; service-local
+tests may set only the variables they need.
 
 AI Gateway variables:
 
@@ -301,92 +303,61 @@ Stop the REPL with `exit` or `q`, then press `Ctrl+C` in terminal A.
 | Tool list has no `echo` | `MCP_TRANSPORT` or `MCP_SERVER_URL` not set in the agent terminal. |
 | Agent lists `echo` but does not call it | Rephrase the request to explicitly ask for an echo tool call. |
 
-## PostgreSQL with Docker
+## Local Infra and PostgreSQL
 
-QA PostgreSQL runs in Docker (`postgres:16-alpine`) and schema changes are
-applied with [`goose`](https://github.com/pressly/goose) `v3.27.1`, matching the
-project technology baseline. Migrations are **not** mounted into
-`docker-entrypoint-initdb.d`; the one-shot `migrate` service runs `goose up`
-after PostgreSQL becomes healthy.
+QA stores state in PostgreSQL and uses Redis for coordination. The canonical
+local start path is the root infra baseline from `deploy/`, which brings up
+`postgres`, `redis`, `qdrant`, `minio`, and `minio-init`. QA itself then runs on
+the host with the pinned `goose@v3.27.1` migration command.
 
-Start only the database (typical for local `go run ./cmd/server`):
-
-```powershell
-.\scripts\docker-db-up.ps1
-```
+Start root infra and apply local migrations/seed from the repository root:
 
 ```bash
-./scripts/docker-db-up.sh
+cp deploy/.env.example deploy/.env
+./scripts/local/dev-up.sh
 ```
 
-Or manually:
-
-```powershell
-docker compose -f docker-compose.db.yml up -d --build postgres
-docker compose -f docker-compose.db.yml up --build migrate
-```
-
-Connection string (host port defaults to `5433`):
+Connection string:
 
 ```text
-postgres://qa_app:qa_app_dev@localhost:5433/qa_system?sslmode=disable
+postgres://qa_app:qa_app_dev@localhost:5432/qa_system?sslmode=disable
 ```
 
 Reset the local database volume and re-apply migrations:
 
-```powershell
-docker compose -f docker-compose.db.yml down -v
-.\scripts\docker-db-up.ps1
+```bash
+./scripts/local/stop-backend.sh
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env down -v
+./scripts/local/dev-up.sh
 ```
 
 Apply or inspect migrations on the host with the project-pinned `goose@v3.27.1` command:
 
 ```powershell
-$env:QA_DATABASE_URL = "postgres://qa_app:qa_app_dev@localhost:5433/qa_system?sslmode=disable"
+$env:QA_DATABASE_URL = "postgres://qa_app:qa_app_dev@localhost:5432/qa_system?sslmode=disable"
 go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres $env:QA_DATABASE_URL up
 go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres $env:QA_DATABASE_URL status
 ```
 
-Integration tests against the Docker database:
+Integration tests against the local infra database:
 
 ```powershell
-$env:QA_TEST_DATABASE_URL = "postgres://qa_app:qa_app_dev@localhost:5433/qa_system?sslmode=disable"
+$env:QA_TEST_DATABASE_URL = "postgres://qa_app:qa_app_dev@localhost:5432/qa_system?sslmode=disable"
 go test ./internal/repository/... -run TestDocumentedResourceRoundTrip -count=1
 ```
 
-## Run with Docker Compose
+## Run Host Process
 
-Start Auth PostgreSQL, QA PostgreSQL (+ goose migrate), Redis, Auth, QA and
-Gateway. QA expects AI Gateway on the same Compose network under the
-`ai-gateway` hostname; provider endpoints outside Docker should be configured
-inside AI Gateway, not by pointing QA at `host.docker.internal`:
+For normal local development, start QA together with the rest of the backend:
 
-```powershell
-$env:INTERNAL_SERVICE_TOKEN = [Environment]::GetEnvironmentVariable('INTERNAL_SERVICE_TOKEN', 'User')
-docker compose up -d --build
-```
-
-The full stack includes `docker-compose.db.yml` via Compose `include`; QA waits
-for the `migrate` job to finish before starting.
-
-If a local Docker registry mirror cannot pull the Go/Alpine build images, use
-the cached-image fallback after compiling a Linux binary on the host:
-
-```powershell
-$env:CGO_ENABLED = '0'; $env:GOOS = 'linux'; $env:GOARCH = 'amd64'
-go build -o bin/qa-server ./cmd/server
-Push-Location ../auth; go build -o bin/auth-server ./cmd/server; Pop-Location
-Push-Location ../gateway; go build -o bin/gateway-server ./cmd/server; Pop-Location
-$env:QA_DOCKERFILE = 'Dockerfile.host'
-$env:AUTH_DOCKERFILE = 'Dockerfile.host'
-$env:GATEWAY_DOCKERFILE = 'Dockerfile.host'
-docker compose up -d --build
+```bash
+./scripts/local/run-backend.sh
 ```
 
 Verify public readiness:
 
-```powershell
-Invoke-RestMethod http://localhost:8080/readyz
+```bash
+curl --noproxy '*' -fsS http://localhost:8084/readyz
 ```
 
 Regenerate sqlc code after changing query files:

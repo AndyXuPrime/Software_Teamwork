@@ -101,6 +101,19 @@ func TestLoadParsesEnvironment(t *testing.T) {
 	}
 }
 
+func TestLoadUsesSharedTokenEnvironment(t *testing.T) {
+	t.Setenv("TOKEN_HASH_SECRET", "shared-hash-secret")
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "shared-service-token")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.TokenHashSecret != "shared-hash-secret" || cfg.InternalServiceToken != "shared-service-token" {
+		t.Fatalf("shared token config = %+v", cfg)
+	}
+}
+
 func TestLoadRejectsInvalidValues(t *testing.T) {
 	tests := []struct {
 		name string
