@@ -25,6 +25,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   formatGatewayCapabilityError,
   getGatewayCapabilityIssue,
   useCreateKnowledgeBase,
@@ -331,18 +338,21 @@ export function KnowledgeManagement() {
                 className="pl-8"
               />
             </div>
-            <select
-              value={docTypeFilter}
-              onChange={(e) => handleDocTypeFilter(e.target.value)}
-              className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+            <Select
+              value={docTypeFilter || undefined}
+              onValueChange={(v) => handleDocTypeFilter(String(v))}
             >
-              <option value="">全部类型</option>
-              {DOC_TYPE_OPTIONS.map((dt) => (
-                <option key={dt} value={dt}>
-                  {dt}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-8 w-auto min-w-[120px]">
+                <SelectValue placeholder="全部类型" />
+              </SelectTrigger>
+              <SelectContent>
+                {DOC_TYPE_OPTIONS.map((dt) => (
+                  <SelectItem key={dt} value={dt}>
+                    {dt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Filter limitation notice */}
@@ -551,18 +561,18 @@ export function KnowledgeManagement() {
               >
                 文档类型
               </label>
-              <select
-                id="kb-create-doctype"
-                value={form.docType}
-                onChange={(e) => updateField('docType', e.target.value)}
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
-              >
-                {DOC_TYPE_OPTIONS.map((dt) => (
-                  <option key={dt} value={dt}>
-                    {dt}
-                  </option>
-                ))}
-              </select>
+              <Select value={form.docType} onValueChange={(v) => updateField('docType', String(v))}>
+                <SelectTrigger id="kb-create-doctype" className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DOC_TYPE_OPTIONS.map((dt) => (
+                    <SelectItem key={dt} value={dt}>
+                      {dt}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Retrieval Strategy */}
@@ -573,18 +583,21 @@ export function KnowledgeManagement() {
               >
                 检索策略
               </label>
-              <select
-                id="kb-create-retrieval"
+              <Select
                 value={form.retrievalMode}
-                onChange={(e) => updateField('retrievalMode', e.target.value)}
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                onValueChange={(v) => updateField('retrievalMode', String(v))}
               >
-                {RETRIEVAL_MODE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="kb-create-retrieval" className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RETRIEVAL_MODE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -653,18 +666,18 @@ export function KnowledgeManagement() {
               >
                 文档类型
               </label>
-              <select
-                id="kb-edit-doctype"
-                value={form.docType}
-                onChange={(e) => updateField('docType', e.target.value)}
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
-              >
-                {DOC_TYPE_OPTIONS.map((dt) => (
-                  <option key={dt} value={dt}>
-                    {dt}
-                  </option>
-                ))}
-              </select>
+              <Select value={form.docType} onValueChange={(v) => updateField('docType', String(v))}>
+                <SelectTrigger id="kb-edit-doctype" className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DOC_TYPE_OPTIONS.map((dt) => (
+                    <SelectItem key={dt} value={dt}>
+                      {dt}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Retrieval Strategy */}
@@ -675,18 +688,21 @@ export function KnowledgeManagement() {
               >
                 检索策略
               </label>
-              <select
-                id="kb-edit-retrieval"
+              <Select
                 value={form.retrievalMode}
-                onChange={(e) => updateField('retrievalMode', e.target.value)}
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                onValueChange={(v) => updateField('retrievalMode', String(v))}
               >
-                {RETRIEVAL_MODE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="kb-edit-retrieval" className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RETRIEVAL_MODE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
