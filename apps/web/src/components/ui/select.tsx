@@ -21,7 +21,7 @@ function SelectTrigger({ className, children, ...props }: SelectPrimitive.Trigge
       {...props}
     >
       {children}
-      <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform duration-300 [&[data-popup-open]]:rotate-180" />
+      <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform duration-300 [[data-popup-open]_&]:rotate-180" />
     </SelectPrimitive.Trigger>
   )
 }
