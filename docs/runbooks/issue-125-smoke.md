@@ -58,6 +58,25 @@ Run the Auth/Gateway/Redis baseline:
 bash scripts/run_issue_125_smoke.sh --auth
 ```
 
+Run the full issue #352 Auth/Gateway/Redis smoke, including infra startup,
+Auth migration apply, host-run Auth/Gateway processes, Gateway user creation,
+Redis token-cache safety, logout invalidation, and fake owner-service header
+capture:
+
+```bash
+bash scripts/run_issue_125_smoke.sh --auth-full
+# equivalent:
+bash scripts/run_issue_352_smoke.sh
+```
+
+The full smoke starts only `postgres` and `redis` from the root Compose file.
+Business services still run on the host. If Docker is unavailable, image pulls
+are blocked, PostgreSQL/Redis never become healthy, or Go is unavailable, the
+script exits with a `blocked:` reason instead of reporting a business failure.
+Optional CI is available through the manual workflow
+`Auth Gateway Redis Smoke` (`.github/workflows/auth-gateway-redis-smoke.yml`);
+it is not a required PR check.
+
 Run File owner-service E2E:
 
 ```bash
@@ -121,6 +140,7 @@ bash scripts/run_issue_125_smoke.sh --all
 | Slice | Gate | Verifies |
 | --- | --- | --- |
 | Auth/Gateway/Redis | `AUTH_GATEWAY_REDIS_SMOKE=1` | Gateway login, `/users/me`, spoofed header rejection, logout invalidation, Redis `gateway:session:*` TTL/value safety. |
+| Auth/Gateway/Redis full | `AUTH_GATEWAY_REDIS_FULL_SMOKE=1` | Auth migration apply, host-run Auth/Gateway startup, Gateway `POST /api/v1/users`, `/api/v1/sessions`, `/api/v1/users/me`, logout invalidation, Redis TTL/value/token safety, and fake owner capture of Gateway-injected `X-Caller-Service`, `X-Service-Token`, `X-User-Id`, roles, and permissions. |
 | File owner E2E | `FILE_OWNER_E2E_SMOKE=1` | Gateway -> Knowledge -> File upload/read, Gateway -> Document read paths, File internal missing-token rejection, optional File dependency failure envelope, and public-response no-leak checks. |
 | QA MCP RAG | `QA_MCP_RAG_SMOKE=1` | Knowledge tool availability, QA SSE `tool.completed` / `citation.delta` / `answer.completed`, safe tool-call summary, citation snapshots, final answer evidence. |
 | Document REST | `DOCUMENT_REST_SMOKE=1` | Gateway -> Document report type/report/outlines routes, 404 envelope, and no-leak checks. |
@@ -142,6 +162,8 @@ bash scripts/run_issue_125_smoke.sh --all
 | Stage | Likely failure | Action |
 | --- | --- | --- |
 | Auth/Gateway/Redis | `redis is not reachable` | Check `docker compose ps redis`, `GATEWAY_REDIS_ADDR`, and `NO_PROXY`. |
+| Auth/Gateway/Redis full | `blocked: auth migration apply failed` | Check PostgreSQL is healthy, `AUTH_GATEWAY_REDIS_DATABASE_URL` points at the Auth database, and `deploy/postgres/init/001-create-databases.sql` ran for a fresh volume. |
+| Auth/Gateway/Redis full | `blocked: postgres/redis infrastructure did not become healthy` | Check Docker daemon state, registry rewrite/image pulls, and `docker compose -f deploy/docker-compose.yml --env-file deploy/.env ps`. |
 | File owner | `no knowledge bases available` | Run local seed or create a knowledge base through Gateway first. |
 | Parser/Knowledge | Parser dependency preparation or startup fails | Check `.local/logs/parser.log`, `UV_DEFAULT_INDEX`, and Parser runtime prerequisites; record the blocked dependency if it cannot be prepared. |
 | QA RAG | AI Gateway/provider unavailable | Check #234 profile seed/provider setup; placeholder profiles are not real provider proof. |

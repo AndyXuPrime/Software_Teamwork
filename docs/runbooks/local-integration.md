@@ -12,6 +12,8 @@ Docker infra -> host backend -> frontend
 Issue #125 的 MCP 与跨服务 smoke 汇总入口见
 [`Issue #125 MCP and Cross-Service Smoke`](./issue-125-smoke.md)。只有对应 slice
 在当前环境实际通过后，才能在 PR 或验收记录中声明完整跨服务 smoke 通过。
+Auth/Gateway/Redis 的完整本地 smoke 可直接执行：
+`bash scripts/run_issue_352_smoke.sh`。
 
 ## 启动命令
 

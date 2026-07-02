@@ -30,7 +30,7 @@
 | 契约对齐 | guarded / partial | route matrix 覆盖 103 个 active operations，并校验 method/path/owner/operationId 与 OpenAPI 一致；admin parser-configs、Knowledge document lifecycle、chunks、content 和 knowledge-queries 已转为 owner proxy；当前 Gateway route matrix 不再为 Knowledge active routes 返回阶段性 501。 |
 | 数据持久化 | redis / none | Gateway 不持久化业务数据库；使用 Redis 保存 session cache。 |
 | 测试状态 | partial | 单元测试覆盖 route matrix、QA active OpenAPI schema contract、auth proxy、headers、binary/SSE proxy、中间件和 metrics middleware；缺真实 Redis/downstream 集成测试。 |
-| 建议动作 | 联调 / 复核 | 补真实 Redis、auth 和 owner services 端到端联调验证。 |
+| 建议动作 | 联调 / 复核 | Auth/Gateway/Redis full smoke 已脚本化；继续补真实 owner services 端到端联调验证。 |
 
 ## 3. 已实现
 
@@ -56,7 +56,7 @@
 | 缺口 | 文档来源 | 影响范围 | 建议任务 |
 | --- | --- | --- | --- |
 | 管理概览/跨服务指标聚合路由待实现 | OpenAPI active paths 已定义 | backend / deploy | 契约已补齐，路由注册由单独后端 issue 追踪。 |
-| 完整跨服务 smoke 未一键化 | README / deploy expectation | deploy / integration | `/readyz` 不承担完整业务链路验证；#125 承担跨服务 smoke，#352 承担 Auth/Gateway/Redis smoke 脚本化。 |
+| 真实 owner service 跨服务 smoke 仍需按 slice 验证 | README / deploy expectation | deploy / integration | `/readyz` 不承担完整业务链路验证；#125 承担跨服务 smoke 汇总，#352 的 Auth/Gateway/Redis full smoke 已由 `scripts/run_issue_352_smoke.sh` 脚本化，并提供手动 optional workflow。 |
 
 ## 5. 文档与实现出入
 
@@ -88,7 +88,7 @@
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
 | 单元测试 | `cd services/gateway && go test ./...` | pass（既有记录，2026-06-30；本轮文档审计未重跑） | 不覆盖真实 Redis/downstreams。 |
-| 集成测试 | Gateway + Redis + Auth smoke；Gateway -> owner service smoke | partial / missing | #352 负责 Auth/Gateway/Redis 脚本化；#125 负责更完整的跨服务 smoke。 |
+| 集成测试 | Gateway + Redis + Auth smoke；Gateway -> owner service smoke | partial | `bash scripts/run_issue_352_smoke.sh` 或手动 workflow `Auth Gateway Redis Smoke` 可执行 Auth/Gateway/Redis full smoke；#125 继续负责更完整的 owner service 跨服务 smoke。 |
 | 契约测试 | `TestActiveRouteMatrixCoversGatewayOwnerMap`、`TestQAActiveOpenAPIContractsHaveSchemasAndAuth`、`TestQAInternalOpenAPIRefsCoverGatewayActivePaths`、`TestQASseEventSchemaCoversSafePublicEvents`、`TestNotImplementedRoutesReturnStableGatewayError`、`TestGatewayDoesNotImportBusinessInfrastructureClients` | QA schema subset pass（2026-07-01，本地 `go test ./internal/http -run QA`）；全量记录需随 PR 前检查更新 | 仍不覆盖真实 Redis/downstreams。 |
 | 手工 smoke | 登录、访问 knowledge/report/qa route | not run | 需要完整依赖环境。 |
 

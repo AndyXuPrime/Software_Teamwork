@@ -30,7 +30,7 @@
 | 契约对齐 | aligned | Auth 内部 routes 与服务 OpenAPI 主体一致；Gateway 公开 auth routes 已有专门 handler。 |
 | 数据持久化 | postgres | `AUTH_DATABASE_URL` 配置后使用 PostgreSQL；无 memory runtime。 |
 | 测试状态 | covered | config、repository mapping、service crypto/session、HTTP handler 测试存在。 |
-| 建议动作 | 联调 / 回写文档 | 保留 DB migration smoke 记录，补 Gateway/Auth/Redis 端到端 smoke 和初始化管理员账号说明；清理 README 中已过时的“代码未落地”描述。 |
+| 建议动作 | 联调 / 回写文档 | 保留 DB migration smoke 记录；Gateway/Auth/Redis full smoke 已脚本化，初始化管理员账号说明仍需继续完善。 |
 
 ## 3. 已实现
 
@@ -50,7 +50,7 @@
 | 缺口 | 文档来源 | 影响范围 | 建议任务 |
 | --- | --- | --- | --- |
 | 初始化管理员账号流程未形成公开 smoke | `docs/requirements-analysis/overall-requirements-analysis.md` | deploy / auth | 待确认：补 seed/admin bootstrap 文档或命令。 |
-| Gateway/Auth/Redis 端到端 smoke 未在当前基线证明 | Gateway/Auth README | integration | 待确认：补登录、session cache、`/users/me` 端到端脚本或 runbook。 |
+| Gateway/Auth/Redis 端到端 smoke 未进入默认 required CI | Gateway/Auth README | integration | 已新增 `bash scripts/run_issue_352_smoke.sh` 本地入口和手动 optional workflow；真实执行需要 Docker daemon、PostgreSQL、Redis 和 host-run 进程，不作为 required CI。 |
 | 限流/风控不在当前代码范围 | Auth README 安全事件扩展 | security | 待确认：作为后续增强。 |
 
 ## 5. 文档与实现出入
@@ -85,13 +85,13 @@
 | 单元测试 | `cd services/auth && go test ./...` | pass（既有记录，2026-06-30；本轮文档审计未重跑） | 无。 |
 | 集成测试 | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up` | pass（2026-07-01，本地 Docker PostgreSQL 16，迁移到 version 3） | 未跑 gateway 端到端 smoke。 |
 | 契约测试 | HTTP handler tests + Gateway auth proxy tests | partial | 未从 OpenAPI 自动生成校验。 |
-| 手工 smoke | 注册、登录、`/users/me` through gateway | not run | 需要 gateway + Redis + auth。 |
+| 本地 / optional CI smoke | `bash scripts/run_issue_352_smoke.sh`；手动 workflow `Auth Gateway Redis Smoke` | available（env-gated；执行会 apply Auth migration、启动 Auth/Gateway、验证 Redis 和 fake owner header capture） | 真实执行需要 Docker daemon、PostgreSQL、Redis 和 Go；默认 PR CI 只跑 skip 编译。 |
 
 ## 9. 建议任务
 
 | 任务 | 类型 | 优先级 | 依据 | 说明 |
 | --- | --- | --- | --- | --- |
-| 补 Gateway/Auth/Redis 端到端 smoke | 新任务 | P0 | Auth 是 gateway 鉴权上游 | 验证 migrations、seed roles、create session、gateway session cache 和 `/users/me`。 |
+| 补 Gateway/Auth/Redis 端到端 smoke | 已脚本化 | P0 | Auth 是 gateway 鉴权上游 | `scripts/run_issue_352_smoke.sh` 验证 Auth migration apply、Gateway create user/session、session cache、`/users/me`、logout、Redis 脱敏和 fake owner header capture；已提供手动 optional CI。 |
 | 补管理员账号初始化说明 | 新任务 | P1 | 管理端需要管理员身份 | 形成本地和演示环境 bootstrap。 |
 | 保持 pgx v5 基线 | 维护约束 | P1 | Auth 已与其他 PostgreSQL 服务统一到 pgx/v5 | 后续升级 pgx 或 sqlc 时同步更新技术基线和服务文档。 |
 
