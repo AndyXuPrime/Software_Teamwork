@@ -79,6 +79,7 @@ minio-data/
 *.tar.gz
 
 # Local runtime artifacts
+/.local/
 .worktrees/
 legacy-runtime-data/
 tmp/

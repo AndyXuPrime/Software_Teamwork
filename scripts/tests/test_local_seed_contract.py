@@ -34,6 +34,7 @@ class LocalSeedContractTests(unittest.TestCase):
                 "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple\n",
                 encoding="utf-8",
             )
+            (root / ".gitignore").write_text("/.local/\n*.pid\n", encoding="utf-8")
             (root / "services" / "parser").mkdir(parents=True)
             (root / "services" / "parser" / "uv.lock").write_text(
                 'source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }\n'
@@ -108,6 +109,14 @@ class LocalSeedContractTests(unittest.TestCase):
 
         self.assertIssueContains(issues, "https://pypi.org/simple")
         self.assertIssueContains(issues, "https://files.pythonhosted.org")
+
+    def test_verifier_reports_missing_local_runtime_gitignore(self) -> None:
+        verifier = load_verifier()
+
+        issues = verifier.validate_gitignore("*.pid\n*.log\n")
+
+        self.assertIssueContains(issues, ".gitignore")
+        self.assertIssueContains(issues, "/.local/")
 
     def test_verifier_reports_container_only_ai_gateway_seed_url(self) -> None:
         verifier = load_verifier()

@@ -166,8 +166,9 @@ cd apps/web && bun run dev
 脚本不会创建、改写或维护另一套默认变量，只会读取 `deploy/.env` 让宿主机进程拿到配置。
 默认 demo 管理员账号来自 `deploy/.env.example`：`admin` / `LocalDemoAdmin#12345`。
 `UV_DEFAULT_INDEX` 也在这份文件里，默认使用清华 PyPI 镜像加速 Parser 首次准备
-PaddleOCR 依赖；它影响 uv，不影响 Docker。第一次启动仍会下载几十个 OCR 依赖包，
-之后会走 uv 缓存。
+PaddleOCR 依赖；它影响 uv，不影响 Docker。Parser 的 `uv.lock` 同样锁到清华源，
+`uv sync --frozen` 会按锁文件里的 URL 下载包，不能靠删除 `UV_DEFAULT_INDEX` 切回
+官方 PyPI。第一次启动仍会下载几十个 OCR 依赖包，之后会走 uv 缓存。
 
 `./scripts/local/dev-up.sh` 会拉取并启动 `postgres`、`redis`、`qdrant`、`minio`、
 `minio-init`，等待基础设施健康后创建/校验 Knowledge 的 Qdrant collection，
