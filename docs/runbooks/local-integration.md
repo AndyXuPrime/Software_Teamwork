@@ -59,7 +59,7 @@ curl --noproxy '*' -fsS http://localhost:8080/readyz
 
 ## 谁负责什么
 
-- `dev-up.sh`：infra pull/up、migration、demo seed。
+- `dev-up.sh`：infra pull/up、等待 Compose health checks、migration、demo seed。
 - `run-backend.sh`：Parser uv 依赖准备、后端进程启动、日志和 PID。uv 的 Python
   包索引来自 `deploy/.env` 里的 `UV_DEFAULT_INDEX`，不走 Docker 镜像源。
 - `stop-backend.sh`：停止 `.local/run/` 中记录的后端进程。
@@ -78,6 +78,8 @@ Parser uv 依赖慢：
 - 默认保留 `deploy/.env.example` 里的 `UV_DEFAULT_INDEX`。
 - 如果公司网络只能访问 PyPI 或自建源，改 `deploy/.env` 里的 `UV_DEFAULT_INDEX`。
 - uv 下载的是 Python 包；Docker registry rewrite 不影响它。
+- 第一次准备 PaddleOCR extra 会下载几十个包；确认 `services/parser/uv.lock`
+  里的 URL 也是清华源，而不是 `pypi.org` 或 `files.pythonhosted.org`。
 
 后端没起来：
 

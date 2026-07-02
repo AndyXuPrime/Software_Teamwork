@@ -166,10 +166,11 @@ cd apps/web && bun run dev
 脚本不会创建、改写或维护另一套默认变量，只会读取 `deploy/.env` 让宿主机进程拿到配置。
 默认 demo 管理员账号来自 `deploy/.env.example`：`admin` / `LocalDemoAdmin#12345`。
 `UV_DEFAULT_INDEX` 也在这份文件里，默认使用清华 PyPI 镜像加速 Parser 首次准备
-PaddleOCR 依赖；它影响 uv，不影响 Docker。
+PaddleOCR 依赖；它影响 uv，不影响 Docker。第一次启动仍会下载几十个 OCR 依赖包，
+之后会走 uv 缓存。
 
 `./scripts/local/dev-up.sh` 会拉取并启动 `postgres`、`redis`、`qdrant`、`minio`、
-`minio-init`，然后执行本机 migration 和 demo seed。
+`minio-init`，等待基础设施健康后执行本机 migration 和 demo seed。
 `./scripts/local/run-backend.sh` 会启动 `auth`、`file`、`parser`、`knowledge`、
 `ai-gateway`、`qa`、`document` 和 `gateway`，日志在 `.local/logs/`。
 

@@ -865,6 +865,9 @@ Rules:
   probes with `--profile all --clean-env`.
 - Docker policy docs/spec changes, including `deploy/README.md`, should trigger
   the lightweight policy checker even when Compose itself did not change.
+- Local startup scripts and local seed contract files must trigger Docker/deploy
+  checks. The policy job must run shell syntax checks for `scripts/local/*.sh`
+  and `python3 scripts/verify_local_seed_contract.py`.
 - Business-service Docker artifacts must not be introduced into the current
   repository baseline.
 
@@ -878,8 +881,8 @@ infrastructure. Business services run on the host.
 Required local sequence:
 
 1. Copy local defaults with `cp deploy/.env.example deploy/.env`.
-2. Run `./scripts/local/dev-up.sh` to pull/start infra, apply host migrations,
-   and apply local seed.
+2. Run `./scripts/local/dev-up.sh` to pull/start infra, wait for health, apply
+   host migrations, and apply local seed.
 3. Run `./scripts/local/run-backend.sh` to start Auth, File, Parser, Knowledge,
    AI Gateway, QA, Document, and Gateway as host processes.
 4. Run `cd apps/web && bun install && bun run dev` for the frontend.
@@ -897,6 +900,9 @@ Runtime rules:
   package index for mainland China developer networks. It affects Python
   dependency downloads only; Docker registry rewrite remains the Compose image
   path.
+- Treat `services/parser/uv.lock` as part of the local startup contract because
+  `run-backend.sh` uses `uv sync --frozen`; Docker/deploy checks should run the
+  local seed/startup contract when that lock file changes.
 - Use named volumes for PostgreSQL, Qdrant, and MinIO persistence.
 - Keep frontend and browser traffic routed through Gateway.
 - Health checks for infra stay in Compose; service health checks are host-run

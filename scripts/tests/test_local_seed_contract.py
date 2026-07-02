@@ -34,6 +34,12 @@ class LocalSeedContractTests(unittest.TestCase):
                 "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple\n",
                 encoding="utf-8",
             )
+            (root / "services" / "parser").mkdir(parents=True)
+            (root / "services" / "parser" / "uv.lock").write_text(
+                'source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }\n'
+                "https://pypi.tuna.tsinghua.edu.cn/packages/example.whl\n",
+                encoding="utf-8",
+            )
             (root / "deploy" / "seeds" / "001-local-demo-seed.sql").write_text(
                 "\\connect auth_system\nINSERT INTO auth_users (id) VALUES ('usr_local_admin') ON CONFLICT (id) DO NOTHING;\n",
                 encoding="utf-8",
@@ -55,7 +61,7 @@ class LocalSeedContractTests(unittest.TestCase):
             )
             (root / "scripts" / "local").mkdir(parents=True)
             (root / "scripts" / "local" / "dev-up.sh").write_text(
-                "goose@v3.27.1\npsql\n001-local-demo-seed.sql\n",
+                "goose@v3.27.1\npsql\n001-local-demo-seed.sql\n--wait\n--wait-timeout\n",
                 encoding="utf-8",
             )
             (root / "scripts" / "local" / "run-backend.sh").write_text(
@@ -75,6 +81,17 @@ class LocalSeedContractTests(unittest.TestCase):
         self.assertIssueContains(issues, "22222222-2222-4222-8222-222222222301")
         self.assertIssueContains(issues, "33333333-3333-4333-8333-333333333301")
         self.assertIssueContains(issues, "AUTH_DATABASE_URL")
+
+    def test_verifier_reports_parser_lock_official_pypi_urls(self) -> None:
+        verifier = load_verifier()
+
+        issues = verifier.validate_parser_uv_lock(
+            'source = { registry = "https://pypi.org/simple" }\n'
+            "https://files.pythonhosted.org/packages/example.whl\n"
+        )
+
+        self.assertIssueContains(issues, "https://pypi.org/simple")
+        self.assertIssueContains(issues, "https://files.pythonhosted.org")
 
     def test_verifier_reports_missing_auth_qa_settings_permissions(self) -> None:
         verifier = load_verifier()
