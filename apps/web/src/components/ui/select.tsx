@@ -79,6 +79,14 @@ function SelectContent({
 }
 
 function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Props) {
+  // Auto-wrap plain text children in SelectItemText so SelectValue
+  // displays the label instead of the raw value (e.g. kb name vs kb id).
+  const content =
+    typeof children === 'string' ? (
+      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    ) : (
+      children
+    )
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
@@ -91,7 +99,7 @@ function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Prop
       <SelectPrimitive.ItemIndicator className="absolute right-2 flex size-4 items-center justify-center">
         <Check className="size-3.5" />
       </SelectPrimitive.ItemIndicator>
-      {children}
+      {content}
     </SelectPrimitive.Item>
   )
 }

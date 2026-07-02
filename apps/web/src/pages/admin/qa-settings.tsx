@@ -9,6 +9,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectItemText,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -679,12 +680,16 @@ export function QASettings() {
                   <SelectContent>
                     {showCurrentProfileFallback && (
                       <SelectItem value={llmForm.profileId}>
-                        当前配置：{llmForm.modelName || llmForm.profileId}
+                        <SelectItemText>
+                          当前配置：{llmForm.modelName || llmForm.profileId}
+                        </SelectItemText>
                       </SelectItem>
                     )}
                     {chatProfiles.map((profile) => (
                       <SelectItem key={profile.id} value={profile.id}>
-                        {profile.name} / {profile.model}
+                        <SelectItemText>
+                          {profile.name} / {profile.model}
+                        </SelectItemText>
                       </SelectItem>
                     ))}
                   </SelectContent>

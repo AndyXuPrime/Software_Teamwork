@@ -19,6 +19,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectItemText,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -754,7 +755,9 @@ export function ReportGeneratePage() {
                     <SelectContent>
                       {templates.map((template) => (
                         <SelectItem key={template.id} value={template.id}>
-                          {template.templateName} v{template.version}
+                          <SelectItemText>
+                            {template.templateName} v{template.version}
+                          </SelectItemText>
                         </SelectItem>
                       ))}
                     </SelectContent>

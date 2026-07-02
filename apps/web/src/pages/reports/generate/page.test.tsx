@@ -1,4 +1,5 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ModelProfile, UserSummary } from '@/lib/types'
@@ -526,11 +527,16 @@ describe('ReportGeneratePage', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     renderWithProviders(<ReportGeneratePage />)
+    const user = userEvent.setup()
 
-    await screen.findByRole('option', { name: '真实巡检报告' })
+    // Open the report-type Select and pick the first option
+    const reportTrigger = screen.getByText('请选择报告类型').closest('button')!
+    await user.click(reportTrigger)
+    const option = await screen.findByRole('option', { name: '真实巡检报告' })
+    await user.click(option)
     await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
 
-    fireEvent.click(screen.getByRole('button', { name: /创建草稿/ }))
+    await user.click(screen.getByRole('button', { name: /创建草稿/ }))
 
     expect(await screen.findByText(/Real report creation is not ready/)).toBeVisible()
     expect(screen.getByText(/req-create-501/)).toBeVisible()
@@ -583,18 +589,23 @@ describe('ReportGeneratePage', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     renderWithProviders(<ReportGeneratePage />)
+    const user = userEvent.setup()
 
-    await screen.findByRole('option', { name: '真实巡检报告' })
+    // Open the report-type Select and pick the first option
+    const reportTrigger = screen.getByText('请选择报告类型').closest('button')!
+    await user.click(reportTrigger)
+    const reportOption = await screen.findByRole('option', { name: '真实巡检报告' })
+    await user.click(reportOption)
     await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
 
-    fireEvent.click(screen.getByRole('button', { name: /创建草稿/ }))
+    await user.click(screen.getByRole('button', { name: /创建草稿/ }))
 
     expect(await screen.findByText(/Outline job dependency down/)).toBeVisible()
     expect(screen.getByText(/req-job/)).toBeVisible()
     expect(await screen.findByText(/已保留报告草稿/)).toBeVisible()
     expect(screen.getByRole('button', { name: /复用草稿生成大纲/ })).toBeEnabled()
 
-    fireEvent.click(screen.getByRole('button', { name: /复用草稿生成大纲/ }))
+    await user.click(screen.getByRole('button', { name: /复用草稿生成大纲/ }))
 
     await waitFor(() => expect(jobCreatePaths).toHaveLength(2))
     expect(reportCreatePaths).toHaveLength(1)

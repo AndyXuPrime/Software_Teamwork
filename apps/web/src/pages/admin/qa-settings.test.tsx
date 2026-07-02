@@ -1,4 +1,5 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ModelProfile } from '@/lib/types'
@@ -115,19 +116,23 @@ describe('QASettings', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     renderWithProviders(<QASettings />)
+    const user = userEvent.setup()
 
-    const modelSelect = await screen.findByLabelText('聊天模型')
+    const modelTrigger = await screen.findByLabelText('聊天模型')
     expect(screen.getAllByText('生效中')).toHaveLength(2)
     expect(screen.queryByText('llm-current-internal-id')).not.toBeInTheDocument()
     expect(screen.queryByText('版本 6')).not.toBeInTheDocument()
 
-    fireEvent.change(modelSelect, { target: { value: 'mp_a27b266bfc922ff8995f5935' } })
+    // Open the Select popup, find the chat profile option, and click it
+    await user.click(modelTrigger)
+    const profileOption = await screen.findByRole('option', {
+      name: /主聊天模型 \/ gpt-5\.5/,
+    })
+    // Use pointer down + up sequence to simulate real click on base-ui option
+    await user.pointer({ keys: '[MouseLeft]', target: profileOption })
 
-    expect(screen.getByText('mp_a27b266bfc922ff8995f5935')).toBeVisible()
-    expect(screen.getByDisplayValue('gpt-5.5')).toBeVisible()
-
-    fireEvent.click(screen.getByRole('button', { name: '测试连接' }))
-    fireEvent.click(screen.getByRole('button', { name: '发布配置' }))
+    await user.click(screen.getByRole('button', { name: '测试连接' }))
+    await user.click(screen.getByRole('button', { name: '发布配置' }))
 
     await waitFor(() => expect(postBodies).toHaveLength(2))
     expect(postBodies[0]).toEqual({
