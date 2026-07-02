@@ -39,7 +39,7 @@
 | --- | --- | --- | --- | --- |
 | 健康/就绪检查 | `services/qa/internal/http/server.go` | `docs/services/qa/api/internal.openapi.yaml` | `cd services/qa && go test ./...` | `/readyz` 使用 repo ping。 |
 | QA session CRUD | `services/qa/internal/http/server.go`、`internal/service/qa.go` | Gateway OpenAPI QA paths | HTTP/service tests | 创建、列表、详情、更新、删除。 |
-| QA owner authorization | `internal/repository/postgres.go`、`internal/repository/resources_postgres.go` | Gateway OpenAPI QA `403`/`404` responses | HTTP/service tests；PostgreSQL integration test gated by `QA_TEST_DATABASE_URL` | 有效非 owner session 的详情、更新、删除返回 `403`；message/run/citation 子资源按契约执行 owner 过滤与隐藏。 |
+| QA owner authorization | `internal/repository/postgres.go`、`internal/repository/resources_postgres.go` | Gateway OpenAPI QA `403`/`404` responses / [QA 权限矩阵](permission-matrix.md) | HTTP/service tests；PostgreSQL integration test gated by `QA_TEST_DATABASE_URL` | 会话、message、run 和 citation 子资源按矩阵执行 owner 过滤与隐藏。 |
 | 消息创建与 SSE | `services/qa/internal/http/server.go`、`internal/service/qa.go` | Gateway OpenAPI | `TestStreamUsesContractEventNames`、`TestAskSSEPayloadsDoNotLeakPromptRawToolOrProviderSecrets` | 支持 `Accept: text/event-stream`，fake-backed 测试覆盖 prompt、私有 chain-of-thought、原始工具结果、provider 原始错误、内部 URL 和 object key 不进入 SSE payload。 |
 | SSE heartbeat/replay safeguards | `services/qa/internal/http/server.go`、`internal/service/qa.go`、`internal/repository` | #92 / #321 | SSE/service/repository tests | 支持 heartbeat、事件回放边界、取消后 replay record 保留和 event id 语义保护。 |
 | response runs / tool calls / citations | `services/qa/internal/http/resource_handlers.go`、`internal/service/resources.go` | Gateway OpenAPI | service/repository tests | 返回脱敏资源摘要。 |
@@ -76,7 +76,7 @@
 
 ## 6. QA 报告生成工具产物契约
 
-`reportArtifact` 是 QA 面向前端的报告生成产物摘要，权威 schema 在 Gateway OpenAPI `QAReportArtifact`。QA 后端在后续注册 Document 报告生成工具时，应把 Document MCP tool result 映射为该结构，并只写入以下公开位置：
+`reportArtifact` 是 QA 面向前端的报告生成产物摘要，权威 schema 在 Gateway OpenAPI `QAReportArtifact`。QA 后端把 Document MCP tool result 映射为该结构，并只写入以下公开位置：
 
 - SSE `tool.completed` / `tool.failed` 事件的 `payload.result.reportArtifact`。
 - `agent_tool_calls.result_summary.reportArtifact`，供 `GET /api/v1/response-runs/{responseRunId}/tool-calls` 回放。
