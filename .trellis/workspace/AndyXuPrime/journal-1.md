@@ -1063,7 +1063,7 @@ Rebased PR #404 branch onto latest upstream/develop d5e2e94, resolved docs/testi
 
 ### Summary
 
-Completed T-015/#549 regression verification: added the archived security URL boundary test report, strengthened Gateway Auth missing-host URL coverage, verified alerts 17/18/39 as fixed, created PR #587, and updated issue #549 to Review/Low after dependencies closed.
+Completed T-015/#549 regression verification: added the archived security URL boundary test report, strengthened Gateway Auth missing-host URL coverage, verified alerts 17/18/39 as fixed, created PR #587, updated issue #549 to Review/Low after dependencies closed, and refreshed the report after rebasing onto upstream/develop @ 3e3565a6.
 
 ### Main Changes
 
@@ -1073,11 +1073,13 @@ Completed T-015/#549 regression verification: added the archived security URL bo
 
 | Hash | Message |
 |------|---------|
-| `19e5e326` | (see git log) |
+| `2a00cd7f` | test(security): add url boundary regression report |
+| `e83efaa8` | test(security): refresh develop verification |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] Rebased branch onto upstream/develop @ 3e3565a6.
+- [OK] Reran File, QA, Gateway, frontend check/unit, alert status queries, and `git diff --check` against the refreshed base.
 
 ### Status
 

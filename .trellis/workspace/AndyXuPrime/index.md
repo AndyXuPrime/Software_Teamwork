@@ -29,7 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
-| 30 | 2026-07-03 | Issue 549 security URL boundary regression | `19e5e326` | `Test/test/security-alert-url-boundary-regression` |
+| 30 | 2026-07-03 | Issue 549 security URL boundary regression | `2a00cd7f`, `e83efaa8` | `Test/test/security-alert-url-boundary-regression` |
 | 29 | 2026-07-01 | Review PR 404 readiness follow-up | `4e3a703` | `Special/test/real-provider-api-key-smoke` |
 | 28 | 2026-07-01 | S-042 AI Gateway real provider readiness | `8ec4388` | `Special/test/real-provider-api-key-smoke` |
 | 27 | 2026-07-01 | Review PR 350 against latest develop | - | `PrimeTeam/chore/pr-350-review-journal` |
