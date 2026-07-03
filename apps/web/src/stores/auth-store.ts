@@ -2,6 +2,7 @@ import { create } from 'zustand'
 
 import { createSession, createUserSession, deleteCurrentSession, getCurrentUser } from '@/api/auth'
 import { apiClient, ApiError } from '@/api/client'
+import { queryClient } from '@/app/query-client'
 import type { CreateSessionRequest, CreateUserRequest, UserSummary } from '@/lib/types'
 import { useChatStore } from '@/stores/chat-store'
 
@@ -36,8 +37,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   userName: null,
   clearSession: () => {
-    // Clear chat store first to avoid showing previous user's sessions
+    // Clear chat store and React Query cache first to avoid
+    // showing previous user's sessions on next login
     useChatStore.getState().reset()
+    queryClient.clear()
     apiClient.setToken(null)
     set({
       accessToken: null,
@@ -190,6 +193,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 apiClient.setAccessTokenProvider(() => useAuthStore.getState().accessToken ?? apiClient.getToken())
 apiClient.setUnauthorizedHandler(() => {
   useChatStore.getState().reset()
+  queryClient.clear()
   useAuthStore.setState({
     accessToken: null,
     error: null,

@@ -138,7 +138,9 @@ export const useChatStore = create<ChatState>()(
       setLastFailedMsg: (msg) => set({ lastFailedMsg: msg }),
 
       reset: () => {
-        useChatStore.persist.clearStorage()
+        // Clear persisted sessionIds so the next rehydrate starts empty
+        try { localStorage.removeItem('qa-sessions-ids') } catch { /* noop */ }
+        try { useChatStore.persist.clearStorage() } catch { /* noop */ }
         set({
           sessions: [],
           sessionIds: [],
