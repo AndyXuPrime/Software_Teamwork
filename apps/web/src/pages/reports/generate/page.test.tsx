@@ -154,7 +154,7 @@ describe('ReportGeneratePage', () => {
 
     // Open report type Select and pick another type
     fireEvent.click(screen.getAllByRole('combobox')[0]!)
-    const summerOption = await screen.findByRole('option', { name: /迎峰度夏检查报告/ })
+    const summerOption = await screen.findByRole('option', { name: '真实巡检报告' })
     fireEvent.click(summerOption)
 
     expect(await screen.findByDisplayValue('2026年迎峰度夏检查报告')).toBeVisible()
@@ -496,7 +496,12 @@ describe('ReportGeneratePage', () => {
 
     renderWithProviders(<ReportGeneratePage />)
 
+    // Open report type Select and pick the first option
+    const trigger = screen.getAllByRole('combobox')[0]!
+    await waitFor(() => expect(trigger).not.toBeDisabled())
+    fireEvent.click(trigger)
     await screen.findByRole('option', { name: '真实巡检报告' })
+    fireEvent.click(screen.getByRole('option', { name: '真实巡检报告' }))
     await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: /创建草稿/ }))
 
