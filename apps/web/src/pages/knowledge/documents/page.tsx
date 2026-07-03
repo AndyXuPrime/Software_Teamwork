@@ -570,6 +570,7 @@ export function KnowledgeDocumentsPage({
               />
               <Input
                 type="text"
+                maxLength={200}
                 placeholder="搜索文档名称或标签..."
                 value={keyword}
                 onChange={(e) => {
@@ -881,6 +882,7 @@ export function KnowledgeDocumentsPage({
               <Input
                 id="upload-tags"
                 type="text"
+                maxLength={500}
                 placeholder="例如: 规程, 安全, 2024"
                 value={uploadTags}
                 onChange={(e) => setUploadTags(e.target.value)}
@@ -930,6 +932,7 @@ export function KnowledgeDocumentsPage({
             <Input
               id="edit-doc-tags"
               type="text"
+              maxLength={500}
               placeholder="标签1, 标签2, 标签3"
               value={editTagsText}
               onChange={(e) => setEditTagsText(e.target.value)}

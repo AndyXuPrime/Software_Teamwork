@@ -189,6 +189,7 @@ export default function ChatSidebar({
             <input
               aria-label="搜索对话标题"
               className="h-9 w-full rounded-md border border-input bg-background py-2 pl-8 pr-8 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+              maxLength={200}
               placeholder="搜索对话标题"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -297,6 +298,8 @@ export default function ChatSidebar({
                     <input
                       ref={editInputRef}
                       className="min-w-0 flex-1 rounded border border-input bg-background px-1.5 py-0.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      minLength={1}
+                      maxLength={100}
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
                       onKeyDown={handleEditKeyDown}

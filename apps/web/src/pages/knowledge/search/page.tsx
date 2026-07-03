@@ -176,6 +176,7 @@ export function KnowledgeSearchPage() {
           />
           <Input
             type="text"
+            maxLength={500}
             placeholder="输入检索关键词或问题..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -369,6 +370,7 @@ export function KnowledgeSearchPage() {
             <Input
               id="search-tags"
               type="text"
+              maxLength={200}
               placeholder="例如: 规程, 安全"
               value={tagFilter}
               onChange={(e) => setTagFilter(e.target.value)}

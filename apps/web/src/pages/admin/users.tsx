@@ -331,6 +331,7 @@ export function AdminUsersPage() {
           <label className="space-y-1.5 text-sm">
             <span className="text-muted-foreground">用户名搜索</span>
             <Input
+              maxLength={200}
               placeholder="输入用户名"
               value={filters.username}
               onChange={(event) =>
@@ -648,6 +649,7 @@ export function AdminUsersPage() {
             <label className="space-y-1.5 text-sm sm:col-span-2">
               <span className="text-muted-foreground">电话</span>
               <Input
+                type="tel"
                 value={createForm.phone}
                 disabled={isMutating}
                 placeholder="可不填写"

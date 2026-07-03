@@ -194,6 +194,7 @@ export function LoginPage() {
                 autoComplete="username"
                 disabled={isSubmitting}
                 id="username"
+                maxLength={64}
                 placeholder=" "
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -224,6 +225,7 @@ export function LoginPage() {
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 disabled={isSubmitting}
                 id="password"
+                minLength={8}
                 placeholder=" "
                 type="password"
                 value={password}

@@ -485,17 +485,22 @@ export function QASettings() {
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">Top K</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={100}
                   value={qaForm.topK}
                   onChange={(event) => setQAForm({ ...qaForm, topK: event.target.value })}
-                  inputMode="numeric"
                 />
               </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">相似度阈值</span>
                 <Input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.01}
                   value={qaForm.scoreThreshold}
                   onChange={(event) => setQAForm({ ...qaForm, scoreThreshold: event.target.value })}
-                  inputMode="decimal"
                 />
               </label>
               <label className="flex items-center gap-2 rounded-lg border border-border p-3 text-sm">
@@ -510,57 +515,70 @@ export function QASettings() {
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">Rerank 阈值</span>
                 <Input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.01}
                   value={qaForm.rerankThreshold}
                   onChange={(event) =>
                     setQAForm({ ...qaForm, rerankThreshold: event.target.value })
                   }
-                  inputMode="decimal"
                 />
               </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">Rerank Top N</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={100}
                   value={qaForm.rerankTopN}
                   onChange={(event) => setQAForm({ ...qaForm, rerankTopN: event.target.value })}
-                  inputMode="numeric"
                 />
               </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">最大迭代次数</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={50}
                   value={qaForm.maxIterations}
                   onChange={(event) => setQAForm({ ...qaForm, maxIterations: event.target.value })}
-                  inputMode="numeric"
                 />
               </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">工具超时（秒）</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={600}
                   value={qaForm.toolTimeoutSeconds}
                   onChange={(event) =>
                     setQAForm({ ...qaForm, toolTimeoutSeconds: event.target.value })
                   }
-                  inputMode="numeric"
                 />
               </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">模型超时（秒）</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={600}
                   value={qaForm.modelTimeoutSeconds}
                   onChange={(event) =>
                     setQAForm({ ...qaForm, modelTimeoutSeconds: event.target.value })
                   }
-                  inputMode="numeric"
                 />
               </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">总超时（秒）</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={600}
                   value={qaForm.overallTimeoutSeconds}
                   onChange={(event) =>
                     setQAForm({ ...qaForm, overallTimeoutSeconds: event.target.value })
                   }
-                  inputMode="numeric"
                 />
               </label>
               <label className="flex items-center gap-2 rounded-lg border border-border p-3 text-sm">
@@ -578,6 +596,7 @@ export function QASettings() {
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">工具白名单</span>
                 <Textarea
+                  maxLength={5000}
                   value={qaForm.enabledToolNames}
                   onChange={(event) =>
                     setQAForm({ ...qaForm, enabledToolNames: event.target.value })
@@ -588,6 +607,7 @@ export function QASettings() {
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">默认知识库 ID</span>
                 <Textarea
+                  maxLength={2000}
                   value={qaForm.defaultKnowledgeBaseIds}
                   onChange={(event) =>
                     setQAForm({ ...qaForm, defaultKnowledgeBaseIds: event.target.value })
@@ -600,6 +620,7 @@ export function QASettings() {
             <label className="block space-y-1.5 text-sm">
               <span className="font-medium text-foreground">知识库配置 JSON</span>
               <Textarea
+                maxLength={10000}
                 value={qaForm.knowledgeBases}
                 onChange={(event) => setQAForm({ ...qaForm, knowledgeBases: event.target.value })}
                 className="min-h-36 font-mono text-xs"
@@ -727,30 +748,37 @@ export function QASettings() {
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">超时（秒）</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={600}
                   value={llmForm.timeoutSeconds}
                   onChange={(event) =>
                     setLLMForm({ ...llmForm, timeoutSeconds: event.target.value })
                   }
-                  inputMode="numeric"
                 />
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium text-foreground">温度</span>
                   <Input
+                    type="number"
+                    min={0}
+                    max={2}
+                    step={0.01}
                     value={llmForm.temperature}
                     onChange={(event) =>
                       setLLMForm({ ...llmForm, temperature: event.target.value })
                     }
-                    inputMode="decimal"
                   />
                 </label>
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium text-foreground">最大 Token 数</span>
                   <Input
+                    type="number"
+                    min={1}
+                    max={128000}
                     value={llmForm.maxTokens}
                     onChange={(event) => setLLMForm({ ...llmForm, maxTokens: event.target.value })}
-                    inputMode="numeric"
                   />
                 </label>
               </div>

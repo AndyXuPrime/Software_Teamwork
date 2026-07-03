@@ -196,6 +196,7 @@ export function SystemSettings() {
             <Input
               id="llm-profile-id"
               type="text"
+              maxLength={100}
               placeholder="model-profile-id"
               value={form.profileId}
               onChange={(e) => updateField('profileId', e.target.value)}
@@ -213,6 +214,7 @@ export function SystemSettings() {
             <Input
               id="llm-model-name"
               type="text"
+              maxLength={100}
               placeholder="gpt-4o"
               value={form.modelName}
               onChange={(e) => updateField('modelName', e.target.value)}

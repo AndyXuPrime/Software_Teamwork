@@ -210,6 +210,7 @@ function PaddleOCRCloudFields({
         <Input
           id={`pc-${mode}-paddleocr-base-url`}
           type="url"
+          maxLength={500}
           placeholder="https://paddleocr-api.example.com"
           value={form.paddleocrBaseUrl}
           onChange={(e) => updateField('paddleocrBaseUrl', e.target.value)}
@@ -226,6 +227,7 @@ function PaddleOCRCloudFields({
         <Input
           id={`pc-${mode}-paddleocr-access-token`}
           type="password"
+          maxLength={500}
           placeholder={mode === 'edit' ? '留空保持不变' : '请输入 API Token'}
           value={form.paddleocrAccessToken}
           onChange={(e) => updateField('paddleocrAccessToken', e.target.value)}
@@ -608,6 +610,7 @@ export function ParserConfigsPage() {
               <Input
                 id="pc-create-name"
                 type="text"
+                maxLength={100}
                 placeholder="解析器配置名称"
                 value={form.name}
                 onChange={(e) => updateField('name', e.target.value)}
@@ -670,6 +673,7 @@ export function ParserConfigsPage() {
                 <Input
                   id="pc-create-endpointurl"
                   type="url"
+                  maxLength={500}
                   placeholder="https://parser-api.example.com/v1"
                   value={form.endpointUrl}
                   onChange={(e) => updateField('endpointUrl', e.target.value)}
@@ -721,6 +725,7 @@ export function ParserConfigsPage() {
               <Input
                 id="pc-create-filetypes"
                 type="text"
+                maxLength={500}
                 placeholder="application/pdf, text/plain (逗号分隔)"
                 value={form.fileTypes}
                 onChange={(e) => updateField('fileTypes', e.target.value)}
@@ -741,6 +746,7 @@ export function ParserConfigsPage() {
                 type="number"
                 placeholder="512"
                 min={1}
+                max={100000}
                 value={form.chunkSize}
                 onChange={(e) => updateField('chunkSize', Math.max(1, Number(e.target.value) || 1))}
               />
@@ -759,6 +765,7 @@ export function ParserConfigsPage() {
                 type="number"
                 placeholder="64"
                 min={0}
+                max={100000}
                 value={form.chunkOverlap}
                 onChange={(e) =>
                   updateField('chunkOverlap', Math.max(0, Number(e.target.value) || 0))
@@ -777,6 +784,7 @@ export function ParserConfigsPage() {
               <Input
                 id="pc-create-separators"
                 type="text"
+                maxLength={500}
                 placeholder="\n\n, \n, 。(逗号分隔)"
                 value={form.separators}
                 onChange={(e) => updateField('separators', e.target.value)}
@@ -821,6 +829,7 @@ export function ParserConfigsPage() {
               <Input
                 id="pc-edit-name"
                 type="text"
+                maxLength={100}
                 placeholder="解析器配置名称"
                 value={form.name}
                 onChange={(e) => updateField('name', e.target.value)}
@@ -883,6 +892,7 @@ export function ParserConfigsPage() {
                 <Input
                   id="pc-edit-endpointurl"
                   type="url"
+                  maxLength={500}
                   placeholder="https://parser-api.example.com/v1"
                   value={form.endpointUrl}
                   onChange={(e) => updateField('endpointUrl', e.target.value)}
@@ -934,6 +944,7 @@ export function ParserConfigsPage() {
               <Input
                 id="pc-edit-filetypes"
                 type="text"
+                maxLength={500}
                 placeholder="application/pdf, text/plain (逗号分隔)"
                 value={form.fileTypes}
                 onChange={(e) => updateField('fileTypes', e.target.value)}
@@ -954,6 +965,7 @@ export function ParserConfigsPage() {
                 type="number"
                 placeholder="512"
                 min={1}
+                max={100000}
                 value={form.chunkSize}
                 onChange={(e) => updateField('chunkSize', Math.max(1, Number(e.target.value) || 1))}
               />
@@ -972,6 +984,7 @@ export function ParserConfigsPage() {
                 type="number"
                 placeholder="64"
                 min={0}
+                max={100000}
                 value={form.chunkOverlap}
                 onChange={(e) =>
                   updateField('chunkOverlap', Math.max(0, Number(e.target.value) || 0))
@@ -990,6 +1003,7 @@ export function ParserConfigsPage() {
               <Input
                 id="pc-edit-separators"
                 type="text"
+                maxLength={500}
                 placeholder="\n\n, \n, 。(逗号分隔)"
                 value={form.separators}
                 onChange={(e) => updateField('separators', e.target.value)}

@@ -453,6 +453,7 @@ export function ModelProfilesPage() {
               <Input
                 id="mp-create-name"
                 type="text"
+                maxLength={100}
                 placeholder="模型配置名称"
                 value={form.name}
                 onChange={(e) => updateField('name', e.target.value)}
@@ -524,6 +525,7 @@ export function ModelProfilesPage() {
               <Input
                 id="mp-create-baseurl"
                 type="url"
+                maxLength={500}
                 placeholder="https://api.example.com/v1"
                 value={form.baseUrl}
                 onChange={(e) => updateField('baseUrl', e.target.value)}
@@ -541,6 +543,7 @@ export function ModelProfilesPage() {
               <Input
                 id="mp-create-model"
                 type="text"
+                maxLength={100}
                 placeholder="gpt-4o"
                 value={form.model}
                 onChange={(e) => updateField('model', e.target.value)}
@@ -601,6 +604,7 @@ export function ModelProfilesPage() {
                   type="number"
                   placeholder="1536"
                   min={1}
+                  max={16384}
                   value={form.dimension || ''}
                   onChange={(e) =>
                     updateField('dimension', Math.max(0, Number(e.target.value) || 0))
@@ -623,6 +627,7 @@ export function ModelProfilesPage() {
                   type="number"
                   placeholder="3"
                   min={1}
+                  max={100}
                   value={form.topN || ''}
                   onChange={(e) => updateField('topN', Math.max(0, Number(e.target.value) || 0))}
                 />
@@ -640,6 +645,8 @@ export function ModelProfilesPage() {
               <Input
                 id="mp-create-apikey"
                 type="password"
+                minLength={8}
+                maxLength={500}
                 placeholder="sk-..."
                 value={form.apiKey}
                 onChange={(e) => updateField('apiKey', e.target.value)}
@@ -657,6 +664,8 @@ export function ModelProfilesPage() {
               <Input
                 id="mp-create-timeout"
                 type="number"
+                min={1000}
+                max={300000}
                 placeholder="60000"
                 value={form.timeoutMs}
                 onChange={(e) => updateField('timeoutMs', Math.max(1000, Number(e.target.value)))}
@@ -674,6 +683,7 @@ export function ModelProfilesPage() {
               <Input
                 id="mp-create-maxtokens"
                 type="number"
+                max={128000}
                 placeholder="0 表示不限制"
                 value={form.maxTokens}
                 onChange={(e) => updateField('maxTokens', Math.max(0, Number(e.target.value)))}
@@ -718,6 +728,7 @@ export function ModelProfilesPage() {
               <Input
                 id="mp-edit-name"
                 type="text"
+                maxLength={100}
                 placeholder="模型配置名称"
                 value={form.name}
                 onChange={(e) => updateField('name', e.target.value)}
@@ -779,6 +790,7 @@ export function ModelProfilesPage() {
               <Input
                 id="mp-edit-baseurl"
                 type="url"
+                maxLength={500}
                 placeholder="https://api.example.com/v1"
                 value={form.baseUrl}
                 onChange={(e) => updateField('baseUrl', e.target.value)}
@@ -796,6 +808,7 @@ export function ModelProfilesPage() {
               <Input
                 id="mp-edit-model"
                 type="text"
+                maxLength={100}
                 placeholder="gpt-4o"
                 value={form.model}
                 onChange={(e) => updateField('model', e.target.value)}
@@ -856,6 +869,7 @@ export function ModelProfilesPage() {
                   type="number"
                   placeholder="1536"
                   min={1}
+                  max={16384}
                   value={form.dimension || ''}
                   onChange={(e) =>
                     updateField('dimension', Math.max(0, Number(e.target.value) || 0))
@@ -878,6 +892,7 @@ export function ModelProfilesPage() {
                   type="number"
                   placeholder="3"
                   min={1}
+                  max={100}
                   value={form.topN || ''}
                   onChange={(e) => updateField('topN', Math.max(0, Number(e.target.value) || 0))}
                 />
@@ -895,6 +910,8 @@ export function ModelProfilesPage() {
               <Input
                 id="mp-edit-apikey"
                 type="password"
+                minLength={8}
+                maxLength={500}
                 placeholder="留空保持不变"
                 value={form.apiKey}
                 onChange={(e) => updateField('apiKey', e.target.value)}
@@ -915,6 +932,8 @@ export function ModelProfilesPage() {
               <Input
                 id="mp-edit-timeout"
                 type="number"
+                min={1000}
+                max={300000}
                 placeholder="60000"
                 value={form.timeoutMs}
                 onChange={(e) => updateField('timeoutMs', Math.max(1000, Number(e.target.value)))}
@@ -932,6 +951,7 @@ export function ModelProfilesPage() {
               <Input
                 id="mp-edit-maxtokens"
                 type="number"
+                max={128000}
                 placeholder="0 表示不限制"
                 value={form.maxTokens}
                 onChange={(e) => updateField('maxTokens', Math.max(0, Number(e.target.value)))}

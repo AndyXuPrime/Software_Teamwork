@@ -169,6 +169,7 @@ export default function ChatInput({
         <Textarea
           ref={textareaRef}
           aria-label="输入问题"
+          maxLength={10000}
           className={cn(
             'min-h-0 flex-1 resize-none border-0 bg-transparent p-0 placeholder:text-muted-foreground focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-60 md:text-sm',
             isLarge ? 'py-2 text-lg' : 'py-1 text-base',
