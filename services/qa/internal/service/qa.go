@@ -439,7 +439,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 	if err != nil {
 		return AskResult{}, err
 	}
-	baseCtx := WithUserID(ctx, userID)
+	baseCtx := WithUserID(context.WithoutCancel(ctx), userID)
 	baseCtx = contextutil.WithKnowledgeBaseIDs(baseCtx, input.KnowledgeBaseIDs)
 	baseCtx = contextutil.WithDefaultKnowledgeBaseIDs(baseCtx, runtime.DefaultKnowledgeBaseIDs)
 	baseCtx = contextutil.WithRetrievalSettings(baseCtx, retrievalSettingsForAsk(runtime.RetrievalSettings, input.Retrieval))

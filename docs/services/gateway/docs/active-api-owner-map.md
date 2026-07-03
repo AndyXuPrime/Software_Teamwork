@@ -4,7 +4,7 @@ This document is the human-readable audit list for gateway active API paths. The
 
 ## Audit Result
 
-- Active operations: `110`.
+- Active operations: `111`.
 - Every `/api/v1/**` active operation has `operationId`, `tags`, `x-owner-service`, security, at least one `2XX` response, and at least one `4XX` response.
 - `/healthz` and `/readyz` are operational routes owned by `gateway`; they intentionally do not use bearer auth.
 - No stable active path uses action-style segments such as `/login`, `/logout`, `/search`, `/generate`, `/export`, `/retry`, or `/revoke`.
@@ -23,7 +23,7 @@ This document is the human-readable audit list for gateway active API paths. The
 | `auth` | 11 | Users, sessions, current-user identity, current-user profile, required password change, admin user management, roles, and permissions. |
 | `knowledge` | 18 | Knowledge bases, knowledge documents, chunks, retrieval, and parser runtime config. |
 | `ai-gateway` | 5 | Model profile runtime configuration exposed through gateway admin paths. |
-| `document` | 43 | Report templates, materials, records, outlines, sections, jobs, files, settings, statistics, and logs. |
+| `document` | 44 | Report templates, materials, records, outlines, sections, jobs, files, settings, statistics, and logs. |
 | `qa` | 29 | QA sessions, messages, attachments, runs, citations, configuration, retrieval tests, and QA metrics. |
 
 ## Missing Contracts
@@ -102,6 +102,7 @@ aggregation endpoints are now active gateway contracts listed below.
 | `GET` | `/api/v1/reports/{reportId}/jobs` | `document` | `report-generation` | `listReportJobs` | `bearerAuth` |
 | `POST` | `/api/v1/reports/{reportId}/jobs` | `document` | `report-generation` | `createReportJob` | `bearerAuth` |
 | `GET` | `/api/v1/report-jobs/{jobId}` | `document` | `report-generation` | `getReportJob` | `bearerAuth` |
+| `PATCH` | `/api/v1/report-jobs/{jobId}` | `document` | `report-generation` | `updateReportJob` | `bearerAuth` |
 | `GET` | `/api/v1/report-jobs/{jobId}/attempts` | `document` | `report-generation` | `listReportJobAttempts` | `bearerAuth` |
 | `POST` | `/api/v1/report-jobs/{jobId}/attempts` | `document` | `report-generation` | `createReportJobAttempt` | `bearerAuth` |
 | `GET` | `/api/v1/reports/{reportId}/events` | `document` | `report-generation` | `listReportEvents` | `bearerAuth` |

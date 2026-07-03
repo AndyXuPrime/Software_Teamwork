@@ -334,9 +334,9 @@ async function mockGateway(page: Page) {
           createdAt: '2026-06-30T00:00:00Z',
           id: 'job-1',
           jobType: 'outline_generation',
-          progress: { completedSections: 1, percent: 50, totalSections: 2 },
+          progress: { completed: 1, total: 1 },
           reportId: 'report-1',
-          status: 'running',
+          status: 'succeeded',
         },
         requestId: 'req-job',
       },
@@ -372,6 +372,7 @@ async function mockGateway(page: Page) {
         data: [
           {
             content: 'Equipment load is stable. Watch oil temperature trends.',
+            generationStatus: 'succeeded',
             id: 'section-1',
             order: 1,
             reportId: 'report-1',
@@ -403,9 +404,9 @@ async function mockGateway(page: Page) {
           createdAt: '2026-06-30T00:00:00Z',
           id: 'job-1',
           jobType: 'outline_generation',
-          progress: { completedSections: 1, percent: 50, totalSections: 2 },
+          progress: { completed: 1, total: 1 },
           reportId: 'report-1',
-          status: 'running',
+          status: 'succeeded',
         },
         requestId: 'req-job-status',
       },
@@ -464,7 +465,8 @@ test.describe('frontend critical smoke flows', () => {
       .first()
       .click()
 
-    await expect(page.locator('body')).toContainText(/job-1|任务|浠诲姟/)
-    await expect(page.locator('body')).toContainText(/50%|进度|杩涘害/)
+    await expect(page.locator('body')).toContainText(/报告模板类型|鎶ュ憡/)
+    await expect(page.locator('body')).toContainText(/20%|进度|杩涘害/)
+    await expect(page.locator('body')).not.toContainText('job-1')
   })
 })

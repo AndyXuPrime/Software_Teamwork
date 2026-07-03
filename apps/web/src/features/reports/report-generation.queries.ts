@@ -80,6 +80,15 @@ export function getReportJobRefetchInterval(job?: ReportJob): number | false {
   return false
 }
 
+export function getReportSectionsRefetchInterval(
+  reportId: string | null,
+  job?: ReportJob | null,
+): number | false {
+  if (!reportId || !job || job.reportId !== reportId) return false
+  if (job.status === 'pending' || job.status === 'running') return activeReportPollIntervalMs
+  return false
+}
+
 export function getReportEventsRefetchInterval(events?: ReportEvent[]): number | false {
   if (!events || events.length === 0) return pendingReportEventPollIntervalMs
 
@@ -144,7 +153,7 @@ export function useReportsQuery(keyword = '') {
   })
 }
 
-export function useReportDetailQueries(reportId: string | null) {
+export function useReportDetailQueries(reportId: string | null, activeJob?: ReportJob | null) {
   const enabled = Boolean(reportId)
   const outlinesQuery = useQuery({
     queryKey: reportKeys.outlines(reportId ?? ''),
@@ -155,6 +164,7 @@ export function useReportDetailQueries(reportId: string | null) {
     queryKey: reportKeys.sections(reportId ?? ''),
     queryFn: () => listReportSections(reportId ?? ''),
     enabled,
+    refetchInterval: () => getReportSectionsRefetchInterval(reportId, activeJob),
   })
 
   return { outlinesQuery, sectionsQuery }
@@ -163,6 +173,7 @@ export function useReportDetailQueries(reportId: string | null) {
 export function useReportJobQuery(jobId: string | null) {
   const queryClient = useQueryClient()
   const refreshedTerminalJobsRef = useRef(new Set<string>())
+  const refreshedActiveJobsRef = useRef(new Set<string>())
   const query = useQuery({
     queryKey: reportKeys.job(jobId ?? ''),
     queryFn: () => getReportJob(jobId ?? ''),
@@ -170,11 +181,24 @@ export function useReportJobQuery(jobId: string | null) {
     refetchInterval: (query) => {
       return getReportJobRefetchInterval(query.state.data)
     },
+    structuralSharing: false,
   })
 
   useEffect(() => {
     const job = query.data
-    if (!job?.reportId || !isTerminalReportJobStatus(job.status)) return
+    if (!job?.reportId) return
+
+    if (job.status === 'pending' || job.status === 'running') {
+      const refreshKey = `${job.id}:${job.status}:${query.dataUpdatedAt}`
+      if (refreshedActiveJobsRef.current.has(refreshKey)) return
+      refreshedActiveJobsRef.current.add(refreshKey)
+
+      void queryClient.invalidateQueries({ queryKey: reportKeys.sections(job.reportId) })
+      void queryClient.invalidateQueries({ queryKey: reportKeys.events(job.reportId) })
+      return
+    }
+
+    if (!isTerminalReportJobStatus(job.status)) return
 
     const refreshKey = `${job.id}:${job.status}:${job.finishedAt ?? ''}`
     if (refreshedTerminalJobsRef.current.has(refreshKey)) return
@@ -185,7 +209,7 @@ export function useReportJobQuery(jobId: string | null) {
     void queryClient.invalidateQueries({ queryKey: reportKeys.detail(job.reportId) })
     void queryClient.invalidateQueries({ queryKey: reportKeys.records() })
     void queryClient.invalidateQueries({ queryKey: reportKeys.events(job.reportId) })
-  }, [query.data, queryClient])
+  }, [query.data, query.dataUpdatedAt, queryClient])
 
   return query
 }
@@ -271,6 +295,19 @@ export function useRetryReportJobMutation() {
   return useMutation({
     mutationFn: ({ jobId }: { jobId: string; reportId?: string }) => createReportJobAttempt(jobId),
     onSuccess: (attempt, variables) => {
+      queryClient.setQueryData<ReportJob>(reportKeys.job(attempt.jobId), (job) =>
+        job
+          ? {
+              ...job,
+              error: undefined,
+              finishedAt: undefined,
+              progress: {},
+              resultSummary: undefined,
+              startedAt: undefined,
+              status: 'pending',
+            }
+          : job,
+      )
       void queryClient.invalidateQueries({ queryKey: reportKeys.job(attempt.jobId) })
       if (variables.reportId) {
         void queryClient.invalidateQueries({
@@ -405,6 +442,7 @@ export function useCancelReportJob() {
   return useMutation({
     mutationFn: (jobId: string) => cancelReportJob(jobId),
     onSuccess: (job) => {
+      queryClient.setQueryData<ReportJob>(reportKeys.job(job.id), job)
       void queryClient.invalidateQueries({ queryKey: reportKeys.job(job.id) })
       if (job.reportId) {
         void queryClient.invalidateQueries({

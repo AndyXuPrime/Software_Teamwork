@@ -71,6 +71,47 @@ func TestReportGenerationServicePersistsAIOutlineAndSectionSkeletons(t *testing.
 	}
 }
 
+func TestReportGenerationServiceSkipsExecutionWhenJobAlreadyCanceled(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer peak inspection",
+		ReportType: "summer_peak_inspection",
+		Topic:      "summer power supply",
+		CreatorID:  "user-1",
+		Status:     ReportStatusDraft,
+	}
+	repo.jobs["job-1"] = ReportJob{
+		ID:       "job-1",
+		JobType:  JobTypeOutlineGeneration,
+		ReportID: "report-1",
+		Status:   JobStatusCanceled,
+	}
+	chat := &fakeGenerationChatClient{
+		responses: []ChatCompletionResponse{{Content: `{"sections":[{"title":"Overview"}]}`}},
+	}
+	svc := NewReportGenerationService(repo, chat)
+
+	result, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-canceled",
+		JobType:   JobTypeOutlineGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteReportGeneration() error = %v", err)
+	}
+	if result.Status != JobStatusCanceled {
+		t.Fatalf("result status = %q, want canceled", result.Status)
+	}
+	if len(chat.requests) != 0 {
+		t.Fatalf("chat request count = %d, want 0 for canceled job", len(chat.requests))
+	}
+	if len(repo.outlines) != 0 || len(repo.sections) != 0 {
+		t.Fatalf("canceled job should not write outline/sections, outlines=%+v sections=%+v", repo.outlines, repo.sections)
+	}
+}
+
 func TestReportGenerationServiceSupportsCoalInventoryAuditAIJobs(t *testing.T) {
 	t.Run("outline generation", func(t *testing.T) {
 		repo := newFakeReportGenerationRepository()
@@ -260,6 +301,183 @@ func TestReportGenerationServiceKeepsGeneratedSectionsOnPartialFailure(t *testin
 		if strings.Contains(event.Message, "sk-secret") || strings.Contains(event.Message, "provider.internal") {
 			t.Fatalf("event leaked provider details: %+v", event)
 		}
+	}
+}
+
+func TestReportGenerationServiceContinuesContentGenerationAfterSectionFailure(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer peak inspection",
+		ReportType: "summer_peak_inspection",
+		TemplateID: "template-1",
+		Topic:      "summer power supply",
+		CreatorID:  "user-1",
+		Status:     ReportStatusOutlineGenerated,
+	}
+	repo.jobs["job-1"] = ReportJob{ID: "job-1", JobType: JobTypeContentGeneration, ReportID: "report-1"}
+	repo.sections["section-1"] = ReportSection{ID: "section-1", ReportID: "report-1", Title: "Overview", SortOrder: 0, Version: 1, GenerationStatus: JobStatusPending}
+	repo.sections["section-2"] = ReportSection{ID: "section-2", ReportID: "report-1", Title: "Risk inspection", SortOrder: 1, Version: 1, GenerationStatus: JobStatusPending}
+	repo.sections["section-3"] = ReportSection{ID: "section-3", ReportID: "report-1", Title: "Action plan", SortOrder: 2, Version: 1, GenerationStatus: JobStatusPending}
+	chat := &fakeGenerationChatClient{
+		responses: []ChatCompletionResponse{
+			{Content: `{"content":"first section body","tables":[]}`},
+			{},
+			{Content: `{"content":"third section body","tables":[]}`},
+		},
+		errs: []error{nil, errors.New("provider raw error sk-secret https://provider.internal"), nil},
+	}
+	svc := NewReportGenerationService(repo, chat)
+	svc.clock = func() time.Time { return time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC) }
+
+	result, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-content",
+		JobType:   JobTypeContentGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteReportGeneration() error = %v", err)
+	}
+	if result.Status != JobStatusPartialSucceeded {
+		t.Fatalf("result status = %q, want partial_succeeded", result.Status)
+	}
+	if len(chat.requests) != 3 {
+		t.Fatalf("chat request count = %d, want 3", len(chat.requests))
+	}
+	first := repo.sections["section-1"]
+	if first.Content != "first section body" || first.GenerationStatus != JobStatusSucceeded {
+		t.Fatalf("first section not generated: %+v", first)
+	}
+	second := repo.sections["section-2"]
+	if second.GenerationStatus != JobStatusFailed || second.Content != "" {
+		t.Fatalf("second section should be failed without content overwrite: %+v", second)
+	}
+	third := repo.sections["section-3"]
+	if third.Content != "third section body" || third.GenerationStatus != JobStatusSucceeded {
+		t.Fatalf("third section should still be generated after second failed: %+v", third)
+	}
+	lastProgress := repo.progressUpdates[len(repo.progressUpdates)-1]
+	if lastProgress["completed"] != 3 || lastProgress["total"] != 3 {
+		t.Fatalf("last progress = %+v, want 3/3 attempted sections", lastProgress)
+	}
+	if !hasReportEvent(repo.events, "content.partial_succeeded") {
+		t.Fatalf("expected content.partial_succeeded event, got %+v", repo.events)
+	}
+}
+
+func TestReportGenerationServiceStopsContentGenerationWhenJobIsCanceledBetweenSections(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer peak inspection",
+		ReportType: "summer_peak_inspection",
+		TemplateID: "template-1",
+		Topic:      "summer power supply",
+		CreatorID:  "user-1",
+		Status:     ReportStatusOutlineGenerated,
+	}
+	repo.jobs["job-1"] = ReportJob{ID: "job-1", JobType: JobTypeContentGeneration, ReportID: "report-1", Status: JobStatusRunning}
+	repo.cancelJobAfterProgressUpdates = 1
+	repo.sections["section-1"] = ReportSection{ID: "section-1", ReportID: "report-1", Title: "Overview", SortOrder: 0, Version: 1, GenerationStatus: JobStatusPending}
+	repo.sections["section-2"] = ReportSection{ID: "section-2", ReportID: "report-1", Title: "Risk inspection", SortOrder: 1, Version: 1, GenerationStatus: JobStatusPending}
+	repo.sections["section-3"] = ReportSection{ID: "section-3", ReportID: "report-1", Title: "Action plan", SortOrder: 2, Version: 1, GenerationStatus: JobStatusPending}
+	chat := &fakeGenerationChatClient{
+		responses: []ChatCompletionResponse{
+			{Content: `{"content":"first section body","tables":[]}`},
+			{Content: `{"content":"second section body","tables":[]}`},
+			{Content: `{"content":"third section body","tables":[]}`},
+		},
+	}
+	svc := NewReportGenerationService(repo, chat)
+
+	result, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-content",
+		JobType:   JobTypeContentGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteReportGeneration() error = %v", err)
+	}
+	if result.Status != JobStatusCanceled {
+		t.Fatalf("result status = %q, want canceled", result.Status)
+	}
+	if len(chat.requests) != 1 {
+		t.Fatalf("chat request count = %d, want only first section before cancellation", len(chat.requests))
+	}
+	if got := repo.sections["section-1"]; got.Content != "first section body" || got.GenerationStatus != JobStatusSucceeded {
+		t.Fatalf("first section should be generated before cancellation: %+v", got)
+	}
+	if got := repo.sections["section-2"]; got.Content != "" || got.GenerationStatus != JobStatusPending {
+		t.Fatalf("second section should remain pending after cancellation: %+v", got)
+	}
+	if got := repo.sections["section-3"]; got.Content != "" || got.GenerationStatus != JobStatusPending {
+		t.Fatalf("third section should remain pending after cancellation: %+v", got)
+	}
+	if !hasReportEvent(repo.events, "content.canceled") {
+		t.Fatalf("expected content.canceled event, got %+v", repo.events)
+	}
+}
+
+func TestReportGenerationServiceContinuesAfterSectionVersionPersistenceFailure(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer peak inspection",
+		ReportType: "summer_peak_inspection",
+		TemplateID: "template-1",
+		Topic:      "summer power supply",
+		CreatorID:  "user-1",
+		Status:     ReportStatusOutlineGenerated,
+	}
+	repo.jobs["job-1"] = ReportJob{ID: "job-1", JobType: JobTypeContentGeneration, ReportID: "report-1"}
+	repo.sections["section-1"] = ReportSection{ID: "section-1", ReportID: "report-1", Title: "Overview", SortOrder: 0, Version: 1, GenerationStatus: JobStatusPending}
+	repo.sections["section-2"] = ReportSection{ID: "section-2", ReportID: "report-1", Title: "Risk inspection", SortOrder: 1, Version: 1, GenerationStatus: JobStatusPending}
+	repo.sections["section-3"] = ReportSection{ID: "section-3", ReportID: "report-1", Title: "Action plan", SortOrder: 2, Version: 1, GenerationStatus: JobStatusPending}
+	repo.createSectionVersionErrBySection = map[string]error{
+		"section-2": errors.New("insert section version failed"),
+	}
+	chat := &fakeGenerationChatClient{
+		responses: []ChatCompletionResponse{
+			{Content: `{"content":"first section body","tables":[]}`},
+			{Content: `{"content":"second section body","tables":[]}`},
+			{Content: `{"content":"third section body","tables":[]}`},
+		},
+	}
+	svc := NewReportGenerationService(repo, chat)
+	svc.clock = func() time.Time { return time.Date(2026, 6, 30, 10, 0, 0, 0, time.UTC) }
+
+	result, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-content",
+		JobType:   JobTypeContentGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteReportGeneration() error = %v", err)
+	}
+	if result.Status != JobStatusPartialSucceeded {
+		t.Fatalf("result status = %q, want partial_succeeded", result.Status)
+	}
+	if len(chat.requests) != 3 {
+		t.Fatalf("chat request count = %d, want 3", len(chat.requests))
+	}
+	if got := repo.sections["section-1"]; got.Content != "first section body" || got.GenerationStatus != JobStatusSucceeded {
+		t.Fatalf("first section not generated: %+v", got)
+	}
+	if got := repo.sections["section-2"]; got.Content != "" || got.GenerationStatus != JobStatusFailed || got.Version != 1 {
+		t.Fatalf("second section should roll back content and be marked failed: %+v", got)
+	}
+	if got := repo.sections["section-3"]; got.Content != "third section body" || got.GenerationStatus != JobStatusSucceeded {
+		t.Fatalf("third section should still be generated after version write failure: %+v", got)
+	}
+	lastProgress := repo.progressUpdates[len(repo.progressUpdates)-1]
+	if lastProgress["completed"] != 3 || lastProgress["total"] != 3 {
+		t.Fatalf("last progress = %+v, want 3/3 attempted sections", lastProgress)
+	}
+	if !hasReportEvent(repo.events, "content.partial_succeeded") {
+		t.Fatalf("expected content.partial_succeeded event, got %+v", repo.events)
 	}
 }
 
@@ -1203,22 +1421,24 @@ func (f *fakeGenerationChatClient) CreateChatCompletion(_ context.Context, _ Req
 }
 
 type fakeReportGenerationRepository struct {
-	reports                 map[string]Report
-	jobs                    map[string]ReportJob
-	templateStructures      map[string]ReportTemplateStructure
-	settings                ReportSettings
-	outlines                map[string]ReportOutline
-	sections                map[string]ReportSection
-	sectionVersions         map[string][]ReportSectionVersion
-	events                  []ReportEvent
-	progressUpdates         []map[string]any
-	createSectionErr        error
-	createSectionErrAfter   int
-	createdSectionCount     int
-	createSectionVersionErr error
-	markSectionRunningErr   error
-	beforeGenerationTx      func(*fakeReportGenerationRepository)
-	afterGenerationRollback func(*fakeReportGenerationRepository)
+	reports                          map[string]Report
+	jobs                             map[string]ReportJob
+	templateStructures               map[string]ReportTemplateStructure
+	settings                         ReportSettings
+	outlines                         map[string]ReportOutline
+	sections                         map[string]ReportSection
+	sectionVersions                  map[string][]ReportSectionVersion
+	events                           []ReportEvent
+	progressUpdates                  []map[string]any
+	createSectionErr                 error
+	createSectionErrAfter            int
+	createdSectionCount              int
+	createSectionVersionErr          error
+	createSectionVersionErrBySection map[string]error
+	markSectionRunningErr            error
+	cancelJobAfterProgressUpdates    int
+	beforeGenerationTx               func(*fakeReportGenerationRepository)
+	afterGenerationRollback          func(*fakeReportGenerationRepository)
 }
 
 func newFakeReportGenerationRepository() *fakeReportGenerationRepository {
@@ -1295,6 +1515,10 @@ func (f *fakeReportGenerationRepository) FindReportJobByID(_ context.Context, id
 	job, ok := f.jobs[id]
 	if !ok {
 		return ReportJob{}, NewError(CodeNotFound, "report job not found", nil)
+	}
+	if f.cancelJobAfterProgressUpdates > 0 && len(f.progressUpdates) >= f.cancelJobAfterProgressUpdates {
+		job.Status = JobStatusCanceled
+		f.jobs[id] = job
 	}
 	return job, nil
 }
@@ -1393,6 +1617,9 @@ func (f *fakeReportGenerationRepository) updateReportSectionGenerationState(sect
 }
 
 func (f *fakeReportGenerationRepository) CreateReportSectionVersion(_ context.Context, value ReportSectionVersion) (ReportSectionVersion, error) {
+	if err := f.createSectionVersionErrBySection[value.SectionID]; err != nil {
+		return ReportSectionVersion{}, err
+	}
 	if f.createSectionVersionErr != nil {
 		return ReportSectionVersion{}, f.createSectionVersionErr
 	}

@@ -355,6 +355,91 @@ const request: CreateModelProfileRequest = {
 }
 ```
 
+## Scenario: Report Job Progress Presentation
+
+### 1. Scope / Trigger
+
+- Trigger: frontend pages display Document/report generation job progress from
+  Gateway `ReportJob` responses.
+- Applies to `apps/web/src/features/reports/`,
+  `apps/web/src/pages/reports/`, report E2E mocks, and tests that assert report
+  progress UI.
+
+### 2. Signatures
+
+- `GET /api/v1/report-jobs/{jobId}` -> `ReportJob`.
+- `POST /api/v1/reports/{reportId}/jobs` -> initial `ReportJob`.
+- Durable progress fields from Document are:
+  - `progress.completed`: number of processed units.
+  - `progress.total`: total units.
+- Older mocks may still include `progress.percent`; browser code may accept it
+  as a compatibility fallback only.
+
+### 3. Contracts
+
+- The frontend must treat `completed` / `total` as the primary progress
+  contract. Do not rely on `progress.percent` for real Document jobs.
+- Report workflow progress should be user-facing, not raw job metadata:
+  `reportId`, `jobId`, raw `jobType`, queue IDs, retry internals, provider
+  details, prompts, and raw errors must not be presented as the primary progress
+  summary.
+- Outline generation may map to an initial bounded portion of a whole-report
+  progress bar. Content generation may map `completed/total` into the remaining
+  portion.
+- `partial_succeeded` means all attempted work reached a terminal state but
+  some sections failed; present it differently from full `succeeded`.
+- If backend returns both `percent` and `completed/total`, prefer the stable
+  `completed/total` mapping unless the code path is explicitly compatibility
+  handling for old mocks.
+
+### 4. Validation & Error Matrix
+
+| Condition | UI behavior |
+| --- | --- |
+| `completed` and `total > 0` are present | Render bounded percentage derived from those fields. |
+| `completed > total` | Clamp to 100%; do not overflow the progress bar. |
+| `total <= 0` or fields missing | Fall back to safe status-based progress or legacy `percent` when present. |
+| Job status is `partial_succeeded` | Show completion of processing plus a partial-failure status. |
+| Job status is `failed` | Preserve error display and do not label as successful completion. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: content job `{ progress: { completed: 2, total: 4 } }` renders halfway
+  through the content-generation portion of the workflow, with a localized
+  status label.
+- Base: old test fixture `{ progress: { percent: 50 } }` still renders a
+  bounded progress value while fixtures migrate.
+- Bad: page reads only `progress.percent`, displays `jobId` as a success signal,
+  or treats `partial_succeeded` as full success without a partial warning.
+
+### 6. Tests Required
+
+- Page/component tests must assert `completed/total` progress mapping for report
+  generation UI.
+- Regression tests must assert internal IDs and raw job type are not required
+  visible success signals.
+- E2E mocks should prefer `completed/total` over `percent`.
+- Run `bun run --cwd apps/web check`, relevant unit tests, and critical report
+  E2E after changing progress presentation.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const percent = job.progress?.percent ?? 0
+return <code>{job.id}</code>
+```
+
+#### Correct
+
+```ts
+const completed = readProgressNumber(job.progress, 'completed')
+const total = readProgressNumber(job.progress, 'total')
+const percent = total > 0 ? Math.round((completed / total) * 100) : fallbackByStatus(job)
+return <ProgressSummary percent={percent} status={localizedStatus(job)} />
+```
+
 ## Scenario: QA/LLM Config Version Forms
 
 ### 1. Scope / Trigger

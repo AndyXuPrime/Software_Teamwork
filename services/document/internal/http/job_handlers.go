@@ -204,6 +204,33 @@ type retryJobRequest struct {
 	Reason string `json:"reason"`
 }
 
+type updateJobRequest struct {
+	Status string `json:"status"`
+}
+
+func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
+	if s.jobSvc == nil {
+		writeError(w, r, service.NewError(service.CodeDependency, "job service not configured", nil))
+		return
+	}
+	rctx := s.requestContext(r)
+	jobID := r.PathValue("jobId")
+	var req updateJobRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Status != string(service.JobStatusCanceled) {
+		writeError(w, r, service.ValidationError(map[string]string{"status": "only canceled is supported"}))
+		return
+	}
+	job, err := s.jobSvc.CancelJob(r.Context(), rctx, jobID)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeData(w, r, http.StatusOK, toJobResponse(job))
+}
+
 func (s *Server) handleRetryJob(w http.ResponseWriter, r *http.Request) {
 	if s.jobSvc == nil {
 		writeError(w, r, service.NewError(service.CodeDependency, "job service not configured", nil))

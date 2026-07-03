@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  cancelReportJob,
   createReportJobAttempt,
   createReportTemplate,
   deleteReport,
@@ -66,15 +67,17 @@ describe('report generation API wrappers', () => {
   })
 
   it('uploads report templates as multipart form data', async () => {
+    const appendSpy = vi.spyOn(FormData.prototype, 'append')
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init)
       const url = new URL(request.url)
 
       expect(request.method).toBe('POST')
       expect(url.pathname).toBe('/api/v1/report-templates')
+      expect(request.headers.get('Content-Type')).not.toBe('application/json')
       expect(request.headers.get('Content-Type')).toContain('multipart/form-data')
 
-      const form = await request.formData()
+      const form = new Map(appendSpy.mock.calls.map(([key, value]) => [key, value]))
       expect(form.get('templateName')).toBe('巡检模板')
       expect(form.get('reportType')).toBe('inspection')
       expect(form.get('description')).toBe('现场巡检')
@@ -118,6 +121,50 @@ describe('report generation API wrappers', () => {
       id: 'tpl-uploaded',
       templateName: '巡检模板',
     })
+  })
+
+  it('cancels a report job through the gateway report job update contract', async () => {
+    const bodies: unknown[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init)
+        bodies.push(await request.clone().json())
+        return new Response(
+          JSON.stringify({
+            data: {
+              createdAt: '2026-07-03T08:00:00Z',
+              finishedAt: '2026-07-03T08:01:00Z',
+              id: 'job-real',
+              jobType: 'content_generation',
+              progress: { completed: 1, total: 4 },
+              reportId: 'rpt-real',
+              status: 'canceled',
+            },
+            requestId: 'req-cancel',
+          }),
+          {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          },
+        )
+      }),
+    )
+
+    await expect(cancelReportJob('job-real')).resolves.toMatchObject({
+      id: 'job-real',
+      reportId: 'rpt-real',
+      status: 'canceled',
+    })
+
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>
+    const request = fetchMock.mock.calls[0]?.[0]
+    expect(request).toBeInstanceOf(Request)
+    expect(request instanceof Request ? request.method : undefined).toBe('PATCH')
+    expect(request instanceof Request ? new URL(request.url).pathname : undefined).toBe(
+      '/api/v1/report-jobs/job-real',
+    )
+    expect(bodies).toEqual([{ status: 'canceled' }])
   })
 
   it('reads and updates report generation settings through the gateway contract', async () => {

@@ -553,6 +553,7 @@ const (
 	OperationDeleteMaterial            = "delete_material"
 	OperationCreateReportJob           = "create_report_job"
 	OperationRetryReportJob            = "retry_report_job"
+	OperationCancelReportJob           = "cancel_report_job"
 	OperationUpdateReportSettings      = "update_report_settings"
 	OperationReportJobRunning          = "report_job_running"
 	OperationReportJobSucceeded        = "report_job_succeeded"

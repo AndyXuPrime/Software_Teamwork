@@ -428,6 +428,24 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ReportJob' }
         default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Jobs]
+      summary: Update report job
+      description: Cancels a pending or running report generation job.
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateReportJobRequest' }
+      responses:
+        '200':
+          description: Report job updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportJob' }
+        default: { $ref: '#/components/responses/Error' }
   /report-jobs/{jobId}/attempts:
     get:
       tags: [Jobs]
@@ -1119,6 +1137,13 @@ components:
       type: object
       properties:
         reason: { type: string }
+    UpdateReportJobRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [canceled]
     ReportEvent:
       type: object
       properties:

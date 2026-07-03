@@ -412,10 +412,12 @@ func TestJobServiceRetryJobDoesNotPersistRawReason(t *testing.T) {
 	repo := &fakeJobRepository{
 		report: Report{ID: "report-1", CreatorID: "user-1"},
 		job: ReportJob{
-			ID:        "job-1",
-			ReportID:  "report-1",
-			JobType:   JobTypeContentGeneration,
-			RequestID: "req-retry",
+			ID:          "job-1",
+			ReportID:    "report-1",
+			JobType:     JobTypeContentGeneration,
+			RequestID:   "req-retry",
+			Status:      JobStatusFailed,
+			MaxAttempts: 3,
 		},
 	}
 	svc := NewJobService(repo, &fakeTaskEnqueuer{})
@@ -434,6 +436,70 @@ func TestJobServiceRetryJobDoesNotPersistRawReason(t *testing.T) {
 	}
 	if summary["reasonProvided"] != true {
 		t.Fatalf("reasonProvided = %v, want true", summary["reasonProvided"])
+	}
+}
+
+func TestRetryJobAcceptsPartialSucceededJob(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeJobRepository{
+		report: Report{ID: "report-1", CreatorID: "user-1", Status: ReportStatusGenerated},
+		job: ReportJob{
+			ID:          "job-1",
+			ReportID:    "report-1",
+			JobType:     JobTypeContentGeneration,
+			RequestID:   "req-retry-partial",
+			Status:      JobStatusPartialSucceeded,
+			RetryCount:  1,
+			MaxAttempts: 3,
+		},
+	}
+	enqueuer := &fakeTaskEnqueuer{}
+	svc := NewJobService(repo, enqueuer)
+
+	attempt, err := svc.RetryJob(ctx, RequestContext{UserID: "user-1"}, "job-1", "retry failed sections")
+	if err != nil {
+		t.Fatalf("RetryJob() error = %v", err)
+	}
+	if attempt.JobID != "job-1" || attempt.Status != JobStatusPending {
+		t.Fatalf("attempt = %+v, want pending retry for job-1", attempt)
+	}
+	if repo.job.Status != JobStatusPending || repo.job.RetryCount != 2 {
+		t.Fatalf("job retry state = status %q retry_count %d, want pending/2", repo.job.Status, repo.job.RetryCount)
+	}
+	if enqueuer.jobType != JobTypeContentGeneration {
+		t.Fatalf("enqueued job type = %q, want %q", enqueuer.jobType, JobTypeContentGeneration)
+	}
+}
+
+func TestRetryJobAcceptsSucceededJob(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeJobRepository{
+		report: Report{ID: "report-1", CreatorID: "user-1", Status: ReportStatusGenerated},
+		job: ReportJob{
+			ID:          "job-1",
+			ReportID:    "report-1",
+			JobType:     JobTypeContentGeneration,
+			RequestID:   "req-retry-succeeded",
+			Status:      JobStatusSucceeded,
+			RetryCount:  1,
+			MaxAttempts: 3,
+		},
+	}
+	enqueuer := &fakeTaskEnqueuer{}
+	svc := NewJobService(repo, enqueuer)
+
+	attempt, err := svc.RetryJob(ctx, RequestContext{UserID: "user-1"}, "job-1", "regenerate completed report")
+	if err != nil {
+		t.Fatalf("RetryJob() error = %v", err)
+	}
+	if attempt.JobID != "job-1" || attempt.Status != JobStatusPending {
+		t.Fatalf("attempt = %+v, want pending retry for job-1", attempt)
+	}
+	if repo.job.Status != JobStatusPending || repo.job.RetryCount != 2 {
+		t.Fatalf("job retry state = status %q retry_count %d, want pending/2", repo.job.Status, repo.job.RetryCount)
+	}
+	if enqueuer.jobType != JobTypeContentGeneration {
+		t.Fatalf("enqueued job type = %q, want %q", enqueuer.jobType, JobTypeContentGeneration)
 	}
 }
 
@@ -482,6 +548,86 @@ func TestRetryJobRejectsReportWithDeletedAtSet(t *testing.T) {
 	appErr, ok := Classify(err)
 	if !ok || appErr.Code != CodeConflict {
 		t.Fatalf("expected conflict error, got %v", err)
+	}
+}
+
+func TestCancelJobMarksActiveJobCanceled(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeJobRepository{
+		report: Report{ID: "report-1", CreatorID: "user-1", Status: ReportStatusContentGenerating},
+		job: ReportJob{
+			ID:        "job-1",
+			ReportID:  "report-1",
+			JobType:   JobTypeContentGeneration,
+			RequestID: "req-cancel",
+			Status:    JobStatusRunning,
+		},
+	}
+	svc := NewJobService(repo, &fakeTaskEnqueuer{})
+
+	job, err := svc.CancelJob(ctx, RequestContext{UserID: "user-1"}, "job-1")
+	if err != nil {
+		t.Fatalf("CancelJob() error = %v", err)
+	}
+	if job.Status != JobStatusCanceled {
+		t.Fatalf("job status = %q, want canceled", job.Status)
+	}
+	if job.FinishedAt == nil {
+		t.Fatal("FinishedAt = nil, want cancellation timestamp")
+	}
+	if repo.report.Status != ReportStatusFailed || repo.report.LatestJobID != "job-1" {
+		t.Fatalf("report state = %+v, want failed latest canceled job", repo.report)
+	}
+}
+
+func TestCancelJobRejectsTerminalJob(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeJobRepository{
+		report: Report{ID: "report-1", CreatorID: "user-1", Status: ReportStatusGenerated},
+		job: ReportJob{
+			ID:       "job-1",
+			ReportID: "report-1",
+			JobType:  JobTypeContentGeneration,
+			Status:   JobStatusSucceeded,
+		},
+	}
+	svc := NewJobService(repo, &fakeTaskEnqueuer{})
+
+	_, err := svc.CancelJob(ctx, RequestContext{UserID: "user-1"}, "job-1")
+	if err == nil {
+		t.Fatal("CancelJob() error = nil, want conflict")
+	}
+	if appErr, ok := Classify(err); !ok || appErr.Code != CodeConflict {
+		t.Fatalf("CancelJob() error = %v, want conflict", err)
+	}
+	if repo.job.Status != JobStatusSucceeded {
+		t.Fatalf("terminal job status changed to %q", repo.job.Status)
+	}
+}
+
+func TestCancelJobRejectsDeletedReport(t *testing.T) {
+	ctx := context.Background()
+	deletedAt := time.Now().UTC()
+	repo := &fakeJobRepository{
+		report: Report{ID: "report-1", CreatorID: "user-1", Status: ReportStatusDeleted, DeletedAt: &deletedAt},
+		job: ReportJob{
+			ID:       "job-1",
+			ReportID: "report-1",
+			JobType:  JobTypeContentGeneration,
+			Status:   JobStatusRunning,
+		},
+	}
+	svc := NewJobService(repo, &fakeTaskEnqueuer{})
+
+	_, err := svc.CancelJob(ctx, RequestContext{UserID: "user-1"}, "job-1")
+	if err == nil {
+		t.Fatal("CancelJob() error = nil, want conflict")
+	}
+	if appErr, ok := Classify(err); !ok || appErr.Code != CodeConflict {
+		t.Fatalf("CancelJob() error = %v, want conflict", err)
+	}
+	if repo.job.Status != JobStatusRunning {
+		t.Fatalf("running job status changed to %q", repo.job.Status)
 	}
 }
 
@@ -649,8 +795,36 @@ func (f *fakeJobRepository) GetReportSectionByID(_ context.Context, id string) (
 	return section, nil
 }
 
-func (f *fakeJobRepository) ClaimRetry(context.Context, string, string, string, string) (ReportJobAttempt, error) {
-	return ReportJobAttempt{ID: "attempt-1", JobID: "job-1"}, nil
+func (f *fakeJobRepository) ClaimRetry(_ context.Context, jobID, attemptID, triggerSource, reason string) (ReportJobAttempt, error) {
+	if f.job.ID != jobID {
+		return ReportJobAttempt{}, NewError(CodeNotFound, "report job not found", nil)
+	}
+	if f.job.Status != JobStatusFailed && f.job.Status != JobStatusCanceled && f.job.Status != JobStatusPartialSucceeded && f.job.Status != JobStatusSucceeded {
+		return ReportJobAttempt{}, NewError(CodeValidation, "only failed, canceled, succeeded, or partially succeeded jobs can be retried", nil)
+	}
+	maxAttempts := f.job.MaxAttempts
+	if maxAttempts == 0 {
+		maxAttempts = 3
+	}
+	if f.job.RetryCount >= maxAttempts {
+		return ReportJobAttempt{}, NewError(CodeValidation, "max retry attempts reached", nil)
+	}
+	f.job.RetryCount++
+	f.job.Status = JobStatusPending
+	f.job.ErrorCode = ""
+	f.job.ErrorMessage = ""
+	attemptNumber := f.job.RetryCount + 1
+	attempt := ReportJobAttempt{
+		ID:            attemptID,
+		JobID:         jobID,
+		AttemptNumber: attemptNumber,
+		TriggerSource: triggerSource,
+		Reason:        reason,
+		Status:        JobStatusPending,
+		CreatedAt:     time.Now().UTC(),
+	}
+	f.createdAttempt = attempt
+	return attempt, nil
 }
 
 func (f *fakeJobRepository) ListReportJobAttemptsByJobID(context.Context, string) ([]ReportJobAttempt, error) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/service"
 	"github.com/hibiken/asynq"
@@ -18,6 +19,8 @@ const (
 	TaskSectionRegeneration = "document:report:section_regeneration"
 	TaskReportFileCreation  = "document:report:report_file_creation"
 )
+
+var jobCancelPollInterval = time.Second
 
 type ReportJobPayload struct {
 	RequestID string `json:"requestId"`
@@ -48,6 +51,7 @@ func TaskTypeForJobType(jobType service.JobType) (string, error) {
 
 // JobStateManager updates job and attempt status in the database as the worker processes tasks.
 type JobStateManager interface {
+	FindReportJobByID(ctx context.Context, id string) (service.ReportJob, error)
 	SetJobRunning(ctx context.Context, id string) error
 	SetJobSucceeded(ctx context.Context, id string) error
 	SetJobPartialSucceeded(ctx context.Context, id string) error
@@ -55,6 +59,7 @@ type JobStateManager interface {
 	SetAttemptRunning(ctx context.Context, attemptID string) error
 	SetAttemptSucceeded(ctx context.Context, attemptID string) error
 	SetAttemptPartialSucceeded(ctx context.Context, attemptID string) error
+	SetAttemptCanceled(ctx context.Context, attemptID string) error
 	SetAttemptFailed(ctx context.Context, attemptID, errCode, errMsg string) error
 }
 
@@ -109,8 +114,14 @@ func (w *Worker) handleReportJob(ctx context.Context, t *asynq.Task) error {
 	}
 	w.logger.InfoContext(ctx, "report job started", "job_id", payload.JobID, "attempt_id", payload.AttemptID, "job_type", safeLogValue(payload.JobType))
 
+	if canceled := w.finishIfCanceled(ctx, payload); canceled {
+		return nil
+	}
 	if err := w.jobsMgr.SetJobRunning(ctx, payload.JobID); err != nil {
 		w.logger.ErrorContext(ctx, "mark job running failed", "job_id", payload.JobID, "error", safeLogError(err))
+		if canceled := w.finishIfCanceled(ctx, payload); canceled {
+			return nil
+		}
 	} else {
 		w.recordJobStatusOperation(ctx, payload, service.OperationReportJobRunning, service.OperationResultSucceeded, "")
 	}
@@ -119,6 +130,12 @@ func (w *Worker) handleReportJob(ctx context.Context, t *asynq.Task) error {
 			w.logger.ErrorContext(ctx, "mark attempt running failed", "attempt_id", payload.AttemptID, "error", safeLogError(err))
 		}
 	}
+	if canceled := w.finishIfCanceled(ctx, payload); canceled {
+		return nil
+	}
+
+	execCtx, stopCancelWatcher := w.contextWithJobCancellation(ctx, payload)
+	defer stopCancelWatcher()
 
 	finalStatus := service.JobStatusSucceeded
 	if payload.JobType == string(service.JobTypeReportFileCreation) {
@@ -127,11 +144,14 @@ func (w *Worker) handleReportJob(ctx context.Context, t *asynq.Task) error {
 			w.markFailed(ctx, payload, "executor_not_configured", err)
 			return fmt.Errorf("report file executor is not configured")
 		}
-		if err := w.reportFileExecutor.ExecuteReportFileCreation(ctx, service.ReportFileExecutionPayload{
+		if err := w.reportFileExecutor.ExecuteReportFileCreation(execCtx, service.ReportFileExecutionPayload{
 			RequestID: payload.RequestID,
 			JobID:     payload.JobID,
 			UserID:    payload.UserID,
 		}); err != nil {
+			if canceled := w.finishIfCanceled(ctx, payload); canceled {
+				return nil
+			}
 			w.markFailed(ctx, payload, "execution_failed", err)
 			return fmt.Errorf("report job execution failed")
 		}
@@ -141,7 +161,7 @@ func (w *Worker) handleReportJob(ctx context.Context, t *asynq.Task) error {
 			w.markFailed(ctx, payload, "executor_not_configured", err)
 			return fmt.Errorf("report generation executor is not configured")
 		}
-		result, err := w.reportGenerationExecutor.ExecuteReportGeneration(ctx, service.ReportGenerationExecutionPayload{
+		result, err := w.reportGenerationExecutor.ExecuteReportGeneration(execCtx, service.ReportGenerationExecutionPayload{
 			RequestID: payload.RequestID,
 			JobType:   service.JobType(payload.JobType),
 			JobID:     payload.JobID,
@@ -149,6 +169,9 @@ func (w *Worker) handleReportJob(ctx context.Context, t *asynq.Task) error {
 			UserID:    payload.UserID,
 		})
 		if err != nil {
+			if canceled := w.finishIfCanceled(ctx, payload); canceled {
+				return nil
+			}
 			w.markFailed(ctx, payload, "execution_failed", err)
 			if appErr, ok := service.Classify(err); ok && appErr.Code == service.CodeValidation {
 				return fmt.Errorf("%w: report validation failed", asynq.SkipRetry)
@@ -158,11 +181,21 @@ func (w *Worker) handleReportJob(ctx context.Context, t *asynq.Task) error {
 		if result.Status == service.JobStatusPartialSucceeded {
 			finalStatus = service.JobStatusPartialSucceeded
 		}
+		if result.Status == service.JobStatusCanceled {
+			w.markAttemptCanceled(ctx, payload)
+			return nil
+		}
 	}
 
+	if canceled := w.finishIfCanceled(ctx, payload); canceled {
+		return nil
+	}
 	w.logger.InfoContext(ctx, "report job completed", "job_id", payload.JobID, "job_type", safeLogValue(payload.JobType))
 
 	if err := w.markFinalStatus(ctx, payload, finalStatus); err != nil {
+		if canceled := w.finishIfCanceled(ctx, payload); canceled {
+			return nil
+		}
 		w.logger.ErrorContext(ctx, "mark job succeeded failed", "job_id", payload.JobID, "error", safeLogError(err))
 		if payload.AttemptID != "" {
 			_ = w.jobsMgr.SetAttemptFailed(ctx, payload.AttemptID, "state_error", "report job state update failed")
@@ -172,6 +205,67 @@ func (w *Worker) handleReportJob(ctx context.Context, t *asynq.Task) error {
 	}
 	w.recordFinalStatusOperation(ctx, payload, finalStatus)
 	return nil
+}
+
+func (w *Worker) finishIfCanceled(ctx context.Context, payload ReportJobPayload) bool {
+	canceled, err := w.isJobCanceled(ctx, payload)
+	if err != nil {
+		w.logger.ErrorContext(ctx, "load report job status failed", "job_id", payload.JobID, "error", safeLogError(err))
+		return false
+	}
+	if !canceled {
+		return false
+	}
+	w.markAttemptCanceled(ctx, payload)
+	return true
+}
+
+func (w *Worker) contextWithJobCancellation(ctx context.Context, payload ReportJobPayload) (context.Context, func()) {
+	execCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(jobCancelPollInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-execCtx.Done():
+				return
+			case <-ticker.C:
+				canceled, err := w.isJobCanceled(ctx, payload)
+				if err != nil {
+					w.logger.ErrorContext(ctx, "load report job status failed", "job_id", payload.JobID, "error", safeLogError(err))
+					continue
+				}
+				if canceled {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return execCtx, func() {
+		close(done)
+		cancel()
+	}
+}
+
+func (w *Worker) isJobCanceled(ctx context.Context, payload ReportJobPayload) (bool, error) {
+	job, err := w.jobsMgr.FindReportJobByID(ctx, payload.JobID)
+	if err != nil {
+		return false, err
+	}
+	return job.Status == service.JobStatusCanceled, nil
+}
+
+func (w *Worker) markAttemptCanceled(ctx context.Context, payload ReportJobPayload) {
+	if payload.AttemptID == "" {
+		return
+	}
+	if err := w.jobsMgr.SetAttemptCanceled(ctx, payload.AttemptID); err != nil {
+		w.logger.ErrorContext(ctx, "mark attempt canceled failed", "attempt_id", payload.AttemptID, "error", safeLogError(err))
+	}
 }
 
 func (w *Worker) markFinalStatus(ctx context.Context, payload ReportJobPayload, status service.JobStatus) error {

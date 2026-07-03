@@ -8,7 +8,9 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/service"
 	"github.com/hibiken/asynq"
@@ -181,6 +183,132 @@ func TestWorkerMarksReportGenerationPartialSucceeded(t *testing.T) {
 	}
 }
 
+func TestWorkerPreservesCanceledJobAfterExecutorReturns(t *testing.T) {
+	mgr := &fakeWorkerJobManager{currentJobStatus: service.JobStatusCanceled}
+	executor := &fakeReportGenerationExecutor{
+		result: service.ReportGenerationExecutionResult{Status: service.JobStatusSucceeded},
+	}
+	w := &Worker{
+		logger:                   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		jobsMgr:                  mgr,
+		reportGenerationExecutor: executor,
+	}
+	payload := ReportJobPayload{
+		RequestID: "req-canceled",
+		JobType:   string(service.JobTypeContentGeneration),
+		JobID:     "job-canceled",
+		AttemptID: "attempt-canceled",
+		UserID:    "user-canceled",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	if err := w.handleReportJob(context.Background(), asynq.NewTask(TaskContentGeneration, body)); err != nil {
+		t.Fatalf("handleReportJob() error = %v", err)
+	}
+
+	if mgr.jobSucceeded || mgr.jobPartialSucceeded {
+		t.Fatalf("canceled job must not be overwritten by a final success state: %+v", mgr)
+	}
+	if !mgr.attemptCanceled {
+		t.Fatalf("attempt should be marked canceled when job was canceled: %+v", mgr)
+	}
+}
+
+func TestWorkerCancelsExecutorContextWhenRunningJobIsCanceled(t *testing.T) {
+	previousPollInterval := jobCancelPollInterval
+	jobCancelPollInterval = 10 * time.Millisecond
+	defer func() { jobCancelPollInterval = previousPollInterval }()
+
+	mgr := &cancelWhileRunningJobManager{}
+	executor := &contextCanceledReportGenerationExecutor{
+		started: make(chan struct{}),
+	}
+	w := &Worker{
+		logger:                   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		jobsMgr:                  mgr,
+		reportGenerationExecutor: executor,
+	}
+	payload := ReportJobPayload{
+		RequestID: "req-cancel-running",
+		JobType:   string(service.JobTypeContentGeneration),
+		JobID:     "job-cancel-running",
+		AttemptID: "attempt-cancel-running",
+		UserID:    "user-cancel-running",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- w.handleReportJob(context.Background(), asynq.NewTask(TaskContentGeneration, body))
+	}()
+
+	select {
+	case <-executor.started:
+	case <-time.After(time.Second):
+		t.Fatal("executor did not start")
+	}
+	mgr.canceled.Store(true)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("handleReportJob() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("worker did not stop after job cancellation")
+	}
+	if !executor.sawContextCanceled.Load() {
+		t.Fatal("executor context was not canceled")
+	}
+	if !mgr.fakeWorkerJobManager.attemptCanceled {
+		t.Fatalf("attempt should be marked canceled when running job is canceled: %+v", mgr.fakeWorkerJobManager)
+	}
+	if mgr.fakeWorkerJobManager.jobFailed || mgr.fakeWorkerJobManager.jobSucceeded {
+		t.Fatalf("canceled job must not be overwritten by failed/succeeded state: %+v", mgr.fakeWorkerJobManager)
+	}
+}
+
+func TestWorkerStopsBeforeAttemptRunningWhenJobIsCanceledDuringRunningTransition(t *testing.T) {
+	mgr := &cancelDuringRunningTransitionJobManager{}
+	executor := &fakeReportGenerationExecutor{}
+	w := &Worker{
+		logger:                   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		jobsMgr:                  mgr,
+		reportGenerationExecutor: executor,
+	}
+	payload := ReportJobPayload{
+		RequestID: "req-cancel-transition",
+		JobType:   string(service.JobTypeContentGeneration),
+		JobID:     "job-cancel-transition",
+		AttemptID: "attempt-cancel-transition",
+		UserID:    "user-cancel-transition",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	if err := w.handleReportJob(context.Background(), asynq.NewTask(TaskContentGeneration, body)); err != nil {
+		t.Fatalf("handleReportJob() error = %v", err)
+	}
+
+	if executor.payload.JobID != "" {
+		t.Fatalf("executor should not start after a cancel race, payload = %+v", executor.payload)
+	}
+	if mgr.fakeWorkerJobManager.attemptRunning {
+		t.Fatalf("attempt must not be marked running after job cancellation: %+v", mgr.fakeWorkerJobManager)
+	}
+	if !mgr.fakeWorkerJobManager.attemptCanceled {
+		t.Fatalf("attempt should be marked canceled after job cancellation: %+v", mgr.fakeWorkerJobManager)
+	}
+}
+
 func TestWorkerSanitizesSensitiveLogValues(t *testing.T) {
 	var logs bytes.Buffer
 	mgr := &fakeWorkerJobManager{}
@@ -302,9 +430,11 @@ type fakeWorkerJobManager struct {
 	attemptFailedMessage    string
 	jobPartialSucceeded     bool
 	attemptPartialSucceeded bool
+	attemptCanceled         bool
 	logs                    []service.OperationLog
 	succeededErr            error
 	setJobSucceededCount    int
+	currentJobStatus        service.JobStatus
 }
 
 func (f *fakeWorkerJobManager) SetJobRunning(context.Context, string) error {
@@ -348,15 +478,57 @@ func (f *fakeWorkerJobManager) SetAttemptPartialSucceeded(context.Context, strin
 	return nil
 }
 
+func (f *fakeWorkerJobManager) SetAttemptCanceled(context.Context, string) error {
+	f.attemptCanceled = true
+	return nil
+}
+
 func (f *fakeWorkerJobManager) SetAttemptFailed(_ context.Context, _, _, message string) error {
 	f.attemptFailed = true
 	f.attemptFailedMessage = message
 	return nil
 }
 
+func (f *fakeWorkerJobManager) FindReportJobByID(_ context.Context, id string) (service.ReportJob, error) {
+	status := f.currentJobStatus
+	if status == "" {
+		status = service.JobStatusRunning
+	}
+	return service.ReportJob{ID: id, Status: status}, nil
+}
+
 func (f *fakeWorkerJobManager) CreateOperationLog(_ context.Context, log service.OperationLog) (service.OperationLog, error) {
 	f.logs = append(f.logs, log)
 	return log, nil
+}
+
+type cancelWhileRunningJobManager struct {
+	fakeWorkerJobManager
+	canceled atomic.Bool
+}
+
+func (f *cancelWhileRunningJobManager) FindReportJobByID(_ context.Context, id string) (service.ReportJob, error) {
+	if f.canceled.Load() {
+		return service.ReportJob{ID: id, Status: service.JobStatusCanceled}, nil
+	}
+	return service.ReportJob{ID: id, Status: service.JobStatusRunning}, nil
+}
+
+type cancelDuringRunningTransitionJobManager struct {
+	fakeWorkerJobManager
+	canceled atomic.Bool
+}
+
+func (f *cancelDuringRunningTransitionJobManager) SetJobRunning(context.Context, string) error {
+	f.canceled.Store(true)
+	return errors.New("job status changed before running transition")
+}
+
+func (f *cancelDuringRunningTransitionJobManager) FindReportJobByID(_ context.Context, id string) (service.ReportJob, error) {
+	if f.canceled.Load() {
+		return service.ReportJob{ID: id, Status: service.JobStatusCanceled}, nil
+	}
+	return service.ReportJob{ID: id, Status: service.JobStatusPending}, nil
 }
 
 type fakeReportFileExecutor struct {
@@ -381,6 +553,18 @@ func (f *fakeReportGenerationExecutor) ExecuteReportGeneration(_ context.Context
 		f.result.Status = service.JobStatusSucceeded
 	}
 	return f.result, f.err
+}
+
+type contextCanceledReportGenerationExecutor struct {
+	started            chan struct{}
+	sawContextCanceled atomic.Bool
+}
+
+func (f *contextCanceledReportGenerationExecutor) ExecuteReportGeneration(ctx context.Context, _ service.ReportGenerationExecutionPayload) (service.ReportGenerationExecutionResult, error) {
+	close(f.started)
+	<-ctx.Done()
+	f.sawContextCanceled.Store(true)
+	return service.ReportGenerationExecutionResult{}, ctx.Err()
 }
 
 // sequentialReportGenerationExecutor returns errs[i] on the i-th call, then succeeds.

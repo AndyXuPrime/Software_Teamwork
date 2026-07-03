@@ -1077,6 +1077,67 @@ func TestDocumentPatchRouteProxiesToKnowledge(t *testing.T) {
 	}
 }
 
+func TestReportJobCancelPatchRouteProxiesToDocument(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_1",
+		UserID:      "usr_1",
+		Username:    "alice",
+		Roles:       []string{},
+		Permissions: []string{"document:write"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+	var capturedMethod string
+	var capturedPath string
+	var capturedBody string
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedMethod = r.Method
+		capturedPath = r.URL.Path
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read downstream body: %v", err)
+		}
+		capturedBody = string(body)
+		if r.Header.Get("X-User-Id") != "usr_1" ||
+			r.Header.Get("X-User-Permissions") != "document:write" ||
+			r.Header.Get("X-Request-Id") != "req_cancel_job" {
+			t.Fatalf("downstream headers = %#v", r.Header)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"id":"job_cancel","reportId":"rpt_1","jobType":"content_generation","status":"canceled","createdAt":"2026-07-03T00:00:00Z"},"requestId":"req_cancel_job"}`))
+	}))
+	defer downstream.Close()
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		store:         store,
+		hasher:        hasher,
+		ownerBaseURLs: map[string]string{"document": downstream.URL},
+	})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/report-jobs/job_cancel", strings.NewReader(`{"status":"canceled"}`))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-Id", "req_cancel_job")
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code == http.StatusNotFound && strings.Contains(res.Body.String(), "route not found") {
+		t.Fatalf("report job cancellation route returned gateway route not found: %s", res.Body.String())
+	}
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	if capturedMethod != http.MethodPatch || capturedPath != "/report-jobs/job_cancel" {
+		t.Fatalf("downstream method/path = %s %s", capturedMethod, capturedPath)
+	}
+	if !strings.Contains(capturedBody, `"status":"canceled"`) {
+		t.Fatalf("downstream body = %q", capturedBody)
+	}
+}
+
 func TestProxyNormalizesDownstreamErrorBody(t *testing.T) {
 	hasher := testHasher(t)
 	store := newMemorySessionStore()
