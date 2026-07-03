@@ -230,6 +230,8 @@ export function ProfilePage() {
           <label className="space-y-1.5 text-sm">
             <span className="text-muted-foreground">电话</span>
             <Input
+              type="tel"
+              pattern="[0-9+\- ]*"
               value={form.phone}
               disabled={isSaving}
               placeholder="可不填写"

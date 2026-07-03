@@ -1181,6 +1181,7 @@ export function ReportGeneratePage() {
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium">报告名称</span>
                   <Input
+                    maxLength={200}
                     value={form.name}
                     onChange={(event) => updateForm('name', event.target.value)}
                   />
@@ -1241,6 +1242,8 @@ export function ReportGeneratePage() {
                   <span className="font-medium">年份</span>
                   <Input
                     type="number"
+                    min={2000}
+                    max={2100}
                     value={form.year}
                     onChange={(event) => updateForm('year', Number(event.target.value))}
                   />
@@ -1248,6 +1251,7 @@ export function ReportGeneratePage() {
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium">专业</span>
                   <Input
+                    maxLength={500}
                     value={form.specialty ?? ''}
                     onChange={(event) => updateForm('specialty', event.target.value)}
                   />
@@ -1255,6 +1259,7 @@ export function ReportGeneratePage() {
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium">业务对象</span>
                   <Input
+                    maxLength={500}
                     value={form.businessObject ?? ''}
                     onChange={(event) => updateForm('businessObject', event.target.value)}
                   />
@@ -1262,6 +1267,7 @@ export function ReportGeneratePage() {
                 <label className="space-y-1.5 text-sm md:col-span-2">
                   <span className="font-medium">报告主题</span>
                   <Input
+                    maxLength={500}
                     value={form.topic}
                     onChange={(event) => updateForm('topic', event.target.value)}
                   />
@@ -1270,6 +1276,7 @@ export function ReportGeneratePage() {
                   <span className="font-medium">补充上下文 / 生成要求</span>
                   <textarea
                     className="min-h-24 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                    maxLength={5000}
                     value={form.extraContextText ?? ''}
                     onChange={(event) => updateForm('extraContextText', event.target.value)}
                   />
@@ -1589,6 +1596,7 @@ export function ReportGeneratePage() {
                     <textarea
                       aria-label="章节正文"
                       className="min-h-[420px] flex-1 resize-y rounded-lg border border-input bg-background px-4 py-3 text-sm leading-7 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                      maxLength={50000}
                       value={sectionDraft}
                       onChange={(event) => setSectionDraft(event.target.value)}
                     />

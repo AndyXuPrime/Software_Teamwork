@@ -43,15 +43,20 @@ const retrievalTestPayloadSchema = z.object({
   retrieval: z
     .object({
       topK: z.number().int().min(1).max(100).optional(),
-      scoreThreshold: z.number().min(0).optional(),
+      scoreThreshold: z.number().min(0).max(1).optional(),
       enableRerank: z.boolean().optional(),
-      rerankThreshold: z.number().min(0).optional(),
+      rerankThreshold: z.number().min(0).max(1).optional(),
       rerankTopN: z.number().int().min(1).optional(),
     })
     .optional(),
 }) satisfies z.ZodType<CreateQARetrievalTestRunRequest>
 
-function optionalNumber(value: string, label: string, min?: number): number | undefined {
+function optionalNumber(
+  value: string,
+  label: string,
+  min?: number,
+  max?: number,
+): number | undefined {
   const normalized = value.trim()
   if (normalized === '') return undefined
 
@@ -62,12 +67,20 @@ function optionalNumber(value: string, label: string, min?: number): number | un
   if (min !== undefined && parsed < min) {
     throw new Error(`${label} 不能小于 ${min}`)
   }
+  if (max !== undefined && parsed > max) {
+    throw new Error(`${label} 不能大于 ${max}`)
+  }
 
   return parsed
 }
 
-function optionalInteger(value: string, label: string, min?: number): number | undefined {
-  const parsed = optionalNumber(value, label, min)
+function optionalInteger(
+  value: string,
+  label: string,
+  min?: number,
+  max?: number,
+): number | undefined {
+  const parsed = optionalNumber(value, label, min, max)
   if (parsed !== undefined && !Number.isInteger(parsed)) {
     throw new Error(`${label} 必须是整数`)
   }
@@ -89,11 +102,11 @@ function buildPayload(form: RetrievalFormState): CreateQARetrievalTestRunRequest
     question: form.question.trim(),
     knowledgeBaseIds: splitIds(form.knowledgeBaseIds),
     retrieval: {
-      topK: optionalInteger(form.topK, 'Top K', 1),
-      scoreThreshold: optionalNumber(form.scoreThreshold, '阈值', 0),
+      topK: optionalInteger(form.topK, 'Top K', 1, 100),
+      scoreThreshold: optionalNumber(form.scoreThreshold, '阈值', 0, 1),
       enableRerank: form.enableRerank,
-      rerankThreshold: optionalNumber(form.rerankThreshold, 'Rerank 阈值', 0),
-      rerankTopN: optionalInteger(form.rerankTopN, 'Rerank Top N', 1),
+      rerankThreshold: optionalNumber(form.rerankThreshold, 'Rerank 阈值', 0, 1),
+      rerankTopN: optionalInteger(form.rerankTopN, 'Rerank Top N', 1, 100),
     },
   })
 
@@ -264,6 +277,7 @@ export function QARetrievalTestPage() {
           <label className="space-y-1.5 text-sm">
             <span className="font-medium text-foreground">Query</span>
             <Textarea
+              maxLength={5000}
               value={form.question}
               onChange={(event) => setForm({ ...form, question: event.target.value })}
               className="min-h-28"
@@ -273,6 +287,7 @@ export function QARetrievalTestPage() {
           <label className="space-y-1.5 text-sm">
             <span className="font-medium text-foreground">知识库 ID</span>
             <Textarea
+              maxLength={2000}
               value={form.knowledgeBaseIds}
               onChange={(event) => setForm({ ...form, knowledgeBaseIds: event.target.value })}
               className="min-h-28 font-mono text-xs"
@@ -285,16 +300,21 @@ export function QARetrievalTestPage() {
           <label className="space-y-1.5 text-sm">
             <span className="font-medium text-foreground">Top K</span>
             <Input
+              type="number"
+              min={1}
+              max={100}
               value={form.topK}
-              inputMode="numeric"
               onChange={(event) => setForm({ ...form, topK: event.target.value })}
             />
           </label>
           <label className="space-y-1.5 text-sm">
             <span className="font-medium text-foreground">Score 阈值</span>
             <Input
+              type="number"
+              min={0}
+              max={1}
+              step={0.01}
               value={form.scoreThreshold}
-              inputMode="decimal"
               onChange={(event) => setForm({ ...form, scoreThreshold: event.target.value })}
             />
           </label>
@@ -310,16 +330,21 @@ export function QARetrievalTestPage() {
           <label className="space-y-1.5 text-sm">
             <span className="font-medium text-foreground">Rerank 阈值</span>
             <Input
+              type="number"
+              min={0}
+              max={1}
+              step={0.01}
               value={form.rerankThreshold}
-              inputMode="decimal"
               onChange={(event) => setForm({ ...form, rerankThreshold: event.target.value })}
             />
           </label>
           <label className="space-y-1.5 text-sm">
             <span className="font-medium text-foreground">Rerank Top N</span>
             <Input
+              type="number"
+              min={1}
+              max={100}
               value={form.rerankTopN}
-              inputMode="numeric"
               onChange={(event) => setForm({ ...form, rerankTopN: event.target.value })}
             />
           </label>

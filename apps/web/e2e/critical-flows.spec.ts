@@ -418,7 +418,7 @@ async function login(page: Page) {
   await mockGateway(page)
   await page.goto('/login')
   await page.locator('#username').fill('operator')
-  await page.locator('#password').fill('secret')
+  await page.locator('#password').fill('e2e-secret-8chars')
   await page.getByRole('button').first().click()
   await expect(page).toHaveURL(/\/chat$/)
 }

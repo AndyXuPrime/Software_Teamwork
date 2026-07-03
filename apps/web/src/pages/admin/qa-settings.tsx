@@ -72,9 +72,9 @@ const qaPayloadSchema = z.object({
   knowledgeBases: z.array(knowledgeBaseSchema).optional(),
   retrieval: z.object({
     topK: z.number().int().min(1).optional(),
-    scoreThreshold: z.number().min(0).optional(),
+    scoreThreshold: z.number().min(0).max(1).optional(),
     enableRerank: z.boolean(),
-    rerankThreshold: z.number().min(0).optional(),
+    rerankThreshold: z.number().min(0).max(1).optional(),
     rerankTopN: z.number().int().min(1).optional(),
   }),
   maxIterations: z.number().int().min(1).optional(),
@@ -99,7 +99,7 @@ const llmPayloadSchema = z.object({
   profileId: z.string().min(1, 'profileId 不能为空'),
   modelName: z.string().min(1, 'modelName 不能为空'),
   timeoutSeconds: z.number().int().min(1).optional(),
-  temperature: z.number().optional(),
+  temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().int().min(1).optional(),
   activate: z.boolean(),
 }) satisfies z.ZodType<CreateQALLMConfigVersionRequest>
@@ -108,7 +108,12 @@ function zodErrorMessage(error: z.ZodError): string {
   return error.issues.map((issue) => issue.message).join('；')
 }
 
-function optionalNumber(value: string, label: string, min?: number): number | undefined {
+function optionalNumber(
+  value: string,
+  label: string,
+  min?: number,
+  max?: number,
+): number | undefined {
   const normalized = value.trim()
   if (normalized === '') return undefined
 
@@ -120,12 +125,20 @@ function optionalNumber(value: string, label: string, min?: number): number | un
   if (min !== undefined && parsed < min) {
     throw new Error(`${label} 不能小于 ${min}`)
   }
+  if (max !== undefined && parsed > max) {
+    throw new Error(`${label} 不能大于 ${max}`)
+  }
 
   return parsed
 }
 
-function optionalInteger(value: string, label: string, min?: number): number | undefined {
-  const parsed = optionalNumber(value, label, min)
+function optionalInteger(
+  value: string,
+  label: string,
+  min?: number,
+  max?: number,
+): number | undefined {
+  const parsed = optionalNumber(value, label, min, max)
   if (parsed !== undefined && !Number.isInteger(parsed)) {
     throw new Error(`${label} 必须是整数`)
   }
@@ -213,10 +226,10 @@ function buildQAPayload(form: QAFormState): CreateQAConfigVersionRequest {
   const knowledgeBases = parseKnowledgeBases(form.knowledgeBases)
   const enabledToolNames = splitLines(form.enabledToolNames)
   const defaultKnowledgeBaseIds = splitLines(form.defaultKnowledgeBaseIds)
-  const maxIterations = optionalInteger(form.maxIterations, '最大迭代次数', 1)
-  const toolTimeoutSeconds = optionalInteger(form.toolTimeoutSeconds, '工具超时', 1)
-  const modelTimeoutSeconds = optionalInteger(form.modelTimeoutSeconds, '模型超时', 1)
-  const overallTimeoutSeconds = optionalInteger(form.overallTimeoutSeconds, '总超时', 1)
+  const maxIterations = optionalInteger(form.maxIterations, '最大迭代次数', 1, 10)
+  const toolTimeoutSeconds = optionalInteger(form.toolTimeoutSeconds, '工具超时', 1, 600)
+  const modelTimeoutSeconds = optionalInteger(form.modelTimeoutSeconds, '模型超时', 1, 600)
+  const overallTimeoutSeconds = optionalInteger(form.overallTimeoutSeconds, '总超时', 1, 600)
 
   const agent =
     maxIterations !== undefined &&
@@ -236,11 +249,11 @@ function buildQAPayload(form: QAFormState): CreateQAConfigVersionRequest {
     defaultKnowledgeBaseIds,
     knowledgeBases,
     retrieval: {
-      topK: optionalInteger(form.topK, 'Top K', 1),
-      scoreThreshold: optionalNumber(form.scoreThreshold, '相似度阈值', 0),
+      topK: optionalInteger(form.topK, 'Top K', 1, 100),
+      scoreThreshold: optionalNumber(form.scoreThreshold, '相似度阈值', 0, 1),
       enableRerank: form.enableRerank,
-      rerankThreshold: optionalNumber(form.rerankThreshold, 'Rerank 阈值', 0),
-      rerankTopN: optionalInteger(form.rerankTopN, 'Rerank Top N', 1),
+      rerankThreshold: optionalNumber(form.rerankThreshold, 'Rerank 阈值', 0, 1),
+      rerankTopN: optionalInteger(form.rerankTopN, 'Rerank Top N', 1, 100),
     },
     maxIterations,
     toolTimeoutSeconds,
@@ -266,9 +279,9 @@ function buildLLMPayload(form: LLMFormState): CreateQALLMConfigVersionRequest {
     provider: 'ai-gateway',
     profileId,
     modelName,
-    timeoutSeconds: optionalInteger(form.timeoutSeconds, 'LLM 超时', 1),
-    temperature: optionalNumber(form.temperature, '温度'),
-    maxTokens: optionalInteger(form.maxTokens, '最大 Token 数', 1),
+    timeoutSeconds: optionalInteger(form.timeoutSeconds, 'LLM 超时', 1, 600),
+    temperature: optionalNumber(form.temperature, '温度', 0, 2),
+    maxTokens: optionalInteger(form.maxTokens, '最大 Token 数', 1, 128000),
     activate: form.activate,
   })
 
@@ -485,17 +498,22 @@ export function QASettings() {
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">Top K</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={100}
                   value={qaForm.topK}
                   onChange={(event) => setQAForm({ ...qaForm, topK: event.target.value })}
-                  inputMode="numeric"
                 />
               </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">相似度阈值</span>
                 <Input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.01}
                   value={qaForm.scoreThreshold}
                   onChange={(event) => setQAForm({ ...qaForm, scoreThreshold: event.target.value })}
-                  inputMode="decimal"
                 />
               </label>
               <label className="flex items-center gap-2 rounded-lg border border-border p-3 text-sm">
@@ -510,57 +528,70 @@ export function QASettings() {
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">Rerank 阈值</span>
                 <Input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.01}
                   value={qaForm.rerankThreshold}
                   onChange={(event) =>
                     setQAForm({ ...qaForm, rerankThreshold: event.target.value })
                   }
-                  inputMode="decimal"
                 />
               </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">Rerank Top N</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={100}
                   value={qaForm.rerankTopN}
                   onChange={(event) => setQAForm({ ...qaForm, rerankTopN: event.target.value })}
-                  inputMode="numeric"
                 />
               </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">最大迭代次数</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={10}
                   value={qaForm.maxIterations}
                   onChange={(event) => setQAForm({ ...qaForm, maxIterations: event.target.value })}
-                  inputMode="numeric"
                 />
               </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">工具超时（秒）</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={600}
                   value={qaForm.toolTimeoutSeconds}
                   onChange={(event) =>
                     setQAForm({ ...qaForm, toolTimeoutSeconds: event.target.value })
                   }
-                  inputMode="numeric"
                 />
               </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">模型超时（秒）</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={600}
                   value={qaForm.modelTimeoutSeconds}
                   onChange={(event) =>
                     setQAForm({ ...qaForm, modelTimeoutSeconds: event.target.value })
                   }
-                  inputMode="numeric"
                 />
               </label>
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">总超时（秒）</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={600}
                   value={qaForm.overallTimeoutSeconds}
                   onChange={(event) =>
                     setQAForm({ ...qaForm, overallTimeoutSeconds: event.target.value })
                   }
-                  inputMode="numeric"
                 />
               </label>
               <label className="flex items-center gap-2 rounded-lg border border-border p-3 text-sm">
@@ -578,6 +609,7 @@ export function QASettings() {
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">工具白名单</span>
                 <Textarea
+                  maxLength={5000}
                   value={qaForm.enabledToolNames}
                   onChange={(event) =>
                     setQAForm({ ...qaForm, enabledToolNames: event.target.value })
@@ -588,6 +620,7 @@ export function QASettings() {
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">默认知识库 ID</span>
                 <Textarea
+                  maxLength={2000}
                   value={qaForm.defaultKnowledgeBaseIds}
                   onChange={(event) =>
                     setQAForm({ ...qaForm, defaultKnowledgeBaseIds: event.target.value })
@@ -600,6 +633,7 @@ export function QASettings() {
             <label className="block space-y-1.5 text-sm">
               <span className="font-medium text-foreground">知识库配置 JSON</span>
               <Textarea
+                maxLength={10000}
                 value={qaForm.knowledgeBases}
                 onChange={(event) => setQAForm({ ...qaForm, knowledgeBases: event.target.value })}
                 className="min-h-36 font-mono text-xs"
@@ -727,30 +761,37 @@ export function QASettings() {
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">超时（秒）</span>
                 <Input
+                  type="number"
+                  min={1}
+                  max={600}
                   value={llmForm.timeoutSeconds}
                   onChange={(event) =>
                     setLLMForm({ ...llmForm, timeoutSeconds: event.target.value })
                   }
-                  inputMode="numeric"
                 />
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium text-foreground">温度</span>
                   <Input
+                    type="number"
+                    min={0}
+                    max={2}
+                    step={0.01}
                     value={llmForm.temperature}
                     onChange={(event) =>
                       setLLMForm({ ...llmForm, temperature: event.target.value })
                     }
-                    inputMode="decimal"
                   />
                 </label>
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium text-foreground">最大 Token 数</span>
                   <Input
+                    type="number"
+                    min={1}
+                    max={128000}
                     value={llmForm.maxTokens}
                     onChange={(event) => setLLMForm({ ...llmForm, maxTokens: event.target.value })}
-                    inputMode="numeric"
                   />
                 </label>
               </div>

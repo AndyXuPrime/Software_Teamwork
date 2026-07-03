@@ -29,15 +29,17 @@ function hasValue(value: string): boolean {
 }
 
 function normalizedTimeout(value: number): number {
-  return Math.max(1000, value || 60000)
+  return Math.min(300000, Math.max(1000, value || 60000))
 }
 
 function validatePurposeFields(form: ModelProfileFormValues): ValidationResult {
-  if (form.purpose === 'embedding' && form.dimension <= 0) {
-    return { isValid: false, message: '请填写向量维度' }
+  if (form.purpose === 'embedding') {
+    if (form.dimension <= 0) return { isValid: false, message: '请填写向量维度' }
+    if (form.dimension > 16384) return { isValid: false, message: '向量维度不能大于 16384' }
   }
-  if (form.purpose === 'rerank' && form.topN <= 0) {
-    return { isValid: false, message: '请填写默认 TopN' }
+  if (form.purpose === 'rerank') {
+    if (form.topN <= 0) return { isValid: false, message: '请填写默认 TopN' }
+    if (form.topN > 100) return { isValid: false, message: 'TopN 不能大于 100' }
   }
   return { isValid: true }
 }
@@ -67,6 +69,9 @@ export function validateCreateModelProfileForm(form: ModelProfileFormValues): Va
   if (!hasValue(form.apiKey)) {
     return { isValid: false, message: '请填写 API Key' }
   }
+  if (form.apiKey.trim().length < 8) {
+    return { isValid: false, message: 'API Key 不能少于 8 个字符' }
+  }
   return validatePurposeFields(form)
 }
 
@@ -78,6 +83,9 @@ export function validateUpdateModelProfileForm(form: ModelProfileFormValues): Va
     !hasValue(form.model)
   ) {
     return { isValid: false, message: '请填写名称、服务商、地址和模型名称' }
+  }
+  if (hasValue(form.apiKey) && form.apiKey.trim().length < 8) {
+    return { isValid: false, message: 'API Key 不能少于 8 个字符' }
   }
   return validatePurposeFields(form)
 }

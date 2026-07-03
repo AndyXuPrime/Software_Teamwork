@@ -505,6 +505,7 @@ export function ReportTemplatesPage() {
                 <div className="flex flex-col gap-2">
                   <Textarea
                     className="min-h-80 font-mono text-xs"
+                    maxLength={50000}
                     value={editJson}
                     onChange={(event) => {
                       setEditJson(event.target.value)
