@@ -52,13 +52,13 @@ function formatDateTime(iso?: string | null): string {
 
 function ChunkListSkeleton() {
   return (
-    <div className="animate-pulse space-y-4">
-      <div className="h-6 w-48 rounded bg-muted" />
+    <div className="space-y-4">
+      <div className="h-6 w-48 rounded skeleton-shimmer" />
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-4 py-3">
           <div className="grid grid-cols-5 gap-3">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-4 rounded bg-muted" />
+              <div key={i} className="h-4 rounded skeleton-shimmer" />
             ))}
           </div>
         </div>
@@ -66,7 +66,7 @@ function ChunkListSkeleton() {
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="grid grid-cols-5 gap-3 px-4 py-3">
               {Array.from({ length: 5 }).map((_, j) => (
-                <div key={j} className="h-4 rounded bg-muted" />
+                <div key={j} className="h-4 rounded skeleton-shimmer" />
               ))}
             </div>
           ))}
@@ -304,6 +304,7 @@ export function KnowledgeChunksPage({ documentId, onNavigateBack }: KnowledgeChu
                     <Button
                       variant="outline"
                       size="icon-sm"
+                      className="hover:scale-105 active:scale-95 transition-transform"
                       disabled={page <= 1}
                       onClick={() => setPage((p) => p - 1)}
                       aria-label="上一页"
@@ -313,6 +314,7 @@ export function KnowledgeChunksPage({ documentId, onNavigateBack }: KnowledgeChu
                     <Button
                       variant="outline"
                       size="icon-sm"
+                      className="hover:scale-105 active:scale-95 transition-transform"
                       disabled={page >= totalPages}
                       onClick={() => setPage((p) => p + 1)}
                       aria-label="下一页"

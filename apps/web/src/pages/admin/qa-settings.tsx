@@ -5,6 +5,14 @@ import { z } from 'zod'
 import { ApiError } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectItemText,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useModelProfiles } from '@/features/admin-config'
 import {
@@ -662,24 +670,30 @@ export function QASettings() {
             <div className="grid gap-3">
               <label className="space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">聊天模型</span>
-                <select
-                  aria-label="聊天模型"
-                  value={llmForm.profileId}
-                  onChange={(event) => handleSelectChatProfile(event.target.value)}
-                  className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                <Select
+                  value={llmForm.profileId || undefined}
+                  onValueChange={(v) => handleSelectChatProfile(String(v))}
                 >
-                  <option value="">请选择聊天模型</option>
-                  {showCurrentProfileFallback && (
-                    <option value={llmForm.profileId}>
-                      当前配置：{llmForm.modelName || llmForm.profileId}
-                    </option>
-                  )}
-                  {chatProfiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.name} / {profile.model}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="h-8 w-full" aria-label="聊天模型">
+                    <SelectValue placeholder="请选择聊天模型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {showCurrentProfileFallback && (
+                      <SelectItem value={llmForm.profileId}>
+                        <SelectItemText>
+                          当前配置：{llmForm.modelName || llmForm.profileId}
+                        </SelectItemText>
+                      </SelectItem>
+                    )}
+                    {chatProfiles.map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        <SelectItemText>
+                          {profile.name} / {profile.model}
+                        </SelectItemText>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </label>
 
               {chatProfiles.length === 0 && !showCurrentProfileFallback && (

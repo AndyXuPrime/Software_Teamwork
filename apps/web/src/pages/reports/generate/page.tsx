@@ -15,6 +15,14 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { InlineNotice, ProgressSummary, StateBlock } from '@/components/common'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectItemText,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useModelProfiles } from '@/features/admin-config'
 import { useCurrentQALLMConfigQuery } from '@/features/qa-settings/qa-settings.queries'
 import type {
@@ -707,12 +715,11 @@ export function ReportGeneratePage() {
                 </label>
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium">报告类型</span>
-                  <select
-                    className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+                  <Select
                     disabled={typeQuery.isLoading || typeQuery.isError || reportTypes.length === 0}
-                    value={form.reportType}
-                    onChange={(event) => {
-                      const nextReportType = event.target.value
+                    value={form.reportType || undefined}
+                    onValueChange={(v) => {
+                      const nextReportType = String(v)
                       setForm((prev) => ({
                         ...(nextReportType
                           ? applyReportTypeDraftDefaults(prev, nextReportType)
@@ -721,31 +728,42 @@ export function ReportGeneratePage() {
                       }))
                     }}
                   >
-                    <option value="">请选择报告类型</option>
-                    {reportTypes.map((type) => (
-                      <option key={type.code} value={type.code}>
-                        {type.name}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-8 w-full">
+                      <SelectValue placeholder="请选择报告类型" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">请选择报告类型</SelectItem>
+                      {reportTypes.map((type) => (
+                        <SelectItem key={type.code} value={type.code}>
+                          {type.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </label>
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium">报告模板</span>
-                  <select
-                    className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+                  <Select
                     disabled={
                       templateQuery.isLoading || templateQuery.isError || templates.length === 0
                     }
-                    value={form.templateId}
-                    onChange={(event) => updateForm('templateId', event.target.value)}
+                    value={form.templateId || undefined}
+                    onValueChange={(v) => updateForm('templateId', String(v))}
                   >
-                    <option value="">请选择报告模板</option>
-                    {templates.map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {template.templateName} v{template.version}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-8 w-full">
+                      <SelectValue placeholder="请选择报告模板" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">请选择报告模板</SelectItem>
+                      {templates.map((template) => (
+                        <SelectItem key={template.id} value={template.id}>
+                          <SelectItemText>
+                            {template.templateName} v{template.version}
+                          </SelectItemText>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </label>
                 <label className="space-y-1.5 text-sm">
                   <span className="font-medium">年份</span>
@@ -1171,25 +1189,31 @@ export function ReportGeneratePage() {
 
               <label className="mt-3 block space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">文档生成模型</span>
-                <select
-                  aria-label="文档生成模型"
-                  value={documentProfileId}
-                  onChange={(event) => handleSelectDocumentProfile(event.target.value)}
-                  className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+                <Select
+                  value={documentProfileId || undefined}
+                  onValueChange={(v) => handleSelectDocumentProfile(String(v))}
                   disabled={reportSettingsQuery.isLoading || chatProfilesQuery.isLoading}
                 >
-                  <option value="">请选择聊天模型 Profile</option>
-                  {showDocumentProfileFallback && (
-                    <option value={documentProfileId}>
-                      当前配置：{selectedDocumentModel || documentProfileId}
-                    </option>
-                  )}
-                  {chatProfiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.name} / {profile.model}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="h-8 w-full" aria-label="文档生成模型">
+                    <SelectValue placeholder="请选择聊天模型 Profile" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {showDocumentProfileFallback && (
+                      <SelectItem value={documentProfileId}>
+                        <SelectItemText>
+                          当前配置：{selectedDocumentModel || documentProfileId}
+                        </SelectItemText>
+                      </SelectItem>
+                    )}
+                    {chatProfiles.map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        <SelectItemText>
+                          {profile.name} / {profile.model}
+                        </SelectItemText>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </label>
 
               <div className="mt-3 space-y-2 text-sm">

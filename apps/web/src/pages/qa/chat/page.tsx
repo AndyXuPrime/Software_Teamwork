@@ -1254,6 +1254,8 @@ export function ChatPage() {
               <ChatInput
                 onSend={sendMessage}
                 disabled={streaming}
+                streaming={streaming}
+                onStop={() => abortRef.current?.()}
                 value={inputText}
                 onChange={setInputText}
                 size={chatPhase === 'empty' ? 'large' : 'normal'}
@@ -1265,11 +1267,12 @@ export function ChatPage() {
             </div>
             {chatPhase === 'empty' && (
               <div className="flex flex-wrap justify-center gap-2">
-                {SUGGESTED_PROMPTS.map((p) => (
+                {SUGGESTED_PROMPTS.map((p, i) => (
                   <button
                     key={p}
                     type="button"
-                    className="flex items-center rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-primary transition-all hover:bg-primary/10 hover:border-primary/50"
+                    className="flex items-center rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-primary transition-all hover:bg-primary/10 hover:border-primary/50 animate-[fade-in-up_0.4s_ease-out_both]"
+                    style={{ animationDelay: `${i * 150}ms` }}
                     onClick={() => handleSuggested(p)}
                   >
                     <ArrowUpRight className="mr-1 inline-block size-3.5 shrink-0" />

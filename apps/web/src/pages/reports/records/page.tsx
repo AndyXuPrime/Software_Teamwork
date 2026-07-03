@@ -64,11 +64,14 @@ export function ReportRecordsPage() {
       </div>
 
       <div className="mb-4 flex max-w-md items-center gap-2">
-        <Input
-          placeholder="按报告名称搜索"
-          value={keyword}
-          onChange={(event) => setKeyword(event.target.value)}
-        />
+        <div className="search-expand">
+          <Input
+            className="w-full"
+            placeholder="按报告名称搜索"
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+          />
+        </div>
         <Button variant="outline" size="icon" aria-label="搜索">
           <Search className="size-4" />
         </Button>

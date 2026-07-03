@@ -330,10 +330,8 @@ export default function ChatMessages({
         return (
           <div
             key={msg.id}
-            className={cn(
-              'message-enter max-w-[85%]',
-              msg.role === 'user' ? 'self-end' : 'self-start',
-            )}
+            className={cn('msg-enter max-w-[85%]', msg.role === 'user' ? 'self-end' : 'self-start')}
+            style={{ animationDelay: `${Math.min(i * 50, 600)}ms` }}
           >
             <MessageBubble
               msg={msg}

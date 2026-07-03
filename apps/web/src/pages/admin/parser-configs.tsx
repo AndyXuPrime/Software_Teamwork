@@ -14,6 +14,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   useCreateParserConfig,
   useDeleteParserConfig,
   useParserConfigs,
@@ -142,16 +149,16 @@ function formToUpdateRequest(form: FormData) {
 
 function ParserConfigsSkeleton() {
   return (
-    <div className="animate-pulse space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="h-7 w-32 rounded bg-muted" />
-        <div className="h-8 w-36 rounded bg-muted" />
+        <div className="h-7 w-32 rounded skeleton-shimmer" />
+        <div className="h-8 w-36 rounded skeleton-shimmer" />
       </div>
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-4 py-3">
           <div className="grid grid-cols-5 gap-4">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-4 rounded bg-muted" />
+              <div key={i} className="h-4 rounded skeleton-shimmer" />
             ))}
           </div>
         </div>
@@ -159,7 +166,7 @@ function ParserConfigsSkeleton() {
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="grid grid-cols-5 gap-4 px-4 py-3">
               {Array.from({ length: 5 }).map((_, j) => (
-                <div key={j} className="h-4 rounded bg-muted" />
+                <div key={j} className="h-4 rounded skeleton-shimmer" />
               ))}
             </div>
           ))}
@@ -481,18 +488,21 @@ export function ParserConfigsPage() {
               >
                 解析后端 <span className="text-destructive">*</span>
               </label>
-              <select
-                id="pc-create-backend"
+              <Select
                 value={form.backend}
-                onChange={(e) => updateField('backend', e.target.value as ParserBackend)}
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                onValueChange={(v) => updateField('backend', String(v) as ParserBackend)}
               >
-                {BACKEND_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="pc-create-backend" className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {BACKEND_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">
@@ -682,18 +692,21 @@ export function ParserConfigsPage() {
               >
                 解析后端 <span className="text-destructive">*</span>
               </label>
-              <select
-                id="pc-edit-backend"
+              <Select
                 value={form.backend}
-                onChange={(e) => updateField('backend', e.target.value as ParserBackend)}
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                onValueChange={(v) => updateField('backend', String(v) as ParserBackend)}
               >
-                {BACKEND_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="pc-edit-backend" className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {BACKEND_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">
