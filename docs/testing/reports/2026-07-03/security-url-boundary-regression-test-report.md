@@ -10,8 +10,8 @@
 | Assistants | Codex |
 | Scope | Dependabot alert 39, CodeQL alerts 17 and 18, Gateway Auth base URL boundary regression |
 | Tested branch | Test/test/security-alert-url-boundary-regression |
-| Tested commit | 59290d1ddb3a2a060277010f486a08f5c2bdd9b1 plus this report and one Gateway test-case addition |
-| Base branch | upstream/develop @ 59290d1ddb3a2a060277010f486a08f5c2bdd9b1 |
+| Tested commit | PR branch rebased on upstream/develop @ 3e3565a6b3e4a9c9691161a740da2c16af6f339a plus this report and one Gateway test-case addition |
+| Base branch | upstream/develop @ 3e3565a6b3e4a9c9691161a740da2c16af6f339a |
 | Environment | Local Windows PowerShell, Go 1.25 modules, Bun/Vitest frontend checks, GitHub CLI |
 | Conclusion | Passed after environment retry; first-run failures were caused by Go proxy timeout and transient test-load timeouts, then passed on rerun |
 
@@ -58,6 +58,7 @@ This round does not close GitHub Security alerts directly and does not expand in
 - Retry used project defaults from `deploy/.env.example`: `GOPROXY=https://goproxy.cn,direct` and `GOSUMDB=sum.golang.google.cn`.
 - Initial QA and frontend full-suite runs saw transient load-related failures; targeted reruns, low-worker reruns, and final default reruns passed.
 - After PR creation, issue #549 was updated from `Status=Blocked` / `Risk=Blocked` to `Status=Review` / `Risk=Low` because dependencies #533 and #546 are closed and this regression PR is ready for review.
+- After upstream `develop` advanced to `3e3565a6`, this PR branch was rebased and the issue-required checks were rerun on 2026-07-03.
 
 ## 4. Test Case Matrix
 
@@ -90,6 +91,13 @@ This round does not close GitHub Security alerts directly and does not expand in
 | 2026-07-03 14:22 +0800 | TEST-006 | `gh api repos/Sakayori-Iroha-168/Software_Teamwork/dependabot/alerts --paginate ...` | pass | Alert 39 returned `state=fixed`, dependency `golang.org/x/net`, manifest `services/file/go.mod`, GHSA `GHSA-5cv4-jp36-h3mw` |
 | 2026-07-03 14:22 +0800 | TEST-006 | `gh api repos/Sakayori-Iroha-168/Software_Teamwork/code-scanning/alerts --paginate ...` | pass | Alert 17 returned `state=fixed`, rule `js/insecure-randomness`, path `apps/web/src/pages/qa/chat/page.tsx`; alert 18 returned `state=fixed`, rule `go/allocation-size-overflow`, path `services/qa/internal/repository/postgres.go` |
 | 2026-07-03 14:27 +0800 | TEST-ALL | `git diff --check` | pass | No whitespace errors |
+| 2026-07-03 14:53 +0800 | TEST-001 | `cd services/file && $env:GOPROXY='https://goproxy.cn,direct'; $env:GOSUMDB='sum.golang.google.cn'; go list -m golang.org/x/net; go test ./...; go build ./cmd/server` | pass | Latest-develop recheck after rebase; `golang.org/x/net v0.55.0`; File tests/build passed |
+| 2026-07-03 14:53 +0800 | TEST-002 | `cd services/qa && go test ./...; go build ./cmd/server; go build ./cmd/agent` | pass | Latest-develop recheck after rebase; QA tests and both builds passed |
+| 2026-07-03 14:53 +0800 | TEST-004 / TEST-005 | `cd services/gateway && go test ./internal/platform/authclient ./internal/config ./internal/http; go build ./cmd/server` | pass | Latest-develop recheck after rebase; Gateway tests/build passed |
+| 2026-07-03 14:53 +0800 | TEST-003 | `bun run --cwd apps/web check` | pass | Latest-develop recheck after rebase; check passed with 2 existing lint warnings in `components/ui/select.tsx` |
+| 2026-07-03 14:53 +0800 | TEST-003 | `bun run --cwd apps/web test:unit` | pass | Latest-develop recheck after rebase; 38 files and 162 tests passed |
+| 2026-07-03 14:53 +0800 | TEST-006 | `gh api repos/Sakayori-Iroha-168/Software_Teamwork/dependabot/alerts --paginate ...` and `gh api repos/Sakayori-Iroha-168/Software_Teamwork/code-scanning/alerts --paginate ...` | pass | Latest-develop recheck after rebase; alert 39, 18, and 17 still returned `fixed` |
+| 2026-07-03 14:53 +0800 | TEST-ALL | `git diff --check` | pass | Latest-develop recheck after rebase; no whitespace errors |
 
 ## 6. Defects And Handling
 
@@ -119,7 +127,7 @@ This round does not close GitHub Security alerts directly and does not expand in
 
 ## 9. Final Conclusion
 
-Passed after environment retry. All issue-scoped security alert and URL boundary checks have command-backed evidence, GitHub alert API state is `fixed` for #39/#18/#17, and no sensitive values were included in this report.
+Passed after environment retry and latest-develop rebase. All issue-scoped security alert and URL boundary checks have command-backed evidence on `upstream/develop @ 3e3565a6`, GitHub alert API state is `fixed` for #39/#18/#17, and no sensitive values were included in this report.
 
 ## 10. Review Checklist
 
