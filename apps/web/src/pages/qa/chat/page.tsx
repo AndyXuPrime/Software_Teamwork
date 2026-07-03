@@ -91,7 +91,20 @@ const VALID_STEP_TYPES = new Set([
   'verify',
 ])
 
-function sanitizeThinkingStep(raw: Record<string, unknown>): QAThinkingStep {
+export type ToolThinkingStep = QAThinkingStep & {
+  argumentsSummary?: unknown
+  completedAt?: number
+  errorSummary?: string
+  iterationNo?: number
+  reasoningStepId?: string
+  reportArtifact?: QAReportArtifact
+  resultSummary?: unknown
+  startedAt?: number
+  toolCallId?: string
+  toolName?: string
+}
+
+export function sanitizeThinkingStep(raw: Record<string, unknown>): ToolThinkingStep {
   const rawType = String(raw.type ?? '')
   // Only allow known step types; discard unknown / internal-only types
   const type = (VALID_STEP_TYPES.has(rawType) ? rawType : 'generation') as QAThinkingStep['type']
@@ -102,7 +115,17 @@ function sanitizeThinkingStep(raw: Record<string, unknown>): QAThinkingStep {
       : 'running'
   ) as QAThinkingStep['status']
   const detail = sanitizeLabel(typeof raw.detail === 'string' ? raw.detail : undefined)
-  return { type, label, status, detail }
+  const iterationNo = getIterationNo(raw)
+  const rawReasoningStepId =
+    typeof raw.reasoningStepId === 'string'
+      ? raw.reasoningStepId
+      : typeof raw.stepId === 'string'
+        ? raw.stepId
+        : typeof raw.id === 'string'
+          ? raw.id
+          : undefined
+  const reasoningStepId = sanitizeLabel(rawReasoningStepId)
+  return { type, label, status, detail, iterationNo, reasoningStepId }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -157,18 +180,6 @@ function sanitizeToolName(raw: unknown): string {
   return trimmed
 }
 
-type ToolThinkingStep = QAThinkingStep & {
-  argumentsSummary?: unknown
-  completedAt?: number
-  errorSummary?: string
-  iterationNo?: number
-  reportArtifact?: QAReportArtifact
-  resultSummary?: unknown
-  startedAt?: number
-  toolCallId?: string
-  toolName?: string
-}
-
 function getToolName(data: Record<string, unknown>): string {
   return sanitizeToolName(data.toolName ?? data.tool)
 }
@@ -189,6 +200,36 @@ function getToolFailureSummary(data: Record<string, unknown>): string | undefine
           ? data.summary
           : undefined
   return sanitizeLabel(raw)
+}
+
+function getReasoningStepKey(step: ToolThinkingStep): string | undefined {
+  if (!step.reasoningStepId) return undefined
+  return `${step.iterationNo ?? 'unknown'}:${step.type}:${step.reasoningStepId}`
+}
+
+export function upsertReasoningStep(
+  steps: ToolThinkingStep[],
+  step: ToolThinkingStep,
+): ToolThinkingStep[] {
+  const key = getReasoningStepKey(step)
+  if (!key) return [...steps, step]
+
+  const idx = steps.findIndex((existing) => getReasoningStepKey(existing) === key)
+  if (idx < 0) return [...steps, step]
+
+  const next = [...steps]
+  next[idx] = step
+  return next
+}
+
+export function finalizeThinkingStepsOnAnswerCompleted(
+  steps: ToolThinkingStep[],
+): ToolThinkingStep[] {
+  return steps.map((step) =>
+    step.type === 'agent_iteration' && step.status === 'running'
+      ? { ...step, status: 'done' as const }
+      : step,
+  )
 }
 
 const SUGGESTED_PROMPTS = [
@@ -771,7 +812,7 @@ export function ChatPage() {
 
       // Accumulators for SSE events
       let content = ''
-      const steps: ToolThinkingStep[] = []
+      let steps: ToolThinkingStep[] = []
       const toolStepIndex: Record<string, number> = {}
       const cites: QACitation[] = []
 
@@ -852,13 +893,11 @@ export function ChatPage() {
           if (!verifySeq(data.seq)) return
           const raw = (data as Record<string, unknown>).step as Record<string, unknown> | undefined
           if (!raw) return
-          const safe = sanitizeThinkingStep(raw)
-          const idx = steps.findIndex((s) => s.type === safe.type)
-          if (idx >= 0) {
-            steps[idx] = safe
-          } else {
-            steps.push(safe)
-          }
+          const safe = sanitizeThinkingStep({
+            ...raw,
+            iterationNo: raw.iterationNo ?? data.iterationNo,
+          })
+          steps = upsertReasoningStep(steps, safe)
           patchAssistant({ thinking: [...steps] })
         },
         onToolStarted(data) {
@@ -968,17 +1007,7 @@ export function ChatPage() {
         onAnswerCompleted(data) {
           const runId = data.responseRunId as string | undefined
           if (runId) responseRunIdRef.current = runId
-          const completedAt = Date.now()
-          for (let i = 0; i < steps.length; i += 1) {
-            const step = steps[i]
-            if (step?.status === 'running') {
-              steps[i] = {
-                ...step,
-                completedAt: step.type === 'tool_call' ? completedAt : step.completedAt,
-                status: 'done',
-              }
-            }
-          }
+          steps = finalizeThinkingStepsOnAnswerCompleted(steps)
           const serverMsgId =
             (data.assistantMessageId as string | undefined) ??
             (data.messageId as string | undefined)
