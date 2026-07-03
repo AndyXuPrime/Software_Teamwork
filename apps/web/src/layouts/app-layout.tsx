@@ -1,10 +1,25 @@
 import { Link, useRouter, useRouterState } from '@tanstack/react-router'
-import { ChevronRight, Loader2, LogOut, RefreshCw, ShieldAlert, UserRound } from 'lucide-react'
+import {
+  ChevronRight,
+  HelpCircle,
+  Loader2,
+  LogOut,
+  RefreshCw,
+  ShieldAlert,
+  UserRound,
+} from 'lucide-react'
 import { type PropsWithChildren, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { apiClient } from '@/api/client'
 import { AppVersionBadge } from '@/components/common/app-version-badge'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { adminShellAccess } from '@/lib/access'
 import type { PermissionRequirement } from '@/lib/permissions'
 import { canAccess } from '@/lib/permissions'
@@ -58,6 +73,7 @@ export function AppLayout({ children }: PropsWithChildren) {
   const router = useRouter()
   const routerState = useRouterState()
   const pathname = routerState.location.pathname
+  const [helpOpen, setHelpOpen] = useState(false)
   const currentLabel =
     Object.entries(pathLabels).find(([key]) => pathname.startsWith(key))?.[1] ?? '首页'
   const user = useAuthStore((state) => state.user)
@@ -187,6 +203,16 @@ export function AppLayout({ children }: PropsWithChildren) {
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <AppVersionBadge className="hidden lg:inline-flex" />
+          <Button
+            aria-label="打开帮助"
+            size="icon-sm"
+            title="帮助"
+            type="button"
+            variant="ghost"
+            onClick={() => setHelpOpen(true)}
+          >
+            <HelpCircle />
+          </Button>
           <Link
             aria-label="打开个人资料"
             className={cn(
@@ -230,6 +256,40 @@ export function AppLayout({ children }: PropsWithChildren) {
       >
         {children}
       </main>
+
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Helpme</DialogTitle>
+            <DialogDescription>常用流程的最短路径。</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 text-sm">
+            <section className="rounded-lg border border-border p-3">
+              <h2 className="font-medium text-foreground">首次配置</h2>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
+                <li>进入管理，新增并启用用途为 chat 的模型 Profile。</li>
+                <li>进入管理的系统设置，发布当前 QA LLM 配置。</li>
+                <li>进入报告生成页，发布文档生成模型配置。</li>
+              </ol>
+            </section>
+            <section className="rounded-lg border border-border p-3">
+              <h2 className="font-medium text-foreground">开始问答</h2>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
+                <li>先在知识库上传并等待文档处理完成。</li>
+                <li>回到问答页新建会话，输入问题后发送。</li>
+              </ol>
+            </section>
+            <section className="rounded-lg border border-border p-3">
+              <h2 className="font-medium text-foreground">生成报告</h2>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
+                <li>在报告模板页上传 DOCX 模板。</li>
+                <li>进入报告生成页，选择报告类型、模板和参数。</li>
+                <li>生成大纲，确认后继续生成正文并导出 DOCX。</li>
+              </ol>
+            </section>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
