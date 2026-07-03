@@ -16,7 +16,8 @@
 所有输入均为 JSON object，字段使用 lowerCamelCase，且
 `additionalProperties=false`。未知字段、类型错误、缺少必填项或越界值都返回
 `validation_error`，不做静默纠正。字符串在执行前去除首尾空白；仅含空白的必填
-字符串视为缺失。
+标量字符串视为缺失。`knowledgeBaseIds` 是唯一的数组归一化例外：其中的字符串会
+先 trim，空项被忽略，重复项去重。
 
 四个工具均为只读、幂等、封闭世界调用：
 
@@ -64,6 +65,7 @@
     "error": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["code", "message"],
       "properties": {
         "code": {"type": "string"},
         "message": {"type": "string"},
@@ -73,7 +75,19 @@
         }
       }
     }
-  }
+  },
+  "oneOf": [
+    {
+      "properties": {"status": {"const": "succeeded"}},
+      "required": ["data"],
+      "not": {"required": ["error"]}
+    },
+    {
+      "properties": {"status": {"const": "failed"}},
+      "required": ["error"],
+      "not": {"required": ["data"]}
+    }
+  ]
 }
 ```
 
@@ -108,7 +122,7 @@ Qdrant/File/AI provider 原始响应不得进入输出。
 | 字段 | 类型 | 必填 | 默认值 | 约束与语义 |
 | --- | --- | --- | --- | --- |
 | `query` | string | 是 | - | 非空自然语言查询。 |
-| `knowledgeBaseIds` | string[] | 否 | `[]` | 限定检索范围；空数组表示所有当前用户可见知识库。空 ID 被忽略，重复 ID 去重。 |
+| `knowledgeBaseIds` | string[] | 否 | `[]` | 限定检索范围；每项 trim 后，空 ID 被忽略、重复 ID 去重。归一化后为空表示所有当前用户可见知识库。 |
 | `topK` | integer | 否 | `5` | `1..20`，最大返回候选数。 |
 | `scoreThreshold` | number | 否 | `0` | `0..1`，低于阈值的结果不返回。 |
 | `rerank` | boolean | 否 | `false` | 是否请求 Knowledge 使用已配置 reranker。 |
@@ -125,7 +139,7 @@ Qdrant/File/AI provider 原始响应不得进入输出。
     "query": {"type": "string", "minLength": 1},
     "knowledgeBaseIds": {
       "type": "array",
-      "items": {"type": "string", "minLength": 1}
+      "items": {"type": "string"}
     },
     "topK": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
     "scoreThreshold": {"type": "number", "minimum": 0, "maximum": 1, "default": 0},
