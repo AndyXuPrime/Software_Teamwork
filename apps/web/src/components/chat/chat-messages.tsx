@@ -1,43 +1,265 @@
-import { Check, ChevronDown, ChevronRight } from 'lucide-react'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { Check, ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react'
+import { Children, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 
+import { lookupCitations } from '@/api/citations'
+import { getDocumentContent } from '@/api/knowledge'
 import ReportArtifactCard from '@/components/chat/report-artifact-card'
 import { InlineNotice } from '@/components/common'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import type { QACitation, QAMessage, QAReportArtifact, QAThinkingStep } from '@/lib/types'
+import { downloadFromUrl } from '@/lib/download'
+import type {
+  QACitation,
+  QACitationDetail,
+  QAMessage,
+  QAReportArtifact,
+  QAThinkingStep,
+} from '@/lib/types'
 import { cn } from '@/lib/utils'
+
+import { createCitationMap, parseCitationMarkers } from './citation-markers'
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Sub-components
 // ══════════════════════════════════════════════════════════════════════════════
 
-/* ── Citation tooltip ── */
-function CitationTooltip({ c }: { c: QACitation }) {
-  const [open, setOpen] = useState(false)
+type CitationLike = QACitation | QACitationDetail
 
-  // Resolve display fields (id is always present; docId/docName are deprecated aliases)
-  const displayId = c.citationNo != null ? `[${c.citationNo}]` : c.id
-  const docName = c.documentName ?? c.docName ?? '未知文档'
-  const text = c.text ?? c.contentPreview ?? ''
-  const score = c.score ?? 0
+type MarkdownComponentProps = {
+  children?: ReactNode
+} & Record<string, unknown>
+
+function citationDocumentId(citation: CitationLike): string {
+  return citation.documentId ?? citation.docId ?? ''
+}
+
+function citationDocumentName(citation: CitationLike): string {
+  return citation.documentName ?? citation.docName ?? '未知文档'
+}
+
+function citationPreview(citation: CitationLike): string {
+  return citation.text ?? citation.contentPreview ?? ''
+}
+
+function citationContent(citation: CitationLike): string {
+  return (citation as QACitationDetail).content ?? citationPreview(citation)
+}
+
+function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, maxLength)}...`
+}
+
+function formatPercent(value: number | null | undefined): string | undefined {
+  if (typeof value !== 'number') return undefined
+  return `${Math.round(value * 100)}%`
+}
+
+function downloadFilename(citation: CitationLike): string {
+  const name = citationDocumentName(citation).trim()
+  if (!name || name === '未知文档') return 'citation-source'
+  return name.replace(/[\\/:*?"<>|]+/g, '_')
+}
+
+function renderCitationChildren(
+  children: ReactNode,
+  citationsByNo: Map<number, QACitation>,
+): ReactNode {
+  return Children.toArray(children).flatMap((child, childIndex) => {
+    if (typeof child !== 'string') return child
+
+    return parseCitationMarkers(child, citationsByNo).map((token, tokenIndex) => {
+      const key = `${childIndex}-${tokenIndex}`
+      if (token.kind === 'text') return token.text
+      return <CitationTooltip key={key} citations={token.citations} label={token.label} />
+    })
+  })
+}
+
+/* ── Citation tooltip ── */
+function CitationTooltip({
+  c,
+  citations,
+  label,
+}: {
+  c?: QACitation
+  citations?: QACitation[]
+  label?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+
+  const baseCitations = useMemo(() => citations ?? (c ? [c] : []), [c, citations])
+  const ids = useMemo(() => baseCitations.map((citation) => citation.id), [baseCitations])
+  const shouldLoadDetails =
+    open && baseCitations.some((citation) => citation.id && !(citation as QACitationDetail).content)
+
+  const detailsQuery = useQuery({
+    enabled: shouldLoadDetails,
+    queryFn: () => lookupCitations(ids),
+    queryKey: ['qa', 'citation-details', ids],
+    staleTime: 60_000,
+  })
+
+  const detailsById = useMemo(() => {
+    const map = new Map<string, QACitationDetail>()
+    for (const detail of detailsQuery.data ?? []) {
+      map.set(detail.id, detail)
+    }
+    return map
+  }, [detailsQuery.data])
+
+  const effectiveCitations = baseCitations.map(
+    (citation) => detailsById.get(citation.id) ?? citation,
+  )
+  const onlyCitation = effectiveCitations.length === 1 ? effectiveCitations[0] : undefined
+  const displayId =
+    label ??
+    (onlyCitation?.citationNo != null
+      ? `[${onlyCitation.citationNo}]`
+      : `[${effectiveCitations
+          .map((citation) => citation.citationNo)
+          .filter(Boolean)
+          .join(',')}]`)
+
+  async function handleDownload(citation: CitationLike) {
+    const documentId = citationDocumentId(citation)
+    if (!documentId || downloadingId) return
+
+    setDownloadError(null)
+    setDownloadingId(citation.id)
+    try {
+      const blob = await getDocumentContent(documentId)
+      const url = URL.createObjectURL(blob)
+      try {
+        downloadFromUrl(url, downloadFilename(citation))
+      } finally {
+        URL.revokeObjectURL(url)
+      }
+    } catch {
+      setDownloadError('下载失败，请稍后重试')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        className="inline-flex rounded-sm bg-accent px-2 py-0.5 text-xs text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+        aria-label={`查看引用 ${displayId}`}
+        className="mx-0.5 inline-flex align-super rounded-sm bg-accent px-1.5 py-0.5 text-[0.65rem] font-medium leading-none text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
         onClick={(e) => {
           e.stopPropagation()
         }}
       >
         {displayId}
       </PopoverTrigger>
-      <PopoverContent className="w-72">
-        <div className="text-sm font-medium">{docName}</div>
-        <div className="mt-1 text-sm italic text-muted-foreground">「{text}」</div>
-        <div className="mt-1 text-xs text-muted-foreground">相关度: {Math.round(score * 100)}%</div>
+      <PopoverContent className="w-[360px] max-w-[calc(100vw-2rem)] p-0">
+        <div className="max-h-[520px] overflow-y-auto p-4">
+          {effectiveCitations.length > 1 && (
+            <div className="mb-3 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+              已合并 {effectiveCitations.length} 条引用片段
+            </div>
+          )}
+          {detailsQuery.isLoading && (
+            <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" />
+              正在加载引用详情
+            </div>
+          )}
+          {detailsQuery.isError && (
+            <div className="mb-3 text-xs text-destructive">引用详情加载失败，已展示摘要。</div>
+          )}
+
+          <div className="space-y-4">
+            {effectiveCitations.map((citation) => {
+              const documentId = citationDocumentId(citation)
+              const source = (citation as QACitationDetail).source
+              const sourceAvailable =
+                source?.available === true || citation.isSourceAvailable === true
+              const sourceUnavailable =
+                source?.available === false || citation.isSourceAvailable === false
+              const score = formatPercent(citation.score)
+              const rerankScore = formatPercent(citation.rerankScore)
+              const content = citationContent(citation)
+              const preview = citationPreview(citation)
+
+              return (
+                <div
+                  key={citation.id}
+                  className="space-y-2 border-b border-border/60 pb-3 last:border-0 last:pb-0"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-foreground">
+                        {citationDocumentName(citation)}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        引用{' '}
+                        {citation.citationNo != null ? `[${citation.citationNo}]` : citation.id}
+                      </div>
+                    </div>
+                    {sourceAvailable && documentId && (
+                      <Button
+                        aria-label="下载原文"
+                        className="h-7 shrink-0 px-2"
+                        disabled={downloadingId === citation.id}
+                        onClick={() => void handleDownload(citation)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        {downloadingId === citation.id ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <Download className="size-3" />
+                        )}
+                        下载原文
+                      </Button>
+                    )}
+                  </div>
+
+                  {content && (
+                    <div className="rounded-md bg-muted/60 p-2 text-sm text-foreground">
+                      {truncateText(content, 300)}
+                    </div>
+                  )}
+                  {!content && preview && (
+                    <div className="rounded-md bg-muted/60 p-2 text-sm text-foreground">
+                      {truncateText(preview, 300)}
+                    </div>
+                  )}
+                  {citation.context && (
+                    <details className="rounded-md border border-border/60 px-2 py-1 text-xs text-muted-foreground">
+                      <summary className="cursor-pointer text-foreground">上下文</summary>
+                      <div className="mt-1">{truncateText(citation.context, 500)}</div>
+                    </details>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    {score && <span>相关度 {score}</span>}
+                    {rerankScore && <span>重排 {rerankScore}</span>}
+                    {citation.pageNumber != null && <span>页码 {citation.pageNumber}</span>}
+                    {citation.chunkType && <span>类型 {citation.chunkType}</span>}
+                    {citation.sectionPath && (
+                      <span className="col-span-2">段落路径 {citation.sectionPath}</span>
+                    )}
+                  </div>
+
+                  {sourceUnavailable && (
+                    <div className="text-xs text-muted-foreground">
+                      原文不可下载：{source?.reason ?? '来源不可用'}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {downloadError && <div className="mt-3 text-xs text-destructive">{downloadError}</div>}
+        </div>
       </PopoverContent>
     </Popover>
   )
@@ -384,71 +606,81 @@ function ThinkPanel({
 }
 
 /* ── Markdown content ── */
-const markdownComponents = {
-  h1: ({ children, ...rest }: { children?: ReactNode } & Record<string, unknown>) => (
-    <h1 className="mb-4 mt-6 text-xl font-bold text-foreground" {...rest}>
-      {children}
-    </h1>
-  ),
-  h2: ({ children, ...rest }: { children?: ReactNode } & Record<string, unknown>) => (
-    <h2 className="mb-3 mt-5 text-lg font-semibold text-foreground" {...rest}>
-      {children}
-    </h2>
-  ),
-  h3: ({ children, ...rest }: { children?: ReactNode } & Record<string, unknown>) => (
-    <h3 className="mb-2 mt-4 text-base font-semibold text-foreground" {...rest}>
-      {children}
-    </h3>
-  ),
-  p: ({ children, ...rest }: { children?: ReactNode } & Record<string, unknown>) => (
-    <p className="my-2" {...rest}>
-      {children}
-    </p>
-  ),
-  ul: ({ children, ...rest }: { children?: ReactNode } & Record<string, unknown>) => (
-    <ul className="my-2 list-disc pl-6" {...rest}>
-      {children}
-    </ul>
-  ),
-  ol: ({ children, ...rest }: { children?: ReactNode } & Record<string, unknown>) => (
-    <ol className="my-2 list-decimal pl-6" {...rest}>
-      {children}
-    </ol>
-  ),
-  li: ({ children, ...rest }: { children?: ReactNode } & Record<string, unknown>) => (
-    <li className="my-1" {...rest}>
-      {children}
-    </li>
-  ),
-  strong: ({ children, ...rest }: { children?: ReactNode } & Record<string, unknown>) => (
-    <strong className="font-semibold text-foreground" {...rest}>
-      {children}
-    </strong>
-  ),
-  code: ({
-    className: cls,
-    children,
-    ...rest
-  }: { className?: string; children?: ReactNode } & Record<string, unknown>) => {
-    const isInline = !cls?.includes('language-')
-    if (isInline) {
+function createMarkdownComponents(citations: QACitation[]) {
+  const citationsByNo = createCitationMap(citations)
+
+  return {
+    h1: ({ children, ...rest }: MarkdownComponentProps) => (
+      <h1 className="mb-4 mt-6 text-xl font-bold text-foreground" {...rest}>
+        {renderCitationChildren(children, citationsByNo)}
+      </h1>
+    ),
+    h2: ({ children, ...rest }: MarkdownComponentProps) => (
+      <h2 className="mb-3 mt-5 text-lg font-semibold text-foreground" {...rest}>
+        {renderCitationChildren(children, citationsByNo)}
+      </h2>
+    ),
+    h3: ({ children, ...rest }: MarkdownComponentProps) => (
+      <h3 className="mb-2 mt-4 text-base font-semibold text-foreground" {...rest}>
+        {renderCitationChildren(children, citationsByNo)}
+      </h3>
+    ),
+    p: ({ children, ...rest }: MarkdownComponentProps) => (
+      <p className="my-2" {...rest}>
+        {renderCitationChildren(children, citationsByNo)}
+      </p>
+    ),
+    ul: ({ children, ...rest }: MarkdownComponentProps) => (
+      <ul className="my-2 list-disc pl-6" {...rest}>
+        {children}
+      </ul>
+    ),
+    ol: ({ children, ...rest }: MarkdownComponentProps) => (
+      <ol className="my-2 list-decimal pl-6" {...rest}>
+        {children}
+      </ol>
+    ),
+    li: ({ children, ...rest }: MarkdownComponentProps) => (
+      <li className="my-1" {...rest}>
+        {renderCitationChildren(children, citationsByNo)}
+      </li>
+    ),
+    strong: ({ children, ...rest }: MarkdownComponentProps) => (
+      <strong className="font-semibold text-foreground" {...rest}>
+        {renderCitationChildren(children, citationsByNo)}
+      </strong>
+    ),
+    em: ({ children, ...rest }: MarkdownComponentProps) => (
+      <em {...rest}>{renderCitationChildren(children, citationsByNo)}</em>
+    ),
+    code: ({
+      className: cls,
+      children,
+      ...rest
+    }: { className?: string; children?: ReactNode } & Record<string, unknown>) => {
+      const isInline = !cls?.includes('language-')
+      if (isInline) {
+        return (
+          <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono" {...rest}>
+            {children}
+          </code>
+        )
+      }
       return (
-        <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono" {...rest}>
+        <code className={cls} {...rest}>
           {children}
         </code>
       )
-    }
-    return (
-      <code className={cls} {...rest}>
+    },
+    pre: ({ children, ...rest }: MarkdownComponentProps) => (
+      <pre
+        className="my-2 overflow-x-auto rounded-md bg-zinc-950 p-4 text-sm text-zinc-50"
+        {...rest}
+      >
         {children}
-      </code>
-    )
-  },
-  pre: ({ children, ...rest }: { children?: ReactNode } & Record<string, unknown>) => (
-    <pre className="my-2 overflow-x-auto rounded-md bg-zinc-950 p-4 text-sm text-zinc-50" {...rest}>
-      {children}
-    </pre>
-  ),
+      </pre>
+    ),
+  }
 }
 
 /* ── Status label for assistant messages ── */
@@ -485,6 +717,10 @@ function MessageBubble({
   const isUser = msg.role === 'user'
   const hasThinking = msg.thinking && msg.thinking.length > 0
   const hasCitations = msg.citations && msg.citations.length > 0
+  const markdownComponents = useMemo(
+    () => createMarkdownComponents(msg.citations ?? []),
+    [msg.citations],
+  )
 
   // Report artifacts stored as a dynamic property (not in the QAMessage schema yet)
   const artifacts = (msg as Record<string, unknown>).artifacts as QAReportArtifact[] | undefined

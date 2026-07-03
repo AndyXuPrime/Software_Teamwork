@@ -164,11 +164,20 @@ function sanitizeCitation(raw: Record<string, unknown>): QACitation {
     id: String(raw.id ?? ''),
     messageId: String(raw.messageId ?? ''),
     citationNo: typeof raw.citationNo === 'number' ? raw.citationNo : undefined,
+    chunkId: typeof raw.chunkId === 'string' ? raw.chunkId : undefined,
+    chunkType: typeof raw.chunkType === 'string' ? raw.chunkType : undefined,
+    context: typeof raw.context === 'string' ? raw.context : undefined,
     documentName: typeof raw.documentName === 'string' ? raw.documentName : undefined,
+    knowledgeBaseId: typeof raw.knowledgeBaseId === 'string' ? raw.knowledgeBaseId : undefined,
+    pageNumber: typeof raw.pageNumber === 'number' ? raw.pageNumber : undefined,
+    rerankScore: typeof raw.rerankScore === 'number' ? raw.rerankScore : undefined,
+    sectionPath: typeof raw.sectionPath === 'string' ? raw.sectionPath : undefined,
     text: typeof raw.text === 'string' ? raw.text : undefined,
     score: typeof raw.score === 'number' ? raw.score : undefined,
     contentPreview: typeof raw.contentPreview === 'string' ? raw.contentPreview : undefined,
     documentId: typeof raw.documentId === 'string' ? raw.documentId : undefined,
+    isSourceAvailable:
+      typeof raw.isSourceAvailable === 'boolean' ? raw.isSourceAvailable : undefined,
   } as QACitation
 }
 

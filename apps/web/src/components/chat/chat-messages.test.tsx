@@ -1,7 +1,13 @@
-import { fireEvent, screen, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { QAMessage, QAReportArtifact, QAThinkingStep } from '@/lib/types'
+import type {
+  QACitation,
+  QACitationDetail,
+  QAMessage,
+  QAReportArtifact,
+  QAThinkingStep,
+} from '@/lib/types'
 import { renderWithProviders } from '@/test/render'
 
 import ChatMessages from './chat-messages'
@@ -17,6 +23,22 @@ type TestThinkingStep = QAThinkingStep & {
   toolCallId?: string
   toolName?: string
 }
+
+const lookupCitations = vi.fn<(ids: string[]) => Promise<QACitationDetail[]>>()
+const getDocumentContent = vi.fn<(documentId: string) => Promise<Blob>>()
+const downloadFromUrl = vi.fn()
+
+vi.mock('@/api/citations', () => ({
+  lookupCitations: (ids: string[]) => lookupCitations(ids),
+}))
+
+vi.mock('@/api/knowledge', () => ({
+  getDocumentContent: (documentId: string) => getDocumentContent(documentId),
+}))
+
+vi.mock('@/lib/download', () => ({
+  downloadFromUrl: (url: string, filename?: string) => downloadFromUrl(url, filename),
+}))
 
 function assistantWithThinking(thinking: TestThinkingStep[], content = '回答正文'): QAMessage {
   return {
@@ -39,6 +61,50 @@ function renderMessage(message: QAMessage, onArtifactDownload = vi.fn()) {
       onArtifactDownload={onArtifactDownload}
     />,
   )
+}
+
+function citation(overrides: Partial<QACitation> = {}): QACitation {
+  const citationNo = overrides.citationNo ?? 1
+  return {
+    citationNo,
+    contentPreview: `preview ${citationNo}`,
+    documentId: 'doc-1',
+    documentName: 'Transformer Manual.pdf',
+    id: `cite-${citationNo}`,
+    isSourceAvailable: true,
+    messageId: 'msg-1',
+    score: 0.92,
+    text: `quote ${citationNo}`,
+    ...overrides,
+  }
+}
+
+function assistantMessage(content: string, citations: QACitation[]): QAMessage {
+  return {
+    citations,
+    content,
+    createdAt: '2026-07-03T00:00:00Z',
+    id: 'msg-1',
+    role: 'assistant',
+    sessionId: 'sess-1',
+    status: 'completed',
+  } as QAMessage
+}
+
+function renderChat(content: string, citations: QACitation[]) {
+  return renderWithProviders(
+    <ChatMessages
+      error={null}
+      messages={[assistantMessage(content, citations)]}
+      streaming={false}
+    />,
+  )
+}
+
+function firstCitationTrigger(label: string): HTMLElement {
+  const trigger = screen.getAllByLabelText(label)[0]
+  if (!trigger) throw new Error(`Missing citation trigger: ${label}`)
+  return trigger
 }
 
 describe('ChatMessages ThinkPanel', () => {
@@ -251,4 +317,105 @@ describe('ChatMessages ThinkPanel', () => {
       '巡检报告.docx',
     )
   })
+})
+
+describe('ChatMessages citations', () => {
+  it('renders answer citation markers as inline buttons', () => {
+    renderChat('巡检需要记录油温 [1]', [citation()])
+
+    expect(screen.getAllByLabelText('查看引用 [1]').length).toBeGreaterThan(0)
+  })
+
+  it('renders discrete markers and leaves invalid markers as text', () => {
+    renderChat('参考 [1][3][5]，不要链接 [99]', [
+      citation({ citationNo: 1, id: 'cite-1' }),
+      citation({ citationNo: 3, id: 'cite-3' }),
+      citation({ citationNo: 5, id: 'cite-5' }),
+    ])
+
+    expect(screen.getAllByLabelText('查看引用 [1]').length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText('查看引用 [3]').length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText('查看引用 [5]').length).toBeGreaterThan(0)
+    expect(screen.queryByLabelText('查看引用 [99]')).not.toBeInTheDocument()
+    expect(screen.getByText(/不要链接 \[99\]/)).toBeInTheDocument()
+  })
+
+  it('merges adjacent same-document citation markers', () => {
+    renderChat('连续引用 [1][2][3]', [
+      citation({ citationNo: 1, id: 'cite-1' }),
+      citation({ citationNo: 2, id: 'cite-2' }),
+      citation({ citationNo: 3, id: 'cite-3' }),
+    ])
+
+    expect(screen.getByLabelText('查看引用 [1-3]')).toBeInTheDocument()
+  })
+
+  it('does not merge adjacent citations from different documents', () => {
+    renderChat('不同来源 [1][2]', [
+      citation({ citationNo: 1, documentId: 'doc-1', id: 'cite-1' }),
+      citation({ citationNo: 2, documentId: 'doc-2', id: 'cite-2' }),
+    ])
+
+    expect(screen.queryByLabelText('查看引用 [1-2]')).not.toBeInTheDocument()
+    expect(screen.getAllByLabelText('查看引用 [1]').length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText('查看引用 [2]').length).toBeGreaterThan(0)
+  })
+
+  it('loads citation detail when the popover opens', async () => {
+    lookupCitations.mockResolvedValueOnce([
+      {
+        ...citation(),
+        content: '完整原文内容',
+        context: '上下文内容',
+        pageNumber: 7,
+        source: { available: true, downloadEndpoint: '/api/v1/documents/doc-1/content' },
+      },
+    ])
+
+    renderChat('查看详情 [1]', [citation({ text: undefined })])
+    fireEvent.click(firstCitationTrigger('查看引用 [1]'))
+
+    expect(await screen.findByText('完整原文内容')).toBeInTheDocument()
+    expect(screen.getByText('页码 7')).toBeInTheDocument()
+  })
+
+  it('downloads original document when the citation source is available', async () => {
+    lookupCitations.mockResolvedValueOnce([
+      {
+        ...citation(),
+        content: '完整原文内容',
+        source: { available: true, downloadEndpoint: '/api/v1/documents/doc-1/content' },
+      },
+    ])
+    getDocumentContent.mockResolvedValueOnce(new Blob(['source']))
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:source'),
+      revokeObjectURL: vi.fn(),
+    })
+
+    renderChat('可下载 [1]', [citation()])
+    fireEvent.click(firstCitationTrigger('查看引用 [1]'))
+    fireEvent.click(await screen.findByRole('button', { name: '下载原文' }))
+
+    await waitFor(() => {
+      expect(getDocumentContent).toHaveBeenCalledWith('doc-1')
+      expect(downloadFromUrl).toHaveBeenCalledWith('blob:source', 'Transformer Manual.pdf')
+    })
+  })
+
+  it('hides the download button and shows the reason when the source is unavailable', async () => {
+    lookupCitations.mockResolvedValueOnce([
+      {
+        ...citation({ isSourceAvailable: false }),
+        source: { available: false, reason: 'source_deleted_or_forbidden' },
+      },
+    ])
+
+    renderChat('不可下载 [1]', [citation({ isSourceAvailable: false })])
+    fireEvent.click(firstCitationTrigger('查看引用 [1]'))
+
+    expect(await screen.findByText(/source_deleted_or_forbidden/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '下载原文' })).not.toBeInTheDocument()
+  })
+
 })
