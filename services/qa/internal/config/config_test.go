@@ -20,6 +20,11 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("MCP_SERVER_COMMAND", "")
 	t.Setenv("MCP_SERVER_ARGS_JSON", "")
 	t.Setenv("MCP_SERVER_ALIAS", "")
+	t.Setenv("KNOWLEDGE_MCP_URL", "")
+	t.Setenv("KNOWLEDGE_MCP_TOKEN", "")
+	t.Setenv("KNOWLEDGE_MCP_TOKEN_HEADER", "")
+	t.Setenv("KNOWLEDGE_MCP_ALIAS", "")
+	t.Setenv("KNOWLEDGE_MCP_TIMEOUT", "")
 }
 
 func TestLoadDefaultConfiguration(t *testing.T) {
@@ -34,6 +39,11 @@ func TestLoadDefaultConfiguration(t *testing.T) {
 	if cfg.ModelTimeout != 60*time.Second || cfg.MaxIterations != 8 {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
+	if cfg.KnowledgeMCPURL != "" || cfg.KnowledgeMCPToken != "test-service-token" ||
+		cfg.KnowledgeMCPTokenHeader != "X-Service-Token" || cfg.KnowledgeMCPAlias != "knowledge" ||
+		cfg.KnowledgeMCPTimeout != 30*time.Second {
+		t.Fatalf("unexpected Knowledge MCP defaults: %+v", cfg)
+	}
 	if cfg.HTTPAddr != ":8084" || cfg.ShutdownTimeout != 10*time.Second || cfg.MaxRequestBytes != 1<<20 {
 		t.Fatalf("unexpected HTTP defaults: %+v", cfg)
 	}
@@ -46,6 +56,41 @@ func TestLoadDefaultConfiguration(t *testing.T) {
 		cfg.ModelID != "deepseek-chat" ||
 		cfg.AIGatewayStream {
 		t.Fatalf("unexpected AI Gateway defaults: %+v", cfg)
+	}
+}
+
+func TestLoadKnowledgeMCPConfiguration(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("KNOWLEDGE_MCP_URL", "http://knowledge:8083/mcp")
+	t.Setenv("KNOWLEDGE_MCP_TOKEN", "knowledge-token")
+	t.Setenv("KNOWLEDGE_MCP_TOKEN_HEADER", "X-Knowledge-Token")
+	t.Setenv("KNOWLEDGE_MCP_ALIAS", "team_knowledge")
+	t.Setenv("KNOWLEDGE_MCP_TIMEOUT", "12s")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.KnowledgeMCPURL != "http://knowledge:8083/mcp" ||
+		cfg.KnowledgeMCPToken != "knowledge-token" ||
+		cfg.KnowledgeMCPTokenHeader != "X-Knowledge-Token" ||
+		cfg.KnowledgeMCPAlias != "team_knowledge" || cfg.KnowledgeMCPTimeout != 12*time.Second {
+		t.Fatalf("unexpected Knowledge MCP config: %+v", cfg)
+	}
+}
+
+func TestLoadRejectsInvalidKnowledgeMCPConfiguration(t *testing.T) {
+	for name, setup := range map[string]func(*testing.T){
+		"url":    func(t *testing.T) { t.Setenv("KNOWLEDGE_MCP_URL", "file:///tmp/mcp") },
+		"header": func(t *testing.T) { t.Setenv("KNOWLEDGE_MCP_TOKEN_HEADER", "bad:header") },
+		"alias":  func(t *testing.T) { t.Setenv("KNOWLEDGE_MCP_ALIAS", "Knowledge-Tools") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			setRequiredEnvironment(t)
+			setup(t)
+			if _, err := Load(); err == nil {
+				t.Fatal("expected invalid Knowledge MCP configuration to fail")
+			}
+		})
 	}
 }
 

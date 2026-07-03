@@ -208,6 +208,15 @@ type citationToolRunner struct{}
 
 const citationToolResultContent = `{"data":{"results":[{"documentId":"doc-1","documentName":"Boiler Manual","knowledgeBaseId":"kb-1","chunkId":"chunk-7","sectionPath":"3.1","quoteText":"inspect the valve before startup","contentPreview":"inspect the valve before startup","context":"Operators inspect the valve before startup.","content":"FULL RAW DOCUMENT BODY MUST NOT LEAK","fullText":"FULL RAW DOCUMENT BODY MUST NOT LEAK EITHER","pageNumber":12,"score":0.91,"rerankScore":0.88,"chunkType":"paragraph","metadata":{"pageLabel":"12","objectKey":"secret","internalUrl":"http://internal/doc","vector":[0.1,0.2]}}]}}`
 
+func TestCitationsRecognizePrefixedKnowledgeMCPSearch(t *testing.T) {
+	citations := citationsFromAgentMessages("message-1", "run-1", []agent.Message{{
+		Role: agent.RoleTool, Name: "knowledge__search", Content: citationToolResultContent,
+	}})
+	if len(citations) != 1 || citations[0].DocumentID != "doc-1" || citations[0].ChunkID != "chunk-7" {
+		t.Fatalf("citations = %#v", citations)
+	}
+}
+
 type documentReportToolRunner struct{}
 
 const documentReportToolResultContent = `{"status":"accepted","reportFile":{"id":"rf-1","reportId":"rpt-1","jobId":"job-1","filename":"inspection.docx","format":"docx","fileSize":2048,"status":"succeeded","contentPath":"http://internal/file/ref"}}`

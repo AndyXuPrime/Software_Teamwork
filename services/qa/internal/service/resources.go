@@ -96,7 +96,7 @@ func NormalizeCitation(item Citation) Citation {
 	if item.IsSourceAvailable {
 		if item.DocumentID != "" {
 			item.Source.DownloadEndpoint = "/api/v1/documents/" + item.DocumentID + "/content"
-			}
+		}
 	} else {
 		if item.SourceUnavailableReason == "" {
 			item.SourceUnavailableReason = citationSourceUnavailableReason
@@ -222,7 +222,7 @@ func DefaultAgentConfig() AgentConfig {
 		OverallTimeoutSeconds: 120,
 		EnabledToolNames: append([]string{
 			"search_knowledge", "search_session_attachments",
-		}, tools.DefaultDocumentReportToolNames...),
+		}, append(tools.ModelFacingKnowledgeMCPToolNames("knowledge"), tools.DefaultDocumentReportToolNames...)...),
 	}
 }
 

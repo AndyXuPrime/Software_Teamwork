@@ -92,6 +92,9 @@ func main() {
 		MaxToolResultBytes: cfg.MaxToolResultBytes, EnableCommandTool: cfg.EnableCommandTool,
 		CommandTimeout: cfg.CommandTimeout, MaxIterations: cfg.MaxIterations,
 		DefaultToolTimeout: cfg.MCPToolTimeout,
+		KnowledgeMCPURL:    cfg.KnowledgeMCPURL, KnowledgeMCPToken: cfg.KnowledgeMCPToken,
+		KnowledgeMCPTokenHeader: cfg.KnowledgeMCPTokenHeader,
+		KnowledgeMCPAlias:       cfg.KnowledgeMCPAlias, KnowledgeMCPTimeout: cfg.KnowledgeMCPTimeout,
 	})
 	if err != nil {
 		logger.Error("agent runtime initialization failed", "service", "qa", "error", err)

@@ -18,13 +18,18 @@ import (
 )
 
 type ManagerConfig struct {
-	WorkDir            string
-	MaxFileBytes       int
-	MaxToolResultBytes int
-	EnableCommandTool  bool
-	CommandTimeout     time.Duration
-	MaxIterations      int
-	DefaultToolTimeout time.Duration
+	WorkDir                 string
+	MaxFileBytes            int
+	MaxToolResultBytes      int
+	EnableCommandTool       bool
+	CommandTimeout          time.Duration
+	MaxIterations           int
+	DefaultToolTimeout      time.Duration
+	KnowledgeMCPURL         string
+	KnowledgeMCPToken       string
+	KnowledgeMCPTokenHeader string
+	KnowledgeMCPAlias       string
+	KnowledgeMCPTimeout     time.Duration
 }
 
 type runtimeState struct {
@@ -279,17 +284,16 @@ func (m *Manager) buildState(ctx context.Context, runtimeConfig service.RuntimeC
 		now := time.Now().UTC()
 		m.updateMCPStatus(ctx, server.ID, len(mcpTools), &now, "")
 	}
-	if m.retriever != nil {
-		adapter := &knowledgeRetrieverAdapter{retriever: m.retriever}
-		knowledgeTool, err := toolspkg.NewKnowledgeToolClient(toolspkg.KnowledgeToolConfig{
-			RetrievalClient: adapter,
-			Timeout:         m.cfg.DefaultToolTimeout,
-		})
-		if err != nil {
-			closeClients(clients)
-			return nil, fmt.Errorf("init knowledge tool client: %w", err)
-		}
-		providers = append(providers, knowledgeTool)
+	knowledgeProvider, knowledgeClient, err := m.buildKnowledgeProvider(ctx)
+	if err != nil {
+		closeClients(clients)
+		return nil, err
+	}
+	if knowledgeProvider != nil {
+		providers = append(providers, knowledgeProvider)
+	}
+	if knowledgeClient != nil {
+		clients = append(clients, knowledgeClient)
 	}
 	if m.attachments != nil {
 		attachmentTool, err := toolspkg.NewAttachmentToolClient(toolspkg.AttachmentToolConfig{
@@ -360,6 +364,48 @@ func (m *Manager) buildState(ctx context.Context, runtimeConfig service.RuntimeC
 		defaultKnowledgeBaseIDs: runtimeConfig.DefaultKnowledgeBaseIDs,
 		retrievalSettings:       runtimeConfig.RetrievalSettings,
 	}, nil
+}
+
+func (m *Manager) buildKnowledgeProvider(ctx context.Context) (agent.ToolClient, *mcpclient.Client, error) {
+	if m.cfg.KnowledgeMCPURL != "" {
+		client, connectErr := mcpclient.Connect(ctx, mcpclient.Config{
+			Transport: mcpclient.TransportStreamableHTTP,
+			Endpoint:  m.cfg.KnowledgeMCPURL, Token: m.cfg.KnowledgeMCPToken,
+			TokenHeader: m.cfg.KnowledgeMCPTokenHeader,
+		})
+		if connectErr == nil {
+			prefixed, prefixErr := mcpclient.NewPrefixed(m.cfg.KnowledgeMCPAlias, client, m.cfg.KnowledgeMCPTimeout)
+			if prefixErr == nil {
+				definitions, listErr := prefixed.ListTools(ctx)
+				if listErr == nil && hasRequiredKnowledgeMCPTools(definitions, m.cfg.KnowledgeMCPAlias) {
+					return prefixed, client, nil
+				}
+			}
+			_ = client.Close()
+		}
+	}
+	if m.retriever == nil {
+		return nil, nil, nil
+	}
+	knowledgeTool, err := toolspkg.NewKnowledgeToolClient(toolspkg.KnowledgeToolConfig{
+		RetrievalClient: &knowledgeRetrieverAdapter{retriever: m.retriever},
+		Timeout:         m.cfg.DefaultToolTimeout,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("init knowledge tool client: %w", err)
+	}
+	return knowledgeTool, nil, nil
+}
+
+func hasRequiredKnowledgeMCPTools(definitions []agent.ToolDefinition, alias string) bool {
+	wanted := make(map[string]struct{}, len(toolspkg.DefaultKnowledgeMCPToolNames))
+	for _, name := range toolspkg.DefaultKnowledgeMCPToolNames {
+		wanted[alias+"__"+name] = struct{}{}
+	}
+	for _, definition := range definitions {
+		delete(wanted, definition.Function.Name)
+	}
+	return len(wanted) == 0
 }
 
 func (m *Manager) updateMCPStatus(ctx context.Context, id string, toolCount int, connectedAt *time.Time, lastError string) {
