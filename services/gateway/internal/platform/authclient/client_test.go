@@ -46,6 +46,7 @@ func TestNewRejectsUnsafeAuthBaseURLs(t *testing.T) {
 		baseURL string
 	}{
 		{name: "missing scheme", baseURL: "auth:8001"},
+		{name: "missing host", baseURL: "http:///internal"},
 		{name: "relative path", baseURL: "/internal"},
 		{name: "unsupported scheme", baseURL: "ftp://auth:8001"},
 		{name: "credentials", baseURL: "http://user:pass@auth:8001"},
