@@ -1,4 +1,5 @@
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -26,6 +27,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   formatGatewayCapabilityError,
   getGatewayCapabilityIssue,
@@ -186,6 +194,7 @@ export function KnowledgeDocumentsPage({
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploadTags, setUploadTags] = useState('')
   const [dragOver, setDragOver] = useState(false)
+  const [showSuccess, setShowSuccess] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Edit tags state
@@ -265,6 +274,20 @@ export function KnowledgeDocumentsPage({
     return () => clearTimeout(timer)
   }, [notification])
 
+  // ── Upload success auto-dismiss ──
+
+  useEffect(() => {
+    if (!showSuccess) return
+    const timer = setTimeout(() => setShowSuccess(false), 1500)
+    return () => clearTimeout(timer)
+  }, [showSuccess])
+
+  // ── Clear success when upload dialog opens/closes ──
+
+  useEffect(() => {
+    setShowSuccess(false)
+  }, [uploadOpen])
+
   // ── Derived ──
 
   const totalPages = data ? Math.max(1, Math.ceil(data.page.total / PAGE_SIZE)) : 1
@@ -303,6 +326,7 @@ export function KnowledgeDocumentsPage({
         return
       }
       setSelectedFile(file)
+      setShowSuccess(true)
     },
     [validateFile],
   )
@@ -478,23 +502,21 @@ export function KnowledgeDocumentsPage({
         <StateBlock
           action={
             !isKbListLoading && (
-              <select
-                className="h-9 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                value=""
-                onChange={(e) => {
-                  const id = e.target.value
-                  if (id) setActiveKbId(id)
-                }}
+              <Select
+                value={activeKbId || undefined}
+                onValueChange={(value) => setActiveKbId(String(value))}
               >
-                <option value="" disabled>
-                  选择知识库…
-                </option>
-                {(kbListData?.items ?? []).map((kb) => (
-                  <option key={kb.id} value={kb.id}>
-                    {kb.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="h-9 w-auto min-w-[180px]">
+                  <SelectValue placeholder="选择知识库…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(kbListData?.items ?? []).map((kb) => (
+                    <SelectItem key={kb.id} value={kb.id}>
+                      {kb.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )
           }
           className="mb-6"
@@ -541,7 +563,7 @@ export function KnowledgeDocumentsPage({
         <>
           {/* Search & filter bar */}
           <div className="mb-4 flex gap-2">
-            <div className="relative flex-1">
+            <div className="search-expand relative flex-1">
               <Search
                 aria-hidden="true"
                 className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
@@ -557,21 +579,25 @@ export function KnowledgeDocumentsPage({
                 className="pl-8"
               />
             </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value as DocumentStatus | '')
+            <Select
+              value={statusFilter || undefined}
+              onValueChange={(v) => {
+                setStatusFilter(String(v) as DocumentStatus | '')
                 setPage(1)
               }}
-              className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
             >
-              <option value="">全部状态</option>
-              {(FILTERABLE_STATUSES.filter(Boolean) as DocumentStatus[]).map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-8 w-auto min-w-[110px]">
+                <SelectValue placeholder="全部状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">全部状态</SelectItem>
+                {(FILTERABLE_STATUSES.filter(Boolean) as DocumentStatus[]).map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {STATUS_LABELS[s]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Empty state */}
@@ -743,6 +769,7 @@ export function KnowledgeDocumentsPage({
                     <Button
                       variant="outline"
                       size="icon-sm"
+                      className="hover:scale-105 active:scale-95 transition-transform"
                       disabled={page <= 1}
                       onClick={() => setPage((p) => p - 1)}
                       aria-label="上一页"
@@ -752,6 +779,7 @@ export function KnowledgeDocumentsPage({
                     <Button
                       variant="outline"
                       size="icon-sm"
+                      className="hover:scale-105 active:scale-95 transition-transform"
                       disabled={page >= totalPages}
                       onClick={() => setPage((p) => p + 1)}
                       aria-label="下一页"
@@ -779,11 +807,13 @@ export function KnowledgeDocumentsPage({
           <div className="space-y-4">
             {/* Drag-and-drop zone */}
             <div
-              className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors ${
+              className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-all duration-200 ${
                 dragOver
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-muted-foreground/30'
-              } ${selectedFile ? 'border-emerald-500/50 bg-emerald-50 dark:bg-emerald-950/20' : ''}`}
+                  ? 'border-primary bg-primary/5 scale-[1.02]'
+                  : selectedFile
+                    ? 'border-emerald-500/50 bg-emerald-50 dark:bg-emerald-950/20'
+                    : 'upload-zone border-border hover:border-muted-foreground/30'
+              }`}
               onDragOver={(e) => {
                 e.preventDefault()
                 setDragOver(true)
@@ -792,6 +822,12 @@ export function KnowledgeDocumentsPage({
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
             >
+              {/* Success check overlay */}
+              {showSuccess && (
+                <div className="check-pop absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-emerald-500/10">
+                  <Check className="size-10 text-emerald-500" strokeWidth={2.5} />
+                </div>
+              )}
               {selectedFile ? (
                 <div className="text-center">
                   <FileText aria-hidden="true" className="mx-auto mb-2 size-8 text-emerald-500" />

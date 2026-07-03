@@ -13,6 +13,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   buildCreateModelProfileRequest,
   buildUpdateModelProfileRequest,
   formatModelProfileError,
@@ -79,16 +86,16 @@ const EMPTY_FORM: ModelProfileFormValues = {
 
 function ModelProfilesSkeleton() {
   return (
-    <div className="animate-pulse space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="h-7 w-32 rounded bg-muted" />
-        <div className="h-8 w-32 rounded bg-muted" />
+        <div className="h-7 w-32 rounded skeleton-shimmer" />
+        <div className="h-8 w-32 rounded skeleton-shimmer" />
       </div>
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-4 py-3">
           <div className="grid grid-cols-7 gap-4">
             {Array.from({ length: 7 }).map((_, i) => (
-              <div key={i} className="h-4 rounded bg-muted" />
+              <div key={i} className="h-4 rounded skeleton-shimmer" />
             ))}
           </div>
         </div>
@@ -96,7 +103,7 @@ function ModelProfilesSkeleton() {
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="grid grid-cols-7 gap-4 px-4 py-3">
               {Array.from({ length: 7 }).map((_, j) => (
-                <div key={j} className="h-4 rounded bg-muted" />
+                <div key={j} className="h-4 rounded skeleton-shimmer" />
               ))}
             </div>
           ))}
@@ -460,20 +467,23 @@ export function ModelProfilesPage() {
               >
                 用途 <span className="text-destructive">*</span>
               </label>
-              <select
-                id="mp-create-purpose"
+              <Select
                 value={form.purpose}
-                onChange={(e) =>
-                  updateField('purpose', e.target.value as ModelProfileFormValues['purpose'])
+                onValueChange={(v) =>
+                  updateField('purpose', String(v) as ModelProfileFormValues['purpose'])
                 }
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
               >
-                {PURPOSE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="mp-create-purpose" className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PURPOSE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Provider */}
@@ -484,20 +494,23 @@ export function ModelProfilesPage() {
               >
                 服务商 <span className="text-destructive">*</span>
               </label>
-              <select
-                id="mp-create-provider"
+              <Select
                 value={form.provider}
-                onChange={(e) =>
-                  updateField('provider', e.target.value as ModelProfileFormValues['provider'])
+                onValueChange={(v) =>
+                  updateField('provider', String(v) as ModelProfileFormValues['provider'])
                 }
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
               >
-                {PROVIDER_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="mp-create-provider" className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROVIDER_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Base URL */}
@@ -736,20 +749,23 @@ export function ModelProfilesPage() {
               >
                 服务商 <span className="text-destructive">*</span>
               </label>
-              <select
-                id="mp-edit-provider"
+              <Select
                 value={form.provider}
-                onChange={(e) =>
-                  updateField('provider', e.target.value as ModelProfileFormValues['provider'])
+                onValueChange={(v) =>
+                  updateField('provider', String(v) as ModelProfileFormValues['provider'])
                 }
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
               >
-                {PROVIDER_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="mp-edit-provider" className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROVIDER_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Base URL */}

@@ -17,6 +17,8 @@ goose PostgreSQL tables when `DATABASE_URL` or `KNOWLEDGE_DATABASE_URL` is set.
 - Parser-config storage: `pgx/v5` + hand-written SQL (optional)
 
 See `../knowledge-runtime/README.md` for host-run vendor runtime wiring.
+The MCP transport and QA integration workflow are documented in
+[`docs/services/knowledge/docs/mcp-server.md`](../../docs/services/knowledge/docs/mcp-server.md).
 
 ## Configuration
 
@@ -142,3 +144,22 @@ the removed Go ingestion worker.
 Contract tests under `internal/adapter` and `internal/mcp` use fake vendor HTTP
 servers or in-memory MCP transports. Live vendor tests require
 `-tags=integration` and `KNOWLEDGE_VENDOR_INTEGRATION_URL`.
+
+For end-to-end ingestion diagnostics, start both Knowledge runtime processes
+(`services/knowledge-runtime/deploy/api/run-local.sh` and
+`services/knowledge-runtime/deploy/worker/run-local.sh`) before the adapter. The
+adapter `/readyz` checks the runtime API and task executor heartbeat; if uploads
+stay in `parsing`, first inspect `/internal/v1/runtime/status` and the runtime
+worker logs. Start or restart the adapter with `KNOWLEDGE_AUTO_START_INGESTION=true`;
+the smoke will fail fast with an `uploaded` status if the adapter was started
+with auto-start disabled. With real dependencies available, run:
+
+```bash
+# Set before starting the adapter process:
+# export KNOWLEDGE_AUTO_START_INGESTION=true
+
+KNOWLEDGE_INGESTION_SMOKE=1 \
+KNOWLEDGE_SERVICE_BASE_URL=http://127.0.0.1:8083 \
+INTERNAL_SERVICE_TOKEN=local-dev-internal-service-token-change-me \
+go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v
+```
