@@ -147,6 +147,8 @@ export const useChatStore = create<ChatState>()(
           error: null,
           lastFailedMsg: null,
           messagesBySession: {},
+          attachmentsBySession: {},
+          excludedAttachmentIds: {},
         })
       },
 
