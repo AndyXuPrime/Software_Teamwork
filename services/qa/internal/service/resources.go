@@ -264,6 +264,7 @@ type QAConfigVersion struct {
 	OverallTimeoutSeconds   int                   `json:"overallTimeoutSeconds,omitempty"`
 	EnabledToolNames        []string              `json:"enabledToolNames,omitempty"`
 	IsActive                bool                  `json:"isActive"`
+	CreatedBy               string                `json:"createdBy,omitempty"`
 	CreatedAt               time.Time             `json:"createdAt"`
 	ReplacedActiveVersionID string                `json:"-"`
 }

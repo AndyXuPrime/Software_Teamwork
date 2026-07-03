@@ -28,6 +28,28 @@ describe('shared access requirements', () => {
     ).toBe(true)
   })
 
+  it('grants the admin shell to QA settings authorities used by Agent prompt routes', () => {
+    expect(
+      canAccess(
+        {
+          ...businessUser,
+          permissions: ['qa:settings:read'],
+        },
+        adminShellAccess,
+      ),
+    ).toBe(true)
+
+    expect(
+      canAccess(
+        {
+          ...businessUser,
+          permissions: ['qa:settings:write'],
+        },
+        adminShellAccess,
+      ),
+    ).toBe(true)
+  })
+
   it('grants the admin shell to admin authorities', () => {
     expect(
       canAccess(

@@ -40,6 +40,12 @@ const menuItems: AdminNavigationItem[] = [
         path: '/admin/users',
         requirement: { roles: ['admin', 'super_admin'] },
       },
+      {
+        key: 'prompts',
+        label: 'Agent 提示词',
+        path: '/admin/prompts',
+        requirement: { any: ['qa:settings:read'] },
+      },
     ],
   },
   {

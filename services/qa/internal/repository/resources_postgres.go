@@ -233,7 +233,7 @@ func (r *Postgres) GetActiveQAConfigVersion(ctx context.Context) (service.QAConf
 	return r.getQAConfigVersion(ctx, "", true)
 }
 func (r *Postgres) getQAConfigVersion(ctx context.Context, id string, active bool) (service.QAConfigVersion, error) {
-	query := `SELECT id::text,version_no,top_k,similarity_threshold,use_rerank,COALESCE(rerank_threshold,0),COALESCE(rerank_top_n,0),max_iterations,tool_timeout_seconds,model_timeout_seconds,overall_timeout_seconds,enabled_tool_names,COALESCE(system_prompt,''),is_active,created_at FROM qa_config_versions WHERE `
+	query := `SELECT id::text,version_no,top_k,similarity_threshold,use_rerank,COALESCE(rerank_threshold,0),COALESCE(rerank_top_n,0),max_iterations,tool_timeout_seconds,model_timeout_seconds,overall_timeout_seconds,enabled_tool_names,COALESCE(system_prompt,''),is_active,COALESCE(created_by_user_id,''),created_at FROM qa_config_versions WHERE `
 	args := []any{}
 	if active {
 		query += `is_active=true ORDER BY version_no DESC LIMIT 1`
@@ -243,7 +243,7 @@ func (r *Postgres) getQAConfigVersion(ctx context.Context, id string, active boo
 	}
 	var v service.QAConfigVersion
 	var tools []byte
-	err := r.pool.QueryRow(ctx, query, args...).Scan(&v.ID, &v.VersionNo, &v.Retrieval.TopK, &v.Retrieval.ScoreThreshold, &v.Retrieval.EnableRerank, &v.Retrieval.RerankThreshold, &v.Retrieval.RerankTopN, &v.Agent.MaxIterations, &v.Agent.ToolTimeoutSeconds, &v.Agent.ModelTimeoutSeconds, &v.Agent.OverallTimeoutSeconds, &tools, &v.SystemPrompt, &v.IsActive, &v.CreatedAt)
+	err := r.pool.QueryRow(ctx, query, args...).Scan(&v.ID, &v.VersionNo, &v.Retrieval.TopK, &v.Retrieval.ScoreThreshold, &v.Retrieval.EnableRerank, &v.Retrieval.RerankThreshold, &v.Retrieval.RerankTopN, &v.Agent.MaxIterations, &v.Agent.ToolTimeoutSeconds, &v.Agent.ModelTimeoutSeconds, &v.Agent.OverallTimeoutSeconds, &tools, &v.SystemPrompt, &v.IsActive, &v.CreatedBy, &v.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return service.QAConfigVersion{}, service.NewError(service.CodeNotFound, "QA configuration not found", err)
 	}
