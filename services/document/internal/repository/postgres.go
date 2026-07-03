@@ -841,6 +841,7 @@ func updateReportJobStatusRow(ctx context.Context, db sqlc.DBTX, id string, stat
 			started_at = CASE WHEN $5::timestamptz IS NOT NULL THEN $5::timestamptz ELSE started_at END,
 			finished_at = $6
 		WHERE id = $1::uuid
+		  AND ($2 = 'canceled' OR status <> 'canceled')
 		RETURNING
 			id::text, COALESCE(request_id, ''), source, job_type, target_type,
 			target_id, COALESCE(asynq_task_id, ''), queue_name, report_id::text,
@@ -1136,8 +1137,8 @@ func (r *PostgresRepository) ClaimRetry(ctx context.Context, jobID, attemptID, t
 		return service.ReportJobAttempt{}, fmt.Errorf("lock report job: %w", err)
 	}
 	s := service.JobStatus(status)
-	if s != service.JobStatusFailed && s != service.JobStatusCanceled {
-		return service.ReportJobAttempt{}, service.NewError(service.CodeValidation, "only failed or canceled jobs can be retried", nil)
+	if s != service.JobStatusFailed && s != service.JobStatusCanceled && s != service.JobStatusPartialSucceeded && s != service.JobStatusSucceeded {
+		return service.ReportJobAttempt{}, service.NewError(service.CodeValidation, "only failed, canceled, succeeded, or partially succeeded jobs can be retried", nil)
 	}
 	if retryCount >= maxAttempts {
 		return service.ReportJobAttempt{}, service.NewError(service.CodeValidation, "max retry attempts reached", nil)
@@ -1240,6 +1241,21 @@ func (r *PostgresRepository) SetAttemptPartialSucceeded(ctx context.Context, att
 	)
 	if err != nil {
 		return fmt.Errorf("set attempt partial succeeded: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) SetAttemptCanceled(ctx context.Context, attemptID string) error {
+	id, err := parseUUID(attemptID)
+	if err != nil {
+		return service.NewError(service.CodeValidation, "invalid attempt id", err)
+	}
+	_, err = r.db.Exec(ctx,
+		`UPDATE report_job_attempts SET status = 'canceled', finished_at = $2 WHERE id = $1`,
+		id, time.Now().UTC(),
+	)
+	if err != nil {
+		return fmt.Errorf("set attempt canceled: %w", err)
 	}
 	return nil
 }

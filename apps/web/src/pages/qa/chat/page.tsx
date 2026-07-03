@@ -653,16 +653,6 @@ export function ChatPage() {
   }, [activeId, attachmentsBySession, updateAttachment])
 
   // ══════════════════════════════════════════════════════════════════════════
-  // Cleanup SSE on unmount
-  // ══════════════════════════════════════════════════════════════════════════
-
-  useEffect(() => {
-    return () => {
-      abortRef.current?.()
-    }
-  }, [])
-
-  // ══════════════════════════════════════════════════════════════════════════
   // Derive sidebar items (merge sessions + messages for display)
   // ══════════════════════════════════════════════════════════════════════════
 

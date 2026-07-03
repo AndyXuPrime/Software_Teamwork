@@ -190,6 +190,26 @@ func (r cancelBeforeCompletedObserverRunner) RunWithToolResultCallback(ctx conte
 	return r.RunWithObserver(ctx, input, observer)
 }
 
+type cancelRequestDuringModelRunner struct {
+	cancel      context.CancelFunc
+	sawCanceled bool
+}
+
+func (r *cancelRequestDuringModelRunner) RunWithObserver(ctx context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
+	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
+	r.cancel()
+	if err := ctx.Err(); err != nil {
+		r.sawCanceled = true
+		return agent.Result{}, err
+	}
+	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1, Usage: agent.TokenUsage{PromptTokens: 7, CompletionTokens: 3, TotalTokens: 10}})
+	final := agent.Message{Role: agent.RoleAssistant, Content: "answer survived disconnect"}
+	return agent.Result{Final: final, Messages: append(input, final), Iterations: 1}, nil
+}
+func (r *cancelRequestDuringModelRunner) RunWithToolResultCallback(ctx context.Context, input []agent.Message, observer agent.Observer, _ agent.ToolObserver) (agent.Result, error) {
+	return r.RunWithObserver(ctx, input, observer)
+}
+
 type toolProgressRunner struct{}
 
 func (toolProgressRunner) RunWithObserver(_ context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
@@ -722,6 +742,34 @@ func TestAskPersistsCompletedInvocationAfterRequestContextCancelled(t *testing.T
 	}
 	if len(repository.invocations) != 1 || repository.invocations[0].Status != "completed" {
 		t.Fatalf("invocations=%+v", repository.invocations)
+	}
+}
+
+func TestAskDoesNotCancelModelRunWhenRequestContextIsCancelled(t *testing.T) {
+	now := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
+	repository := &fakeRepository{
+		conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active", CreatedAt: now, UpdatedAt: now},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	runner := &cancelRequestDuringModelRunner{cancel: cancel}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{runner: runner, prompt: "system"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	qa.now = func() time.Time { return now }
+
+	result, err := qa.Ask(ctx, "user-id", "conversation-id", AskInput{Message: "disconnect during model"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.sawCanceled {
+		t.Fatal("model runner observed request cancellation")
+	}
+	if result.ResponseRun.Status != "completed" || result.AssistantMessage.Status != "completed" {
+		t.Fatalf("result=%+v assistant=%+v", result.ResponseRun, result.AssistantMessage)
+	}
+	if repository.finalization.Status != "completed" || repository.finalization.TerminationReason != "completed" {
+		t.Fatalf("finalization=%+v", repository.finalization)
 	}
 }
 

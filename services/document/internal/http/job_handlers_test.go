@@ -17,6 +17,7 @@ type mockJobSvc struct {
 	createJobFn    func(ctx context.Context, rctx service.RequestContext, input service.CreateJobInput) (service.ReportJob, error)
 	listJobsFn     func(ctx context.Context, rctx service.RequestContext, reportID string) ([]service.ReportJob, error)
 	getJobFn       func(ctx context.Context, rctx service.RequestContext, id string) (service.ReportJob, error)
+	cancelJobFn    func(ctx context.Context, rctx service.RequestContext, id string) (service.ReportJob, error)
 	retryJobFn     func(ctx context.Context, rctx service.RequestContext, id, reason string) (service.ReportJobAttempt, error)
 	listAttemptsFn func(ctx context.Context, rctx service.RequestContext, jobID string) ([]service.ReportJobAttempt, error)
 	listEventsFn   func(ctx context.Context, rctx service.RequestContext, reportID string) ([]service.ReportEvent, error)
@@ -32,6 +33,10 @@ func (m *mockJobSvc) ListJobs(ctx context.Context, rctx service.RequestContext, 
 
 func (m *mockJobSvc) GetJob(ctx context.Context, rctx service.RequestContext, id string) (service.ReportJob, error) {
 	return m.getJobFn(ctx, rctx, id)
+}
+
+func (m *mockJobSvc) CancelJob(ctx context.Context, rctx service.RequestContext, id string) (service.ReportJob, error) {
+	return m.cancelJobFn(ctx, rctx, id)
 }
 
 func (m *mockJobSvc) RetryJob(ctx context.Context, rctx service.RequestContext, id, reason string) (service.ReportJobAttempt, error) {
@@ -161,6 +166,70 @@ func TestGetJobForbidden(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403 Forbidden", rec.Code)
+	}
+}
+
+func TestCancelJobUpdatesRunningJobStatus(t *testing.T) {
+	now := time.Now().UTC()
+	var capturedID string
+	mock := &mockJobSvc{
+		cancelJobFn: func(ctx context.Context, rctx service.RequestContext, id string) (service.ReportJob, error) {
+			capturedID = id
+			if rctx.UserID != "usr_owner" {
+				return service.ReportJob{}, service.NewError(service.CodeForbidden, "you do not have access to this report", nil)
+			}
+			return service.ReportJob{
+				ID:         id,
+				ReportID:   "report-1",
+				JobType:    service.JobTypeContentGeneration,
+				Status:     service.JobStatusCanceled,
+				FinishedAt: &now,
+				CreatedAt:  now.Add(-time.Minute),
+			}, nil
+		},
+	}
+	server := newTestServerWithJobSvc(mock)
+
+	req := httptest.NewRequest(http.MethodPatch, "/report-jobs/job-1", strings.NewReader(`{"status":"canceled"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Id", "usr_owner")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if capturedID != "job-1" {
+		t.Fatalf("captured job id = %q, want job-1", capturedID)
+	}
+	var body struct {
+		Data jobResponse `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Data.Status != string(service.JobStatusCanceled) {
+		t.Fatalf("status = %q, want canceled", body.Data.Status)
+	}
+}
+
+func TestCancelJobRejectsUnsupportedPatchStatus(t *testing.T) {
+	mock := &mockJobSvc{
+		cancelJobFn: func(ctx context.Context, rctx service.RequestContext, id string) (service.ReportJob, error) {
+			t.Fatal("CancelJob should not be called for unsupported status")
+			return service.ReportJob{}, nil
+		},
+	}
+	server := newTestServerWithJobSvc(mock)
+
+	req := httptest.NewRequest(http.MethodPatch, "/report-jobs/job-1", strings.NewReader(`{"status":"running"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Id", "usr_owner")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 	}
 }
 

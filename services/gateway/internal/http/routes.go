@@ -81,6 +81,7 @@ var activeProxyRoutes = []routeSpec{
 	{Method: "GET", Pattern: "/api/v1/reports/{reportId}/jobs", Owner: "document", OperationID: "listReportJobs"},
 	{Method: "POST", Pattern: "/api/v1/reports/{reportId}/jobs", Owner: "document", OperationID: "createReportJob"},
 	{Method: "GET", Pattern: "/api/v1/report-jobs/{jobId}", Owner: "document", OperationID: "getReportJob"},
+	{Method: "PATCH", Pattern: "/api/v1/report-jobs/{jobId}", Owner: "document", OperationID: "updateReportJob"},
 	{Method: "GET", Pattern: "/api/v1/report-jobs/{jobId}/attempts", Owner: "document", OperationID: "listReportJobAttempts"},
 	{Method: "POST", Pattern: "/api/v1/report-jobs/{jobId}/attempts", Owner: "document", OperationID: "createReportJobAttempt"},
 	{Method: "GET", Pattern: "/api/v1/reports/{reportId}/events", Owner: "document", OperationID: "listReportEvents"},

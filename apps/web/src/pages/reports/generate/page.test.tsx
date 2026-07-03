@@ -257,7 +257,7 @@ describe('ReportGeneratePage', () => {
     expect(await screen.findByText(/文档生成模型配置已发布/)).toBeVisible()
   })
 
-  it('shows the current user model config to non-admin report writers without admin-only requests', async () => {
+  it('shows the current document generation model to non-admin report writers without admin-only requests', async () => {
     const user = userEvent.setup()
     setAuthenticatedUser(['report:write'])
     const paths: string[] = []
@@ -352,7 +352,8 @@ describe('ReportGeneratePage', () => {
     await user.click(trigger)
     await screen.findByRole('option', { name: '真实巡检报告' })
     await user.click(screen.getByRole('option', { name: '真实巡检报告' }))
-    expect(await screen.findByText('当前 LLM 配置')).toBeVisible()
+    expect(await screen.findByText('当前文档生成模型')).toBeVisible()
+    expect(screen.queryByText('当前 LLM 配置')).not.toBeInTheDocument()
     expect(screen.getByText('mp-user-chat')).toBeVisible()
     expect(screen.getByText('gpt-user')).toBeVisible()
     expect(screen.queryByRole('button', { name: /发布文档模型配置/ })).not.toBeInTheDocument()
@@ -433,6 +434,7 @@ describe('ReportGeneratePage', () => {
   })
 
   it('renders user-facing report progress from completed sections without internal ids', async () => {
+    const cancelBodies: unknown[] = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init)
       const url = new URL(request.url)
@@ -502,6 +504,21 @@ describe('ReportGeneratePage', () => {
         })
       }
       if (url.pathname.endsWith('/report-jobs/job-content')) {
+        if (request.method === 'PATCH') {
+          cancelBodies.push(await request.clone().json())
+          return jsonResponse({
+            data: {
+              createdAt: '2026-07-03T00:00:00Z',
+              finishedAt: '2026-07-03T00:05:00Z',
+              id: 'job-content',
+              jobType: 'content_generation',
+              progress: { completed: 2, total: 4 },
+              reportId: 'rpt-progress',
+              status: 'canceled',
+            },
+            requestId: 'req-cancel-job',
+          })
+        }
         return jsonResponse({
           data: {
             createdAt: '2026-07-03T00:00:00Z',
@@ -582,9 +599,478 @@ describe('ReportGeneratePage', () => {
     expect(await screen.findByText(/60%/)).toBeVisible()
     expect(screen.getByText('已生成 2 / 4 个章节')).toBeVisible()
     expect(screen.queryByText('job-content')).not.toBeInTheDocument()
+    const cancelButton = screen.getByRole('button', { name: /取消任务/ })
+    expect(cancelButton).toBeVisible()
+    expect(cancelButton).not.toHaveClass('bg-black')
+    expect(cancelButton).not.toHaveClass('text-white')
+    fireEvent.click(cancelButton)
+    await waitFor(() => expect(cancelBodies).toEqual([{ status: 'canceled' }]))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText('任务状态')).not.toBeInTheDocument()
     expect(screen.queryByText('事件日志')).not.toBeInTheDocument()
     expect(screen.queryByText('当前报告')).not.toBeInTheDocument()
+  })
+
+  it('restores an in-progress content job after navigating away and back', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (url.pathname.endsWith('/report-types')) {
+        return jsonResponse({ data: [reportType], requestId: 'req-types' })
+      }
+      if (url.pathname.endsWith('/report-templates')) {
+        return pageResponse([reportTemplate])
+      }
+      if (url.pathname.endsWith('/report-materials')) {
+        return pageResponse([reportMaterial])
+      }
+      if (request.method === 'POST' && url.pathname.endsWith('/reports')) {
+        return jsonResponse({
+          data: {
+            id: 'rpt-restore',
+            name: 'restore-report',
+            reportType: 'summer_peak_inspection',
+            status: 'draft',
+            templateId: 'tpl-real',
+          },
+          requestId: 'req-create-report',
+        })
+      }
+      if (request.method === 'POST' && url.pathname.endsWith('/reports/rpt-restore/jobs')) {
+        const body = (await request.clone().json()) as { jobType?: string }
+        if (body.jobType === 'content_generation') {
+          return jsonResponse({
+            data: {
+              createdAt: '2026-07-03T00:02:00Z',
+              id: 'job-content-restore',
+              jobType: 'content_generation',
+              progress: { completed: 1, total: 2 },
+              reportId: 'rpt-restore',
+              resultSummary: 'restore progress 1 / 2',
+              status: 'running',
+            },
+            requestId: 'req-content-job',
+          })
+        }
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:00:00Z',
+            finishedAt: '2026-07-03T00:01:00Z',
+            id: 'job-outline-restore',
+            jobType: 'outline_generation',
+            progress: { completed: 1, total: 1 },
+            reportId: 'rpt-restore',
+            status: 'succeeded',
+          },
+          requestId: 'req-outline-job',
+        })
+      }
+      if (url.pathname.endsWith('/report-jobs/job-outline-restore')) {
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:00:00Z',
+            finishedAt: '2026-07-03T00:01:00Z',
+            id: 'job-outline-restore',
+            jobType: 'outline_generation',
+            reportId: 'rpt-restore',
+            status: 'succeeded',
+          },
+          requestId: 'req-outline-status',
+        })
+      }
+      if (url.pathname.endsWith('/report-jobs/job-content-restore')) {
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:02:00Z',
+            id: 'job-content-restore',
+            jobType: 'content_generation',
+            progress: { completed: 1, total: 2 },
+            reportId: 'rpt-restore',
+            resultSummary: 'restore progress 1 / 2',
+            status: 'running',
+          },
+          requestId: 'req-content-status',
+        })
+      }
+      if (url.pathname.endsWith('/reports/rpt-restore/outlines')) {
+        return jsonResponse({
+          data: [
+            {
+              createdAt: '2026-07-03T00:00:00Z',
+              id: 'outline-restore',
+              isCurrent: true,
+              reportId: 'rpt-restore',
+              sections: [
+                { id: 'node-1', level: 1, numbering: '1', title: 'restore-section-1' },
+                { id: 'node-2', level: 1, numbering: '2', title: 'restore-section-2' },
+              ],
+              source: 'ai',
+              version: 1,
+            },
+          ],
+          requestId: 'req-outlines',
+        })
+      }
+      if (url.pathname.endsWith('/reports/rpt-restore/sections')) {
+        return jsonResponse({
+          data: [
+            {
+              content: 'done',
+              generationStatus: 'succeeded',
+              id: 'section-1',
+              numbering: '1',
+              reportId: 'rpt-restore',
+              title: 'restore-section-1',
+            },
+            {
+              content: '',
+              generationStatus: 'running',
+              id: 'section-2',
+              numbering: '2',
+              reportId: 'rpt-restore',
+              title: 'restore-section-2',
+            },
+          ],
+          requestId: 'req-sections',
+        })
+      }
+      if (url.pathname.endsWith('/reports/rpt-restore/events')) {
+        return jsonResponse({ data: [], requestId: 'req-events' })
+      }
+
+      return jsonResponse({ data: [], requestId: 'req-default' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const firstRender = renderWithProviders(<ReportGeneratePage />)
+
+    const restoreTypeTrigger = screen.getAllByRole('combobox')[0]!
+    await waitFor(() => expect(restoreTypeTrigger).not.toBeDisabled())
+    fireEvent.click(restoreTypeTrigger)
+    await screen.findByRole('option', { name: '真实巡检报告' })
+    fireEvent.click(screen.getByRole('option', { name: '真实巡检报告' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /创建草稿/ }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /生成正文/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /生成正文/ }))
+
+    expect(await screen.findByText(/restore progress 1 \/ 2/)).toBeVisible()
+    expect((await screen.findAllByText('restore-section-1')).length).toBeGreaterThan(0)
+
+    firstRender.unmount()
+    renderWithProviders(<ReportGeneratePage />)
+
+    expect(await screen.findByText(/restore progress 1 \/ 2/)).toBeVisible()
+    expect((await screen.findAllByText('restore-section-1')).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: /取消任务/ }).length).toBeGreaterThan(0)
+  })
+
+  it('allows retrying a succeeded content generation job', async () => {
+    const retryBodies: unknown[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (url.pathname.endsWith('/report-types')) {
+        return jsonResponse({ data: [reportType], requestId: 'req-types' })
+      }
+      if (url.pathname.endsWith('/report-templates')) {
+        return pageResponse([reportTemplate])
+      }
+      if (url.pathname.endsWith('/report-materials')) {
+        return pageResponse([reportMaterial])
+      }
+      if (request.method === 'POST' && url.pathname.endsWith('/reports')) {
+        return jsonResponse({
+          data: {
+            id: 'rpt-retry-success',
+            name: '迎峰度夏报告',
+            reportType: 'summer_peak_inspection',
+            status: 'draft',
+            templateId: 'tpl-real',
+          },
+          requestId: 'req-create-report',
+        })
+      }
+      if (request.method === 'POST' && url.pathname.endsWith('/reports/rpt-retry-success/jobs')) {
+        const body = (await request.clone().json()) as { jobType?: string }
+        if (body.jobType === 'content_generation') {
+          return jsonResponse({
+            data: {
+              createdAt: '2026-07-03T00:00:00Z',
+              finishedAt: '2026-07-03T00:05:00Z',
+              id: 'job-content-success',
+              jobType: 'content_generation',
+              progress: { completed: 2, total: 2 },
+              reportId: 'rpt-retry-success',
+              resultSummary: '已生成 2 / 2 个章节',
+              status: 'succeeded',
+            },
+            requestId: 'req-content-job',
+          })
+        }
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:00:00Z',
+            finishedAt: '2026-07-03T00:01:00Z',
+            id: 'job-outline-success',
+            jobType: 'outline_generation',
+            progress: { completed: 1, total: 1 },
+            reportId: 'rpt-retry-success',
+            status: 'succeeded',
+          },
+          requestId: 'req-outline-job',
+        })
+      }
+      if (url.pathname.endsWith('/report-jobs/job-outline-success')) {
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:00:00Z',
+            finishedAt: '2026-07-03T00:01:00Z',
+            id: 'job-outline-success',
+            jobType: 'outline_generation',
+            reportId: 'rpt-retry-success',
+            status: 'succeeded',
+          },
+          requestId: 'req-outline-status',
+        })
+      }
+      if (url.pathname.endsWith('/report-jobs/job-content-success/attempts')) {
+        retryBodies.push(await request.clone().json())
+        return jsonResponse({
+          data: {
+            attemptNumber: 2,
+            createdAt: '2026-07-03T00:06:00Z',
+            id: 'attempt-retry-success',
+            jobId: 'job-content-success',
+            status: 'pending',
+          },
+          requestId: 'req-retry-success',
+        })
+      }
+      if (url.pathname.endsWith('/report-jobs/job-content-success')) {
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:00:00Z',
+            finishedAt: '2026-07-03T00:05:00Z',
+            id: 'job-content-success',
+            jobType: 'content_generation',
+            progress: { completed: 2, total: 2 },
+            reportId: 'rpt-retry-success',
+            resultSummary: '已生成 2 / 2 个章节',
+            status: 'succeeded',
+          },
+          requestId: 'req-content-status',
+        })
+      }
+      if (url.pathname.endsWith('/reports/rpt-retry-success/outlines')) {
+        return jsonResponse({
+          data: [
+            {
+              createdAt: '2026-07-03T00:00:00Z',
+              id: 'outline-retry-success',
+              isCurrent: true,
+              reportId: 'rpt-retry-success',
+              sections: [{ id: 'node-1', level: 1, numbering: '1', title: '总览' }],
+              source: 'ai',
+              version: 1,
+            },
+          ],
+          requestId: 'req-outlines',
+        })
+      }
+      if (
+        url.pathname.endsWith('/reports/rpt-retry-success/sections') ||
+        url.pathname.endsWith('/reports/rpt-retry-success/events')
+      ) {
+        return jsonResponse({ data: [], requestId: 'req-empty' })
+      }
+
+      return jsonResponse({ data: [], requestId: 'req-default' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithProviders(<ReportGeneratePage />)
+
+    const retryTypeTrigger = screen.getAllByRole('combobox')[0]!
+    await waitFor(() => expect(retryTypeTrigger).not.toBeDisabled())
+    fireEvent.click(retryTypeTrigger)
+    await screen.findByRole('option', { name: '真实巡检报告' })
+    fireEvent.click(screen.getByRole('option', { name: '真实巡检报告' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /创建草稿/ }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /生成正文/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /生成正文/ }))
+
+    await screen.findByText(/100%/)
+    const retryButton = await waitFor(() => {
+      const buttons = screen.getAllByRole('button', { name: /重试任务/ })
+      const enabled = buttons.find((button) => !(button as HTMLButtonElement).disabled)
+      expect(enabled).toBeDefined()
+      return enabled as HTMLButtonElement
+    })
+    fireEvent.click(retryButton)
+
+    await waitFor(() => expect(retryBodies).toEqual([{ reason: 'frontend_retry' }]))
+  })
+
+  it('edits report outlines with add, delete, undo, redo, and a bounded undo history', async () => {
+    const savedOutlines: unknown[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (url.pathname.endsWith('/report-types')) {
+        return jsonResponse({ data: [reportType], requestId: 'req-types' })
+      }
+      if (url.pathname.endsWith('/report-templates')) {
+        return pageResponse([reportTemplate])
+      }
+      if (url.pathname.endsWith('/report-materials')) {
+        return pageResponse([reportMaterial])
+      }
+      if (request.method === 'POST' && url.pathname.endsWith('/reports')) {
+        return jsonResponse({
+          data: {
+            id: 'rpt-outline-edit',
+            name: '迎峰度夏报告',
+            reportType: 'summer_peak_inspection',
+            status: 'draft',
+            templateId: 'tpl-real',
+          },
+          requestId: 'req-create-report',
+        })
+      }
+      if (request.method === 'POST' && url.pathname.endsWith('/reports/rpt-outline-edit/jobs')) {
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:00:00Z',
+            finishedAt: '2026-07-03T00:01:00Z',
+            id: 'job-outline-edit',
+            jobType: 'outline_generation',
+            progress: { completed: 1, total: 1 },
+            reportId: 'rpt-outline-edit',
+            status: 'succeeded',
+          },
+          requestId: 'req-outline-job',
+        })
+      }
+      if (url.pathname.endsWith('/report-jobs/job-outline-edit')) {
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:00:00Z',
+            finishedAt: '2026-07-03T00:01:00Z',
+            id: 'job-outline-edit',
+            jobType: 'outline_generation',
+            reportId: 'rpt-outline-edit',
+            status: 'succeeded',
+          },
+          requestId: 'req-outline-status',
+        })
+      }
+      if (
+        request.method === 'PATCH' &&
+        url.pathname.endsWith('/reports/rpt-outline-edit/outlines/outline-edit')
+      ) {
+        savedOutlines.push(await request.clone().json())
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:00:00Z',
+            id: 'outline-edit',
+            isCurrent: true,
+            reportId: 'rpt-outline-edit',
+            sections: [],
+            source: 'manual',
+            version: 2,
+          },
+          requestId: 'req-save-outline',
+        })
+      }
+      if (url.pathname.endsWith('/reports/rpt-outline-edit/outlines')) {
+        return jsonResponse({
+          data: [
+            {
+              createdAt: '2026-07-03T00:00:00Z',
+              id: 'outline-edit',
+              isCurrent: true,
+              reportId: 'rpt-outline-edit',
+              sections: [
+                {
+                  id: 'node-1',
+                  level: 1,
+                  numbering: '1',
+                  title: '总览',
+                  children: [{ id: 'node-1-1', level: 2, numbering: '1.1', title: '范围' }],
+                },
+                { id: 'node-2', level: 1, numbering: '2', title: '风险分析' },
+              ],
+              source: 'ai',
+              version: 1,
+            },
+          ],
+          requestId: 'req-outlines',
+        })
+      }
+      if (
+        url.pathname.endsWith('/reports/rpt-outline-edit/sections') ||
+        url.pathname.endsWith('/reports/rpt-outline-edit/events')
+      ) {
+        return jsonResponse({ data: [], requestId: 'req-empty' })
+      }
+
+      return jsonResponse({ data: [], requestId: 'req-default' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithProviders(<ReportGeneratePage />)
+
+    const outlineTypeTrigger = screen.getAllByRole('combobox')[0]!
+    await waitFor(() => expect(outlineTypeTrigger).not.toBeDisabled())
+    fireEvent.click(outlineTypeTrigger)
+    await screen.findByRole('option', { name: '真实巡检报告' })
+    fireEvent.click(screen.getByRole('option', { name: '真实巡检报告' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /创建草稿/ }))
+
+    const firstTitle = await screen.findByDisplayValue('总览')
+    fireEvent.change(firstTitle, { target: { value: '总览修订' } })
+    fireEvent.click(screen.getAllByRole('button', { name: /在此章节后新增同级章节/ })[0]!)
+    expect(screen.getByDisplayValue('新章节')).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: /删除章节：风险分析/ }))
+    expect(screen.queryByDisplayValue('风险分析')).not.toBeInTheDocument()
+    fireEvent.keyDown(document, { ctrlKey: true, key: 'z' })
+    expect(screen.getByDisplayValue('风险分析')).toBeVisible()
+    fireEvent.keyDown(document, { ctrlKey: true, key: 'y' })
+    expect(screen.queryByDisplayValue('风险分析')).not.toBeInTheDocument()
+
+    const editedTitle = screen.getByDisplayValue('总览修订')
+    for (let index = 1; index <= 16; index += 1) {
+      fireEvent.change(editedTitle, { target: { value: `总览修订 ${index}` } })
+    }
+    for (let index = 0; index < 16; index += 1) {
+      fireEvent.keyDown(document, { ctrlKey: true, key: 'z' })
+    }
+    expect(screen.getByDisplayValue('总览修订 1')).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: /保存大纲/ }))
+
+    await waitFor(() => expect(savedOutlines).toHaveLength(1))
+    const saved = savedOutlines[0] as {
+      manualEdited?: boolean
+      sections?: Array<{ children?: Array<{ title: string }>; level: number; title: string }>
+    }
+    expect(saved.manualEdited).toBe(true)
+    expect(saved.sections?.[0]).toMatchObject({
+      children: [{ level: 2, title: '范围' }],
+      level: 1,
+      title: '总览修订 1',
+    })
+    expect(saved.sections?.[1]).toMatchObject({ level: 1, title: '新章节' })
+    expect(saved.sections?.some((section) => section.title === '风险分析')).toBe(false)
   })
 
   it('shows gateway request id and does not create a local report when draft creation is not implemented', async () => {

@@ -8,7 +8,7 @@
  * Signature: streamChat(sessionId, message, handlers, signal?)
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 import type { ChatStreamHandlers } from '@/api/chat'
 import { streamChat } from '@/api/chat'
@@ -20,13 +20,6 @@ export function useStreamChat(handlers: ChatStreamHandlers) {
 
   // Keep handlers current without re-triggering effects
   handlersRef.current = handlers
-
-  // Abort on unmount
-  useEffect(() => {
-    return () => {
-      abortRef.current?.()
-    }
-  }, [])
 
   const sendMessage = useCallback((sessionId: string, message: string) => {
     // Cancel any in-flight stream

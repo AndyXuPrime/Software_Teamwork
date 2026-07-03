@@ -228,13 +228,11 @@ export function listReportEvents(reportId: string): Promise<ReportEvent[]> {
   return gatewayRequest<ReportEvent[]>(`/reports/${encodeURIComponent(reportId)}/events`)
 }
 
-/**
- * Cancel a running report job.
- * NOT YET SUPPORTED: the Gateway OpenAPI does not currently expose PATCH
- * for /api/v1/report-jobs/{jobId}. Will throw until contract is updated.
- */
-export function cancelReportJob(_jobId: string): Promise<ReportJob> {
-  throw new Error('Job cancellation is not yet supported by the Gateway contract.')
+export function cancelReportJob(jobId: string): Promise<ReportJob> {
+  return gatewayRequest<ReportJob>(`/report-jobs/${encodeURIComponent(jobId)}`, {
+    method: 'PATCH',
+    body: { status: 'canceled' },
+  })
 }
 
 export function listSectionVersions(

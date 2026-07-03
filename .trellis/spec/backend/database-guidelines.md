@@ -661,6 +661,7 @@ Knowledge upload -> Knowledge adapter -> RAGFlow runtime stores bytes and parses
 - `report_jobs`, `report_job_attempts`, and `report_events` are the durable authority for job status, retry history, failure summaries, and public progress events.
 - Report job progress JSON must use numeric `completed` and `total` fields. Terminal status updates (`succeeded`, `partial_succeeded`, `failed`, `canceled`) must preserve existing meaningful progress such as `1/2` from multi-step generation, and only write default progress (`1/1` for success-like states, `0/1` for failure-like states) when no detailed progress exists.
 - `reports.status`, `reports.latest_job_id`, and `reports.generated_at` are a denormalized public snapshot of generation lifecycle, not the detailed job authority. Generation job `pending`/`running` states must set `latest_job_id` and the matching generating report status. Terminal `partial_succeeded` keeps the report in the closest usable generated state (`outline_generated` for outline jobs, `generated` for content or section jobs), while `failed` and `canceled` map to report `failed`. Content or section `succeeded` and `partial_succeeded` jobs set `generated_at`.
+- Worker-driven job status writes (`running`, `succeeded`, `partial_succeeded`, `failed`) must never overwrite a job that has already been marked `canceled` through the user/API path. Cancellation is an explicit user terminal state; a worker that loses the race must re-read the job, mark the current attempt canceled, and stop before invoking the model or finalizing success/failure.
 - `report_sections.outline_id` scopes sections to the outline version that created
   or owns them. Report-level `content_generation` and `content_regeneration`
   must generate only sections whose `outline_id` matches the current
@@ -701,6 +702,7 @@ Knowledge upload -> Knowledge adapter -> RAGFlow runtime stores bytes and parses
 - Handler tests for `/healthz` and `/readyz` response envelopes, request ID propagation, and dependency failure status.
 - Repository integration tests, gated by `DOCUMENT_TEST_DATABASE_URL`, that apply migrations and verify report type, report, job, attempt, event, and transaction behavior.
 - Repository integration tests for multi-step jobs must assert `UpdateReportJobProgress` survives terminal status updates instead of being overwritten by generic `1/1` or `0/1` defaults.
+- Repository integration tests must assert a canceled report job cannot be overwritten by later worker `running`, `succeeded`, or `failed` status updates.
 - Service tests for content generation must cover old and current outline
   sections and assert progress totals include only current outline sections.
 - Service tests must simulate section skeleton creation failure and assert the
@@ -795,6 +797,14 @@ outline generation -> parse AI response outside transaction -> transaction inser
   full `report_sections` snapshot over `content`, `tables_json`, `version`,
   `content_source`, or `manual_edited`, and should require `last_job_id` to
   still match the failed generation job before marking `failed`.
+- For report-level content generation, a non-conflict generated-content
+  persistence failure such as `report_section_versions` insert failure must be
+  treated as a terminal outcome for only that section: roll back the generated
+  content switch, mark that section failed with the narrow compensation update,
+  increment `report_jobs.progress.completed`, record `section.failed`, and
+  continue later sections. If at least one section succeeds or is skipped, the
+  job finishes `partial_succeeded`; if every attempted section fails, the job
+  fails with the first section error.
 - A generated-section success transaction returning `409 conflict` because the
   section changed or the job was superseded is not a generation persistence
   failure. The executor must continue on a non-error result path so the worker
@@ -816,7 +826,7 @@ outline generation -> parse AI response outside transaction -> transaction inser
 | Running-marker update before AI section generation fails | `dependency_error`; record `section.failed`; update progress with the current completed count; do not call the AI provider, increment completed progress, create a version, or mark the section skipped |
 | Successful AI response finds a different `last_job_id`, non-running status, changed version, or changed manual-edit state | Skip the stale section on the non-error execution path; update progress and `section.skipped`; do not create a version, overwrite current section content, or mark the section/job/report failed |
 | Version insert succeeds but current-section switch fails | Roll back inserted version and return typed dependency/not-found error |
-| AI generated content update succeeds but version insert fails | Roll back the generated content switch; mark the section failed best-effort with a narrow, current-job-matched status update that preserves concurrent edits |
+| AI generated content update succeeds but version insert fails | Roll back the generated content switch; mark only that section failed with a narrow, current-job-matched status update, count the section as attempted progress, record `section.failed`, and continue later report-level sections |
 | Manual edit changes only metadata | Do not create a new section version |
 
 ### 5. Good/Base/Bad Cases
@@ -857,6 +867,10 @@ outline generation -> parse AI response outside transaction -> transaction inser
 - Generation rollback tests must simulate a concurrent section edit after the
   failed transaction rolls back and assert failure compensation preserves
   `content`, `tables`, `version`, `content_source`, and `manual_edited`.
+- Report-level generation tests must simulate a middle section version insert
+  failure and assert the failed section rolls back content, later sections are
+  still attempted, progress reaches `completed=total`, and the job returns
+  `partial_succeeded` when another section succeeded.
 - HTTP tests that assert `source`, `requirements`, `content`, and `tables` are
   passed through to the service and returned in the response DTO.
 - OpenAPI parse/schema checks that Document and Gateway section-version source

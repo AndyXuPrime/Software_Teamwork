@@ -804,7 +804,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update report job
+         * @description Updates a report job state. The initial supported update is canceling pending or running generation work.
+         */
+        patch: operations["updateReportJob"];
         trace?: never;
     };
     "/api/v1/report-jobs/{jobId}/attempts": {
@@ -2388,6 +2392,10 @@ export interface components {
         ReportJobResponse: {
             data: components["schemas"]["ReportJob"];
             requestId: string;
+        };
+        UpdateReportJobRequest: {
+            /** @enum {string} */
+            status: "canceled";
         };
         ReportJobListResponse: {
             data: components["schemas"]["ReportJob"][];
@@ -4963,6 +4971,35 @@ export interface operations {
                 };
             };
             404: components["responses"]["Error"];
+        };
+    };
+    updateReportJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateReportJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Report job updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportJobResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     listReportJobAttempts: {

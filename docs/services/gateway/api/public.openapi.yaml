@@ -1636,6 +1636,32 @@ paths:
                 $ref: '#/components/schemas/ReportJobResponse'
         '404':
           $ref: '#/components/responses/Error'
+    patch:
+      tags:
+      - report-generation
+      summary: Update report job
+      operationId: updateReportJob
+      x-owner-service: document
+      description: Updates a report job state. The initial supported update is canceling pending or running generation work.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReportJobRequest'
+      responses:
+        '200':
+          description: Report job updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportJobResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
   /api/v1/report-jobs/{jobId}/attempts:
     parameters:
     - $ref: '#/components/parameters/JobId'
@@ -4881,6 +4907,15 @@ components:
           $ref: '#/components/schemas/ReportJob'
         requestId:
           type: string
+    UpdateReportJobRequest:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - canceled
     ReportJobListResponse:
       type: object
       required:

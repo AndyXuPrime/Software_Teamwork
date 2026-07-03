@@ -114,6 +114,35 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+    patch:
+      tags:
+        - report-jobs
+      operationId: updateDocumentReportJob
+      summary: Update report job
+      description: Cancels a pending or running report generation job.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateReportJobRequest"
+      responses:
+        "200":
+          description: Report job updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportJobEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /report-jobs/{jobId}/attempts:
     parameters:
       - $ref: "#/components/parameters/JobId"
@@ -142,7 +171,7 @@ paths:
         - report-jobs
       operationId: createDocumentReportJobAttempt
       summary: Create report job attempt
-      description: Creates a manual retry attempt for an existing failed or canceled report job.
+      description: Creates a manual retry attempt for an existing failed, canceled, succeeded, or partially succeeded report job.
       requestBody:
         required: false
         content:
@@ -300,6 +329,15 @@ components:
       properties:
         reason:
           type: string
+    UpdateReportJobRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - canceled
     ReportJobError:
       type: object
       properties:

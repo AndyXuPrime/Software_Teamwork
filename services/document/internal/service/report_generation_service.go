@@ -58,12 +58,15 @@ func NewReportGenerationService(repo ReportGenerationRepository, chat ReportGene
 }
 
 func (s *ReportGenerationService) ExecuteReportGeneration(ctx context.Context, payload ReportGenerationExecutionPayload) (ReportGenerationExecutionResult, error) {
-	if s.chat == nil {
-		return ReportGenerationExecutionResult{}, NewError(CodeDependency, "ai gateway chat client is not configured", nil)
-	}
 	job, err := s.repo.FindReportJobByID(ctx, payload.JobID)
 	if err != nil {
 		return ReportGenerationExecutionResult{}, mapRepositoryReadError(err, "report job not found")
+	}
+	if job.Status == JobStatusCanceled {
+		return ReportGenerationExecutionResult{Status: JobStatusCanceled}, nil
+	}
+	if s.chat == nil {
+		return ReportGenerationExecutionResult{}, NewError(CodeDependency, "ai gateway chat client is not configured", nil)
 	}
 	jobType := payload.JobType
 	if jobType == "" {
@@ -89,6 +92,12 @@ func (s *ReportGenerationService) ExecuteReportGeneration(ctx context.Context, p
 }
 
 func (s *ReportGenerationService) executeOutlineGeneration(ctx context.Context, reqCtx RequestContext, payload ReportGenerationExecutionPayload, job ReportJob, report Report) (ReportGenerationExecutionResult, error) {
+	if canceled, err := s.isJobCanceled(ctx, payload.JobID); err != nil {
+		return ReportGenerationExecutionResult{}, err
+	} else if canceled {
+		_ = s.recordEvent(ctx, report.ID, payload.JobID, "outline.canceled", "outline generation canceled")
+		return ReportGenerationExecutionResult{Status: JobStatusCanceled}, nil
+	}
 	reportKind, err := resolveAIReportType(report.ReportType, "outline")
 	if err != nil {
 		return ReportGenerationExecutionResult{}, err
@@ -110,6 +119,12 @@ func (s *ReportGenerationService) executeOutlineGeneration(ctx context.Context, 
 		_ = s.recordEvent(ctx, report.ID, payload.JobID, "outline.failed", "outline generation failed")
 		return ReportGenerationExecutionResult{}, err
 	}
+	if canceled, err := s.isJobCanceled(ctx, payload.JobID); err != nil {
+		return ReportGenerationExecutionResult{}, err
+	} else if canceled {
+		_ = s.recordEvent(ctx, report.ID, payload.JobID, "outline.canceled", "outline generation canceled")
+		return ReportGenerationExecutionResult{Status: JobStatusCanceled}, nil
+	}
 	resp, err := s.chat.CreateChatCompletion(ctx, reqCtx, ChatCompletionRequest{
 		Model:     settings.LLM.Model,
 		ProfileID: settings.LLM.ProfileID,
@@ -118,6 +133,12 @@ func (s *ReportGenerationService) executeOutlineGeneration(ctx context.Context, 
 			{Role: "user", Content: buildOutlinePrompt(report, structure, generationContext, reportKind)},
 		},
 	})
+	if canceled, cancelErr := s.isJobCanceled(ctx, payload.JobID); cancelErr != nil {
+		return ReportGenerationExecutionResult{}, cancelErr
+	} else if canceled {
+		_ = s.recordEvent(ctx, report.ID, payload.JobID, "outline.canceled", "outline generation canceled")
+		return ReportGenerationExecutionResult{Status: JobStatusCanceled}, nil
+	}
 	if err != nil {
 		_ = s.recordEvent(ctx, report.ID, payload.JobID, "outline.failed", "outline generation failed")
 		return ReportGenerationExecutionResult{}, dependencyError("generate report outline", err)
@@ -126,6 +147,12 @@ func (s *ReportGenerationService) executeOutlineGeneration(ctx context.Context, 
 	if err != nil {
 		_ = s.recordEvent(ctx, report.ID, payload.JobID, "outline.failed", "outline generation failed")
 		return ReportGenerationExecutionResult{}, err
+	}
+	if canceled, err := s.isJobCanceled(ctx, payload.JobID); err != nil {
+		return ReportGenerationExecutionResult{}, err
+	} else if canceled {
+		_ = s.recordEvent(ctx, report.ID, payload.JobID, "outline.canceled", "outline generation canceled")
+		return ReportGenerationExecutionResult{Status: JobStatusCanceled}, nil
 	}
 	existing, err := s.repo.ListReportOutlines(ctx, report.ID)
 	if err != nil {
@@ -160,11 +187,23 @@ func (s *ReportGenerationService) executeOutlineGeneration(ctx context.Context, 
 		return ReportGenerationExecutionResult{}, err
 	}
 	_ = s.repo.UpdateReportJobProgress(ctx, payload.JobID, CountOutlineNodes(created.Sections), CountOutlineNodes(created.Sections))
+	if canceled, err := s.isJobCanceled(ctx, payload.JobID); err != nil {
+		return ReportGenerationExecutionResult{}, err
+	} else if canceled {
+		_ = s.recordEvent(ctx, report.ID, payload.JobID, "outline.canceled", "outline generation canceled")
+		return ReportGenerationExecutionResult{Status: JobStatusCanceled}, nil
+	}
 	_ = s.recordEvent(ctx, report.ID, payload.JobID, "outline.succeeded", "outline generation succeeded")
 	return ReportGenerationExecutionResult{Status: JobStatusSucceeded}, nil
 }
 
 func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, reqCtx RequestContext, payload ReportGenerationExecutionPayload, job ReportJob, report Report) (ReportGenerationExecutionResult, error) {
+	if canceled, err := s.isJobCanceled(ctx, payload.JobID); err != nil {
+		return ReportGenerationExecutionResult{}, err
+	} else if canceled {
+		_ = s.recordEvent(ctx, report.ID, payload.JobID, "content.canceled", "content generation canceled")
+		return ReportGenerationExecutionResult{Status: JobStatusCanceled}, nil
+	}
 	reportKind, err := resolveAIReportType(report.ReportType, "content")
 	if err != nil {
 		return ReportGenerationExecutionResult{}, err
@@ -206,6 +245,12 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 		_ = s.repo.UpdateReportJobProgress(ctx, payload.JobID, completed, total)
 	}
 	for _, section := range sections {
+		if canceled, err := s.isJobCanceled(ctx, payload.JobID); err != nil {
+			return ReportGenerationExecutionResult{}, err
+		} else if canceled {
+			_ = s.recordEvent(ctx, report.ID, payload.JobID, "content.canceled", "content generation canceled")
+			return ReportGenerationExecutionResult{Status: JobStatusCanceled}, nil
+		}
 		if preserveManual && section.ManualEdited {
 			completed++
 			successful++
@@ -225,6 +270,12 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 			recordSectionFailure(section.ID, err)
 			continue
 		}
+		if canceled, err := s.isJobCanceled(ctx, payload.JobID); err != nil {
+			return ReportGenerationExecutionResult{}, err
+		} else if canceled {
+			_ = s.recordEvent(ctx, report.ID, payload.JobID, "content.canceled", "content generation canceled")
+			return ReportGenerationExecutionResult{Status: JobStatusCanceled}, nil
+		}
 		resp, err := s.chat.CreateChatCompletion(ctx, reqCtx, ChatCompletionRequest{
 			Model:     settings.LLM.Model,
 			ProfileID: settings.LLM.ProfileID,
@@ -233,6 +284,12 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 				{Role: "user", Content: buildSectionPrompt(report, section, generationContext, sectionHasChildren(sections, section.ID), reportKind)},
 			},
 		})
+		if canceled, cancelErr := s.isJobCanceled(ctx, payload.JobID); cancelErr != nil {
+			return ReportGenerationExecutionResult{}, cancelErr
+		} else if canceled {
+			_ = s.recordEvent(ctx, report.ID, payload.JobID, "content.canceled", "content generation canceled")
+			return ReportGenerationExecutionResult{Status: JobStatusCanceled}, nil
+		}
 		if err != nil {
 			recordSectionFailure(section.ID, dependencyError("generate report section", err))
 			continue
@@ -300,13 +357,19 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 				_ = s.recordEvent(ctx, report.ID, payload.JobID, "section.skipped", "section generation skipped because current section changed during generation")
 				continue
 			}
-			s.markSectionGenerationFailed(ctx, sectionID, payload.JobID)
-			return ReportGenerationExecutionResult{}, err
+			recordSectionFailure(sectionID, err)
+			continue
 		}
 		completed++
 		successful++
 		_ = s.repo.UpdateReportJobProgress(ctx, payload.JobID, completed, total)
 		_ = s.recordEvent(ctx, report.ID, payload.JobID, "section.succeeded", "section generation succeeded")
+	}
+	if canceled, err := s.isJobCanceled(ctx, payload.JobID); err != nil {
+		return ReportGenerationExecutionResult{}, err
+	} else if canceled {
+		_ = s.recordEvent(ctx, report.ID, payload.JobID, "content.canceled", "content generation canceled")
+		return ReportGenerationExecutionResult{Status: JobStatusCanceled}, nil
 	}
 	if failed > 0 {
 		if successful > 0 {
@@ -319,6 +382,14 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 	}
 	_ = s.recordEvent(ctx, report.ID, payload.JobID, "content.succeeded", "content generation succeeded")
 	return ReportGenerationExecutionResult{Status: JobStatusSucceeded}, nil
+}
+
+func (s *ReportGenerationService) isJobCanceled(ctx context.Context, jobID string) (bool, error) {
+	job, err := s.repo.FindReportJobByID(ctx, jobID)
+	if err != nil {
+		return false, mapRepositoryReadError(err, "report job not found")
+	}
+	return job.Status == JobStatusCanceled, nil
 }
 
 func (s *ReportGenerationService) markSectionGenerationRunning(ctx context.Context, section ReportSection, jobID string) (ReportSection, error) {

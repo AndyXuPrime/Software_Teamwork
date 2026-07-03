@@ -2,14 +2,17 @@ import {
   Download,
   FileText,
   Loader2,
+  Minus,
   PencilLine,
   Play,
+  Plus,
   RefreshCw,
   Rocket,
   Save,
   Settings2,
+  XCircle,
 } from 'lucide-react'
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 
 import { InlineNotice, ProgressSummary, StateBlock } from '@/components/common'
 import { Button } from '@/components/ui/button'
@@ -38,6 +41,7 @@ import {
   formatReportGatewayError,
   getCreateReportDefaults,
   isReportTypeDraftDefaultValue,
+  useCancelReportJob,
   useCreateReportFileMutation,
   useCreateReportJobMutation,
   useCreateReportMutation,
@@ -56,8 +60,96 @@ import { canAccess } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
-function flattenOutline(nodes: ReportOutlineNode[]): ReportOutlineNode[] {
-  return nodes.flatMap((node) => [node, ...flattenOutline(node.children ?? [])])
+type FlattenedOutlineNode = {
+  node: ReportOutlineNode
+  path: number[]
+}
+
+type OutlineEditorState = {
+  future: ReportOutlineNode[][]
+  nodes: ReportOutlineNode[]
+  past: ReportOutlineNode[][]
+  sourceKey: string
+}
+
+const maxOutlineUndoSteps = 15
+
+function cloneOutline(nodes: ReportOutlineNode[]): ReportOutlineNode[] {
+  return nodes.map((node) => ({
+    ...node,
+    children: node.children ? cloneOutline(node.children) : undefined,
+  }))
+}
+
+function flattenOutline(
+  nodes: ReportOutlineNode[],
+  parentPath: number[] = [],
+): FlattenedOutlineNode[] {
+  return nodes.flatMap((node, index) => {
+    const path = [...parentPath, index]
+    return [{ node, path }, ...flattenOutline(node.children ?? [], path)]
+  })
+}
+
+function updateOutlineNodeTitle(
+  nodes: ReportOutlineNode[],
+  path: number[],
+  title: string,
+): ReportOutlineNode[] {
+  if (path.length === 0) return nodes
+  const index = path[0]
+  if (index === undefined) return nodes
+  const rest = path.slice(1)
+  return nodes.map((node, nodeIndex) => {
+    if (nodeIndex !== index) return node
+    if (rest.length === 0) return { ...node, title }
+    return {
+      ...node,
+      children: updateOutlineNodeTitle(node.children ?? [], rest, title),
+    }
+  })
+}
+
+function createOutlineNode(level: number): ReportOutlineNode {
+  return {
+    clientSectionId: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    children: [],
+    level,
+    title: '新章节',
+  }
+}
+
+function insertOutlineSibling(nodes: ReportOutlineNode[], path: number[]): ReportOutlineNode[] {
+  if (path.length === 0) return nodes
+  const index = path[0]
+  if (index === undefined) return nodes
+  const rest = path.slice(1)
+  if (rest.length === 0) {
+    const current = nodes[index]
+    const next = [...nodes]
+    next.splice(index + 1, 0, createOutlineNode(current?.level ?? 1))
+    return next
+  }
+  return nodes.map((node, nodeIndex) =>
+    nodeIndex === index
+      ? { ...node, children: insertOutlineSibling(node.children ?? [], rest) }
+      : node,
+  )
+}
+
+function deleteOutlineNode(nodes: ReportOutlineNode[], path: number[]): ReportOutlineNode[] {
+  if (path.length === 0) return nodes
+  const index = path[0]
+  if (index === undefined) return nodes
+  const rest = path.slice(1)
+  if (rest.length === 0) {
+    return nodes.filter((_, nodeIndex) => nodeIndex !== index)
+  }
+  return nodes.map((node, nodeIndex) =>
+    nodeIndex === index
+      ? { ...node, children: deleteOutlineNode(node.children ?? [], rest) }
+      : node,
+  )
 }
 
 const steps = [
@@ -76,6 +168,130 @@ const statusText: Record<ReportJobStatus, string> = {
   partial_succeeded: '部分成功',
   failed: '失败',
   canceled: '已取消',
+}
+
+type ReportGenerateSession = {
+  activeJobId: string | null
+  activeSectionId: string
+  currentReport: Report | null
+  form: CreateReportFormValues
+  lastJob: ReportJob | null
+  latestFile: ReportFile | null
+  selectedMaterialIds: string[]
+  step: StepKey
+  version: 1
+}
+
+const reportGenerateSessionStorageKey = 'report-generation.session.v1'
+
+function createInitialReportForm(): CreateReportFormValues {
+  return {
+    ...getCreateReportDefaults(''),
+    reportType: '',
+    templateId: '',
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isStepKey(value: unknown): value is StepKey {
+  return typeof value === 'string' && steps.some((step) => step.key === value)
+}
+
+function isReportJobStatus(value: unknown): value is ReportJobStatus {
+  return typeof value === 'string' && value in statusText
+}
+
+function isReportSnapshot(value: unknown): value is Report {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.name === 'string' &&
+    typeof value.reportType === 'string'
+  )
+}
+
+function isReportJobSnapshot(value: unknown): value is ReportJob {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.reportId === 'string' &&
+    isReportJobStatus(value.status) &&
+    typeof value.jobType === 'string'
+  )
+}
+
+function isReportFileSnapshot(value: unknown): value is ReportFile {
+  return isRecord(value) && typeof value.id === 'string'
+}
+
+function inferRestoredStep(step: unknown, job: ReportJob | null): StepKey {
+  if (isStepKey(step)) return step
+  if (isContentJob(job)) return 'content'
+  if (isOutlineJob(job)) return 'outline'
+  return 'draft'
+}
+
+function reportGenerationStorage(): Storage | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.sessionStorage
+  } catch {
+    return null
+  }
+}
+
+function readReportGenerateSession(): ReportGenerateSession | null {
+  const storage = reportGenerationStorage()
+  if (!storage) return null
+  const raw = storage.getItem(reportGenerateSessionStorageKey)
+  if (!raw) return null
+
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!isRecord(parsed)) return null
+
+    const currentReport = isReportSnapshot(parsed.currentReport) ? parsed.currentReport : null
+    const lastJob = isReportJobSnapshot(parsed.lastJob) ? parsed.lastJob : null
+    const latestFile = isReportFileSnapshot(parsed.latestFile) ? parsed.latestFile : null
+    const activeJobId =
+      typeof parsed.activeJobId === 'string' && parsed.activeJobId.trim() !== ''
+        ? parsed.activeJobId
+        : (lastJob?.id ?? null)
+    const selectedMaterialIds = Array.isArray(parsed.selectedMaterialIds)
+      ? parsed.selectedMaterialIds.filter((item): item is string => typeof item === 'string')
+      : []
+    const formResult = createReportSchema.safeParse(parsed.form)
+
+    if (!currentReport && !lastJob && !activeJobId && !latestFile) return null
+
+    return {
+      activeJobId,
+      activeSectionId: typeof parsed.activeSectionId === 'string' ? parsed.activeSectionId : '',
+      currentReport,
+      form: formResult.success ? formResult.data : createInitialReportForm(),
+      lastJob,
+      latestFile,
+      selectedMaterialIds,
+      step: inferRestoredStep(parsed.step, lastJob),
+      version: 1,
+    }
+  } catch {
+    storage.removeItem(reportGenerateSessionStorageKey)
+    return null
+  }
+}
+
+function writeReportGenerateSession(session: ReportGenerateSession | null) {
+  const storage = reportGenerationStorage()
+  if (!storage) return
+  if (!session) {
+    storage.removeItem(reportGenerateSessionStorageKey)
+    return
+  }
+  storage.setItem(reportGenerateSessionStorageKey, JSON.stringify(session))
 }
 
 const outlineProgressMax = 20
@@ -216,18 +432,29 @@ function applyReportTypeDraftDefaults(
 }
 
 export function ReportGeneratePage() {
-  const [step, setStep] = useState<StepKey>('draft')
-  const [form, setForm] = useState<CreateReportFormValues>({
-    ...getCreateReportDefaults(''),
-    reportType: '',
-    templateId: '',
-  })
-  const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>([])
-  const [currentReport, setCurrentReport] = useState<Report | null>(null)
-  const [activeJobId, setActiveJobId] = useState<string | null>(null)
-  const [lastJob, setLastJob] = useState<ReportJob | null>(null)
-  const [latestFile, setLatestFile] = useState<ReportFile | null>(null)
-  const [activeSectionId, setActiveSectionId] = useState('')
+  const [restoredSession] = useState<ReportGenerateSession | null>(() =>
+    readReportGenerateSession(),
+  )
+  const [step, setStep] = useState<StepKey>(() => restoredSession?.step ?? 'draft')
+  const [form, setForm] = useState<CreateReportFormValues>(
+    () => restoredSession?.form ?? createInitialReportForm(),
+  )
+  const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>(
+    () => restoredSession?.selectedMaterialIds ?? [],
+  )
+  const [currentReport, setCurrentReport] = useState<Report | null>(
+    () => restoredSession?.currentReport ?? null,
+  )
+  const [activeJobId, setActiveJobId] = useState<string | null>(
+    () => restoredSession?.activeJobId ?? restoredSession?.lastJob?.id ?? null,
+  )
+  const [lastJob, setLastJob] = useState<ReportJob | null>(() => restoredSession?.lastJob ?? null)
+  const [latestFile, setLatestFile] = useState<ReportFile | null>(
+    () => restoredSession?.latestFile ?? null,
+  )
+  const [activeSectionId, setActiveSectionId] = useState(
+    () => restoredSession?.activeSectionId ?? '',
+  )
   const [sectionDraft, setSectionDraft] = useState('')
   const [showVersions, setShowVersions] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -235,6 +462,12 @@ export function ReportGeneratePage() {
   const [documentProfileId, setDocumentProfileId] = useState('')
   const [documentProfileTouched, setDocumentProfileTouched] = useState(false)
   const [documentSettingsNotice, setDocumentSettingsNotice] = useState<string | null>(null)
+  const [outlineEditor, setOutlineEditor] = useState<OutlineEditorState>({
+    future: [],
+    nodes: [],
+    past: [],
+    sourceKey: '',
+  })
 
   const user = useAuthStore((state) => state.user)
   const canManageDocumentModelSettings =
@@ -244,14 +477,18 @@ export function ReportGeneratePage() {
   const reportSettingsQuery = useReportSettingsQuery({
     enabled: canManageDocumentModelSettings,
   })
-  const userLLMConfigQuery = useCurrentQALLMConfigQuery({
-    enabled: Boolean(user),
+  const userDocumentModelQuery = useCurrentQALLMConfigQuery({
+    enabled: Boolean(user) && !canManageDocumentModelSettings,
   })
   const chatProfilesQuery = useModelProfiles('chat', true, {
     queryEnabled: canManageDocumentModelSettings,
   })
-  const { outlinesQuery, sectionsQuery } = useReportDetailQueries(currentReport?.id ?? null)
   const jobQuery = useReportJobQuery(activeJobId)
+  const activeJobForPolling = jobQuery.data ?? lastJob
+  const { outlinesQuery, sectionsQuery } = useReportDetailQueries(
+    currentReport?.id ?? null,
+    activeJobForPolling,
+  )
   const createReportMutation = useCreateReportMutation()
   const createJobMutation = useCreateReportJobMutation()
   const saveOutlineMutation = useUpdateReportOutlineMutation(currentReport?.id ?? '')
@@ -259,6 +496,7 @@ export function ReportGeneratePage() {
   const createFileMutation = useCreateReportFileMutation()
   const updateReportSettingsMutation = useUpdateReportSettingsMutation()
   const retryJobMutation = useRetryReportJobMutation()
+  const cancelJobMutation = useCancelReportJob()
   const downloadMutation = useDownloadReportFileMutation()
   const sectionVersionsQuery = useSectionVersions(
     currentReport?.id ?? null,
@@ -269,10 +507,15 @@ export function ReportGeneratePage() {
   const templates = useMemo(() => templateQuery.data?.items ?? [], [templateQuery.data])
   const materials = useMemo(() => materialQuery.data?.items ?? [], [materialQuery.data])
   const chatProfiles = useMemo(() => chatProfilesQuery.data ?? [], [chatProfilesQuery.data])
-  const outline = outlinesQuery.data?.[0]?.sections ?? []
+  const currentOutline = outlinesQuery.data?.[0]
+  const outlineSourceKey = currentOutline
+    ? `${currentOutline.id}:${currentOutline.version}:${currentOutline.sections.length}`
+    : ''
+  const outline = outlineEditor.nodes
+  const flattenedOutline = useMemo(() => flattenOutline(outline), [outline])
   const sections = useMemo(() => sectionsQuery.data ?? [], [sectionsQuery.data])
   const activeSection = sections.find((item) => item.id === activeSectionId) ?? sections[0]
-  const effectiveJob = jobQuery.data ?? lastJob
+  const effectiveJob = activeJobForPolling
   const selectedTemplate = templates.find((template) => template.id === form.templateId)
   const selectedReportType = reportTypes.find(
     (type) => type.code === (currentReport?.reportType ?? form.reportType),
@@ -388,6 +631,122 @@ export function ReportGeneratePage() {
       setLastJob(jobQuery.data)
     }
   }, [jobQuery.data])
+
+  useEffect(() => {
+    const hasGenerationSession = Boolean(currentReport || activeJobId || lastJob || latestFile)
+    if (!hasGenerationSession) {
+      writeReportGenerateSession(null)
+      return
+    }
+
+    writeReportGenerateSession({
+      activeJobId,
+      activeSectionId,
+      currentReport,
+      form,
+      lastJob,
+      latestFile,
+      selectedMaterialIds,
+      step,
+      version: 1,
+    })
+  }, [
+    activeJobId,
+    activeSectionId,
+    currentReport,
+    form,
+    lastJob,
+    latestFile,
+    selectedMaterialIds,
+    step,
+  ])
+
+  useEffect(() => {
+    setOutlineEditor((prev) => {
+      if (!currentOutline) {
+        return prev.sourceKey === '' ? prev : { future: [], nodes: [], past: [], sourceKey: '' }
+      }
+      if (prev.sourceKey === outlineSourceKey) return prev
+      return {
+        future: [],
+        nodes: cloneOutline(currentOutline.sections),
+        past: [],
+        sourceKey: outlineSourceKey,
+      }
+    })
+  }, [currentOutline, outlineSourceKey])
+
+  const commitOutlineChange = (updater: (nodes: ReportOutlineNode[]) => ReportOutlineNode[]) => {
+    setOutlineEditor((prev) => {
+      const previousNodes = cloneOutline(prev.nodes)
+      const nextNodes = updater(cloneOutline(prev.nodes))
+      return {
+        ...prev,
+        future: [],
+        nodes: nextNodes,
+        past: [...prev.past, previousNodes].slice(-maxOutlineUndoSteps),
+      }
+    })
+  }
+
+  const handleOutlineTitleChange = (path: number[], title: string) => {
+    commitOutlineChange((nodes) => updateOutlineNodeTitle(nodes, path, title))
+  }
+
+  const handleAddOutlineSibling = (path: number[]) => {
+    commitOutlineChange((nodes) => insertOutlineSibling(nodes, path))
+  }
+
+  const handleDeleteOutlineNode = (path: number[]) => {
+    commitOutlineChange((nodes) => deleteOutlineNode(nodes, path))
+  }
+
+  const undoOutline = useCallback(() => {
+    setOutlineEditor((prev) => {
+      const previous = prev.past[prev.past.length - 1]
+      if (!previous) return prev
+      return {
+        ...prev,
+        future: [cloneOutline(prev.nodes), ...prev.future].slice(0, maxOutlineUndoSteps),
+        nodes: cloneOutline(previous),
+        past: prev.past.slice(0, -1),
+      }
+    })
+  }, [])
+
+  const redoOutline = useCallback(() => {
+    setOutlineEditor((prev) => {
+      const next = prev.future[0]
+      if (!next) return prev
+      return {
+        ...prev,
+        future: prev.future.slice(1),
+        nodes: cloneOutline(next),
+        past: [...prev.past, cloneOutline(prev.nodes)].slice(-maxOutlineUndoSteps),
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (step !== 'outline') return
+
+    const handleOutlineKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return
+      const key = event.key.toLowerCase()
+      if (key === 'z' && !event.shiftKey) {
+        event.preventDefault()
+        undoOutline()
+        return
+      }
+      if (key === 'y' || (key === 'z' && event.shiftKey)) {
+        event.preventDefault()
+        redoOutline()
+      }
+    }
+
+    document.addEventListener('keydown', handleOutlineKeyDown)
+    return () => document.removeEventListener('keydown', handleOutlineKeyDown)
+  }, [redoOutline, step, undoOutline])
 
   const updateForm = (field: keyof CreateReportFormValues, value: string | number) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -572,6 +931,21 @@ export function ReportGeneratePage() {
     setNotice('暂无可重试的服务端任务。')
   }
 
+  const handleCancelJob = async () => {
+    const cancelJob = effectiveJob ?? lastJob
+    if (cancelJob?.id) {
+      try {
+        const job = await cancelJobMutation.mutateAsync(cancelJob.id)
+        setLastJob(job)
+        setNotice(`已提交取消任务，当前状态：${statusText[job.status]}`)
+      } catch (error) {
+        setNotice(formatReportGatewayError(error, '取消任务失败'))
+      }
+      return
+    }
+    setNotice('暂无可取消的服务端任务。')
+  }
+
   const handleExport = async () => {
     if (!currentReport) {
       setNotice('请先创建报告草稿。')
@@ -624,8 +998,10 @@ export function ReportGeneratePage() {
           : 'default'
   const canRetryJob =
     effectiveJob?.status === 'failed' ||
+    effectiveJob?.status === 'succeeded' ||
     effectiveJob?.status === 'partial_succeeded' ||
     effectiveJob?.status === 'canceled'
+  const canCancelJob = effectiveJob?.status === 'pending' || effectiveJob?.status === 'running'
 
   return (
     <div className="flex h-full flex-col overflow-auto bg-background">
@@ -682,6 +1058,22 @@ export function ReportGeneratePage() {
                   <h2 className="text-base font-semibold">当前文档进度</h2>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {canCancelJob && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-foreground"
+                      onClick={handleCancelJob}
+                      disabled={cancelJobMutation.isPending}
+                    >
+                      {cancelJobMutation.isPending ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <XCircle className="size-3" />
+                      )}
+                      取消任务
+                    </Button>
+                  )}
                   {canRetryJob && (
                     <Button
                       variant="outline"
@@ -957,23 +1349,44 @@ export function ReportGeneratePage() {
                 />
               ) : (
                 <div className="max-h-80 space-y-2 overflow-y-auto">
-                  {flattenOutline(outline).map((node) => (
+                  {flattenedOutline.map(({ node, path }) => (
                     <div
                       key={node.id ?? node.clientSectionId ?? node.title}
                       style={
                         node.level > 1 ? { marginLeft: `${(node.level - 1) * 2}rem` } : undefined
                       }
-                      className="flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2"
+                      className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-lg border border-border bg-background px-3 py-2"
                     >
+                      <Button
+                        aria-label={`在此章节后新增同级章节：${node.title}`}
+                        size="icon-sm"
+                        type="button"
+                        variant="ghost"
+                        onClick={() => handleAddOutlineSibling(path)}
+                      >
+                        <Plus className="size-3.5" />
+                      </Button>
                       <span className="w-10 text-xs text-muted-foreground">
                         {node.numbering ?? '-'}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {node.title}
-                      </span>
+                      <Input
+                        aria-label={`章节标题：${node.title}`}
+                        className="h-8 min-w-0 text-sm font-medium"
+                        value={node.title}
+                        onChange={(event) => handleOutlineTitleChange(path, event.target.value)}
+                      />
                       <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                         level {node.level}
                       </span>
+                      <Button
+                        aria-label={`删除章节：${node.title}`}
+                        size="icon-sm"
+                        type="button"
+                        variant="ghost"
+                        onClick={() => handleDeleteOutlineNode(path)}
+                      >
+                        <Minus className="size-3.5" />
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -1053,9 +1466,23 @@ export function ReportGeneratePage() {
                         </Button>
                         <Button
                           variant="outline"
+                          className="text-foreground"
+                          onClick={handleCancelJob}
+                          disabled={!canCancelJob || cancelJobMutation.isPending}
+                        >
+                          {cancelJobMutation.isPending ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <XCircle className="size-4" />
+                          )}
+                          取消任务
+                        </Button>
+                        <Button
+                          variant="outline"
                           onClick={handleRetry}
                           disabled={
                             effectiveJob?.status !== 'failed' &&
+                            effectiveJob?.status !== 'succeeded' &&
                             effectiveJob?.status !== 'partial_succeeded' &&
                             effectiveJob?.status !== 'canceled'
                           }
@@ -1175,42 +1602,34 @@ export function ReportGeneratePage() {
         </div>
 
         <aside className="flex flex-col space-y-4">
-          {user && (
+          {user && !canManageDocumentModelSettings && (
             <section className="rounded-lg border border-border bg-card p-4">
-              <h2 className="text-sm font-semibold">当前 LLM 配置</h2>
+              <h2 className="text-sm font-semibold">当前文档生成模型</h2>
 
-              {userLLMConfigQuery.isLoading ? (
+              {userDocumentModelQuery.isLoading ? (
                 <p className="mt-3 text-sm text-muted-foreground">加载中...</p>
-              ) : userLLMConfigQuery.isError ? (
-                <InlineNotice className="mt-3" title="LLM 配置加载失败" variant="error">
-                  {formatReportGatewayError(userLLMConfigQuery.error, 'LLM 配置加载失败')}
+              ) : userDocumentModelQuery.isError ? (
+                <InlineNotice className="mt-3" title="文档生成模型加载失败" variant="error">
+                  {formatReportGatewayError(userDocumentModelQuery.error, '文档生成模型加载失败')}
                 </InlineNotice>
               ) : (
                 <dl className="mt-3 grid gap-2 text-sm">
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted-foreground">服务</dt>
                     <dd className="text-foreground">
-                      {userLLMConfigQuery.data?.provider ?? 'ai-gateway'}
+                      {userDocumentModelQuery.data?.provider ?? 'ai-gateway'}
                     </dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted-foreground">Profile ID</dt>
                     <dd className="break-all text-foreground">
-                      {userLLMConfigQuery.data?.profileId ?? '-'}
+                      {userDocumentModelQuery.data?.profileId ?? '-'}
                     </dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted-foreground">模型</dt>
                     <dd className="break-all text-foreground">
-                      {userLLMConfigQuery.data?.modelName ?? '-'}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">版本</dt>
-                    <dd className="text-foreground">
-                      {userLLMConfigQuery.data?.versionNo
-                        ? `v${userLLMConfigQuery.data.versionNo}`
-                        : '-'}
+                      {userDocumentModelQuery.data?.modelName ?? '-'}
                     </dd>
                   </div>
                 </dl>
@@ -1222,7 +1641,7 @@ export function ReportGeneratePage() {
             <section className="rounded-lg border border-border bg-card p-4">
               <div className="flex items-center gap-2">
                 <Settings2 className="size-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold">文档生成模型</h2>
+                <h2 className="text-sm font-semibold">当前文档生成模型</h2>
               </div>
 
               <div className="mt-3 rounded-lg border border-border bg-background p-3 text-sm">

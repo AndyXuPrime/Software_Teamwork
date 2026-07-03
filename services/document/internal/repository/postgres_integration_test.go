@@ -149,6 +149,86 @@ func TestPostgresRepositoryPersistsReportJobAttemptAndEvent(t *testing.T) {
 	}
 }
 
+func TestPostgresRepositoryDoesNotOverwriteCanceledJobWithWorkerStatus(t *testing.T) {
+	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DOCUMENT_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	pool := newTestPool(t, ctx, databaseURL)
+	defer pool.Close()
+	applyMigration(t, ctx, pool)
+
+	repo := NewPostgresRepository(pool)
+	now := time.Date(2026, 7, 3, 13, 0, 0, 0, time.UTC)
+
+	reportType, err := repo.UpsertReportType(ctx, service.ReportType{
+		Code:      "cancel_race_report",
+		Name:      "Cancel Race Report",
+		Enabled:   true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("UpsertReportType() error = %v", err)
+	}
+	report, err := repo.CreateReport(ctx, service.Report{
+		ID:         "00000000-0000-0000-0000-000000000901",
+		Name:       "cancel race report",
+		ReportType: reportType.Code,
+		Topic:      "cancel race",
+		Status:     service.ReportStatusDraft,
+		Source:     "backend",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("CreateReport() error = %v", err)
+	}
+	job, err := repo.CreateReportJob(ctx, service.ReportJob{
+		ID:          "00000000-0000-0000-0000-000000000902",
+		RequestID:   "req_cancel_race",
+		Source:      "api",
+		JobType:     service.JobTypeContentGeneration,
+		TargetType:  "report",
+		TargetID:    report.ID,
+		QueueName:   "document",
+		ReportID:    report.ID,
+		Status:      service.JobStatusPending,
+		MaxAttempts: 3,
+		CreatedAt:   now,
+	})
+	if err != nil {
+		t.Fatalf("CreateReportJob() error = %v", err)
+	}
+	finishedAt := now.Add(time.Minute)
+	if _, err := repo.UpdateReportJobStatus(ctx, job.ID, service.JobStatusCanceled, "", "", nil, &finishedAt); err != nil {
+		t.Fatalf("UpdateReportJobStatus(canceled) error = %v", err)
+	}
+
+	if err := repo.SetJobRunning(ctx, job.ID); err == nil {
+		t.Fatal("SetJobRunning() error = nil, want canceled job to reject worker overwrite")
+	}
+	if err := repo.SetJobSucceeded(ctx, job.ID); err == nil {
+		t.Fatal("SetJobSucceeded() error = nil, want canceled job to reject worker overwrite")
+	}
+	if err := repo.SetJobFailed(ctx, job.ID, "execution_failed", "report job execution failed"); err == nil {
+		t.Fatal("SetJobFailed() error = nil, want canceled job to reject worker overwrite")
+	}
+
+	after, err := repo.FindReportJobByID(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("FindReportJobByID() error = %v", err)
+	}
+	if after.Status != service.JobStatusCanceled {
+		t.Fatalf("job status = %q, want canceled", after.Status)
+	}
+	if after.FinishedAt == nil || !after.FinishedAt.Equal(finishedAt) {
+		t.Fatalf("job finishedAt = %v, want %v", after.FinishedAt, finishedAt)
+	}
+}
+
 func TestPostgresRepositoryTerminalStatusPreservesDetailedProgress(t *testing.T) {
 	databaseURL := os.Getenv("DOCUMENT_TEST_DATABASE_URL")
 	if databaseURL == "" {

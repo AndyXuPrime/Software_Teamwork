@@ -113,6 +113,7 @@ func TestGatewayPublicOpenAPIContainsDocumentOwnerRoutes(t *testing.T) {
 		{"get", "/api/v1/reports/{reportId}/jobs"},
 		{"post", "/api/v1/reports/{reportId}/jobs"},
 		{"get", "/api/v1/report-jobs/{jobId}"},
+		{"patch", "/api/v1/report-jobs/{jobId}"},
 		{"get", "/api/v1/report-jobs/{jobId}/attempts"},
 		{"post", "/api/v1/report-jobs/{jobId}/attempts"},
 		{"get", "/api/v1/reports/{reportId}/events"},

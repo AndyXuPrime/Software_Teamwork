@@ -36,6 +36,7 @@ type DocumentService interface {
 type JobSvc interface {
 	CreateJob(ctx context.Context, rctx service.RequestContext, input service.CreateJobInput) (service.ReportJob, error)
 	GetJob(ctx context.Context, rctx service.RequestContext, id string) (service.ReportJob, error)
+	CancelJob(ctx context.Context, rctx service.RequestContext, id string) (service.ReportJob, error)
 	ListJobs(ctx context.Context, rctx service.RequestContext, reportID string) ([]service.ReportJob, error)
 	RetryJob(ctx context.Context, rctx service.RequestContext, id, reason string) (service.ReportJobAttempt, error)
 	ListAttempts(ctx context.Context, rctx service.RequestContext, jobID string) ([]service.ReportJobAttempt, error)
@@ -130,6 +131,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /reports/{reportId}/jobs", s.handleListJobs)
 	s.mux.HandleFunc("POST /reports/{reportId}/jobs", s.handleCreateJob)
 	s.mux.HandleFunc("GET /report-jobs/{jobId}", s.handleGetJob)
+	s.mux.HandleFunc("PATCH /report-jobs/{jobId}", s.handleUpdateJob)
 	s.mux.HandleFunc("GET /report-jobs/{jobId}/attempts", s.handleListAttempts)
 	s.mux.HandleFunc("POST /report-jobs/{jobId}/attempts", s.handleRetryJob)
 	s.mux.HandleFunc("GET /reports/{reportId}/events", s.handleListEvents)

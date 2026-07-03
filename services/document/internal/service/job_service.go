@@ -354,6 +354,47 @@ func (s *JobService) RetryJob(ctx context.Context, rctx RequestContext, id, reas
 	return attempt, nil
 }
 
+func (s *JobService) CancelJob(ctx context.Context, rctx RequestContext, id string) (ReportJob, error) {
+	job, err := s.repo.FindReportJobByID(ctx, id)
+	if err != nil {
+		return ReportJob{}, mapRepositoryReadError(err, "report job not found")
+	}
+	report, err := s.requireReportAccess(ctx, rctx, job.ReportID)
+	if err != nil {
+		return ReportJob{}, err
+	}
+	if report.Status == ReportStatusDeleted || report.DeletedAt != nil {
+		return ReportJob{}, NewError(CodeConflict, "cannot cancel job for a deleted report", nil)
+	}
+	if job.Status != JobStatusPending && job.Status != JobStatusRunning {
+		return ReportJob{}, NewError(CodeConflict, "only pending or running jobs can be canceled", nil)
+	}
+	finishedAt := time.Now().UTC()
+	canceled, err := s.repo.UpdateReportJobStatus(ctx, job.ID, JobStatusCanceled, "", "", nil, &finishedAt)
+	if err != nil {
+		return ReportJob{}, err
+	}
+	recordOperationIfSupported(ctx, s.repo, OperationLog{
+		OperatorID:      rctx.UserID,
+		OperatorName:    rctx.UserID,
+		OperationType:   OperationCancelReportJob,
+		TargetType:      "job",
+		TargetID:        job.ID,
+		RequestID:       requestIDOrFallback(rctx, job.RequestID),
+		RequestSource:   requestSource(rctx, "api"),
+		OperationResult: OperationResultSucceeded,
+		ParameterSummary: map[string]any{
+			"jobType":    job.JobType,
+			"targetType": job.TargetType,
+		},
+		Metadata: map[string]any{
+			"reportId": job.ReportID,
+		},
+		CreatedAt: finishedAt,
+	})
+	return canceled, nil
+}
+
 func (s *JobService) ListAttempts(ctx context.Context, rctx RequestContext, jobID string) ([]ReportJobAttempt, error) {
 	job, err := s.repo.FindReportJobByID(ctx, jobID)
 	if err != nil {
@@ -423,4 +464,11 @@ func recordJobFailureIfSupported(ctx context.Context, recorder any, rctx Request
 		Metadata:  metadata,
 		CreatedAt: time.Now().UTC(),
 	})
+}
+
+func requestIDOrFallback(rctx RequestContext, fallback string) string {
+	if strings.TrimSpace(rctx.RequestID) != "" {
+		return rctx.RequestID
+	}
+	return fallback
 }
