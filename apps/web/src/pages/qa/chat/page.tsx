@@ -1008,9 +1008,11 @@ export function ChatPage() {
               abort()
               return
             }
-            // Real backend error: surface to user
-            setError(formatError(sseErr))
-            setLastFailedMsg(trimmed)
+            // Real backend error: surface to user (only if store hasn't been reset)
+            if (useChatStore.getState().activeId) {
+              setError(formatError(sseErr))
+              setLastFailedMsg(trimmed)
+            }
             patchAssistant({
               content,
               thinking: [...steps],
@@ -1020,7 +1022,7 @@ export function ChatPage() {
             abort()
           } else {
             // Non-fatal error: surface a brief summary but keep streaming
-            setError(formatError(sseErr))
+            if (useChatStore.getState().activeId) setError(formatError(sseErr))
             console.warn(`[SSE] Non-fatal: ${sseErr.code}`)
             const runId = responseRunIdRef.current
             if (runId) {
