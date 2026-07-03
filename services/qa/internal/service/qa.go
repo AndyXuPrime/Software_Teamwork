@@ -513,7 +513,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 		if observation.Result == "" {
 			return
 		}
-		if observation.ToolName == tools.ToolSearchKnowledge || observation.ToolName == tools.ToolSearchSessionAttachments {
+		if isCitationToolName(observation.ToolName) {
 			startNo := contextutil.CitationNoFromContext(runCtx)
 			if startNo <= 0 {
 				startNo = 1

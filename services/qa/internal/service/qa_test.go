@@ -301,6 +301,32 @@ func (citationToolRunner) RunWithToolResultCallback(_ context.Context, input []a
 	return agent.Result{Final: final, Messages: messages, Iterations: 1}, nil
 }
 
+type knowledgeMCPSearchCitationToolRunner struct{}
+
+func (knowledgeMCPSearchCitationToolRunner) RunWithObserver(ctx context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
+	return knowledgeMCPSearchCitationToolRunner{}.RunWithToolResultCallback(ctx, input, observer, nil)
+}
+func (knowledgeMCPSearchCitationToolRunner) RunWithToolResultCallback(_ context.Context, input []agent.Message, observer agent.Observer, toolObserver agent.ToolObserver) (agent.Result, error) {
+	const toolName = "knowledge__search"
+	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
+	observer(agent.Event{Type: agent.EventToolStarted, Iteration: 1, ToolCallID: "call-1", ToolName: toolName})
+	if toolObserver != nil {
+		toolObserver(agent.ToolObservation{Type: agent.EventToolCompleted, Iteration: 1, ToolCallID: "call-1", ToolName: toolName, Result: citationToolResultContent})
+	}
+	observer(agent.Event{Type: agent.EventToolCompleted, Iteration: 1, ToolCallID: "call-1", ToolName: toolName})
+	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1, Usage: agent.TokenUsage{PromptTokens: 8, CompletionTokens: 6, TotalTokens: 14}})
+	toolResult := agent.Message{
+		Role:       agent.RoleTool,
+		Name:       toolName,
+		ToolCallID: "call-1",
+		Content:    citationToolResultContent,
+	}
+	final := agent.Message{Role: agent.RoleAssistant, Content: "answer with citation [1]"}
+	messages := append([]agent.Message{}, input...)
+	messages = append(messages, toolResult, final)
+	return agent.Result{Final: final, Messages: messages, Iterations: 1}, nil
+}
+
 type duplicateCitationToolRunner struct{}
 
 func (duplicateCitationToolRunner) RunWithObserver(_ context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
@@ -1041,6 +1067,51 @@ func TestAskPersistsCitationSnapshotsFromKnowledgeToolResults(t *testing.T) {
 	}
 	if citationSeq == 0 || completedSeq == 0 || citationSeq > completedSeq {
 		t.Fatalf("citation event sequence=%d completed=%d events=%+v", citationSeq, completedSeq, repository.savedEvents)
+	}
+}
+
+func TestAskStreamsCitationDeltaFromKnowledgeMCPSearchTool(t *testing.T) {
+	now := time.Date(2026, 6, 30, 9, 0, 0, 0, time.UTC)
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active", CreatedAt: now, UpdatedAt: now}}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{runner: knowledgeMCPSearchCitationToolRunner{}, prompt: "system"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	qa.now = func() time.Time { return now }
+	qa.SetCitationSourceChecker(&fakeCitationSourceChecker{availability: map[string]bool{"doc-1": true}})
+
+	result, err := qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "find citation", Mode: "knowledge_qa"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Citations) != 1 || len(repository.finalization.Citations) != 1 {
+		t.Fatalf("result citations=%+v finalization=%+v", result.Citations, repository.finalization.Citations)
+	}
+
+	citationSeq, citationCount, completedSeq := 0, 0, 0
+	var eventCitation Citation
+	for _, event := range repository.savedEvents {
+		if event.EventType == "citation.delta" {
+			citationCount++
+			citationSeq = event.EventSeq
+			payload, ok := event.Payload["citation"].(Citation)
+			if !ok {
+				t.Fatalf("citation.delta payload=%#v, want Citation", event.Payload["citation"])
+			}
+			eventCitation = payload
+		}
+		if event.EventType == "answer.completed" {
+			completedSeq = event.EventSeq
+		}
+	}
+	if citationCount != 1 {
+		t.Fatalf("citation.delta event count=%d events=%+v", citationCount, repository.savedEvents)
+	}
+	if citationSeq == 0 || completedSeq == 0 || citationSeq > completedSeq {
+		t.Fatalf("citation event sequence=%d completed=%d events=%+v", citationSeq, completedSeq, repository.savedEvents)
+	}
+	if eventCitation.ID != repository.finalization.Citations[0].ID || eventCitation.DocumentID != "doc-1" || eventCitation.MessageID != result.AssistantMessage.ID {
+		t.Fatalf("citation event=%+v finalization=%+v", eventCitation, repository.finalization.Citations[0])
 	}
 }
 
