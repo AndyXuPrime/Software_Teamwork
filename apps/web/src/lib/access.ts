@@ -9,6 +9,8 @@ export const adminShellAccess: PermissionRequirement = {
     'knowledge:write',
     'admin:model-profile:write',
     'admin:parser-config:write',
+    'qa:settings:read',
+    'qa:settings:write',
     'report:read',
     'report:write',
     'reports:write',
