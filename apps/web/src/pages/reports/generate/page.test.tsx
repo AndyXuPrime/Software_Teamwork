@@ -258,6 +258,7 @@ describe('ReportGeneratePage', () => {
   })
 
   it('shows the current user model config to non-admin report writers without admin-only requests', async () => {
+    const user = userEvent.setup()
     setAuthenticatedUser(['report:write'])
     const paths: string[] = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -319,6 +320,19 @@ describe('ReportGeneratePage', () => {
           requestId: 'req-job',
         })
       }
+      if (request.method === 'GET' && url.pathname.endsWith('/report-jobs/job-writer')) {
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:00:00Z',
+            id: 'job-writer',
+            jobType: 'outline_generation',
+            progress: { percent: 20 },
+            reportId: 'rpt-writer',
+            status: 'running',
+          },
+          requestId: 'req-job-detail',
+        })
+      }
       if (
         url.pathname.endsWith('/reports/rpt-writer/outlines') ||
         url.pathname.endsWith('/reports/rpt-writer/sections')
@@ -335,17 +349,18 @@ describe('ReportGeneratePage', () => {
     // Wait for bootstrap data to load, then open Select and pick the report type
     const trigger = screen.getAllByRole('combobox')[0]!
     await waitFor(() => expect(trigger).not.toBeDisabled())
-    fireEvent.click(trigger)
+    await user.click(trigger)
     await screen.findByRole('option', { name: '真实巡检报告' })
-    fireEvent.click(screen.getByRole('option', { name: '真实巡检报告' }))
+    await user.click(screen.getByRole('option', { name: '真实巡检报告' }))
     expect(await screen.findByText('当前 LLM 配置')).toBeVisible()
     expect(screen.getByText('mp-user-chat')).toBeVisible()
     expect(screen.getByText('gpt-user')).toBeVisible()
     expect(screen.queryByRole('button', { name: /发布文档模型配置/ })).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
 
-    fireEvent.click(screen.getByRole('button', { name: /创建草稿/ }))
+    await user.click(screen.getByRole('button', { name: /创建草稿/ }))
 
+    await waitFor(() => expect(paths).toContain('POST /api/v1/reports/rpt-writer/jobs'))
     expect(await screen.findByText('job-writer')).toBeVisible()
     expect(paths.some((path) => path.includes('/report-settings'))).toBe(false)
     expect(paths.some((path) => path.includes('/admin/model-profiles'))).toBe(false)

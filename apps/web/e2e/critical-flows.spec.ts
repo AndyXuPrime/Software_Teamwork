@@ -450,7 +450,7 @@ test.describe('frontend critical smoke flows', () => {
   test('streams a chat answer through mocked gateway SSE', async ({ page }) => {
     await login(page)
     await page.goto('/chat')
-    await page.getByRole('textbox').fill('变压器巡检要点')
+    await page.getByRole('textbox', { name: /输入问题/ }).fill('变压器巡检要点')
     await page.getByRole('button', { name: /发送|鍙戦€?/ }).click()
 
     await expect(page.locator('body')).toContainText('请检查油温和负荷趋势。')

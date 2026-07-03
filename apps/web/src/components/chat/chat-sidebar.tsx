@@ -5,10 +5,11 @@ import {
   Edit3,
   MessageSquare,
   Plus,
+  Search,
   Trash2,
   X,
 } from 'lucide-react'
-import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ConfirmDialog, StateBlock } from '@/components/common'
 import { Button } from '@/components/ui/button'
@@ -43,7 +44,37 @@ export default function ChatSidebar({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   const editInputRef = useRef<HTMLInputElement>(null)
+
+  const trimmedSearchQuery = searchQuery.trim()
+  const isSearching = trimmedSearchQuery.length > 0
+
+  const filteredSessions = useMemo(() => {
+    if (!isSearching) return sessions
+
+    const normalizedQuery = trimmedSearchQuery.toLocaleLowerCase()
+    return sessions.filter((session) => {
+      const title = session.title?.trim()
+      if (!title) return false
+      return title.toLocaleLowerCase().includes(normalizedQuery)
+    })
+  }, [isSearching, sessions, trimmedSearchQuery])
+
+  const visibleSessions = collapsed ? sessions : filteredSessions
+
+  const searchEnterTarget = useMemo(() => {
+    if (!isSearching) return undefined
+
+    const normalizedQuery = trimmedSearchQuery.toLocaleLowerCase()
+    const exactMatches = filteredSessions.filter(
+      (session) => session.title?.trim().toLocaleLowerCase() === normalizedQuery,
+    )
+
+    if (exactMatches.length === 1) return exactMatches[0]
+    if (filteredSessions.length === 1) return filteredSessions[0]
+    return undefined
+  }, [filteredSessions, isSearching, trimmedSearchQuery])
 
   // Focus and select the inline edit input when entering edit mode
   useEffect(() => {
@@ -84,6 +115,21 @@ export default function ChatSidebar({
       }
     },
     [confirmEdit, cancelEdit],
+  )
+
+  const handleSearchKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        if (searchEnterTarget) {
+          e.preventDefault()
+          onSelect(searchEnterTarget.id)
+        }
+      } else if (e.key === 'Escape' && searchQuery) {
+        e.preventDefault()
+        setSearchQuery('')
+      }
+    },
+    [onSelect, searchEnterTarget, searchQuery],
   )
 
   const deleteTarget = sessions.find((session) => session.id === deleteTargetId)
@@ -135,6 +181,33 @@ export default function ChatSidebar({
         )}
       </div>
 
+      {!collapsed && (
+        <div className="px-2 pb-2">
+          <label className="relative block">
+            <span className="sr-only">搜索对话标题</span>
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              aria-label="搜索对话标题"
+              className="h-9 w-full rounded-md border border-input bg-background py-2 pl-8 pr-8 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+              placeholder="搜索对话标题"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+            />
+            {searchQuery && (
+              <button
+                aria-label="清空搜索"
+                className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                onClick={() => setSearchQuery('')}
+                type="button"
+              >
+                <X className="size-3.5" aria-hidden="true" />
+              </button>
+            )}
+          </label>
+        </div>
+      )}
+
       {/* ── Session list ── */}
       <ScrollArea className="flex-1" viewportClassName="overscroll-y-contain">
         <div className="flex flex-col gap-1 p-2">
@@ -164,8 +237,18 @@ export default function ChatSidebar({
             <StateBlock className="mx-2" size="compact" title="暂无对话记录" variant="empty" />
           )}
 
+          {/* Search empty state — hidden when collapsed */}
+          {!collapsed &&
+            !fetchError &&
+            !isLoading &&
+            isSearching &&
+            sessions.length > 0 &&
+            filteredSessions.length === 0 && (
+              <StateBlock className="mx-2" size="compact" title="未找到匹配对话" variant="empty" />
+            )}
+
           {/* Session items */}
-          {sessions.map((sess, index) => {
+          {visibleSessions.map((sess, index) => {
             const isEditing = editingId === sess.id
             const isActive = sess.id === activeId
 
