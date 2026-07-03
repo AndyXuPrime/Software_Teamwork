@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -15,9 +14,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const gatewayRAGSmokeGate = "GATEWAY_RAG_E2E_SMOKE"
@@ -41,15 +37,14 @@ func TestGatewayRAGE2ESmoke(t *testing.T) {
 	requestID := "req_gateway_rag_e2e_smoke_" + safeIdentifierSuffix(newSmokeRunID(t))
 	session := createGatewaySession(t, ctx, cfg.gatewayOwnerSmokeConfig(), requestID+"_session")
 
-	knowledgeBaseID := "kb_gateway_rag_smoke_" + safeIdentifierSuffix(newSmokeRunID(t))
-	setCleanupDocumentID := cleanupGatewayRAGSmokeResources(t, cfg, session, knowledgeBaseID)
-	createdKB := createGatewayKnowledgeBase(t, ctx, cfg.gatewayOwnerSmokeConfig(), session, requestID+"_kb", knowledgeBaseID)
-	if createdKB.ID != knowledgeBaseID {
-		t.Fatalf("Knowledge stage: created knowledge base id = %q, want %q", createdKB.ID, knowledgeBaseID)
-	}
+	requestedKnowledgeBaseID := "kb_gateway_rag_smoke_" + safeIdentifierSuffix(newSmokeRunID(t))
+	setCleanupIDs := cleanupGatewayRAGSmokeResources(t, cfg, session)
+	createdKB := createGatewayKnowledgeBase(t, ctx, cfg.gatewayOwnerSmokeConfig(), session, requestID+"_kb", requestedKnowledgeBaseID)
+	knowledgeBaseID := createdKB.ID
+	setCleanupIDs(knowledgeBaseID, "")
 
 	doc := uploadGatewayRAGDocument(t, ctx, cfg, session, requestID+"_upload", knowledgeBaseID)
-	setCleanupDocumentID(doc.ID)
+	setCleanupIDs(knowledgeBaseID, doc.ID)
 	readyDoc := waitForGatewayDocumentReady(t, ctx, cfg, session, requestID+"_document_ready", doc.ID)
 	if readyDoc.ChunkCount <= 0 {
 		t.Fatalf("Knowledge ingestion stage: document chunkCount = %d, want > 0", readyDoc.ChunkCount)
@@ -70,28 +65,32 @@ func TestGatewayRAGE2ESmoke(t *testing.T) {
 	assertGatewayQACitations(t, citations, knowledgeBaseID, readyDoc.ID)
 }
 
-func cleanupGatewayRAGSmokeResources(t *testing.T, cfg gatewayRAGSmokeConfig, session gatewaySmokeSession, knowledgeBaseID string) func(string) {
+func cleanupGatewayRAGSmokeResources(t *testing.T, cfg gatewayRAGSmokeConfig, session gatewaySmokeSession) func(string, string) {
 	t.Helper()
+	var knowledgeBaseID string
 	var documentID string
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		if strings.TrimSpace(documentID) != "" {
 			deleteGatewayRAGDocument(cleanupCtx, t, cfg, session, "req_gateway_rag_e2e_cleanup_"+knowledgeBaseID, documentID)
-			waitForGatewayRAGDeleteCleanup(cleanupCtx, t, cfg, knowledgeBaseID, documentID)
 		}
+		if strings.TrimSpace(knowledgeBaseID) == "" {
+			return
+		}
+		deleteGatewayKnowledgeBase(cleanupCtx, t, cfg.gatewayOwnerSmokeConfig(), session, "req_gateway_rag_e2e_kb_cleanup_"+knowledgeBaseID, knowledgeBaseID)
 		if err := deleteGatewaySmokeKnowledgeBaseRows(cleanupCtx, cfg.gatewayOwnerSmokeConfig(), knowledgeBaseID); err != nil {
 			t.Errorf("cleanup Gateway RAG smoke knowledge base %q: %v", knowledgeBaseID, err)
 		}
 	})
-	return func(id string) {
-		documentID = strings.TrimSpace(id)
+	return func(kbID string, docID string) {
+		knowledgeBaseID = strings.TrimSpace(kbID)
+		documentID = strings.TrimSpace(docID)
 	}
 }
 
 type gatewayRAGSmokeConfig struct {
 	gatewayBaseURL          string
-	fileServiceBaseURL      string
 	vendorRuntimeURL        string
 	knowledgeServiceBaseURL string
 	qaServiceBaseURL        string
@@ -109,7 +108,6 @@ func loadGatewayRAGSmokeConfig(t *testing.T) gatewayRAGSmokeConfig {
 	t.Helper()
 	required := map[string]string{
 		"GATEWAY_BASE_URL":                               os.Getenv("GATEWAY_BASE_URL"),
-		"FILE_SERVICE_BASE_URL":                          os.Getenv("FILE_SERVICE_BASE_URL"),
 		"VENDOR_RUNTIME_URL":                             os.Getenv("VENDOR_RUNTIME_URL"),
 		"KNOWLEDGE_SERVICE_BASE_URL":                     os.Getenv("KNOWLEDGE_SERVICE_BASE_URL"),
 		"QA_SERVICE_BASE_URL":                            os.Getenv("QA_SERVICE_BASE_URL"),
@@ -141,7 +139,6 @@ func loadGatewayRAGSmokeConfig(t *testing.T) gatewayRAGSmokeConfig {
 	}
 	return gatewayRAGSmokeConfig{
 		gatewayBaseURL:          trimHTTPBaseURL(t, "GATEWAY_BASE_URL", required["GATEWAY_BASE_URL"]),
-		fileServiceBaseURL:      trimHTTPBaseURL(t, "FILE_SERVICE_BASE_URL", required["FILE_SERVICE_BASE_URL"]),
 		vendorRuntimeURL:        trimHTTPBaseURL(t, "VENDOR_RUNTIME_URL", required["VENDOR_RUNTIME_URL"]),
 		knowledgeServiceBaseURL: trimHTTPBaseURL(t, "KNOWLEDGE_SERVICE_BASE_URL", required["KNOWLEDGE_SERVICE_BASE_URL"]),
 		qaServiceBaseURL:        trimHTTPBaseURL(t, "QA_SERVICE_BASE_URL", required["QA_SERVICE_BASE_URL"]),
@@ -159,7 +156,6 @@ func loadGatewayRAGSmokeConfig(t *testing.T) gatewayRAGSmokeConfig {
 func (cfg gatewayRAGSmokeConfig) gatewayOwnerSmokeConfig() gatewayOwnerSmokeConfig {
 	return gatewayOwnerSmokeConfig{
 		gatewayBaseURL:          cfg.gatewayBaseURL,
-		fileServiceBaseURL:      cfg.fileServiceBaseURL,
 		knowledgeServiceBaseURL: cfg.knowledgeServiceBaseURL,
 		knowledgeDatabaseURL:    cfg.knowledgeDatabaseURL,
 		redisAddr:               cfg.redisAddr,
@@ -170,7 +166,6 @@ func (cfg gatewayRAGSmokeConfig) gatewayOwnerSmokeConfig() gatewayOwnerSmokeConf
 
 func assertGatewayRAGPrechecks(t *testing.T, ctx context.Context, cfg gatewayRAGSmokeConfig) {
 	t.Helper()
-	assertHTTPReady(t, ctx, "file", cfg.fileServiceBaseURL)
 	assertRuntimeHealthy(t, ctx, cfg.vendorRuntimeURL)
 	assertPostgresReady(t, ctx, cfg.knowledgeDatabaseURL)
 	assertRedisReady(t, ctx, cfg.redisAddr)
@@ -222,41 +217,6 @@ func deleteGatewayRAGDocument(ctx context.Context, t *testing.T, cfg gatewayRAGS
 	}
 }
 
-func waitForGatewayRAGDeleteCleanup(ctx context.Context, t *testing.T, cfg gatewayRAGSmokeConfig, knowledgeBaseID string, documentID string) {
-	t.Helper()
-	pool, err := pgxpool.New(ctx, cfg.knowledgeDatabaseURL)
-	if err != nil {
-		t.Errorf("cleanup Gateway RAG document %q: connect PostgreSQL: %v", documentID, err)
-		return
-	}
-	defer pool.Close()
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		deadline = time.Now().Add(15 * time.Second)
-	}
-	var lastStatus, lastStage string
-	for time.Now().Before(deadline) {
-		err := pool.QueryRow(ctx, `
-SELECT COALESCE(status, ''), COALESCE(current_stage, '')
-FROM processing_jobs
-WHERE knowledge_base_id = $1
-  AND document_id = $2
-  AND job_type = 'delete_cleanup'
-ORDER BY created_at DESC
-LIMIT 1
-`, knowledgeBaseID, documentID).Scan(&lastStatus, &lastStage)
-		if err == nil && lastStatus == "succeeded" {
-			return
-		}
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			t.Errorf("cleanup Gateway RAG document %q: query delete cleanup job: %v", documentID, err)
-			return
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	t.Errorf("cleanup Gateway RAG document %q: delete_cleanup job did not succeed before timeout; last status=%q stage=%q", documentID, lastStatus, lastStage)
-}
-
 type gatewayRAGDocument struct {
 	ID            string
 	Status        string
@@ -270,24 +230,24 @@ func uploadGatewayRAGDocument(t *testing.T, ctx context.Context, cfg gatewayRAGS
 	writer := multipart.NewWriter(body)
 	part, err := writer.CreateFormFile("file", ragSmokeFixtureFilename)
 	if err != nil {
-		t.Fatalf("File stage: create multipart file part: %v", err)
+		t.Fatalf("Knowledge upload stage: create multipart file part: %v", err)
 	}
 	if _, err := part.Write([]byte(gatewayRAGFixtureText())); err != nil {
-		t.Fatalf("File stage: write multipart fixture: %v", err)
+		t.Fatalf("Knowledge upload stage: write multipart fixture: %v", err)
 	}
 	for _, tag := range []string{"rag-smoke", "issue-304"} {
 		if err := writer.WriteField("tags", tag); err != nil {
-			t.Fatalf("File stage: write tags field: %v", err)
+			t.Fatalf("Knowledge upload stage: write tags field: %v", err)
 		}
 	}
 	if err := writer.Close(); err != nil {
-		t.Fatalf("File stage: close multipart writer: %v", err)
+		t.Fatalf("Knowledge upload stage: close multipart writer: %v", err)
 	}
 
 	endpoint := cfg.gatewayBaseURL + "/api/v1/knowledge-bases/" + url.PathEscape(knowledgeBaseID) + "/documents"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, body)
 	if err != nil {
-		t.Fatalf("File stage: build upload request: %v", err)
+		t.Fatalf("Knowledge upload stage: build upload request: %v", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
@@ -295,12 +255,12 @@ func uploadGatewayRAGDocument(t *testing.T, ctx context.Context, cfg gatewayRAGS
 
 	res, err := smokeHTTPClient().Do(req)
 	if err != nil {
-		t.Fatalf("File stage: gateway document upload request failed: %v", err)
+		t.Fatalf("Knowledge upload stage: gateway document upload request failed: %v", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
 		discardResponse(res.Body)
-		t.Fatalf("File stage: gateway document upload returned HTTP %d", res.StatusCode)
+		t.Fatalf("Knowledge upload stage: gateway document upload returned HTTP %d", res.StatusCode)
 	}
 	return decodeGatewayDocumentResponse(t, res.Body, requestID)
 }

@@ -215,7 +215,6 @@ cd ../services/knowledge
 GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 \
 GATEWAY_BASE_URL='http://127.0.0.1:8080' \
 KNOWLEDGE_SERVICE_BASE_URL='http://127.0.0.1:8083' \
-FILE_SERVICE_BASE_URL='http://127.0.0.1:8082' \
 VENDOR_RUNTIME_URL='http://127.0.0.1:9380' \
 KNOWLEDGE_TEST_DATABASE_URL='postgres://knowledge_app:knowledge_app_dev@127.0.0.1:5432/knowledge_system?sslmode=disable' \
 KNOWLEDGE_REDIS_ADDR='127.0.0.1:6379' \
@@ -226,7 +225,7 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
 
 该测试会：
 
-- `GET /readyz` 检查 File、Knowledge 和 RAGFlow runtime 可达性。
+- `GET /readyz` 检查 Gateway、Knowledge 和 RAGFlow runtime 可达性。
 - 使用 `KNOWLEDGE_TEST_DATABASE_URL` ping Knowledge PostgreSQL。
 - 使用 `KNOWLEDGE_REDIS_ADDR` 发送 Redis `PING`。
 - 调用带伪造 `X-User-*` 但无 Bearer token 的 `GET /api/v1/knowledge-bases`，
@@ -298,7 +297,6 @@ cp deploy/.env.example deploy/.env
 cd services/knowledge
 GATEWAY_RAG_E2E_SMOKE=1 \
 GATEWAY_BASE_URL='http://127.0.0.1:8080' \
-FILE_SERVICE_BASE_URL='http://127.0.0.1:8082' \
 VENDOR_RUNTIME_URL='http://127.0.0.1:9380' \
 KNOWLEDGE_SERVICE_BASE_URL='http://127.0.0.1:8083' \
 QA_SERVICE_BASE_URL='http://127.0.0.1:8084' \
@@ -321,7 +319,7 @@ PASS
 ```
 
 测试会创建 run-scoped knowledge base 和文档，并在清理阶段先调用 Gateway
-`DELETE /api/v1/documents/{documentId}` 触发 File/vector cleanup，再按
+`DELETE /api/v1/documents/{documentId}` 触发 RAGFlow runtime 文档删除，再按
 chunks、jobs、documents、knowledge base 的顺序删除本轮 Knowledge PostgreSQL 行。
 测试开始前会读取当前 active QA config 和 LLM config，结束时通过 Gateway settings API
 重新创建并激活一份等价恢复版本。本轮 smoke 创建的 QA config versions 仍会作为本地运行

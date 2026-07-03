@@ -35,8 +35,7 @@ settings from that file and the standard host-run ports.
 
 Set per-run overrides only when the environment differs from the local baseline.
 For example, set `GATEWAY_BASE_URL`, `FILE_SERVICE_BASE_URL`,
-`KNOWLEDGE_SERVICE_BASE_URL`, `QA_SERVICE_BASE_URL`,
-`DOCUMENT_SERVICE_BASE_URL`, `GATEWAY_SMOKE_USERNAME`, or
+`QA_SERVICE_BASE_URL`, `DOCUMENT_SERVICE_BASE_URL`, `GATEWAY_SMOKE_USERNAME`, or
 `GATEWAY_SMOKE_PASSWORD` before invoking the script.
 
 AI Gateway profile/provider prerequisites are still owned by #234. The local
@@ -83,18 +82,9 @@ Run File owner-service E2E:
 bash scripts/run_issue_125_smoke.sh --file-owner
 ```
 
-To exercise the File dependency failure branch, start Knowledge with
-`FILE_SERVICE_BASE_URL` pointing at an unavailable File endpoint or with a
-deliberately wrong File service token, then run:
-
-```bash
-export FILE_OWNER_E2E_EXPECT_FILE_FAILURE=1
-bash scripts/run_issue_125_smoke.sh --file-owner
-```
-
-Do not use a request header or Gateway override to change the owner-service File
-dependency for a single request; the failure branch must reflect the actual
-service configuration being diagnosed.
+Knowledge document upload is not part of this File owner slice. Current
+Knowledge document paths are covered by the Knowledge runtime and Gateway RAG
+smokes instead of by File dependency failure checks.
 
 Run QA MCP RAG:
 
@@ -141,7 +131,7 @@ bash scripts/run_issue_125_smoke.sh --all
 | --- | --- | --- |
 | Auth/Gateway/Redis | `AUTH_GATEWAY_REDIS_SMOKE=1` | Gateway login, `/users/me`, spoofed header rejection, logout invalidation, Redis `gateway:session:*` TTL/value safety. |
 | Auth/Gateway/Redis full | `AUTH_GATEWAY_REDIS_FULL_SMOKE=1` | Auth migration apply, host-run Auth/Gateway startup, Gateway `POST /api/v1/users`, `/api/v1/sessions`, `/api/v1/users/me`, logout invalidation, Redis TTL/value/token safety, and fake owner capture of Gateway-injected `X-Caller-Service`, `X-Service-Token`, `X-User-Id`, roles, and permissions. |
-| File owner E2E | `FILE_OWNER_E2E_SMOKE=1` | Gateway -> Document/QA file-backed paths, File internal missing-token rejection, optional File dependency failure envelope, and public-response no-leak checks. Current Knowledge document paths use the Knowledge runtime boundary instead of File. |
+| File owner E2E | `FILE_OWNER_E2E_SMOKE=1` | Gateway authentication rejection, File internal missing-token rejection, Gateway -> Document public-response no-leak checks. Current Knowledge document paths use the Knowledge runtime boundary instead of File. |
 | QA MCP RAG | `QA_MCP_RAG_SMOKE=1` | Knowledge tool availability, QA SSE `tool.completed` / `citation.delta` / `answer.completed`, safe tool-call summary, citation snapshots, final answer evidence. |
 | Document REST | `DOCUMENT_REST_SMOKE=1` | Gateway -> Document report type/report/outlines routes, 404 envelope, and no-leak checks. |
 | Document MCP | `QA_DOCUMENT_MCP_SMOKE=1` | Document Streamable HTTP MCP tools/list, `document__*` prefixing, generation status/result/export, `reportArtifact`, permission-denied summary, optional Gateway file download. |
