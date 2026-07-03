@@ -1187,25 +1187,31 @@ export function ReportGeneratePage() {
 
               <label className="mt-3 block space-y-1.5 text-sm">
                 <span className="font-medium text-foreground">文档生成模型</span>
-                <select
-                  aria-label="文档生成模型"
-                  value={documentProfileId}
-                  onChange={(event) => handleSelectDocumentProfile(event.target.value)}
-                  className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+                <Select
+                  value={documentProfileId || undefined}
+                  onValueChange={(v) => handleSelectDocumentProfile(String(v))}
                   disabled={reportSettingsQuery.isLoading || chatProfilesQuery.isLoading}
                 >
-                  <option value="">请选择聊天模型 Profile</option>
-                  {showDocumentProfileFallback && (
-                    <option value={documentProfileId}>
-                      当前配置：{selectedDocumentModel || documentProfileId}
-                    </option>
-                  )}
-                  {chatProfiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.name} / {profile.model}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="h-8 w-full" aria-label="文档生成模型">
+                    <SelectValue placeholder="请选择聊天模型 Profile" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {showDocumentProfileFallback && (
+                      <SelectItem value={documentProfileId}>
+                        <SelectItemText>
+                          当前配置：{selectedDocumentModel || documentProfileId}
+                        </SelectItemText>
+                      </SelectItem>
+                    )}
+                    {chatProfiles.map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        <SelectItemText>
+                          {profile.name} / {profile.model}
+                        </SelectItemText>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </label>
 
               <div className="mt-3 space-y-2 text-sm">

@@ -32,6 +32,8 @@ type SelectContextValue = {
   setHighlightedIndex: React.Dispatch<React.SetStateAction<number>>
   itemsRef: React.MutableRefObject<string[]>
   nextItemIndex: React.MutableRefObject<number>
+  listboxId: string
+  optionPrefix: string
   disabled?: boolean
 }
 
@@ -53,6 +55,9 @@ type SelectProps = {
 }
 
 function Select({ value: controlledValue, onValueChange, disabled, children }: SelectProps) {
+  const instanceId = React.useId()
+  const listboxId = `select-listbox-${instanceId}`
+  const optionPrefix = `select-option-${instanceId}-`
   const [internalValue, setInternalValue] = React.useState<string | undefined>(undefined)
   const [open, setOpen] = React.useState(false)
   const [highlightedIndex, setHighlightedIndex] = React.useState(-1)
@@ -131,6 +136,8 @@ function Select({ value: controlledValue, onValueChange, disabled, children }: S
         setHighlightedIndex,
         itemsRef,
         nextItemIndex,
+        listboxId,
+        optionPrefix,
         disabled,
       }}
     >
@@ -149,8 +156,17 @@ type SelectTriggerProps = React.ComponentProps<'button'> & {
 }
 
 function SelectTrigger({ className, children, id, ...props }: SelectTriggerProps) {
-  const { open, setOpen, disabled, triggerRef, setHighlightedIndex, highlightedIndex, itemsRef } =
-    useSelectContext()
+  const {
+    open,
+    setOpen,
+    disabled,
+    triggerRef,
+    setHighlightedIndex,
+    highlightedIndex,
+    itemsRef,
+    listboxId,
+    optionPrefix,
+  } = useSelectContext()
   const highlightedValue =
     open && highlightedIndex >= 0 ? itemsRef.current[highlightedIndex] : undefined
   const activeDescendant =
@@ -181,8 +197,10 @@ function SelectTrigger({ className, children, id, ...props }: SelectTriggerProps
       role="combobox"
       aria-expanded={open}
       aria-haspopup="listbox"
-      aria-controls={open ? 'select-listbox' : undefined}
-      aria-activedescendant={activeDescendant ?? undefined}
+      aria-controls={open ? listboxId : undefined}
+      aria-activedescendant={
+        activeDescendant !== undefined ? `${optionPrefix}${activeDescendant}` : undefined
+      }
       onClick={() => {
         setOpen(!open)
         setHighlightedIndex(-1)
@@ -230,8 +248,16 @@ function SelectValue({ placeholder, className }: SelectValueProps) {
 type SelectContentProps = React.ComponentProps<'div'>
 
 function SelectContent({ className, children, ...props }: SelectContentProps) {
-  const { open, setOpen, setHighlightedIndex, highlightedIndex, onValueChange, itemsRef, listRef } =
-    useSelectContext()
+  const {
+    open,
+    setOpen,
+    setHighlightedIndex,
+    highlightedIndex,
+    onValueChange,
+    itemsRef,
+    listRef,
+    listboxId,
+  } = useSelectContext()
   const innerRef = React.useRef<HTMLDivElement | null>(null)
   const [contentHeight, setContentHeight] = React.useState(0)
 
@@ -291,7 +317,7 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
       data-slot="select-content"
       className={cn('absolute top-full left-0 z-50 min-w-full w-fit', className)}
       role="listbox"
-      id="select-listbox"
+      id={listboxId}
       hidden={!open}
       aria-hidden={!open || undefined}
       {...props}
@@ -359,6 +385,7 @@ function SelectItem({ className, children, value, disabled, ...props }: SelectIt
     setHighlightedIndex,
     itemsRef,
     nextItemIndex,
+    optionPrefix,
   } = useSelectContext()
   const isSelected = selectedValue === value
   const itemIndexRef = React.useRef(-1)
@@ -394,7 +421,7 @@ function SelectItem({ className, children, value, disabled, ...props }: SelectIt
   return (
     <div
       role="option"
-      id={`select-option-${value}`}
+      id={`${optionPrefix}${value}`}
       aria-selected={isSelected}
       data-slot="select-item"
       data-value={value}

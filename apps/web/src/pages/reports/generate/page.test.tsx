@@ -239,10 +239,13 @@ describe('ReportGeneratePage', () => {
 
     renderWithProviders(<ReportGeneratePage />)
 
-    const modelSelect = await screen.findByLabelText('文档生成模型')
+    const modelTrigger = screen.getByLabelText('文档生成模型')
     expect(await screen.findByText('old-report-profile')).toBeVisible()
 
-    fireEvent.change(modelSelect, { target: { value: 'mp-chat-report' } })
+    // Open the document model Select and pick the chat profile
+    fireEvent.click(modelTrigger)
+    const option = await screen.findByRole('option', { name: /报告生成模型/ })
+    fireEvent.click(option)
     fireEvent.click(screen.getByRole('button', { name: /发布文档模型配置/ }))
 
     await waitFor(() => expect(patchBodies).toHaveLength(1))
@@ -386,9 +389,8 @@ describe('ReportGeneratePage', () => {
     renderWithProviders(<ReportGeneratePage />)
 
     const publishButton = await screen.findByRole('button', { name: /发布文档模型配置/ })
-    expect(await screen.findByRole('option', { name: '报告生成模型 / gpt-report' })).toBeVisible()
     expect(publishButton).toBeDisabled()
-    expect(screen.getByLabelText('文档生成模型')).toHaveValue('')
+    expect(screen.getByLabelText('文档生成模型')).toHaveTextContent('请选择聊天模型 Profile')
 
     settings.resolve(
       jsonResponse({
@@ -404,7 +406,7 @@ describe('ReportGeneratePage', () => {
     )
 
     await waitFor(() =>
-      expect(screen.getByLabelText('文档生成模型')).toHaveValue('old-report-profile'),
+      expect(screen.getByLabelText('文档生成模型')).toHaveTextContent(/old-report/),
     )
     fireEvent.click(publishButton)
 
