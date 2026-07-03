@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
-- **Last Active**: 2026-07-02
+- **Total Sessions**: 10
+- **Last Active**: 2026-07-03
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~303 | Active |
+| `journal-1.md` | ~387 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-07-03 | Refresh docs after recent PRs | `e64983a8` | `SakayoriTeam/docs/update-docs` |
+| 9 | 2026-07-02 | Refresh architecture docs | `2ebb6935` | `SakayoriTeam/docs/update-docs` |
 | 8 | 2026-07-02 | Gateway readyz semantics | `7ee5551e`, `b4a560a1` | `Special/docs/gateway-readyz-semantics` |
 | 7 | 2026-07-02 | S-031 production compose baseline | `9cbc6e38` | `Special/docs/production-compose-baseline` |
 | 6 | 2026-07-01 | Knowledge QA RAG smoke | `b4acb18` | `Special/test/rag-e2e-smoke` |

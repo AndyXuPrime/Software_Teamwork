@@ -6,26 +6,24 @@
 
 主责服务：
 
-- `knowledge`：知识库、文档上传公开资源、文档业务元数据、解析/切片/向量化任务、Qdrant 索引、检索协调和原始文档内容入口。
-- `file`：后端内部基础文件对象存储和内容读取能力，由 `knowledge` 在服务边界内复用。
-- `knowledge-runtime`：Knowledge 的 RAGFlow runtime 实现细节，负责文档解析、切块、embedding、索引和检索支持，不直接暴露给前端。
+- `knowledge`：知识库、文档上传公开资源、parser config 管理、RAGFlow runtime adapter、检索协调、原始文档内容入口和 MCP bridge。
+- `knowledge-runtime`：Knowledge 的 RAGFlow runtime 实现细节，负责文档保存、解析、切块、embedding、索引和检索支持，不直接暴露给前端。
+- `file`：后端内部基础文件对象能力；当前 Knowledge runtime 路径不直接调用 File Service，涉及 file 的历史契约只作为兼容和迁移背景。
 - `auth`：用户、角色、权限和认证上下文。
 - `gateway`：外部 API 入口。
 - `ai-gateway`：统一提供 OpenAI-compatible 模型调用入口，供 embedding、rerank 和后续 LLM 能力使用。
 
 边界原则：
 
-- `knowledge` 是 Qdrant 的唯一业务写入方。
-- `qa`、`document` 只能通过本契约的知识查询资源复用知识能力，不能直接写 Qdrant。
-- 原始文件和运行时索引细节留在对应服务/runtime 边界；Knowledge 公开响应不得依赖或暴露 bucket、object key、MinIO URL、签名 URL、存储 backend、runtime 内部 URL 或凭据。
-- Knowledge 负责保存业务元数据、chunks、processing jobs 和 Qdrant 索引事实。
-- Redis 用于异步任务队列、短期任务状态辅助和缓存；PostgreSQL 保存可追溯业务状态，不把 Redis 作为长期业务真相。
+- `qa`、`document` 只能通过本契约的 `knowledge-queries`、Knowledge MCP 或后续稳定资源复用知识能力，不能直接读取 runtime 数据库、MinIO、Redis 或索引后端。
+- 原始文件和运行时索引细节留在 RAGFlow runtime 边界；Knowledge 公开响应不得依赖或暴露 bucket、object key、MinIO URL、签名 URL、存储 backend、runtime 内部 URL、provider 原始响应或凭据。
+- Knowledge Go adapter 负责项目契约、权限上下文、错误归一化和 parser config 管理；文档、chunks、embedding、索引和检索事实由 RAGFlow runtime 管理并经 adapter 映射。
+- Runtime 内部可使用 PostgreSQL、Redis、MinIO 和 Elasticsearch/索引后端；这些依赖不是 gateway 或前端可见的业务事实来源。
 
 技术基线：
 
 - 后端通用技术栈、数据库、迁移、日志、配置、队列和测试规则以 [`docs/architecture/technology-decisions.md`](../../../architecture/technology-decisions.md) 为准。
-- Qdrant 当前使用面较窄，短期以轻量 HTTP client 接入；Knowledge 负责 collection/point 生命周期，但不把 Qdrant 作为业务状态事实来源。
-- 文档解析、切块、embedding、索引和检索支持通过 RAGFlow runtime 接入；Knowledge Go 进程不引入 PaddleOCR/PaddlePaddle/OpenCV/CUDA 运行时依赖。
+- 文档解析、切块、embedding、索引和检索支持通过 RAGFlow runtime 接入；当前 runtime 默认 doc engine 为 Elasticsearch/索引后端。Knowledge Go 进程不引入 PaddleOCR/PaddlePaddle/OpenCV/CUDA 运行时依赖，也不维护 Go Qdrant client 或 Go ingestion worker。
 - embedding、rerank 和后续 LLM 能力通过 AI Gateway profile 调用；Knowledge 不保存 provider API key 明文。
 
 ## 2. 通用约定
@@ -118,36 +116,23 @@ failed
 cancelled
 ```
 
-### 2.6 Worker、检索与契约测试解耦
+### 2.6 Runtime、检索与契约测试解耦
 
-以下规则用于解除 A-12、A-14 对 A-11 runtime 完成度的直接依赖。A-11
-仍负责真实解析、切片、embedding 和 Qdrant 写入；A-12 和 A-14
-只依赖本节定义的稳定数据契约。
+当前稳定交接面是 Knowledge adapter 对外暴露的 HTTP/MCP 契约，而不是某个
+runtime 内部表、Redis 队列或索引 payload。单元测试和契约测试可以使用 fake
+RAGFlow runtime、seeded repository 或 fake retrieval response 验证以下语义：
 
-稳定交接面不是 asynq worker 进程本身，而是 Knowledge 拥有的
-PostgreSQL 行和 Qdrant 最小 payload：
+- `knowledge-queries` 输入、过滤、分页、错误 envelope 和 `X-Request-Id` 传播稳定。
+- 文档状态、chunks/content 和检索结果必须映射为 gateway OpenAPI 中的公开字段。
+- 无命中、低分、无权限、文档未 `ready` 或已删除时，返回稳定空结果或统一错误 envelope。
+- 工具、HTTP 响应和日志不得泄露 runtime PostgreSQL、Redis、MinIO、Elasticsearch/索引后端、
+  provider 原始响应、bucket/object key、service token 或完整文档内容。
 
-- `knowledge_documents.status=ready` 且 `deleted_at IS NULL` 的文档可作为检索候选。
-- `document_chunks` 必须保存 `id`、`knowledge_base_id`、`document_id`、
-  `chunk_index`、`content`、`token_count`、`section_path`、`chunk_type`、
-  `metadata`、`qdrant_point_id`、`embedding_provider` 和 `embedding_dimension`。
-- Qdrant payload 必须至少包含 `knowledge_base_id`、`document_id`、
-  `chunk_id` 和 `chunk_index`，可包含 `tags`、`chunk_type`、`section_path`
-  和过滤用 `metadata`。
-- 展示字段、权限判断、文档状态判断和删除状态判断必须回 PostgreSQL hydrate；
-  不得把 Qdrant payload 当作业务事实来源。
-
-A-12 的 `knowledge-queries` 实现可以在单元测试和契约测试中直接 seed
-上述文档、chunk 和 vector hit fixture，或使用 fake Qdrant/AI Gateway adapter。
-这类测试不要求 A-11 worker、真实 RAGFlow runtime、真实 Qdrant 或真实 embedding profile
-已经可运行。无命中、低分、无权限、文档未 `ready` 或已删除时，必须按本契约返回
-稳定空结果或统一错误 envelope。
-
-A-14 的 active operation 契约测试、错误 envelope 测试和 request id 测试可以使用
-seeded repository、fake file client、fake parser client、fake queue、fake vector index 和 fake AI Gateway。
-只有跨服务 smoke 或“上传 -> runtime worker -> 解析/切块/索引 -> 检索”的端到端验收需要等待
-A-11 runtime。端到端 smoke 可以登记为 integration follow-up，不应阻塞 A-14
-对公开契约、路由、错误和状态流转的测试收口。
+历史 A-11/A-12/A-14 阶段曾用 `knowledge_documents`、`document_chunks` 和 fake
+Qdrant hit 作为解耦 fixture。当前这些 fixture 仍可保留为快速契约测试输入，
+但不能被误读为当前 Go adapter 直接写 Qdrant/File/asynq 的生产路径。完整端到端
+smoke 仍应覆盖“Gateway 上传 -> adapter -> RAGFlow runtime worker -> 解析/切块/索引
+-> `knowledge-queries` -> QA answer/citation”的真实依赖链路。
 
 ## 3. 数据对象
 
@@ -379,8 +364,8 @@ DELETE /api/v1/knowledge-bases/{knowledgeBaseId}
 规则：
 
 - 删除前必须校验权限。
-- 首期采用软删除；Qdrant 向量、内部 `file_ref` 和后台清理由生命周期任务处理。
-- 删除知识库时应处理 PostgreSQL 元数据、Qdrant 向量和内部 `file_ref` 的生命周期；bucket、object key 和底层对象删除策略由 File Service 独占。
+- 首期采用软删除；当前 adapter 将删除语义转给 RAGFlow runtime，runtime 内部对象、chunks 和索引生命周期不得泄露给 gateway。
+- 删除知识库时应处理 runtime dataset/document/index 生命周期；bucket、object key 和底层对象删除策略由 runtime 或对应 owner service 独占。
 
 ### 4.6 创建知识库删除任务
 
@@ -430,7 +415,7 @@ POST /api/v1/knowledge-base-deletion-jobs
 POST /api/v1/knowledge-bases/{knowledgeBaseId}/documents
 ```
 
-请求使用 `multipart/form-data`。Knowledge 创建知识库文档资源并在内部调用 file 服务保存底层原始文件对象。
+请求使用 `multipart/form-data`。Knowledge adapter 创建知识库文档资源，并通过 RAGFlow runtime 保存原始文件、触发解析和索引；当前路径不直接调用 File Service。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -516,10 +501,10 @@ DELETE /api/v1/documents/{documentId}
 
 规则：
 
-- 删除文档必须同步完成 Knowledge PostgreSQL 软删除和 `delete_cleanup` job 创建；Qdrant 向量生命周期由 worker 异步清理。
+- 删除文档必须同步完成 Knowledge adapter 的软删除语义，并转交 runtime 处理内部文档、chunks 和索引生命周期。
 - 如果历史问答引用了该文档，引用详情应返回“原文已删除或无权限访问”的 fallback。
-- delete cleanup worker 只能通过不透明 `file_ref` 调用 File Service 删除基础 file object，不得读取或暴露 bucket、object key、MinIO URL、签名 URL、storage backend 或凭据。
-- File 404、空 `file_ref`、Qdrant point 不存在和重复 worker 投递按幂等成功处理；File/Qdrant 失败写入脱敏 job 摘要并等待重试，不恢复文档可见性。
+- 历史 delete cleanup worker、`file_ref` 和 Qdrant point 清理只适用于旧 Go worker 路径；当前实现不得把这些内部细节暴露给前端或作为 runtime 成功条件。
+- Runtime 内部对象或索引不存在、重复删除和权限隐藏都应按幂等/脱敏语义处理，不恢复文档可见性。
 
 ### 5.6 创建文档删除任务
 
@@ -757,7 +742,7 @@ POST /api/v1/knowledge-queries
       "embeddingProvider": "ai-gateway",
       "embeddingModel": "embedding-model-name",
       "embeddingDimension": 1024,
-      "qdrantCollection": "knowledge_chunks",
+      "qdrantCollection": "elasticsearch",
       "searchTopK": 8,
       "scoreThreshold": 0.35,
       "hitCount": 1,
@@ -772,7 +757,7 @@ POST /api/v1/knowledge-queries
 规则：
 
 - 必须过滤用户无权限访问的知识库和文档。
-- browser-facing API 返回 `contentPreview`，不得返回原始向量、完整 Qdrant payload、prompt、`file_ref`、bucket、object key、MinIO URL、签名 URL 或 provider 原始响应体。
+- browser-facing API 返回 `contentPreview`，不得返回原始向量、完整 runtime index payload、prompt、`file_ref`、bucket、object key、MinIO URL、签名 URL 或 provider 原始响应体。`qdrantCollection` 是兼容字段名，当前 adapter 可填入 runtime doc engine 标识。
 - `qa` 和 `document` 应通过该接口复用检索能力。
 - 检索建模为创建 `knowledge-query` 资源，不使用 `search` 动作路径。
 
@@ -958,7 +943,7 @@ PATCH /api/v1/knowledge-settings
 - 模型配置中的 `profileId` 指向 AI Gateway 中的 embedding 或 rerank profile；`knowledge` 不保存 provider `baseUrl` 或 `apiKey`，也不直接适配多个模型供应商。
 - 配置变更应记录变更人和时间。
 - `parser.backend` 首期固定为 `external_api`；`parser.apiKey` 只允许写入，不允许明文读取。
-- embedding 维度或模型族变化时创建新的 Qdrant collection 版本，并通过后台任务重建索引；旧 collection 保留到切换完成后清理。
+- embedding 维度、模型族或 runtime doc engine 配置变化时必须通过 RAGFlow runtime 重建索引；旧索引保留到切换完成后清理。
 
 ## 10. 统计 API
 
@@ -991,12 +976,12 @@ GET /api/v1/knowledge-statistics/overview
 
 | 数据 | 存储 | 所有者 |
 | --- | --- | --- |
-| 知识库元数据 | PostgreSQL | `knowledge` |
-| 文档元数据和状态 | PostgreSQL | `knowledge` |
-| 文件对象和内容读取授权 | File Service 内部元数据和对象存储；Knowledge 只保存不透明 `file_ref`，bucket、object key、storage backend 和凭据由 File Service 独占 | `file` |
-| 切片元数据 | PostgreSQL | `knowledge` |
-| 向量和检索 payload | Qdrant | `knowledge` |
-| 处理任务状态 | PostgreSQL 持久化，`asynq` over Redis 队列和短期状态辅助；自动重试最多 3 次 | `knowledge` |
+| 知识库元数据 | RAGFlow runtime dataset + adapter 映射；parser config 可选保存在 Knowledge PostgreSQL | `knowledge` |
+| 文档元数据和状态 | RAGFlow runtime document/task 状态 + adapter 映射 | `knowledge` |
+| 文件对象和内容读取授权 | RAGFlow runtime 内部对象存储；Knowledge 只返回公开文档内容流，不暴露 bucket、object key、storage backend 或凭据 | `knowledge-runtime` |
+| 切片元数据 | RAGFlow runtime chunks + adapter 映射 | `knowledge-runtime` / `knowledge` |
+| 向量和检索 payload | RAGFlow runtime doc engine（当前 Elasticsearch/索引后端） | `knowledge-runtime` |
+| 处理任务状态 | RAGFlow runtime PostgreSQL/Redis/worker；Knowledge adapter 只暴露脱敏状态和公开枚举 | `knowledge-runtime` / `knowledge` |
 | 模型配置 | PostgreSQL 保存业务默认参数和 AI Gateway profile 引用；provider 密钥由 AI Gateway 管理 | `knowledge` / `ai-gateway` |
 
 ## 12. 已确认决策与后续跟踪
@@ -1005,10 +990,10 @@ GET /api/v1/knowledge-statistics/overview
 | --- | --- |
 | K1 | 首期采用角色级 RBAC 和知识库可见性，不做组织/电厂/专业多维权限。 |
 | K2 | 报告支撑材料是独立资源，复用 `file` service 和必要的 `knowledge` 检索能力。 |
-| K3 | 文档删除首期按软删除设计；Qdrant 清理和底层文件对象清理由后台生命周期任务通过内部 `file_ref` 协调处理。 |
-| K4 | 文档解析/OCR 首期使用外部 HTTP 解析服务，通过 `parser.baseUrl`、`apiKey`、`timeoutSeconds`、`maxConcurrency` 配置。 |
-| K5 | 异步任务采用 `asynq` over Redis + PostgreSQL 持久化状态。 |
-| K6 | embedding 维度或模型族变化后创建版本化 Qdrant collection，并通过后台任务重建索引。 |
+| K3 | 文档删除首期按软删除设计；当前 runtime adapter 路径由 RAGFlow runtime 处理内部对象和索引生命周期，旧 `file_ref`/Qdrant cleanup 仅为历史路径。 |
+| K4 | 文档解析/OCR 当前由 RAGFlow runtime API/worker 提供；Knowledge Go 进程只管理 parser config 到 runtime `parser_config` 的映射。 |
+| K5 | Knowledge Go adapter 不接入 asynq；runtime 内部使用 Redis/worker 协调任务，Document 等其他服务可继续使用 asynq。 |
+| K6 | embedding 维度、模型族或 doc engine 变化后通过 RAGFlow runtime 重建索引。 |
 | K7 | 任务自动重试最多 3 次，PostgreSQL job 保留最近 10 次尝试摘要。 |
-| K8 | Owner service 不依赖 bucket 分类或 object key 规则；File Service 独占 bucket、object key、storage backend 和凭据，当前本地 Compose 单 bucket `software-teamwork-local` 只是本地实现细节。 |
+| K8 | Owner service 不依赖 bucket 分类或 object key 规则；当前 Knowledge runtime 对象存储细节由 RAGFlow runtime 独占，File Service 的 bucket/object key 规则不进入 Knowledge 公开响应。 |
 | K9 | 审计日志首期暂缓，不作为知识管理 API 的强制验收项；首期保留配置变更、任务失败和删除结果等排查字段。 |

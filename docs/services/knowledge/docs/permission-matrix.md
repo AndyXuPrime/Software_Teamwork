@@ -10,8 +10,8 @@
 | 用户上下文 | Gateway 注入 `X-User-Id`、`X-User-Roles`、`X-User-Permissions`。 |
 | 角色 | `standard`、`admin`、`super_admin`。 |
 | 权限字符串 | `knowledge:read`、`knowledge:write`、`admin:parser-config:write`。 |
-| 资源事实 | Knowledge PostgreSQL 保存知识库、文档、处理状态、chunks 和 parser configs。 |
-| 文件事实 | 原始 bytes 由 File Service 保存；Knowledge 保存内部 `file_ref`。 |
+| 资源事实 | RAGFlow runtime 保存知识库文档、处理状态、chunks 和索引事实；Knowledge PostgreSQL 可选保存 parser configs 和迁移兼容字段。 |
+| 文件事实 | 当前 Knowledge runtime 路径由 RAGFlow runtime 保存原始 bytes；Knowledge 公开响应不得暴露 runtime object key、bucket、内部 URL 或历史 `file_ref`。 |
 
 ## 业务能力矩阵
 
@@ -21,7 +21,7 @@
 | 创建知识库 | 默认不允许，除非授予 `knowledge:write`。 | 允许。 | 允许。 | 创建人写入 `created_by`。 |
 | 更新知识库 | 默认不允许，除非授予 `knowledge:write` 且有资源权限。 | 允许。 | 允许。 | 软删除资源不可更新。 |
 | 删除知识库 | 默认不允许，除非授予 `knowledge:write` 且有资源权限。 | 允许。 | 允许。 | 需要幂等软删除和后续清理。 |
-| 上传/更新/删除文档 | 默认不允许，除非授予 `knowledge:write` 且可访问知识库。 | 允许。 | 允许。 | 需校验知识库状态和 File/Parser 边界。 |
+| 上传/更新/删除文档 | 默认不允许，除非授予 `knowledge:write` 且可访问知识库。 | 允许。 | 允许。 | 需校验知识库状态和 RAGFlow runtime 处理边界。 |
 | 读取文档详情、chunks、content | 允许，需 `knowledge:read` 且可访问文档。 | 允许。 | 允许。 | 原文内容必须先做文档访问权限校验。 |
 | 创建知识查询 | 允许，需 `knowledge:read`。 | 允许。 | 允许。 | 必须过滤无权限知识库、未 ready 文档和已删除文档。 |
 | 管理 parser configs | 不允许。 | 允许，需 `admin:parser-config:write` 或 `admin` 角色。 | 允许。 | 公开入口为 `/api/v1/admin/parser-configs/**`。 |
@@ -30,10 +30,8 @@
 
 | 下游依赖 | Knowledge 调用前必须校验 | 下游只负责 |
 | --- | --- | --- |
-| File Service | 用户是否可上传、读取或删除对应文档资源。 | 原始 file object 读写和基础元数据。 |
 | Knowledge RAGFlow runtime | 文档存在、状态允许处理、调用方有处理权限。 | 解析文档、生成 chunks、执行 embedding、写入索引并支持检索。 |
 | AI Gateway embeddings/rerankings | 文档或查询权限、profile 配置可用。 | 模型调用和 provider 错误归一化。 |
-| Qdrant | PostgreSQL 中 chunk/document 权限和状态。 | 向量相似度查询和最小 payload 存储。 |
 
 ## 拒绝规则
 

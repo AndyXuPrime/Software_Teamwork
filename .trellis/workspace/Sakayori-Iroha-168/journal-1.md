@@ -316,3 +316,72 @@ Clarified Gateway /readyz as lightweight readiness, separated owner-service busi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Refresh architecture docs
+
+**Date**: 2026-07-02
+**Task**: Refresh architecture docs
+**Branch**: `SakayoriTeam/docs/update-docs`
+
+### Summary
+
+Rebased the architecture docs branch onto latest fork/origin develop and refreshed current capability and system link gap documentation for Gateway, QA, Knowledge, Document, frontend, local integration, and testing evidence.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2ebb6935` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 10: Refresh docs after recent PRs
+
+**Date**: 2026-07-03
+**Task**: Refresh docs after recent PRs
+**Branch**: `SakayoriTeam/docs/update-docs`
+
+### Summary
+
+Updated non-architecture docs and related architecture references after syncing develop.
+
+### Main Changes
+
+- Updated docs across architecture, service implementation, permission matrix, and testing strategy to match develop@736acde0.
+- Captured QA session attachments, versioned systemPrompt permissions, resolved gateway missing-contract status, Document MCP server state, and #125 smoke slice coverage.
+- Validation: git diff --check, stale-status keyword scan, and local Markdown relative-link check passed.
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e64983a8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -28,7 +28,7 @@
 | Knowledge 资源 | `/api/v1/knowledge-bases/**`、`/api/v1/documents/**`、`/api/v1/knowledge-queries` | `bearerAuth` | 注入用户上下文，统一 envelope。 | `knowledge` 校验知识库、文档、查询范围和可见性。 |
 | 管理端 parser config | `/api/v1/admin/parser-configs/**` | `bearerAuth` | 只允许带认证上下文的管理员入口。 | `knowledge` 校验 `admin` / `super_admin` 或 `admin:parser-config:write`。 |
 | 管理端 model profile | `/api/v1/admin/model-profiles/**` | `bearerAuth` | 只允许带认证上下文的管理员入口，不保存 API key。 | `ai-gateway` 保存配置；Gateway 应要求管理员角色或 `admin:model-profile:write`。 |
-| QA 资源 | `/api/v1/qa-sessions/**`、`/api/v1/response-runs/**`、`/api/v1/citations/**`、QA settings、retrieval tests、metrics | `bearerAuth` | 注入用户上下文，转发 SSE 和普通响应。 | `qa` 校验 owner、管理员配置权限和工具权限裁剪。 |
+| QA 资源 | `/api/v1/qa-sessions/**`、`/api/v1/response-runs/**`、`/api/v1/citations/**`、QA attachments、QA settings、retrieval tests、metrics | `bearerAuth` | 注入用户上下文，转发 SSE 和普通响应；QA/LLM settings 端点必须具备 `qa:settings:read` / `qa:settings:write` 或等价管理权限，且是唯一可返回完整 `systemPrompt` 的公开面。 | `qa` 校验 owner、管理员配置权限、附件归属和工具权限裁剪；普通 QA 公开资源不得返回完整提示词。 |
 | Document 资源 | `/api/v1/report-*`、`/api/v1/reports/**` | `bearerAuth` | 注入用户上下文，统一 envelope。 | `document` 校验 owner、报告权限、管理员 settings 权限。 |
 | 管理概览和指标 | `/api/v1/admin/overview`、`/api/v1/admin/metrics` | `bearerAuth` | 聚合读入口，应限制为 `admin` / `super_admin` 或等价管理权限。 | 各 owner service 仍只暴露自己的安全指标。 |
 

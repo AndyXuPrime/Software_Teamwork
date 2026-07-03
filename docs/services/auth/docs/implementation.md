@@ -103,6 +103,8 @@
 
 | 日期 | 检查人/工具 | 代码基准 | 结论 |
 | --- | --- | --- | --- |
+| 2026-07-03 | Codex docs watch | `develop@58fc6eb2` | 复核 #504 已在当前 develop：Auth profile、required password-change 和 admin-users 管理契约已进入 Auth/Gateway 文档；管理员用户管理由 Auth 复核 DB 角色层级，不信任转发角色头，Gateway 仅做入口鉴权、actor context 传递和响应归一化。 |
+| 2026-07-03 | Codex docs watch | `develop@736acde0` | 复核 PR #520：Auth/Gateway/Redis full smoke 已由 `scripts/run_issue_352_smoke.sh` 脚本化，并新增手动 optional workflow；覆盖 Auth migration apply、Gateway create user/session、`/users/me`、logout、Redis session TTL/value/token 脱敏和 fake owner header capture。默认 PR required CI 仍不运行真实 Docker/host-run full smoke。 |
 | 2026-06-29 | Codex goal | `eddf917` + working tree | Auth 实现已落地且基本对齐契约；主要剩余是 DB smoke、管理员初始化和 README 状态回写。 |
 | 2026-06-30 | Codex full-day audit | `develop@92d3afc` | 复核今日 PR/issue：Auth 已保持 PostgreSQL runtime、`pgx/v5@v5.9.2` 和 `x/crypto` 安全基线；DB migration smoke 已有记录，剩余为 Gateway/Auth/Redis 端到端 smoke 与管理员初始化说明。 |
 | 2026-07-02 | Codex backend task | `develop@cda73a10` + user-management working tree | Auth 已实现管理员用户管理、当前用户资料、必需改密、`must_change_password` migration/sqlc/service/handler；`go test ./...` 和 `go build ./cmd/server` 通过。 |

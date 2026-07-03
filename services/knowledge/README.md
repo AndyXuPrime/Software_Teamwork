@@ -14,7 +14,7 @@ goose PostgreSQL tables when `DATABASE_URL` or `KNOWLEDGE_DATABASE_URL` is set.
 - Binary: `cmd/adapter` only (legacy `cmd/server` removed in Phase 5)
 - HTTP: standard `net/http` `ServeMux`
 - Logging: `log/slog`
-- Parser-config storage: `pgx` + `sqlc` (optional)
+- Parser-config storage: `pgx/v5` + hand-written SQL (optional)
 
 See `../knowledge-runtime/README.md` for host-run vendor runtime wiring.
 
@@ -31,6 +31,12 @@ See `../knowledge-runtime/README.md` for host-run vendor runtime wiring.
 | `KNOWLEDGE_ENV` | no | `local` | Runtime environment label. |
 | `KNOWLEDGE_AUTO_START_INGESTION` | no | `true` | Call vendor `/documents/parse` after upload. |
 | `KNOWLEDGE_SHUTDOWN_TIMEOUT` | no | `10s` | Graceful shutdown timeout. |
+| `KNOWLEDGE_MCP_ADDR` | no | - | Optional Streamable HTTP MCP listen address, for example `127.0.0.1:8093`. |
+| `KNOWLEDGE_MCP_USER_ID` | no | `knowledge_mcp_service` | Fixed user id used by MCP bridge calls. |
+| `KNOWLEDGE_MCP_PERMISSIONS` | no | `knowledge:read` | Fixed permission set used by MCP bridge calls; write tools require `knowledge:write`. |
+| `KNOWLEDGE_MCP_ROLES` | no | - | Fixed role set used by MCP bridge calls. |
+| `KNOWLEDGE_AI_GATEWAY_URL` | no | - | Enables `answer_from_knowledge` MCP tool by calling AI Gateway chat completions. |
+| `KNOWLEDGE_AI_GATEWAY_SERVICE_TOKEN` | no | `INTERNAL_SERVICE_TOKEN` fallback | Service token for Knowledge -> AI Gateway chat calls. |
 
 Upload storage and vector retrieval are configured in the vendor runtime
 (`services/knowledge-runtime/conf/service_conf.yaml`): MinIO bucket
@@ -66,6 +72,19 @@ user identity and permission headers are trusted.
 
 Public gateway equivalents are documented in
 `docs/services/gateway/api/public.openapi.yaml`.
+
+## MCP Server
+
+When `KNOWLEDGE_MCP_ADDR` is set, `cmd/adapter` also starts a Streamable HTTP
+MCP server on that independent address. The endpoint uses `X-Service-Token`,
+does not trust caller-supplied `X-User-*` headers, and calls the adapter with
+the fixed `KNOWLEDGE_MCP_USER_ID` / roles / permissions context.
+
+The current native tool catalog includes retrieval, answer synthesis, KB CRUD,
+document CRUD, chunk listing, and document content tools. Runtime details and
+the gap to the four-tool `knowledge__*` target contract are documented in
+[`docs/services/knowledge/docs/mcp-server.md`](../../docs/services/knowledge/docs/mcp-server.md)
+and [`docs/services/knowledge/docs/mcp-tools.md`](../../docs/services/knowledge/docs/mcp-tools.md).
 
 ## Access Context
 
@@ -120,5 +139,6 @@ Gateway `/internal/v1/*` routes to the RAGFlow runtime at
 use runtime MinIO + Elasticsearch — not legacy parser, Qdrant, or
 the removed Go ingestion worker.
 
-Contract tests under `internal/adapter` use a fake vendor HTTP server. Live vendor
-tests require `-tags=integration` and `KNOWLEDGE_VENDOR_INTEGRATION_URL`.
+Contract tests under `internal/adapter` and `internal/mcp` use fake vendor HTTP
+servers or in-memory MCP transports. Live vendor tests require
+`-tags=integration` and `KNOWLEDGE_VENDOR_INTEGRATION_URL`.

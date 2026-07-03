@@ -220,7 +220,7 @@ outline_generation | outline_regeneration | content_generation | content_regener
 
 ### QA 与 MCP 工具
 
-Document 当前已在 `services/document/internal/service/mcp_tools.go` 提供工具适配层，并通过宿主机 Document 进程的 Streamable HTTP `/mcp` 暴露。该适配层接收可信 `RequestContext`，复用现有 Document service 能力，记录 `requestSource=mcp` 和 `toolName=<tool>` 的安全操作日志。精确 input schema、返回结构、QA alias 前缀与 Agent 工作流见 [`docs/mcp-tools.md`](docs/mcp-tools.md)。
+Document 当前已在 `services/document/internal/service/mcp_tools.go` 提供服务内 MCP 工具适配层，并通过 `internal/platform/mcpserver` 暴露 Streamable HTTP `/mcp` server。工具适配层接收可信 `RequestContext`，复用现有 Document service 能力，记录 `requestSource=mcp` 和 `toolName=<tool>` 的安全操作日志；QA 侧已有 env-gated report tools smoke，完整共享环境的 Gateway/Auth/worker/download 验收仍待 #125 smoke 收口。
 
 当前工具包括：
 
@@ -280,4 +280,4 @@ go build ./cmd/server
 
 这些测试覆盖 Document 调用 File Service `/internal/v1/files/**`、`X-Service-Token` 透传、模板/素材/报告文件公开响应脱敏、报告文件 content 成功二进制返回、失败 JSON error envelope，以及 fake 依赖失败到 `dependency_error` 的映射。
 
-需要完整联调时，先通过 gateway 访问公开 `/api/v1/**` 路径，并确保 Document、File、Redis、AI Gateway 可用；如果生成请求使用知识库上下文，还需要 Knowledge。联调时重点检查 `X-Request-Id` 贯穿日志，File Service token 匹配，报告文件 content 未就绪时返回统一错误 envelope。当前富 DOCX 的 Pandoc/LibreOffice 工具链、Issue #510 的 `generate_report_from_content` 和 Document MCP tools 的远程/QA smoke 仍是后续任务，不能作为 C-010 验收前提。
+需要完整联调时，先通过 gateway 访问公开 `/api/v1/**` 路径，并确保 Document、File、Redis、AI Gateway 可用；如果生成请求使用知识库上下文，还需要 Knowledge。联调时重点检查 `X-Request-Id` 贯穿日志，File Service token 匹配，报告文件 content 未就绪时返回统一错误 envelope。当前服务内 Document MCP 工具适配层和 Streamable HTTP `/mcp` server 已存在，QA 侧也有 env-gated report tools smoke；但共享环境中的 Gateway/Auth/worker/download 完整验收、富 DOCX 的 Pandoc/LibreOffice 工具链和新增第三类报告生成策略仍是后续任务，不能作为 C-010 验收前提。

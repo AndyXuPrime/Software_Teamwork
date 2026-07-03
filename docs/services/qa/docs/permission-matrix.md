@@ -24,8 +24,8 @@
 | 查看 response run 和 tool calls | 允许，仅限自己会话关联资源。 | 允许，默认仍按 owner 约束。 | 允许，默认仍按 owner 约束。 | 不返回完整 prompt、chain-of-thought、MCP 原始参数或完整工具结果。 |
 | 查看引用和 citation lookup | 允许，仅限自己消息或可访问引用。 | 允许。 | 允许。 | 原文 hydrate 必须回 Knowledge/File 复核权限。 |
 | 上传和删除 QA 会话附件 | 允许，仅限自己会话。 | 允许。 | 允许。 | QA 拥有附件元数据；File 保存原始 bytes，Parser 做解析。 |
-| 读取当前 QA/LLM settings | 默认不允许，除非授予 `qa:settings:read`。 | 允许。 | 允许。 | 响应必须脱敏模型和 provider 配置。 |
-| 创建 QA/LLM settings version | 默认不允许，除非授予 `qa:settings:write`。 | 允许。 | 允许。 | 写入 admin audit logs。 |
+| 读取当前 QA/LLM settings | 默认不允许，除非授予 `qa:settings:read`。 | 允许。 | 允许。 | 管理端响应可包含完整 `systemPrompt`，但必须脱敏模型和 provider secret；普通 QA 公开资源仍禁止返回完整提示词。 |
+| 创建 QA/LLM settings version | 默认不允许，除非授予 `qa:settings:write`。 | 允许。 | 允许。 | 可写入版本化 `systemPrompt`；admin audit logs 只记录长度和配置元数据，不保存完整提示词。 |
 | LLM connection test | 默认不允许，除非授予 `qa:settings:write`。 | 允许。 | 允许。 | 不返回 provider raw body 或 secret。 |
 | Retrieval test runs | 默认不允许，除非授予管理权限。 | 允许。 | 允许。 | Knowledge retrieval 仍过滤无权限知识库和文档。 |
 | QA metrics | 默认不允许，除非授予管理权限。 | 允许。 | 允许。 | 指标不得包含 prompt、原始文档全文或敏感工具参数。 |
@@ -38,7 +38,7 @@
 | MCP tools | 工具白名单、用户权限、参数 schema、超时、幂等键。 | 具体工具的业务权限和数据脱敏。 |
 | Knowledge retrieval/citation source | 用户是否可在当前 QA 上下文使用检索工具。 | 知识库、文档、chunk 和原文读取权限。 |
 | Document report tools | 用户是否可调用报告工具。 | 报告、模板、文件、settings 和操作日志权限。 |
-| File/Parser for attachments | 会话 owner 和附件状态。 | File 保存 bytes；Parser 解析 bytes。 |
+| File / Knowledge runtime for attachments | 会话 owner 和附件状态。 | File 保存 bytes；Knowledge RAGFlow runtime 处理解析/切块边界。 |
 
 ## 拒绝规则
 
