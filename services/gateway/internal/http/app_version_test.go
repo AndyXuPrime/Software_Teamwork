@@ -233,16 +233,12 @@ func TestAppVersionFreshnessRejectsInvalidCurrentSHAWithoutGitHubCall(t *testing
 	}
 }
 
-func TestAppVersionFreshnessAllowsValidCurrentSHAWhenAllowlistIsEmpty(t *testing.T) {
-	latestSHA := strings.Repeat("a", 40)
+func TestAppVersionFreshnessReturnsUnknownWhenAllowlistIsEmptyWithoutGitHubOrCache(t *testing.T) {
 	currentSHA := strings.Repeat("b", 40)
 	githubCalls := 0
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		githubCalls++
-		if r.URL.Path != "/compare/"+currentSHA+"...develop" {
-			t.Fatalf("github path = %q", r.URL.Path)
-		}
-		writeAppVersionCompareResponse(t, w, currentSHA, currentSHA, []string{latestSHA}, 1, 0)
+		t.Fatalf("GitHub should not be called when allowlist is empty")
 	}))
 	defer github.Close()
 
@@ -250,20 +246,20 @@ func TestAppVersionFreshnessAllowsValidCurrentSHAWhenAllowlistIsEmpty(t *testing
 
 	freshness := checker.CheckFreshness(context.Background(), currentSHA)
 
-	if freshness.Status != appFreshnessDifferent ||
-		freshness.CurrentSHA != currentSHA ||
-		freshness.LatestSHA != latestSHA {
+	if freshness.Status != appFreshnessUnknown ||
+		freshness.Reason != appFreshnessReasonUntrustedCurrentSHA ||
+		freshness.CurrentSHA != currentSHA {
 		t.Fatalf("freshness = %+v", freshness)
 	}
 	checker.cacheLock.Lock()
 	cacheLen := len(checker.cache)
 	inFlightLen := len(checker.inFlight)
 	checker.cacheLock.Unlock()
-	if cacheLen != 1 || inFlightLen != 0 {
-		t.Fatalf("cache entries = %d, in-flight entries = %d, want 1 and 0", cacheLen, inFlightLen)
+	if cacheLen != 0 || inFlightLen != 0 {
+		t.Fatalf("cache entries = %d, in-flight entries = %d, want 0", cacheLen, inFlightLen)
 	}
-	if githubCalls != 1 {
-		t.Fatalf("GitHub calls = %d, want 1", githubCalls)
+	if githubCalls != 0 {
+		t.Fatalf("GitHub calls = %d, want 0", githubCalls)
 	}
 }
 

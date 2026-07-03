@@ -52,13 +52,12 @@ export interface paths {
          *     `currentSha...develop`; `ahead_by > 0` means develop has commits the
          *     current build does not contain, while `ahead_by = 0` means the build
          *     contains the latest develop commit even if it also has feature-branch
-         *     commits. By default, any syntactically valid full SHA can use the
-         *     server-side GitHub check, which is protected by short-lived bounded
-         *     cache entries and in-flight request coalescing. If
-         *     `GATEWAY_APP_VERSION_ALLOWED_SHAS` is configured, Gateway narrows checks
-         *     to the listed SHAs; other syntactically valid SHAs return
+         *     commits. Gateway only performs the server-side GitHub request when
+         *     `currentSha` is present in `GATEWAY_APP_VERSION_ALLOWED_SHAS`; missing
+         *     configuration or other syntactically valid SHAs return
          *     `data.status=unknown` without a GitHub request or cache write. Trusted
-         *     requests use an optional backend-only `GATEWAY_GITHUB_TOKEN`; browser
+         *     requests use short-lived bounded cache entries, in-flight request
+         *     coalescing, and an optional backend-only `GATEWAY_GITHUB_TOKEN`; browser
          *     clients never call GitHub API directly and never receive the token.
          *     If GitHub returns 403, 404, 429, a network error, or an invalid response, the
          *     endpoint still returns 200 with `data.status=unknown` and a short safe
@@ -3388,7 +3387,7 @@ export interface operations {
     getAppVersionFreshness: {
         parameters: {
             query?: {
-                /** @description Current frontend build commit SHA injected at build time. Omit or send blank when unavailable; otherwise send the full 40-character hexadecimal SHA. Gateway checks GitHub for valid SHAs unless `GATEWAY_APP_VERSION_ALLOWED_SHAS` is configured, in which case only listed SHAs can trigger the check. */
+                /** @description Current frontend build commit SHA injected at build time. Omit or send blank when unavailable; otherwise send the full 40-character hexadecimal SHA. Gateway checks GitHub only when the SHA is listed in `GATEWAY_APP_VERSION_ALLOWED_SHAS`; otherwise it returns unknown without an upstream request. */
                 currentSha?: string;
             };
             header?: never;
