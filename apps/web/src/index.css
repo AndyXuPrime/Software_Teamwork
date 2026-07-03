@@ -391,3 +391,25 @@ input[type='range'].range-slider::-moz-range-thumb {
 .search-expand:focus-within {
   min-width: 280px;
 }
+
+/* Streaming cursor appended to the last block via ::after */
+@keyframes blink-cursor {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.streaming-cursor > :last-child::after {
+  content: '';
+  display: inline-block;
+  width: 0.1em;
+  height: 1em;
+  margin-left: 0.125em;
+  background-color: currentColor;
+  vertical-align: baseline;
+  animation: blink-cursor 1s step-end infinite;
+}

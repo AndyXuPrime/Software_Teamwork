@@ -700,6 +700,70 @@ function StatusLabel({ status }: { status: QAMessage['status'] }) {
   return null
 }
 
+/* ── Throttled Markdown content ── */
+const THROTTLE_CHAR_THRESHOLD = 2000
+
+function StreamingContent({
+  content,
+  streaming,
+  components,
+}: {
+  content: string
+  streaming: boolean
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  components: Record<string, any>
+}) {
+  const [displayContent, setDisplayContent] = useState(content)
+  const rafRef = useRef<number | null>(null)
+  const lastContentRef = useRef(content)
+
+  useEffect(() => {
+    if (content === lastContentRef.current) return
+    lastContentRef.current = content
+
+    if (content.length > THROTTLE_CHAR_THRESHOLD) {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+      rafRef.current = requestAnimationFrame(() => {
+        setDisplayContent(content)
+        rafRef.current = null
+      })
+    } else {
+      setDisplayContent(content)
+    }
+
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+    }
+  }, [content])
+
+  useEffect(() => {
+    if (!streaming) {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+      setDisplayContent(content)
+    }
+  }, [streaming, content])
+
+  const markdownElement = useMemo(
+    () => (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <ReactMarkdown components={components as any}>{displayContent}</ReactMarkdown>
+    ),
+    [displayContent, components],
+  )
+
+  return (
+    <div className={streaming && displayContent.trim() ? 'streaming-cursor' : undefined}>
+      {markdownElement}
+      {streaming && !displayContent.trim() && (
+        <span
+          className="ml-0.5 inline-block h-[1em] w-[0.1em] animate-pulse bg-primary align-middle select-none"
+          aria-label="助手正在回复中"
+        />
+      )}
+    </div>
+  )
+}
+
 /* ── Single message bubble ── */
 function MessageBubble({
   msg,
@@ -772,15 +836,19 @@ function MessageBubble({
             <p className="whitespace-pre-wrap">{msg.content}</p>
           ) : msg.content ? (
             <span>
-              {/* @ts-expect-error react-markdown Components type mismatch with React 19 */}
-              <ReactMarkdown components={markdownComponents}>{msg.content}</ReactMarkdown>
+              <StreamingContent
+                content={msg.content}
+                streaming={effectiveStreaming}
+                components={markdownComponents}
+              />
               <StatusLabel status={msg.status} />
             </span>
           ) : effectiveStreaming ? (
             <span>
-              <span className="animate-pulse text-primary" aria-label="助手正在回复中">
-                ▊
-              </span>
+              <span
+                className="ml-0.5 inline-block h-[1em] w-[0.1em] animate-pulse bg-primary align-middle select-none"
+                aria-label="助手正在回复中"
+              />
               <StatusLabel status={msg.status} />
             </span>
           ) : msg.status === 'stopped' || msg.status === 'cancelled' || msg.status === 'failed' ? (
