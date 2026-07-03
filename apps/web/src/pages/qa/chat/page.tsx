@@ -18,11 +18,16 @@ import {
   useSessionMessages,
   useSessions,
 } from '@/features/qa'
-import { parseReportArtifact } from '@/features/qa/capability'
+import {
+  getToolEventSummary,
+  getToolReportArtifact,
+  mergeMessageReportArtifact,
+} from '@/features/qa/capability'
 import { downloadFromUrl } from '@/lib/download'
 import type {
   QACitation,
   QAMessage,
+  QAMessageWithArtifacts,
   QAReportArtifact,
   QASession,
   QASessionListItem,
@@ -86,7 +91,20 @@ const VALID_STEP_TYPES = new Set([
   'verify',
 ])
 
-function sanitizeThinkingStep(raw: Record<string, unknown>): QAThinkingStep {
+export type ToolThinkingStep = QAThinkingStep & {
+  argumentsSummary?: unknown
+  completedAt?: number
+  errorSummary?: string
+  iterationNo?: number
+  reasoningStepId?: string
+  reportArtifact?: QAReportArtifact
+  resultSummary?: unknown
+  startedAt?: number
+  toolCallId?: string
+  toolName?: string
+}
+
+export function sanitizeThinkingStep(raw: Record<string, unknown>): ToolThinkingStep {
   const rawType = String(raw.type ?? '')
   // Only allow known step types; discard unknown / internal-only types
   const type = (VALID_STEP_TYPES.has(rawType) ? rawType : 'generation') as QAThinkingStep['type']
@@ -97,7 +115,17 @@ function sanitizeThinkingStep(raw: Record<string, unknown>): QAThinkingStep {
       : 'running'
   ) as QAThinkingStep['status']
   const detail = sanitizeLabel(typeof raw.detail === 'string' ? raw.detail : undefined)
-  return { type, label, status, detail }
+  const iterationNo = getIterationNo(raw)
+  const rawReasoningStepId =
+    typeof raw.reasoningStepId === 'string'
+      ? raw.reasoningStepId
+      : typeof raw.stepId === 'string'
+        ? raw.stepId
+        : typeof raw.id === 'string'
+          ? raw.id
+          : undefined
+  const reasoningStepId = sanitizeLabel(rawReasoningStepId)
+  return { type, label, status, detail, iterationNo, reasoningStepId }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -150,6 +178,58 @@ function sanitizeToolName(raw: unknown): string {
   const trimmed = raw.slice(0, 80)
   if (SENSITIVE_PATTERN.test(trimmed)) return '检索工具'
   return trimmed
+}
+
+function getToolName(data: Record<string, unknown>): string {
+  return sanitizeToolName(data.toolName ?? data.tool)
+}
+
+function getIterationNo(data: Record<string, unknown>): number | undefined {
+  return typeof data.iterationNo === 'number' && Number.isFinite(data.iterationNo)
+    ? data.iterationNo
+    : undefined
+}
+
+function getToolFailureSummary(data: Record<string, unknown>): string | undefined {
+  const raw =
+    typeof data.errorMessage === 'string'
+      ? data.errorMessage
+      : typeof data.error === 'string'
+        ? data.error
+        : typeof data.summary === 'string'
+          ? data.summary
+          : undefined
+  return sanitizeLabel(raw)
+}
+
+function getReasoningStepKey(step: ToolThinkingStep): string | undefined {
+  if (!step.reasoningStepId) return undefined
+  return `${step.iterationNo ?? 'unknown'}:${step.type}:${step.reasoningStepId}`
+}
+
+export function upsertReasoningStep(
+  steps: ToolThinkingStep[],
+  step: ToolThinkingStep,
+): ToolThinkingStep[] {
+  const key = getReasoningStepKey(step)
+  if (!key) return [...steps, step]
+
+  const idx = steps.findIndex((existing) => getReasoningStepKey(existing) === key)
+  if (idx < 0) return [...steps, step]
+
+  const next = [...steps]
+  next[idx] = step
+  return next
+}
+
+export function finalizeThinkingStepsOnAnswerCompleted(
+  steps: ToolThinkingStep[],
+): ToolThinkingStep[] {
+  return steps.map((step) =>
+    step.type === 'agent_iteration' && step.status === 'running'
+      ? { ...step, status: 'done' as const }
+      : step,
+  )
 }
 
 const SUGGESTED_PROMPTS = [
@@ -732,7 +812,7 @@ export function ChatPage() {
 
       // Accumulators for SSE events
       let content = ''
-      const steps: QAThinkingStep[] = []
+      let steps: ToolThinkingStep[] = []
       const toolStepIndex: Record<string, number> = {}
       const cites: QACitation[] = []
 
@@ -746,6 +826,7 @@ export function ChatPage() {
         thinking?: QAThinkingStep[]
         citations?: QACitation[]
         status?: QAMessage['status']
+        artifacts?: QAReportArtifact[]
       }) => {
         useChatStore.setState((state) => {
           const msgs = [...(state.messagesBySession[uid] ?? [])]
@@ -790,14 +871,20 @@ export function ChatPage() {
         },
         onAgentIterationStarted(data) {
           if (!verifySeq(data.seq)) return
-          const iterationNo = data.iterationNo as number | undefined
+          const iterationNo = getIterationNo(data)
           const label = iterationNo != null ? `Agent 迭代 ${iterationNo}` : 'Agent 分析中'
-          const ex = steps.find((s) => s.type === 'agent_iteration' && s.status === 'running')
+          const ex = steps.find(
+            (s) =>
+              s.type === 'agent_iteration' &&
+              s.status === 'running' &&
+              (iterationNo == null || s.iterationNo === iterationNo),
+          )
           if (!ex) {
             steps.push({
               type: 'agent_iteration',
               label,
               status: 'running',
+              iterationNo,
             })
           }
           patchAssistant({ thinking: [...steps] })
@@ -806,32 +893,37 @@ export function ChatPage() {
           if (!verifySeq(data.seq)) return
           const raw = (data as Record<string, unknown>).step as Record<string, unknown> | undefined
           if (!raw) return
-          const safe = sanitizeThinkingStep(raw)
-          const idx = steps.findIndex((s) => s.type === safe.type)
-          if (idx >= 0) {
-            steps[idx] = safe
-          } else {
-            steps.push(safe)
-          }
+          const safe = sanitizeThinkingStep({
+            ...raw,
+            iterationNo: raw.iterationNo ?? data.iterationNo,
+          })
+          steps = upsertReasoningStep(steps, safe)
           patchAssistant({ thinking: [...steps] })
         },
         onToolStarted(data) {
           if (!verifySeq(data.seq)) return
-          const toolName = sanitizeToolName(data.toolName)
+          const toolName = getToolName(data)
           const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
+          const iterationNo = getIterationNo(data)
           const idx =
             steps.push({
               type: 'tool_call',
               label: `调用: ${toolName}`,
               status: 'running',
+              argumentsSummary: getToolEventSummary(data, 'argumentsSummary'),
+              iterationNo,
+              startedAt: Date.now(),
+              toolCallId,
+              toolName,
             }) - 1
           if (toolCallId) toolStepIndex[toolCallId] = idx
           patchAssistant({ thinking: [...steps] })
         },
         onToolCompleted(data) {
           if (!verifySeq(data.seq)) return
-          const toolName = sanitizeToolName(data.toolName)
+          const toolName = getToolName(data)
           const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
+          const artifact = getToolReportArtifact(data)
           // Match by toolCallId first, fallback to first running
           let idx = -1
           if (toolCallId && toolStepIndex[toolCallId] !== undefined) {
@@ -839,106 +931,59 @@ export function ChatPage() {
           } else {
             idx = steps.findIndex((s) => s.type === 'tool_call' && s.status === 'running')
           }
-          if (idx >= 0) {
+          const existingStep = idx >= 0 ? steps[idx] : undefined
+          if (existingStep) {
             steps[idx] = {
-              ...steps[idx],
+              ...existingStep,
               status: 'done' as const,
               label: `${toolName} 完成`,
-            } as QAThinkingStep
+              completedAt: Date.now(),
+              reportArtifact: artifact,
+              resultSummary: getToolEventSummary(data, 'resultSummary'),
+              toolName,
+            }
           }
-          patchAssistant({ thinking: [...steps] })
-
-          // Parse report artifact from tool result
-          const rawResult = (data as Record<string, unknown>).result as
-            Record<string, unknown> | undefined
-          const rawArtifact = rawResult?.reportArtifact
-          const artifact = parseReportArtifact(rawArtifact)
-          if (artifact) {
-            useChatStore.setState((prev) => {
-              const msgs = [...(prev.messagesBySession[uid] ?? [])]
-              const lastIdx = msgs.length - 1
-              const last = lastIdx >= 0 ? msgs[lastIdx] : undefined
-              if (last?.role === 'assistant') {
-                const existing = ((last as Record<string, unknown>).artifacts ??
-                  []) as QAReportArtifact[]
-                msgs[lastIdx] = {
-                  ...last,
-                  artifacts: [
-                    ...existing.filter((a) => {
-                      // reportId-based dedup: also removes old jobId-only entry
-                      if (artifact.reportId) {
-                        if (a.reportId === artifact.reportId) return false
-                        if (a.jobId && a.jobId === artifact.jobId) return false
-                        return true
-                      }
-                      const aKey = a.reportId ?? a.jobId ?? a.reportName ?? ''
-                      const bKey = artifact.jobId ?? artifact.reportName ?? ''
-                      return aKey !== bKey
-                    }),
-                    artifact,
-                  ],
-                } as QAMessage
-              }
-              return {
-                messagesBySession: { ...prev.messagesBySession, [uid]: msgs },
-              }
-            })
-          }
+          patchAssistant({
+            artifacts: mergeMessageReportArtifact(
+              useChatStore.getState().messagesBySession[uid]?.at(-1) as
+                QAMessageWithArtifacts | undefined,
+              artifact,
+            ),
+            thinking: [...steps],
+          })
         },
         onToolFailed(data) {
           if (!verifySeq(data.seq)) return
-          const toolName = sanitizeToolName(data.toolName)
+          const toolName = getToolName(data)
           const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
+          const failedArtifact = getToolReportArtifact(data)
           let idx = -1
           if (toolCallId && toolStepIndex[toolCallId] !== undefined) {
             idx = toolStepIndex[toolCallId]
           } else {
             idx = steps.findIndex((s) => s.type === 'tool_call' && s.status === 'running')
           }
-          if (idx >= 0) {
+          const existingStep = idx >= 0 ? steps[idx] : undefined
+          if (existingStep) {
             steps[idx] = {
-              ...steps[idx],
+              ...existingStep,
               status: 'failed' as const,
               label: `${toolName} 失败`,
-            } as QAThinkingStep
+              completedAt: Date.now(),
+              errorSummary: getToolFailureSummary(data),
+              reportArtifact: failedArtifact,
+              resultSummary: getToolEventSummary(data, 'resultSummary'),
+              toolName,
+            }
           }
-          patchAssistant({ thinking: [...steps] })
-
-          // Parse report artifact from failed tool result
-          const rawFailedResult = (data as Record<string, unknown>).result as
-            Record<string, unknown> | undefined
-          const rawFailedArtifact = rawFailedResult?.reportArtifact
-          const failedArtifact = parseReportArtifact(rawFailedArtifact)
-          if (failedArtifact) {
-            useChatStore.setState((prev) => {
-              const msgs = [...(prev.messagesBySession[uid] ?? [])]
-              const lastIdx = msgs.length - 1
-              const last = lastIdx >= 0 ? msgs[lastIdx] : undefined
-              if (last?.role === 'assistant') {
-                const existing = ((last as Record<string, unknown>).artifacts ??
-                  []) as QAReportArtifact[]
-                msgs[lastIdx] = {
-                  ...last,
-                  artifacts: [
-                    ...existing.filter((a) => {
-                      if (failedArtifact.reportId) {
-                        if (a.reportId === failedArtifact.reportId) return false
-                        if (a.jobId && a.jobId === failedArtifact.jobId) return false
-                        return true
-                      }
-                      const aKey = a.reportId ?? a.jobId ?? a.reportName ?? ''
-                      const bKey = failedArtifact.jobId ?? failedArtifact.reportName ?? ''
-                      return aKey !== bKey
-                    }),
-                    failedArtifact,
-                  ],
-                } as QAMessage
-              }
-              return {
-                messagesBySession: { ...prev.messagesBySession, [uid]: msgs },
-              }
-            })
-          }
+          patchAssistant({
+            artifacts: mergeMessageReportArtifact(
+              useChatStore.getState().messagesBySession[uid]?.at(-1) as
+                QAMessageWithArtifacts | undefined,
+              failedArtifact,
+            ),
+            thinking: [...steps],
+          })
         },
         onAnswerDelta(data) {
           if (!verifySeq(data.seq)) return
@@ -962,6 +1007,7 @@ export function ChatPage() {
         onAnswerCompleted(data) {
           const runId = data.responseRunId as string | undefined
           if (runId) responseRunIdRef.current = runId
+          steps = finalizeThinkingStepsOnAnswerCompleted(steps)
           const serverMsgId =
             (data.assistantMessageId as string | undefined) ??
             (data.messageId as string | undefined)

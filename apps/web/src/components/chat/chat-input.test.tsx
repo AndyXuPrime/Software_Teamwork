@@ -33,4 +33,28 @@ describe('ChatInput', () => {
     fireEvent.click(screen.getByRole('button'))
     expect(onSend).not.toHaveBeenCalled()
   })
+
+  it('shows an enabled stop button while streaming', () => {
+    const onSend = vi.fn()
+    const onStop = vi.fn()
+
+    renderWithProviders(
+      <ChatInput
+        onSend={onSend}
+        onStop={onStop}
+        disabled
+        streaming
+        value="正在生成"
+        onChange={vi.fn()}
+      />,
+    )
+
+    const stopButton = screen.getByRole('button', { name: '停止生成' })
+    expect(stopButton).toBeEnabled()
+
+    fireEvent.click(stopButton)
+
+    expect(onStop).toHaveBeenCalledTimes(1)
+    expect(onSend).not.toHaveBeenCalled()
+  })
 })

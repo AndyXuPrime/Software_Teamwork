@@ -1,6 +1,7 @@
 import { ApiError } from '@/api/client'
 import type {
   QACitation,
+  QAMessageWithArtifacts,
   QAReportArtifact,
   QAReportArtifactPreview,
   QAThinkingStep,
@@ -262,6 +263,72 @@ export function getCitationDelta(payload: unknown): QACitation | undefined {
   const id = getString(citation, 'id')
   if (!id) return undefined
   return citation as QACitation
+}
+
+export function getToolEventSummary(
+  payload: Record<string, unknown>,
+  summaryKey: 'argumentsSummary' | 'resultSummary',
+): unknown {
+  const summary = payload[summaryKey]
+  return isRecord(summary) ? summary : undefined
+}
+
+export function getToolReportArtifact(
+  payload: Record<string, unknown>,
+): QAReportArtifact | undefined {
+  const summary = payload.resultSummary
+  const result = payload.result
+  return (
+    parseReportArtifact(isRecord(summary) ? summary.reportArtifact : undefined) ??
+    parseReportArtifact(isRecord(result) ? result.reportArtifact : undefined) ??
+    undefined
+  )
+}
+
+function getReportArtifactKey(artifact: QAReportArtifact): string {
+  return (
+    artifact.reportId ??
+    artifact.reportFileId ??
+    artifact.jobId ??
+    artifact.downloadPath ??
+    artifact.detailPath ??
+    artifact.reportName ??
+    JSON.stringify(artifact)
+  )
+}
+
+function getReportArtifactStableIds(artifact: QAReportArtifact): string[] {
+  return [artifact.reportId, artifact.reportFileId, artifact.jobId].filter(
+    (value): value is string => Boolean(value),
+  )
+}
+
+function hasMatchingReportArtifactIdentity(
+  left: QAReportArtifact,
+  right: QAReportArtifact,
+): boolean {
+  const leftIds = getReportArtifactStableIds(left)
+  const rightIds = new Set(getReportArtifactStableIds(right))
+  return leftIds.some((id) => rightIds.has(id))
+}
+
+export function mergeMessageReportArtifact(
+  message: QAMessageWithArtifacts | undefined,
+  artifact: QAReportArtifact | undefined,
+): QAReportArtifact[] | undefined {
+  if (!artifact) return message?.artifacts
+
+  const key = getReportArtifactKey(artifact)
+  const existing = message?.artifacts ?? []
+  const index = existing.findIndex(
+    (item) =>
+      hasMatchingReportArtifactIdentity(item, artifact) || getReportArtifactKey(item) === key,
+  )
+  if (index < 0) return [...existing, artifact]
+
+  const next = [...existing]
+  next[index] = artifact
+  return next
 }
 
 export function getCitationAvailabilityText(citation: QACitation): string {
