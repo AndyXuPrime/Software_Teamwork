@@ -45,6 +45,13 @@ export type ReportTemplateListParams = {
   enabled?: boolean
 }
 
+export type CreateReportTemplateInput = {
+  description?: string
+  file: File
+  reportType: string
+  templateName: string
+}
+
 export type ReportMaterialListParams = {
   page?: number
   pageSize?: number
@@ -58,6 +65,19 @@ export function listReportTypes(): Promise<ReportType[]> {
 
 export function listReportTemplates(params: ReportTemplateListParams = {}) {
   return gatewayPageRequest<ReportTemplate>(`/report-templates${buildQuery(params)}`)
+}
+
+export function createReportTemplate(input: CreateReportTemplateInput): Promise<ReportTemplate> {
+  const formData = new FormData()
+  formData.append('file', input.file, input.file.name)
+  formData.append('templateName', input.templateName)
+  formData.append('reportType', input.reportType)
+  if (input.description) formData.append('description', input.description)
+
+  return gatewayRequest<ReportTemplate>('/report-templates', {
+    method: 'POST',
+    body: formData,
+  })
 }
 
 export function listReportMaterials(params: ReportMaterialListParams = {}) {

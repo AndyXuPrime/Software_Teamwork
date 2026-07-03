@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   createReportJobAttempt,
+  createReportTemplate,
   deleteReport,
   deleteReportTemplate,
   getReportSettings,
@@ -61,6 +62,61 @@ describe('report generation API wrappers', () => {
       id: 'attempt-2',
       jobId: 'job-real',
       status: 'running',
+    })
+  })
+
+  it('uploads report templates as multipart form data', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      expect(request.method).toBe('POST')
+      expect(url.pathname).toBe('/api/v1/report-templates')
+      expect(request.headers.get('Content-Type')).toContain('multipart/form-data')
+
+      const form = await request.formData()
+      expect(form.get('templateName')).toBe('巡检模板')
+      expect(form.get('reportType')).toBe('inspection')
+      expect(form.get('description')).toBe('现场巡检')
+      const file = form.get('file')
+      expect(file).toMatchObject({
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      })
+      expect(typeof file === 'object' && file && 'size' in file ? file.size : 0).toBeGreaterThan(0)
+
+      return new Response(
+        JSON.stringify({
+          data: {
+            createdAt: '2026-07-03T08:00:00Z',
+            enabled: true,
+            filename: 'inspection.docx',
+            id: 'tpl-uploaded',
+            reportType: 'inspection',
+            templateName: '巡检模板',
+            version: 1,
+          },
+          requestId: 'req-template-upload',
+        }),
+        {
+          headers: { 'Content-Type': 'application/json' },
+          status: 201,
+        },
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      createReportTemplate({
+        description: '现场巡检',
+        file: new File(['template'], 'inspection.docx', {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        }),
+        reportType: 'inspection',
+        templateName: '巡检模板',
+      }),
+    ).resolves.toMatchObject({
+      id: 'tpl-uploaded',
+      templateName: '巡检模板',
     })
   })
 

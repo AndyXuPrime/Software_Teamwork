@@ -1,5 +1,5 @@
 import { FileText, Trash2, Upload } from 'lucide-react'
-import { useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 
 import { InlineNotice, StateBlock } from '@/components/common'
 import { Button } from '@/components/ui/button'
@@ -11,16 +11,40 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectItemText,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import type { ReportTemplate } from '@/features/reports'
 import {
   formatReportGatewayError,
+  useCreateTemplate,
   useDeleteTemplate,
   useReportBootstrapQueries,
   useReportStatisticsQueries,
   useTemplateStructure,
   useUpdateTemplateStructure,
 } from '@/features/reports'
+
+type TemplateUploadForm = {
+  description: string
+  file: File | null
+  reportType: string
+  templateName: string
+}
+
+const emptyUploadForm: TemplateUploadForm = {
+  description: '',
+  file: null,
+  reportType: '',
+  templateName: '',
+}
 
 export function ReportTemplatesPage() {
   const [structureTarget, setStructureTarget] = useState<string | null>(null)
@@ -29,23 +53,85 @@ export function ReportTemplatesPage() {
   const [jsonError, setJsonError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ReportTemplate | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [uploadForm, setUploadForm] = useState<TemplateUploadForm>(emptyUploadForm)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null)
 
-  const { templateQuery, materialQuery } = useReportBootstrapQueries()
+  const { typeQuery, templateQuery, materialQuery } = useReportBootstrapQueries()
   const { overviewQuery, dailyQuery } = useReportStatisticsQueries()
   const structureQuery = useTemplateStructure(structureTarget)
   const updateStructureMutation = useUpdateTemplateStructure(structureTarget ?? '')
+  const createTemplateMutation = useCreateTemplate()
   const deleteMutation = useDeleteTemplate()
 
+  const reportTypes = useMemo(() => typeQuery.data ?? [], [typeQuery.data])
   const templates = templateQuery.data?.items ?? []
   const materials = materialQuery.data?.items ?? []
   const overview = overviewQuery.data
   const daily = dailyQuery.data ?? []
   const queryErrors = [
+    { error: typeQuery.error, label: '报告类型', visible: typeQuery.isError },
     { error: templateQuery.error, label: '模板列表', visible: templateQuery.isError },
     { error: materialQuery.error, label: '素材列表', visible: materialQuery.isError },
     { error: overviewQuery.error, label: '统计概览', visible: overviewQuery.isError },
     { error: dailyQuery.error, label: '统计趋势', visible: dailyQuery.isError },
   ].filter((item) => item.visible)
+
+  useEffect(() => {
+    if (!uploadOpen || uploadForm.reportType || reportTypes.length === 0) return
+    setUploadForm((prev) => ({ ...prev, reportType: reportTypes[0]?.code ?? '' }))
+  }, [reportTypes, uploadForm.reportType, uploadOpen])
+
+  const resetUploadDialog = () => {
+    setUploadForm(emptyUploadForm)
+    setUploadError(null)
+  }
+
+  const handleUploadOpenChange = (open: boolean) => {
+    setUploadOpen(open)
+    if (!open) resetUploadDialog()
+  }
+
+  const handleUploadSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setUploadError(null)
+    setUploadNotice(null)
+
+    const templateName = uploadForm.templateName.trim()
+    const reportType = uploadForm.reportType.trim()
+    const description = uploadForm.description.trim()
+
+    if (!templateName) {
+      setUploadError('请输入模板名称。')
+      return
+    }
+    if (!reportType) {
+      setUploadError('请选择报告类型。')
+      return
+    }
+    if (!uploadForm.file) {
+      setUploadError('请选择要上传的模板文件。')
+      return
+    }
+
+    createTemplateMutation.mutate(
+      {
+        description: description || undefined,
+        file: uploadForm.file,
+        reportType,
+        templateName,
+      },
+      {
+        onError: (error) => setUploadError(formatReportGatewayError(error, '上传模板失败')),
+        onSuccess: () => {
+          setUploadNotice('模板上传成功，列表已刷新。')
+          setUploadOpen(false)
+          resetUploadDialog()
+        },
+      },
+    )
+  }
 
   const handleOpenStructure = (templateId: string) => {
     setStructureTarget(templateId)
@@ -119,12 +205,18 @@ export function ReportTemplatesPage() {
             <Upload className="size-4" />
             上传素材
           </Button>
-          <Button disabled title="上传模板表单尚未接入当前页面">
+          <Button onClick={() => setUploadOpen(true)}>
             <Upload className="size-4" />
             上传模板
           </Button>
         </div>
       </div>
+
+      {uploadNotice && (
+        <InlineNotice className="mb-4" title="上传完成" variant="success">
+          {uploadNotice}
+        </InlineNotice>
+      )}
 
       {queryErrors.map((item) => (
         <InlineNotice
@@ -261,6 +353,102 @@ export function ReportTemplatesPage() {
           </div>
         </section>
       </div>
+
+      {/* Template upload dialog */}
+      <Dialog open={uploadOpen} onOpenChange={handleUploadOpenChange}>
+        <DialogContent className="sm:max-w-lg">
+          <form onSubmit={handleUploadSubmit}>
+            <DialogHeader>
+              <DialogTitle>上传报告模板</DialogTitle>
+              <DialogDescription>上传 DOCX 模板并关联报告类型。</DialogDescription>
+            </DialogHeader>
+
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-1.5 text-sm">
+                <span className="font-medium">模板名称</span>
+                <Input
+                  value={uploadForm.templateName}
+                  onChange={(event) =>
+                    setUploadForm((prev) => ({ ...prev, templateName: event.target.value }))
+                  }
+                  placeholder="例如：迎峰度夏巡检模板"
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm">
+                <span className="font-medium">报告类型</span>
+                <Select
+                  value={uploadForm.reportType || undefined}
+                  onValueChange={(value) =>
+                    setUploadForm((prev) => ({ ...prev, reportType: value }))
+                  }
+                  disabled={typeQuery.isLoading || reportTypes.length === 0}
+                >
+                  <SelectTrigger aria-label="报告类型">
+                    <SelectValue
+                      placeholder={typeQuery.isLoading ? '加载中...' : '请选择报告类型'}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {reportTypes.map((type) => (
+                      <SelectItem key={type.code} value={type.code}>
+                        <SelectItemText>
+                          {type.name} / {type.code}
+                        </SelectItemText>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+
+              <label className="grid gap-1.5 text-sm">
+                <span className="font-medium">模板文件</span>
+                <Input
+                  accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  type="file"
+                  onChange={(event) =>
+                    setUploadForm((prev) => ({
+                      ...prev,
+                      file: event.target.files?.[0] ?? null,
+                    }))
+                  }
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm">
+                <span className="font-medium">描述</span>
+                <Textarea
+                  value={uploadForm.description}
+                  onChange={(event) =>
+                    setUploadForm((prev) => ({ ...prev, description: event.target.value }))
+                  }
+                  placeholder="可选，用于说明模板适用场景。"
+                />
+              </label>
+
+              {uploadError && (
+                <InlineNotice title="上传失败" variant="error">
+                  {uploadError}
+                </InlineNotice>
+              )}
+              {!typeQuery.isLoading && reportTypes.length === 0 && (
+                <InlineNotice title="暂无报告类型" variant="warning">
+                  请先确认报告类型接口已返回可用类型。
+                </InlineNotice>
+              )}
+            </div>
+
+            <DialogFooter className="mt-5">
+              <Button type="button" variant="outline" onClick={() => handleUploadOpenChange(false)}>
+                取消
+              </Button>
+              <Button type="submit" disabled={createTemplateMutation.isPending}>
+                {createTemplateMutation.isPending ? '上传中...' : '上传'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Template structure viewer / editor dialog */}
       <Dialog

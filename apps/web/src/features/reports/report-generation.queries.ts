@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 
+import type { CreateReportTemplateInput } from './report-generation.api'
 import {
   cancelReportJob,
   createReport,
   createReportFile,
   createReportJob,
   createReportJobAttempt,
+  createReportTemplate,
   deleteReport,
   deleteReportTemplate,
   downloadReportFile,
@@ -358,6 +360,18 @@ export function useUpdateTemplateStructure(templateId: string) {
       void queryClient.invalidateQueries({
         queryKey: reportKeys.templateStructure(templateId),
       })
+    },
+  })
+}
+
+export function useCreateTemplate() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (payload: CreateReportTemplateInput) => createReportTemplate(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: reportKeys.templates() })
+      void queryClient.invalidateQueries({ queryKey: reportKeys.stats() })
     },
   })
 }
