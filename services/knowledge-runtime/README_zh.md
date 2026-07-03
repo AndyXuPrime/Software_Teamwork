@@ -48,6 +48,21 @@
 engine 与 embedding provider。根级 Compose 不启动 Elasticsearch，也不启动本地
 embedding 服务；启用真实 ingestion 前需要先配置宿主机或外部依赖。
 
+默认依赖和 artifact 下载使用官方 URL。中国大陆网络显式使用镜像模式：
+
+```bash
+cd services/knowledge-runtime
+uv run --no-project \
+  --with "nltk>=3.9.4" \
+  --with "huggingface-hub>=1.3.1" \
+  ragflow_deps/download_deps.py --china
+```
+
+该命令会用临时 uv overlay 将 PyPI 和 GitHub release 下载切到镜像，包括
+`en-core-web-sm`，并镜像 NLTK raw GitHub 数据、HuggingFace、Tika、Chrome 和 uv
+release artifact。它会写入正常 `.venv` 和 artifact 目录，但不会改写提交中的
+`pyproject.toml` 或 `uv.lock`。
+
 ## 本地验证
 
 ```bash

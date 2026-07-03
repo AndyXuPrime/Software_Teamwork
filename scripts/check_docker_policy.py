@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 SCAN_ROOTS = ("deploy", "services", "apps")
-EXPECTED_ENV_IMAGE_OVERRIDES = {
+KNOWN_IMAGE_OVERRIDE_VARS = {
     "POSTGRES_IMAGE": "docker.m.daocloud.io/library/postgres:16-alpine",
     "REDIS_IMAGE": "docker.m.daocloud.io/library/redis:7-alpine",
     "QDRANT_IMAGE": "docker.m.daocloud.io/qdrant/qdrant:v1.18.2",
@@ -395,11 +395,10 @@ def validate_env_example(root: Path) -> list[str]:
     values = parse_env_file(content)
     issues: list[str] = []
 
-    for key, expected in EXPECTED_ENV_IMAGE_OVERRIDES.items():
-        actual = values.get(key)
-        if actual != expected:
+    for key in KNOWN_IMAGE_OVERRIDE_VARS:
+        if key in values:
             issues.append(
-                f"deploy/.env.example: `{key}` must stay `{expected}` for the documented mainland China Docker path"
+                f"deploy/.env.example: `{key}` must not be active by default; use ./scripts/local/dev-up.sh --china or local deploy/.env overrides"
             )
 
     for key, value in values.items():

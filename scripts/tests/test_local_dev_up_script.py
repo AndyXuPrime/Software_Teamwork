@@ -16,8 +16,8 @@ class LocalDevUpScriptTests(unittest.TestCase):
             result = self.run_dev_up(root)
 
             self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("local dev-up: initializing MinIO buckets succeeded", result.stdout)
-            self.assertIn("local dev-up: migrating auth", result.stdout)
+            self.assertIn("[ok] initializing MinIO buckets succeeded", result.stdout)
+            self.assertIn("[dev-up] migrating auth", result.stdout)
             self.assertIn("infra, migrations, and seed are ready", result.stdout)
 
             docker_calls = (root / "docker-calls.log").read_text(encoding="utf-8")
@@ -33,7 +33,7 @@ class LocalDevUpScriptTests(unittest.TestCase):
             result = self.run_dev_up(root, {"FAKE_MINIO_INIT_EXIT": "7"})
 
             self.assertNotEqual(0, result.returncode)
-            self.assertNotIn("local dev-up: migrating auth", result.stdout)
+            self.assertNotIn("[dev-up] migrating auth", result.stdout)
             self.assertIn(
                 "minio-init failed; inspect logs with: docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs minio-init",
                 result.stderr,
@@ -51,9 +51,28 @@ class LocalDevUpScriptTests(unittest.TestCase):
             self.assertIn("Install the missing host tool(s), then rerun ./scripts/local/dev-up.sh.", result.stderr)
             self.assertNotIn("Check Docker with:", result.stderr)
             self.assertNotIn("If Go module download failed", result.stderr)
-            self.assertIn("local dev-up: checking local tool dependencies", result.stdout)
-            self.assertNotIn("local dev-up: pulling infrastructure images", result.stdout)
+            self.assertIn("[dev-up] checking local tool dependencies", result.stdout)
+            self.assertNotIn("[dev-up] pulling infrastructure images", result.stdout)
             self.assertFalse((root / "docker-calls.log").exists())
+
+    def test_china_flag_uses_mirrors_for_current_process_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+
+            result = self.run_dev_up(root, args=["--china"])
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("using mainland China mirrors for this run (--china)", result.stdout)
+            env_text = (root / "deploy" / ".env").read_text(encoding="utf-8")
+            self.assertIn("GOPROXY=https://proxy.golang.org,direct", env_text)
+            docker_env = (root / "docker-env.log").read_text(encoding="utf-8")
+            self.assertIn("POSTGRES_IMAGE=docker.m.daocloud.io/library/postgres:16-alpine", docker_env)
+            self.assertIn("GOPROXY=https://goproxy.cn,direct", docker_env)
+            uv_calls = (root / "uv-calls.log").read_text(encoding="utf-8")
+            self.assertIn("run --no-project", uv_calls)
+            self.assertIn("--with nltk>=3.9.4", uv_calls)
+            self.assertIn("--with huggingface-hub>=1.3.1", uv_calls)
+            self.assertIn("ragflow_deps/download_deps.py --china", uv_calls)
 
     def prepare_runtime(self, root: Path) -> Path:
         script_source = Path.cwd() / "scripts" / "local" / "dev-up.sh"
@@ -67,8 +86,9 @@ class LocalDevUpScriptTests(unittest.TestCase):
         (root / "deploy" / ".env").write_text(
             textwrap.dedent(
                 """\
-                GOPROXY=https://goproxy.cn,direct
-                GOSUMDB=sum.golang.google.cn
+                UV_DEFAULT_INDEX=https://pypi.org/simple
+                GOPROXY=https://proxy.golang.org,direct
+                GOSUMDB=sum.golang.org
                 QDRANT_URL=
                 AUTH_DATABASE_URL=postgres://example/auth
                 FILE_DATABASE_URL=postgres://example/file
@@ -90,6 +110,11 @@ class LocalDevUpScriptTests(unittest.TestCase):
             (root / "deploy" / "seeds" / seed).write_text("-- seed\n", encoding="utf-8")
         for service in ["auth", "file", "knowledge", "qa", "document", "ai-gateway"]:
             (root / "services" / service).mkdir(parents=True)
+        (root / "services" / "knowledge-runtime" / "ragflow_deps").mkdir(parents=True)
+        (root / "services" / "knowledge-runtime" / "ragflow_deps" / "download_deps.py").write_text(
+            "# fake runtime download script\n",
+            encoding="utf-8",
+        )
 
         fake_bin = root / "fake-bin"
         fake_bin.mkdir()
@@ -103,6 +128,16 @@ class LocalDevUpScriptTests(unittest.TestCase):
             """\
             #!/usr/bin/env bash
             echo "$*" >> "$FAKE_DOCKER_CALLS"
+            {
+              echo "POSTGRES_IMAGE=${POSTGRES_IMAGE:-}"
+              echo "REDIS_IMAGE=${REDIS_IMAGE:-}"
+              echo "QDRANT_IMAGE=${QDRANT_IMAGE:-}"
+              echo "MINIO_IMAGE=${MINIO_IMAGE:-}"
+              echo "MINIO_MC_IMAGE=${MINIO_MC_IMAGE:-}"
+              echo "UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX:-}"
+              echo "GOPROXY=${GOPROXY:-}"
+              echo "GOSUMDB=${GOSUMDB:-}"
+            } >> "$FAKE_DOCKER_ENV"
             case " $* " in
               *" up -d --wait "*)
                 if [[ " $* " == *" minio-init "* ]]; then
@@ -131,18 +166,33 @@ class LocalDevUpScriptTests(unittest.TestCase):
             exit 0
             """,
         )
+        self.write_executable(
+            fake_bin / "uv",
+            """\
+            #!/usr/bin/env bash
+            echo "$*" >> "$FAKE_UV_CALLS"
+            exit 0
+            """,
+        )
         return root
 
-    def run_dev_up(self, root: Path, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    def run_dev_up(
+        self,
+        root: Path,
+        extra_env: dict[str, str] | None = None,
+        args: list[str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env.update(extra_env or {})
         env["FAKE_DOCKER_CALLS"] = str(root / "docker-calls.log")
+        env["FAKE_DOCKER_ENV"] = str(root / "docker-env.log")
+        env["FAKE_UV_CALLS"] = str(root / "uv-calls.log")
         if extra_env and "PATH" in extra_env:
             env["PATH"] = extra_env["PATH"]
         else:
             env["PATH"] = f"{root / 'fake-bin'}{os.pathsep}{env['PATH']}"
         return subprocess.run(
-            [str(root / "scripts" / "local" / "dev-up.sh")],
+            [str(root / "scripts" / "local" / "dev-up.sh"), *(args or [])],
             cwd=root,
             env=env,
             text=True,

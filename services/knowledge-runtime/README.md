@@ -37,6 +37,24 @@ set -a && . ../../deploy/.env && set +a
 ./deploy/worker/run-local.sh
 ```
 
+Official package and artifact URLs are the committed default. For mainland
+China networks, prepare dependencies and runtime artifacts with explicit mirror
+mode:
+
+```bash
+cd services/knowledge-runtime
+uv run --no-project \
+  --with "nltk>=3.9.4" \
+  --with "huggingface-hub>=1.3.1" \
+  ragflow_deps/download_deps.py --china
+```
+
+That command uses a temporary uv project overlay for mirrored PyPI and GitHub
+release downloads, including `en-core-web-sm`, and mirrors NLTK raw GitHub data,
+HuggingFace, Tika, Chrome, and uv release artifacts. It writes into the normal
+`.venv` and artifact directories but does not rewrite committed
+`pyproject.toml` or `uv.lock`.
+
 Adapter (separate module):
 
 ```bash

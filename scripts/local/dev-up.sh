@@ -6,36 +6,126 @@ ENV_FILE="$ROOT_DIR/deploy/.env"
 COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose.yml"
 CURRENT_STEP="initializing"
 INFRA_SERVICES=(postgres redis qdrant minio)
+CHINA_MIRRORS=0
+SKIP_KNOWLEDGE_RUNTIME_DEPS=0
+
+OFFICIAL_UV_DEFAULT_INDEX="https://pypi.org/simple"
+CHINA_UV_DEFAULT_INDEX="https://pypi.tuna.tsinghua.edu.cn/simple"
+OFFICIAL_GOPROXY="https://proxy.golang.org,direct"
+CHINA_GOPROXY="https://goproxy.cn,direct"
+OFFICIAL_GOSUMDB="sum.golang.org"
+CHINA_GOSUMDB="sum.golang.google.cn"
+
+CHINA_POSTGRES_IMAGE="docker.m.daocloud.io/library/postgres:16-alpine"
+CHINA_REDIS_IMAGE="docker.m.daocloud.io/library/redis:7-alpine"
+CHINA_QDRANT_IMAGE="docker.m.daocloud.io/qdrant/qdrant:v1.18.2"
+CHINA_MINIO_IMAGE="docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
+CHINA_MINIO_MC_IMAGE="docker.m.daocloud.io/minio/mc:RELEASE.2025-08-13T08-35-41Z"
+
+COLOR_RESET=""
+COLOR_BLUE=""
+COLOR_GREEN=""
+COLOR_YELLOW=""
+COLOR_RED=""
+COLOR_CYAN=""
+if [[ -z "${NO_COLOR:-}" && ( -t 1 || "${FORCE_COLOR:-0}" == "1" || "${CLICOLOR_FORCE:-0}" == "1" ) ]]; then
+  COLOR_RESET=$'\033[0m'
+  COLOR_BLUE=$'\033[1;34m'
+  COLOR_GREEN=$'\033[1;32m'
+  COLOR_YELLOW=$'\033[1;33m'
+  COLOR_RED=$'\033[1;31m'
+  COLOR_CYAN=$'\033[1;36m'
+fi
+
+log_info() {
+  printf '%b%s %s%b\n' "$COLOR_BLUE" "[dev-up]" "$*" "$COLOR_RESET"
+}
+
+log_success() {
+  printf '%b%s %s%b\n' "$COLOR_GREEN" "[ok]" "$*" "$COLOR_RESET"
+}
+
+log_warn() {
+  printf '%b%s %s%b\n' "$COLOR_YELLOW" "[warn]" "$*" "$COLOR_RESET" >&2
+}
+
+log_error() {
+  printf '%b%s %s%b\n' "$COLOR_RED" "[fail]" "$*" "$COLOR_RESET" >&2
+}
+
+log_hint() {
+  printf '%b%s %s%b\n' "$COLOR_CYAN" "[hint]" "$*" "$COLOR_RESET" >&2
+}
+
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/local/dev-up.sh [--china] [--skip-knowledge-runtime-deps]
+
+Starts local infrastructure, runs host migrations, and applies local seed data.
+
+Options:
+  --china   Use mainland China mirrors for this run only:
+            Docker registry rewrite, Go proxy/checksum DB, uv index, and
+            Knowledge runtime dependency/artifact downloads.
+  --skip-knowledge-runtime-deps
+            With --china, skip Knowledge runtime dependency/artifact downloads.
+            You can also set LOCAL_SKIP_KNOWLEDGE_RUNTIME_DEPS=1.
+  -h, --help
+            Show this help.
+EOF
+}
+
+parse_args() {
+  while (($# > 0)); do
+    case "$1" in
+      --china)
+        CHINA_MIRRORS=1
+        ;;
+      --skip-knowledge-runtime-deps|--no-knowledge-runtime-deps)
+        SKIP_KNOWLEDGE_RUNTIME_DEPS=1
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "unknown argument: $1" >&2
+        usage >&2
+        exit 2
+        ;;
+    esac
+    shift
+  done
+}
 
 on_exit() {
   status=$?
   if (( status == 0 )); then
-    echo "local dev-up: completed successfully"
+    log_success "completed successfully"
   else
-    echo "local dev-up: failed during ${CURRENT_STEP} (exit ${status})" >&2
+    log_error "failed during ${CURRENT_STEP} (exit ${status})"
     case "$CURRENT_STEP" in
       "checking local tool dependencies")
-        echo "Install the missing host tool(s), then rerun ./scripts/local/dev-up.sh." >&2
+        log_hint "Install the missing host tool(s), then rerun ./scripts/local/dev-up.sh."
         ;;
       "initializing MinIO buckets")
-        echo "Check MinIO initialization logs with: docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs minio-init" >&2
-        echo "Check Docker with: docker compose -f deploy/docker-compose.yml --env-file deploy/.env ps" >&2
+        log_hint "Check MinIO logs: docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs minio-init"
+        log_hint "Check Docker status: docker compose -f deploy/docker-compose.yml --env-file deploy/.env ps"
         ;;
       *)
-        echo "Check Docker with: docker compose -f deploy/docker-compose.yml --env-file deploy/.env ps" >&2
-        echo "If Go module download failed, confirm deploy/.env contains GOPROXY and GOSUMDB." >&2
+        log_hint "Check Docker status: docker compose -f deploy/docker-compose.yml --env-file deploy/.env ps"
+        log_hint "Mainland China network: rerun ./scripts/local/dev-up.sh --china."
+        log_hint "Official mode: confirm deploy/.env contains GOPROXY=https://proxy.golang.org,direct and GOSUMDB=sum.golang.org."
         ;;
     esac
   fi
 }
-trap on_exit EXIT
-
 run_step() {
   CURRENT_STEP="$1"
   shift
-  echo "local dev-up: ${CURRENT_STEP}"
+  log_info "${CURRENT_STEP}"
   "$@"
-  echo "local dev-up: ${CURRENT_STEP} succeeded"
+  log_success "${CURRENT_STEP} succeeded"
 }
 
 check_required_commands() {
@@ -45,74 +135,146 @@ check_required_commands() {
       missing+=("$command")
     fi
   done
+  if (( CHINA_MIRRORS )) &&
+    [[ "$SKIP_KNOWLEDGE_RUNTIME_DEPS" != "1" ]] &&
+    [[ "${LOCAL_SKIP_KNOWLEDGE_RUNTIME_DEPS:-0}" != "1" ]] &&
+    ! command -v uv >/dev/null 2>&1; then
+    missing+=(uv)
+  fi
   if [[ -n "${QDRANT_URL:-}" ]] && ! command -v curl >/dev/null 2>&1; then
     missing+=(curl)
   fi
 
   if (( ${#missing[@]} > 0 )); then
-    echo "missing required local command(s): ${missing[*]}" >&2
-    echo "Install Docker, Go, psql, and curl in the same host environment that runs ./scripts/local/dev-up.sh." >&2
+    log_error "missing required local command(s): ${missing[*]}"
+    log_error "Install Docker, Go, psql, uv, and curl in the same host environment that runs ./scripts/local/dev-up.sh."
+    log_error "uv is only required when --china prepares Knowledge runtime dependencies; rerun with --skip-knowledge-runtime-deps to skip that step."
     return 1
   fi
 }
 
 run_minio_init() {
   CURRENT_STEP="initializing MinIO buckets"
-  echo "local dev-up: ${CURRENT_STEP}"
+  log_info "${CURRENT_STEP}"
   if ! "${compose[@]}" up --no-deps --exit-code-from minio-init minio-init; then
-    echo "minio-init failed; inspect logs with: docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs minio-init" >&2
+    log_error "minio-init failed; inspect logs with: docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs minio-init"
     return 1
   fi
-  echo "local dev-up: ${CURRENT_STEP} succeeded"
+  log_success "${CURRENT_STEP} succeeded"
 }
 
 ensure_go_module_settings() {
   if ! command -v go >/dev/null 2>&1; then
-    echo "go is required for host-run migrations" >&2
+    log_error "go is required for host-run migrations"
     return 1
+  fi
+
+  local default_goproxy="$OFFICIAL_GOPROXY"
+  local default_gosumdb="$OFFICIAL_GOSUMDB"
+  if (( CHINA_MIRRORS )); then
+    default_goproxy="$CHINA_GOPROXY"
+    default_gosumdb="$CHINA_GOSUMDB"
   fi
 
   effective_goproxy="${GOPROXY:-$(go env GOPROXY 2>/dev/null || true)}"
   effective_gosumdb="${GOSUMDB:-$(go env GOSUMDB 2>/dev/null || true)}"
 
   if [[ -z "${GOPROXY:-}" && ( -z "$effective_goproxy" || "$effective_goproxy" == *"proxy.golang.org"* ) ]]; then
-    export GOPROXY="https://goproxy.cn,direct"
-    echo "deploy/.env did not set GOPROXY; using repository default for this run: $GOPROXY"
+    export GOPROXY="$default_goproxy"
+    log_info "deploy/.env did not set GOPROXY; using selected default for this run: $GOPROXY"
   elif [[ -z "${GOPROXY:-}" ]]; then
     export GOPROXY="$effective_goproxy"
-    echo "deploy/.env did not set GOPROXY; using global go env value: $GOPROXY"
+    log_info "deploy/.env did not set GOPROXY; using global go env value: $GOPROXY"
   fi
 
   if [[ -z "${GOSUMDB:-}" && ( -z "$effective_gosumdb" || "$effective_gosumdb" == "sum.golang.org" ) ]]; then
-    export GOSUMDB="sum.golang.google.cn"
-    echo "deploy/.env did not set GOSUMDB; using repository default for this run: $GOSUMDB"
+    export GOSUMDB="$default_gosumdb"
+    log_info "deploy/.env did not set GOSUMDB; using selected default for this run: $GOSUMDB"
   elif [[ -z "${GOSUMDB:-}" ]]; then
     export GOSUMDB="$effective_gosumdb"
-    echo "deploy/.env did not set GOSUMDB; using global go env value: $GOSUMDB"
+    log_info "deploy/.env did not set GOSUMDB; using global go env value: $GOSUMDB"
   fi
 
-  if [[ "$GOPROXY" == *"proxy.golang.org"* ]]; then
-    echo "warning: GOPROXY includes proxy.golang.org; this may time out on some developer networks" >&2
-    echo "current GOPROXY=$GOPROXY" >&2
+  if [[ "$GOPROXY" == *"proxy.golang.org"* && "$CHINA_MIRRORS" == "0" ]]; then
+    log_warn "GOPROXY includes proxy.golang.org; use --china on mainland China networks"
+    log_warn "current GOPROXY=$GOPROXY"
   fi
+}
+
+apply_china_mirrors() {
+  export POSTGRES_IMAGE="$CHINA_POSTGRES_IMAGE"
+  export REDIS_IMAGE="$CHINA_REDIS_IMAGE"
+  export QDRANT_IMAGE="$CHINA_QDRANT_IMAGE"
+  export MINIO_IMAGE="$CHINA_MINIO_IMAGE"
+  export MINIO_MC_IMAGE="$CHINA_MINIO_MC_IMAGE"
+  export UV_DEFAULT_INDEX="$CHINA_UV_DEFAULT_INDEX"
+  export GOPROXY="$CHINA_GOPROXY"
+  export GOSUMDB="$CHINA_GOSUMDB"
+  log_info "using mainland China mirrors for this run (--china); deploy/.env is not modified"
+}
+
+warn_legacy_mirror_env() {
+  local mirrored=()
+  for value in \
+    "${POSTGRES_IMAGE:-}" \
+    "${REDIS_IMAGE:-}" \
+    "${QDRANT_IMAGE:-}" \
+    "${MINIO_IMAGE:-}" \
+    "${MINIO_MC_IMAGE:-}" \
+    "${UV_DEFAULT_INDEX:-}" \
+    "${GOPROXY:-}" \
+    "${GOSUMDB:-}"; do
+    case "$value" in
+      *docker.m.daocloud.io*|*pypi.tuna.tsinghua.edu.cn*|*goproxy.cn*|sum.golang.google.cn)
+        mirrored+=("$value")
+        ;;
+    esac
+  done
+  if (( ${#mirrored[@]} > 0 )); then
+    log_warn "deploy/.env still contains mainland China mirror values while --china was not passed."
+    log_warn "continuing with deploy/.env as user configuration; remove those values for official defaults or rerun with --china."
+  fi
+}
+
+prepare_knowledge_runtime_deps() {
+  if [[ "$SKIP_KNOWLEDGE_RUNTIME_DEPS" == "1" || "${LOCAL_SKIP_KNOWLEDGE_RUNTIME_DEPS:-0}" == "1" ]]; then
+    log_info "skipping Knowledge runtime dependency preparation"
+    return
+  fi
+
+  if ! command -v uv >/dev/null 2>&1; then
+    log_error "uv is required to prepare Knowledge runtime dependencies; install uv or rerun with --skip-knowledge-runtime-deps"
+    return 1
+  fi
+
+  (
+    cd "$ROOT_DIR/services/knowledge-runtime"
+    uv run --no-project \
+      --with "nltk>=3.9.4" \
+      --with "huggingface-hub>=1.3.1" \
+      ragflow_deps/download_deps.py --china
+  )
 }
 
 migrate_service() {
   service="$1"
   database_url="$2"
   CURRENT_STEP="migrating $service"
-  echo "local dev-up: ${CURRENT_STEP}"
+  log_info "${CURRENT_STEP}"
   (
     cd "$ROOT_DIR/services/$service"
     go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$database_url" up
   )
-  echo "local dev-up: ${CURRENT_STEP} succeeded"
+  log_success "${CURRENT_STEP} succeeded"
 }
 
-echo "local dev-up: starting infra, migrations, and seed"
+parse_args "$@"
+trap on_exit EXIT
+
+log_info "starting infra, migrations, and seed"
 
 if [[ ! -f "$ENV_FILE" ]]; then
-  echo "missing deploy/.env; run: cp deploy/.env.example deploy/.env" >&2
+  log_error "missing deploy/.env; run: cp deploy/.env.example deploy/.env"
   exit 1
 fi
 
@@ -123,6 +285,15 @@ set -a
 . "$ENV_FILE"
 set +a
 
+if (( CHINA_MIRRORS )); then
+  apply_china_mirrors
+else
+  export UV_DEFAULT_INDEX="${UV_DEFAULT_INDEX:-$OFFICIAL_UV_DEFAULT_INDEX}"
+  export GOPROXY="${GOPROXY:-$OFFICIAL_GOPROXY}"
+  export GOSUMDB="${GOSUMDB:-$OFFICIAL_GOSUMDB}"
+  warn_legacy_mirror_env
+fi
+
 compose=(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE")
 
 initialize_qdrant_collection() {
@@ -130,17 +301,17 @@ initialize_qdrant_collection() {
   qdrant_url="${QDRANT_URL:-}"
 
   if [[ -z "$qdrant_url" ]]; then
-    echo "QDRANT_URL is empty; skipping Qdrant collection initialization"
+    log_info "QDRANT_URL is empty; skipping Qdrant collection initialization"
     return
   fi
   qdrant_collection="${QDRANT_COLLECTION:?QDRANT_COLLECTION must be set in deploy/.env}"
   embedding_dimension="${EMBEDDING_DIMENSION:?EMBEDDING_DIMENSION must be set in deploy/.env}"
   if [[ ! "$qdrant_collection" =~ ^[A-Za-z0-9_.-]+$ ]]; then
-    echo "QDRANT_COLLECTION must contain only letters, numbers, dots, underscores, or hyphens" >&2
+    log_error "QDRANT_COLLECTION must contain only letters, numbers, dots, underscores, or hyphens"
     return 1
   fi
   if [[ ! "$embedding_dimension" =~ ^[1-9][0-9]*$ ]]; then
-    echo "EMBEDDING_DIMENSION must be a positive integer" >&2
+    log_error "EMBEDDING_DIMENSION must be a positive integer"
     return 1
   fi
 
@@ -157,20 +328,20 @@ initialize_qdrant_collection() {
       rm -f "$response_file"
       if [[ "$compact_response" != *"\"vectors\":{\"size\":$embedding_dimension"* ]] ||
         [[ "$compact_response" != *"\"distance\":\"Cosine\""* ]]; then
-        echo "Qdrant collection $qdrant_collection exists but does not match EMBEDDING_DIMENSION=$embedding_dimension" >&2
+        log_error "Qdrant collection $qdrant_collection exists but does not match EMBEDDING_DIMENSION=$embedding_dimension"
         return 1
       fi
-      echo "Qdrant collection $qdrant_collection is ready"
+      log_success "Qdrant collection $qdrant_collection is ready"
       ;;
     404)
       rm -f "$response_file"
-      echo "creating Qdrant collection $qdrant_collection"
+      log_info "creating Qdrant collection $qdrant_collection"
       curl --noproxy '*' -fsS -X PUT "$qdrant_url/collections/$qdrant_collection" \
         -H 'Content-Type: application/json' \
         --data "{\"vectors\":{\"size\":$embedding_dimension,\"distance\":\"Cosine\"}}" >/dev/null
       ;;
     *)
-      echo "could not inspect Qdrant collection $qdrant_collection at $qdrant_url (HTTP $status)" >&2
+      log_error "could not inspect Qdrant collection $qdrant_collection at $qdrant_url (HTTP $status)"
       rm -f "$response_file"
       return 1
       ;;
@@ -178,6 +349,9 @@ initialize_qdrant_collection() {
 }
 
 run_step "checking local tool dependencies" check_required_commands
+if (( CHINA_MIRRORS )); then
+  run_step "preparing Knowledge runtime dependencies with China mirrors" prepare_knowledge_runtime_deps
+fi
 run_step "validating Docker Compose config" "${compose[@]}" config --quiet
 run_step "pulling infrastructure images" "${compose[@]}" pull
 run_step "starting infrastructure and waiting for health" "${compose[@]}" up -d --wait --wait-timeout "${LOCAL_INFRA_WAIT_TIMEOUT_SECONDS:-180}" "${INFRA_SERVICES[@]}"
@@ -199,13 +373,13 @@ for item in \
 done
 
 CURRENT_STEP="applying local demo seed"
-echo "local dev-up: ${CURRENT_STEP}"
+log_info "${CURRENT_STEP}"
 psql "$POSTGRES_ADMIN_URL" \
   -v ON_ERROR_STOP=1 \
   -f "$ROOT_DIR/deploy/seeds/001-local-demo-seed.sql" \
   -f "$ROOT_DIR/deploy/seeds/002-ai-gateway-model-profiles.sql" \
   -f "$ROOT_DIR/deploy/seeds/003-qa-document-mcp.sql" \
   -f "$ROOT_DIR/deploy/seeds/004-qa-default-knowledge-base.sql"
-echo "local dev-up: ${CURRENT_STEP} succeeded"
+log_success "${CURRENT_STEP} succeeded"
 
-echo "infra, migrations, and seed are ready"
+log_success "infra, migrations, and seed are ready"

@@ -33,11 +33,14 @@ class LocalSeedContractTests(unittest.TestCase):
                 "LOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345\n"
                 "LOCAL_SUPER_ADMIN_USERNAME=superadmin\n"
                 "LOCAL_SUPER_ADMIN_PASSWORD=LocalDemoAdmin#12345\n"
-                "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple\n"
-                "GOPROXY=https://goproxy.cn,direct\n"
-                "GOSUMDB=sum.golang.google.cn\n"
-                "DOCKER_IMAGE_REGISTRY_PREFIX=docker.m.daocloud.io/library/\n"
-                "RAGFLOW_DEPS_IMAGE=docker.m.daocloud.io/infiniflow/ragflow_deps:51ce6aab\n"
+                "UV_DEFAULT_INDEX=https://pypi.org/simple\n"
+                "GOPROXY=https://proxy.golang.org,direct\n"
+                "GOSUMDB=sum.golang.org\n"
+                "# POSTGRES_IMAGE=docker.m.daocloud.io/library/postgres:16-alpine\n"
+                "# REDIS_IMAGE=docker.m.daocloud.io/library/redis:7-alpine\n"
+                "# QDRANT_IMAGE=docker.m.daocloud.io/qdrant/qdrant:v1.18.2\n"
+                "# MINIO_IMAGE=docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z\n"
+                "# MINIO_MC_IMAGE=docker.m.daocloud.io/minio/mc:RELEASE.2025-08-13T08-35-41Z\n"
                 "VENDOR_RUNTIME_URL=http://127.0.0.1:9380\n"
                 "KNOWLEDGE_AUTO_START_INGESTION=false\n"
                 "# DOC_ENGINE=elasticsearch\n",
@@ -82,20 +85,40 @@ class LocalSeedContractTests(unittest.TestCase):
                 "LOCAL_SUPER_ADMIN_PASSWORD=LocalDemoAdmin#12345\n"
                 "admin / LocalDemoAdmin#12345\n"
                 "superadmin / LocalDemoAdmin#12345\n"
+                "Go modules 下载默认读取 `deploy/.env`\n"
+                "默认使用官方源\n"
+                "--china\n"
+                "大陆镜像\n"
+                "GOPROXY=https://proxy.golang.org,direct\n"
+                "GOSUMDB=sum.golang.org\n"
                 "cleanup with down -v\n",
                 encoding="utf-8",
             )
             (root / "scripts" / "local").mkdir(parents=True)
             (root / "scripts" / "local" / "dev-up.sh").write_text(
-                "local dev-up: starting\n"
-                "local dev-up: completed successfully\n"
-                "local dev-up: failed during\n"
+                "[dev-up]\n"
+                "[ok]\n"
+                "[warn]\n"
+                "[fail]\n"
+                "[hint]\n"
+                "completed successfully\n"
+                "failed during\n"
+                "Check Docker status:\n"
                 "checking local tool dependencies\n"
                 "missing required local command(s):\n"
-                "Install Docker, Go, psql, and curl\n"
+                "Install Docker, Go, psql, uv, and curl\n"
                 "Install the missing host tool(s)\n"
+                "Mainland China network: rerun ./scripts/local/dev-up.sh --china.\n"
+                "preparing Knowledge runtime dependencies with China mirrors\n"
+                '--with "nltk>=3.9.4"\n'
+                '--with "huggingface-hub>=1.3.1"\n'
+                "ragflow_deps/download_deps.py --china\n"
+                "--skip-knowledge-runtime-deps\n"
+                "LOCAL_SKIP_KNOWLEDGE_RUNTIME_DEPS\n"
                 "checking Go module settings\n"
-                "using repository default for this run\n"
+                "--china\n"
+                "using selected default for this run\n"
+                "docker.m.daocloud.io/library/postgres:16-alpine\n"
                 "goose@v3.27.1\n"
                 "psql\n"
                 "INFRA_SERVICES=(postgres redis qdrant minio)\n"
@@ -116,13 +139,19 @@ class LocalSeedContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (root / "scripts" / "local" / "run-backend.sh").write_text(
-                "local backend startup: starting\n"
-                "local backend startup: completed successfully\n"
-                "local backend startup: failed during\n"
+                "[backend]\n"
+                "[ok]\n"
+                "[warn]\n"
+                "[fail]\n"
+                "[hint]\n"
+                "completed successfully\n"
+                "failed during\n"
+                "Check service logs under .local/logs/\n"
                 "setsid\n"
                 "go mod download\n"
                 "checking Go modules\n"
-                "using repository default for this run\n"
+                "--china\n"
+                "using selected default for this run\n"
                 "LOCAL_GO_MOD_DOWNLOAD_TIMEOUT_SECONDS\n"
                 "go mod download timed out\n"
                 "LOCAL_BACKEND_STARTUP_CHECK_SECONDS\n"
@@ -131,9 +160,14 @@ class LocalSeedContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (root / "scripts" / "local" / "stop-backend.sh").write_text(
-                "local backend stop: starting\n"
-                "local backend stop: completed successfully\n"
-                "local backend stop: failed during\n"
+                "[stop]\n"
+                "[ok]\n"
+                "[warn]\n"
+                "[fail]\n"
+                "[hint]\n"
+                "completed successfully\n"
+                "failed during\n"
+                "nothing to stop\n"
                 'kill -0 -- "-$pid"\n'
                 'kill -TERM -- "-$pid"\n'
                 'kill -KILL -- "-$pid"\n',

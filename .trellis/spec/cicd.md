@@ -907,29 +907,37 @@ Runtime rules:
 - `run-backend.sh` must not prepare or start the retired standalone Parser.
   Knowledge parsing runs through the RAGFlow runtime API/worker path.
 - Keep `UV_DEFAULT_INDEX` in `deploy/.env.example` as the default host-run uv
-  package index for mainland China developer networks. It affects Python
-  dependency downloads only; Docker registry rewrite remains the Compose image
-  path.
+  package index, using official PyPI by default. Mainland China mirror usage
+  must be explicit, preferably through `dev-up.sh --china` which prepares
+  Knowledge runtime dependencies/artifacts, or local untracked env overrides.
+  `ragflow_deps/download_deps.py --china` remains the manual fallback when that
+  preparation was intentionally skipped. It affects Python dependency downloads
+  only; Docker registry rewrite remains the Compose image path.
 - Treat `services/knowledge-runtime/**` and its host-run API/worker scripts as
   the local runtime contract for Knowledge parsing and retrieval changes.
 - Keep `GOPROXY` and `GOSUMDB` in `deploy/.env.example` as the default host-run
-  Go module proxy/checksum settings for mainland China developer networks. They
-  affect `dev-up.sh` goose migrations and `run-backend.sh` Go service startup,
-  not Docker image pulls or Knowledge runtime uv downloads.
+  Go module proxy/checksum settings, using official upstream values by default.
+  Mainland China mirror usage must be explicit through `dev-up.sh --china`,
+  `run-backend.sh --china`, or local untracked env overrides. They affect
+  `dev-up.sh` goose migrations and `run-backend.sh` Go service startup, not
+  Docker image pulls or Knowledge runtime uv downloads.
 - `dev-up.sh` must check effective Go module settings before host-run goose
   migrations, and `run-backend.sh` must preflight each host-run Go service with
-  `go mod download` before forking service processes. If an old `deploy/.env`
-  lacks Go mirror settings, local scripts may use the repository default
-  `GOPROXY` / `GOSUMDB` values for the current process and tell the user to
-  persist them locally. If module download fails, it should fail visibly in the
-  terminal with the current effective values and remediation guidance.
+  `go mod download` before forking service processes. If `--china` is passed,
+  local scripts may use mainland China mirrors for the current process without
+  rewriting `deploy/.env`. If an old `deploy/.env` still contains mirror values
+  while `--china` was not passed, scripts should warn but respect that local
+  config. If module download fails, it should fail visibly in the terminal with
+  the current effective values and remediation guidance.
 - Host-run process management is part of the local startup contract:
   `run-backend.sh` should start service commands in managed process groups and
   `stop-backend.sh` should stop those process groups, not just wrapper PIDs.
 - Local entrypoint scripts under `scripts/local/` must print command-line status
-  for start, success, and failure. Failure output should include the current
-  stage and next diagnostic location so contributors are not misled by missing
-  or log-only errors.
+  for start, success, warning, failure, and diagnostic hints. Use
+  human-scannable colored status labels when stdout/stderr supports color, with
+  `NO_COLOR=1` disabling color. Failure output should include the current stage
+  and next diagnostic location so contributors are not misled by missing or
+  log-only errors.
 - After forking services, `run-backend.sh` should observe a short configurable
   startup window and report early process exits with the relevant
   `.local/logs/<service>.log` tail instead of unconditionally printing

@@ -52,11 +52,14 @@ VALID_COMPOSE = textwrap.dedent(
 
 VALID_ENV = textwrap.dedent(
     """
-    POSTGRES_IMAGE=docker.m.daocloud.io/library/postgres:16-alpine
-    REDIS_IMAGE=docker.m.daocloud.io/library/redis:7-alpine
-    QDRANT_IMAGE=docker.m.daocloud.io/qdrant/qdrant:v1.18.2
-    MINIO_IMAGE=docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
-    MINIO_MC_IMAGE=docker.m.daocloud.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    UV_DEFAULT_INDEX=https://pypi.org/simple
+    GOPROXY=https://proxy.golang.org,direct
+    GOSUMDB=sum.golang.org
+    # POSTGRES_IMAGE=docker.m.daocloud.io/library/postgres:16-alpine
+    # REDIS_IMAGE=docker.m.daocloud.io/library/redis:7-alpine
+    # QDRANT_IMAGE=docker.m.daocloud.io/qdrant/qdrant:v1.18.2
+    # MINIO_IMAGE=docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # MINIO_MC_IMAGE=docker.m.daocloud.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
     """
 )
 
@@ -166,14 +169,12 @@ class DockerPolicyTests(unittest.TestCase):
         self.assertIssueContains(issues, "services/parser is retired")
 
     def test_env_example_regressions_are_reported(self) -> None:
-        env = VALID_ENV.replace(
-            "POSTGRES_IMAGE=docker.m.daocloud.io/library/postgres:16-alpine",
-            "POSTGRES_IMAGE=postgres:latest",
-        )
+        env = VALID_ENV + "\nPOSTGRES_IMAGE=postgres:latest\n"
 
         issues = self.verify(files={"deploy/.env.example": env})
 
         self.assertIssueContains(issues, "POSTGRES_IMAGE")
+        self.assertIssueContains(issues, "must not be active by default")
         self.assertIssueContains(issues, "must not use latest")
 
     def test_business_docker_artifacts_are_reported(self) -> None:

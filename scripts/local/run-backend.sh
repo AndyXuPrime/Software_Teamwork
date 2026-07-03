@@ -6,6 +6,47 @@ ENV_FILE="$ROOT_DIR/deploy/.env"
 RUN_DIR="$ROOT_DIR/.local/run"
 LOG_DIR="$ROOT_DIR/.local/logs"
 CURRENT_STEP="initializing"
+CHINA_MIRRORS=0
+
+OFFICIAL_GOPROXY="https://proxy.golang.org,direct"
+CHINA_GOPROXY="https://goproxy.cn,direct"
+OFFICIAL_GOSUMDB="sum.golang.org"
+CHINA_GOSUMDB="sum.golang.google.cn"
+
+COLOR_RESET=""
+COLOR_BLUE=""
+COLOR_GREEN=""
+COLOR_YELLOW=""
+COLOR_RED=""
+COLOR_CYAN=""
+if [[ -z "${NO_COLOR:-}" && ( -t 1 || "${FORCE_COLOR:-0}" == "1" || "${CLICOLOR_FORCE:-0}" == "1" ) ]]; then
+  COLOR_RESET=$'\033[0m'
+  COLOR_BLUE=$'\033[1;34m'
+  COLOR_GREEN=$'\033[1;32m'
+  COLOR_YELLOW=$'\033[1;33m'
+  COLOR_RED=$'\033[1;31m'
+  COLOR_CYAN=$'\033[1;36m'
+fi
+
+log_info() {
+  printf '%b%s %s%b\n' "$COLOR_BLUE" "[backend]" "$*" "$COLOR_RESET"
+}
+
+log_success() {
+  printf '%b%s %s%b\n' "$COLOR_GREEN" "[ok]" "$*" "$COLOR_RESET"
+}
+
+log_warn() {
+  printf '%b%s %s%b\n' "$COLOR_YELLOW" "[warn]" "$*" "$COLOR_RESET" >&2
+}
+
+log_error() {
+  printf '%b%s %s%b\n' "$COLOR_RED" "[fail]" "$*" "$COLOR_RESET" >&2
+}
+
+log_hint() {
+  printf '%b%s %s%b\n' "$COLOR_CYAN" "[hint]" "$*" "$COLOR_RESET" >&2
+}
 
 GO_SERVICES=(
   "auth|$ROOT_DIR/services/auth|./cmd/server"
@@ -18,26 +59,61 @@ GO_SERVICES=(
 )
 STARTED_SERVICES=()
 
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/local/run-backend.sh [--china]
+
+Checks Go modules and starts all host-run backend services.
+
+Options:
+  --china   Use mainland China Go proxy/checksum mirrors for this run only.
+  -h, --help
+            Show this help.
+EOF
+}
+
+parse_args() {
+  while (($# > 0)); do
+    case "$1" in
+      --china)
+        CHINA_MIRRORS=1
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "unknown argument: $1" >&2
+        usage >&2
+        exit 2
+        ;;
+    esac
+    shift
+  done
+}
+
 on_exit() {
   status=$?
   if (( status == 0 )); then
-    echo "local backend startup: completed successfully"
+    log_success "completed successfully"
   else
-    echo "local backend startup: failed during ${CURRENT_STEP} (exit ${status})" >&2
-    echo "Check service logs under .local/logs/ and current process files under .local/run/." >&2
+    log_error "failed during ${CURRENT_STEP} (exit ${status})"
+    log_hint "Check service logs under .local/logs/ and process files under .local/run/."
   fi
 }
+parse_args "$@"
+
 trap on_exit EXIT
 
-echo "local backend startup: starting Go module checks and host services"
+log_info "starting Go module checks and host services"
 
 if [[ ! -f "$ENV_FILE" ]]; then
-  echo "missing deploy/.env; run: cp deploy/.env.example deploy/.env" >&2
+  log_error "missing deploy/.env; run: cp deploy/.env.example deploy/.env"
   exit 1
 fi
 
 if ! command -v setsid >/dev/null 2>&1; then
-  echo "setsid is required to manage host-run service process groups" >&2
+  log_error "setsid is required to manage host-run service process groups"
   exit 1
 fi
 
@@ -48,70 +124,81 @@ set -a
 . "$ENV_FILE"
 set +a
 
+if (( CHINA_MIRRORS )); then
+  export GOPROXY="$CHINA_GOPROXY"
+  export GOSUMDB="$CHINA_GOSUMDB"
+  log_info "using mainland China Go mirrors for this run (--china); deploy/.env is not modified"
+else
+  export GOPROXY="${GOPROXY:-$OFFICIAL_GOPROXY}"
+  export GOSUMDB="${GOSUMDB:-$OFFICIAL_GOSUMDB}"
+  case "${GOPROXY:-}" in
+    *goproxy.cn*)
+      log_warn "deploy/.env still contains mainland China Go mirror values while --china was not passed."
+      log_warn "continuing with deploy/.env as user configuration; use official GOPROXY/GOSUMDB for default mode or rerun with --china."
+      ;;
+  esac
+  if [[ "${GOSUMDB:-}" == "sum.golang.google.cn" ]]; then
+    log_warn "deploy/.env still contains mainland China GOSUMDB while --china was not passed."
+  fi
+fi
+
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
 print_go_module_hint() {
-  cat >&2 <<EOF
-Go module download failed before backend startup completed.
-
-Current effective Go module settings:
-  GOPROXY=${GOPROXY:-<unset>}
-  GOSUMDB=${GOSUMDB:-<unset>}
-
-The repository default for mainland China developer networks is:
-  GOPROXY=https://goproxy.cn,direct
-  GOSUMDB=sum.golang.google.cn
-
-If your deploy/.env was copied before those defaults existed, add the two lines
-above or recopy deploy/.env.example and reapply only your local private changes.
-EOF
+  log_error "Go module download failed before backend startup completed."
+  log_hint "Current effective Go module settings:"
+  log_hint "  GOPROXY=${GOPROXY:-<unset>}"
+  log_hint "  GOSUMDB=${GOSUMDB:-<unset>}"
+  log_hint "Mainland China mirrors: ./scripts/local/run-backend.sh --china"
+  log_hint "Official defaults: GOPROXY=https://proxy.golang.org,direct and GOSUMDB=sum.golang.org"
 }
 
 print_startup_failure_hint() {
-  cat >&2 <<EOF
-Backend process startup failed after services were forked.
-
-Use the log tails above first. If a log shows proxy.golang.org, sum.golang.org,
-i/o timeout, or go: downloading before exit, check these effective Go module
-settings:
-  GOPROXY=${GOPROXY:-<unset>}
-  GOSUMDB=${GOSUMDB:-<unset>}
-
-For port binding, database, Redis, token, or runtime dependency errors, follow
-the specific service log instead of treating it as a Go module mirror issue.
-EOF
+  log_error "Backend process startup failed after services were forked."
+  log_hint "Use the log tails above first."
+  log_hint "If a log shows proxy.golang.org, sum.golang.org, i/o timeout, or go: downloading, check:"
+  log_hint "  GOPROXY=${GOPROXY:-<unset>}"
+  log_hint "  GOSUMDB=${GOSUMDB:-<unset>}"
+  log_hint "For port binding, database, Redis, token, or runtime dependency errors, follow the specific service log instead of treating it as a Go module mirror issue."
 }
 
 check_go_module_settings() {
+  local default_goproxy="$OFFICIAL_GOPROXY"
+  local default_gosumdb="$OFFICIAL_GOSUMDB"
+  if (( CHINA_MIRRORS )); then
+    default_goproxy="$CHINA_GOPROXY"
+    default_gosumdb="$CHINA_GOSUMDB"
+  fi
+
   effective_goproxy="${GOPROXY:-$(go env GOPROXY 2>/dev/null || true)}"
   effective_gosumdb="${GOSUMDB:-$(go env GOSUMDB 2>/dev/null || true)}"
 
   if [[ -z "${GOPROXY:-}" && ( -z "$effective_goproxy" || "$effective_goproxy" == *"proxy.golang.org"* ) ]]; then
-    export GOPROXY="https://goproxy.cn,direct"
-    echo "deploy/.env did not set GOPROXY; using repository default for this run: $GOPROXY"
+    export GOPROXY="$default_goproxy"
+    log_info "deploy/.env did not set GOPROXY; using selected default for this run: $GOPROXY"
   elif [[ -z "${GOPROXY:-}" ]]; then
     export GOPROXY="$effective_goproxy"
-    echo "deploy/.env did not set GOPROXY; using global go env value: $GOPROXY"
+    log_info "deploy/.env did not set GOPROXY; using global go env value: $GOPROXY"
   fi
 
   if [[ -z "${GOSUMDB:-}" && ( -z "$effective_gosumdb" || "$effective_gosumdb" == "sum.golang.org" ) ]]; then
-    export GOSUMDB="sum.golang.google.cn"
-    echo "deploy/.env did not set GOSUMDB; using repository default for this run: $GOSUMDB"
+    export GOSUMDB="$default_gosumdb"
+    log_info "deploy/.env did not set GOSUMDB; using selected default for this run: $GOSUMDB"
   elif [[ -z "${GOSUMDB:-}" ]]; then
     export GOSUMDB="$effective_gosumdb"
-    echo "deploy/.env did not set GOSUMDB; using global go env value: $GOSUMDB"
+    log_info "deploy/.env did not set GOSUMDB; using global go env value: $GOSUMDB"
   fi
 
-  if [[ "$GOPROXY" == *"proxy.golang.org"* ]]; then
-    echo "warning: GOPROXY includes proxy.golang.org; this may time out on some developer networks" >&2
-    echo "current GOPROXY=$GOPROXY" >&2
+  if [[ "$GOPROXY" == *"proxy.golang.org"* && "$CHINA_MIRRORS" == "0" ]]; then
+    log_warn "GOPROXY includes proxy.golang.org; use --china on mainland China networks"
+    log_warn "current GOPROXY=$GOPROXY"
   fi
 }
 
 check_go_modules() {
   CURRENT_STEP="checking Go module downloads"
   if ! command -v go >/dev/null 2>&1; then
-    echo "go is required for host-run backend services" >&2
+    log_error "go is required for host-run backend services"
     exit 1
   fi
 
@@ -120,9 +207,9 @@ check_go_modules() {
   for service in "${GO_SERVICES[@]}"; do
     IFS='|' read -r name dir _go_target <<<"$service"
     CURRENT_STEP="checking Go modules for $name"
-    echo "checking Go modules for $name"
+    log_info "checking Go modules for $name"
     if ! run_go_mod_download "$dir"; then
-      echo "failed to download Go modules for $name" >&2
+      log_error "failed to download Go modules for $name"
       print_go_module_hint
       return 1
     fi
@@ -140,7 +227,7 @@ run_go_mod_download() {
     status=$?
     set -e
     if (( status == 124 )); then
-      echo "go mod download timed out after ${timeout_seconds}s in $dir" >&2
+      log_error "go mod download timed out after ${timeout_seconds}s in $dir"
     fi
     return "$status"
   fi
@@ -157,13 +244,13 @@ start() {
   if [[ -f "$RUN_DIR/$name.pid" ]]; then
     pid="$(cat "$RUN_DIR/$name.pid")"
     if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 -- "-$pid" 2>/dev/null; then
-      echo "$name already running"
+      log_success "$name already running"
       return
     fi
   fi
   rm -f "$RUN_DIR/$name.pid"
 
-  echo "starting $name"
+  log_info "starting $name"
   (cd "$dir" && exec setsid "$@") >"$LOG_DIR/$name.log" 2>&1 &
   echo "$!" >"$RUN_DIR/$name.pid"
   STARTED_SERVICES+=("$name")
@@ -175,7 +262,7 @@ check_started_services() {
   local failed=()
 
   if [[ "$wait_seconds" =~ ^[0-9]+$ ]] && (( wait_seconds > 0 )) && (( ${#STARTED_SERVICES[@]} > 0 )); then
-    echo "checking backend processes for ${wait_seconds}s"
+    log_info "checking backend processes for ${wait_seconds}s"
     sleep "$wait_seconds"
   fi
 
@@ -198,15 +285,15 @@ check_started_services() {
     return 0
   fi
 
-  echo "backend startup failed for: ${failed[*]}" >&2
-  echo "The failed service log tails are shown below." >&2
+  log_error "backend startup failed for: ${failed[*]}"
+  log_error "The failed service log tails are shown below."
   for name in "${failed[@]}"; do
     log_file="$LOG_DIR/$name.log"
-    echo "----- $log_file (tail) -----" >&2
+    printf '%b%s%b\n' "$COLOR_YELLOW" "----- $log_file (tail) -----" "$COLOR_RESET" >&2
     if [[ -f "$log_file" ]]; then
       tail -n 40 "$log_file" >&2
     else
-      echo "log file missing" >&2
+      log_warn "log file missing"
     fi
   done
   print_startup_failure_hint
@@ -222,4 +309,4 @@ done
 
 check_started_services
 
-echo "backend started; logs: .local/logs/*.log"
+log_success "backend started; logs: .local/logs/*.log"

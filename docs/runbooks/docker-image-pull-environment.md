@@ -10,19 +10,34 @@
 
 业务服务、migration、seed、Knowledge runtime 和前端都不通过 Docker 启动。
 Knowledge runtime 的 `uv sync` 下载 Python 包，不走 Docker registry。uv 默认包索引由
-`deploy/.env.example` 里的 `UV_DEFAULT_INDEX` 控制；当前 `services/knowledge-runtime/uv.lock`
-也锁到同一清华源，`uv sync --frozen` 不会因为删除该变量而改用官方 PyPI。
+`deploy/.env.example` 里的 `UV_DEFAULT_INDEX` 控制；默认是官方 PyPI。中国大陆网络运行
+`./scripts/local/dev-up.sh --china` 时会一并准备 runtime 依赖和 GitHub release/raw 等
+artifact；如果用 `--skip-knowledge-runtime-deps` 跳过，可按
+`services/knowledge-runtime/README.md` 手工补跑 runtime 下载脚本。不要把
+`pyproject.toml` 或 `uv.lock` 的默认 URL 改成第三方代理。
 Go 后端 host-run 期间的模块下载由 `deploy/.env.example` 里的 `GOPROXY` /
-`GOSUMDB` 控制，也不属于 Docker registry 问题。
+`GOSUMDB` 控制；默认是官方 `proxy.golang.org` / `sum.golang.org`。中国大陆网络用
+`./scripts/local/dev-up.sh --china` 或 `./scripts/local/run-backend.sh --china`
+临时切换 Go mirrors，也不属于 Docker registry 问题。
 
 ## 默认路径
 
-`deploy/.env.example` 已经写入 DaoCloud registry rewrite，适合中国大陆开发网络：
+默认使用 Compose 里的 Docker Hub pinned tags：
 
 ```bash
 cp deploy/.env.example deploy/.env
 ./scripts/local/dev-up.sh
 ```
+
+中国大陆网络拉取 Docker 基础设施镜像慢时，显式使用：
+
+```bash
+./scripts/local/dev-up.sh --china
+```
+
+该模式只在本次进程设置 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`QDRANT_IMAGE`、
+`MINIO_IMAGE` 和 `MINIO_MC_IMAGE` 的 DaoCloud registry rewrite，不改写
+`deploy/.env`。
 
 脚本内部会执行 Compose config、pull、up、migration 和 seed。只想验证 Docker 配置时：
 
@@ -33,11 +48,13 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env config --serv
 
 服务清单只能包含 `postgres`、`redis`、`qdrant`、`minio`、`minio-init`。
 
-## Docker Hub Fallback
+## Docker 镜像源选择
 
-Compose 文件本身保留 Docker Hub pinned fallback。如果不想走 DaoCloud，删除
-`deploy/.env` 里的 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`QDRANT_IMAGE`、
-`MINIO_IMAGE` 和 `MINIO_MC_IMAGE` 行即可。
+Compose 文件本身保留 Docker Hub pinned defaults。需要企业 registry 或长期本地
+override 时，可只在本机 `deploy/.env` 设置 `POSTGRES_IMAGE`、`REDIS_IMAGE`、
+`QDRANT_IMAGE`、`MINIO_IMAGE` 和 `MINIO_MC_IMAGE`，不要提交成默认值。已有旧
+`deploy/.env` 如果仍保留 DaoCloud 值，脚本会尊重本地配置；不传 `--china` 时会提示
+这是本地覆盖。
 
 优先级固定为：
 
@@ -47,19 +64,19 @@ registry rewrite > daemon mirror > proxy
 
 原因：
 
-- registry rewrite 写在 `deploy/.env.example`，团队可审查、可复制。
+- registry rewrite 通过 `--china` 或本地 `deploy/.env` 显式选择，团队可审查、可复制。
 - daemon mirror 是个人机器状态，适合已有稳定镜像站的人。
 - proxy 依赖 shell、Docker daemon 和系统代理是否同时生效，最容易出现“终端能访问但 Docker 不走代理”。
 
 ## 环境诊断
 
-默认 DaoCloud 路径：
+中国大陆 registry rewrite 路径：
 
 ```bash
 python3 scripts/check_docker_environment.py --profile china --clean-env
 ```
 
-Docker Hub fallback：
+Docker Hub 默认路径：
 
 ```bash
 python3 scripts/check_docker_environment.py --profile default --clean-env
@@ -89,8 +106,9 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env pull minio
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env pull minio-init
 ```
 
-如果 DaoCloud 路径异常，先用环境诊断脚本确认 manifest 是否可用，再决定是否临时删除
-`*_IMAGE` override 走 Docker Hub fallback、切换本机 daemon mirror，或配置 Docker daemon proxy。
+如果 DaoCloud 路径异常，先用环境诊断脚本确认 manifest 是否可用，再决定是否临时去掉
+`--china` / 本地 `*_IMAGE` override 走 Docker Hub、切换本机 daemon mirror，或配置
+Docker daemon proxy。
 
 `minio-init` 退出是正常行为。它是 `minio/mc` 客户端，完成 bucket 创建后退出。真正的
 对象存储服务是 `minio`。
@@ -115,4 +133,6 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example confi
 - 根 Compose 只包含五个基础设施服务。
 - 根 Compose 不包含 `build:`。
 - 默认镜像不能是 `latest`。
-- `deploy/.env.example` 的基础设施镜像 rewrite 必须保持 pinned。
+- `deploy/.env.example` 不能默认启用第三方基础设施镜像 rewrite；大陆网络使用
+  `./scripts/local/dev-up.sh --china` 或本地 `deploy/.env` override。
+- 所有基础设施镜像 tag 必须 pinned，不能使用 `latest`。

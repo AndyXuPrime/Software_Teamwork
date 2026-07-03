@@ -20,9 +20,21 @@ Docker only starts the infrastructure services listed in
 Gateway run on the host through `run-backend.sh`; do not use Compose profiles,
 business-service containers, or `--build` for this smoke.
 
-For mainland China networks, keep the pinned registry rewrite, `UV_DEFAULT_INDEX`,
-`GOPROXY`, and `GOSUMDB` defaults copied from `deploy/.env.example`. If image
-pulls, Knowledge runtime dependency downloads, or Go module downloads are blocked, use
+Defaults use official Docker/PyPI/Go/GitHub sources. For mainland China
+networks, use explicit mirror mode for the affected step:
+
+```bash
+./scripts/local/dev-up.sh --china
+./scripts/local/run-backend.sh --china
+```
+
+`dev-up.sh --china` includes Knowledge runtime dependency and GitHub release/raw
+artifact preparation. If you intentionally skipped it with
+`--skip-knowledge-runtime-deps`, rerun the runtime download script manually
+before claiming Knowledge runtime coverage.
+
+If image pulls, Knowledge runtime dependency downloads, GitHub release/raw
+downloads, or Go module downloads are blocked, use
 [`Docker 基础设施镜像拉取环境`](./docker-image-pull-environment.md) and record the
 blocked dependency instead of marking the full smoke as passed.
 
@@ -156,6 +168,6 @@ bash scripts/run_issue_125_smoke.sh --all
 | Auth/Gateway/Redis full | `blocked: postgres/redis infrastructure did not become healthy` | Check Docker daemon state, registry rewrite/image pulls, and `docker compose -f deploy/docker-compose.yml --env-file deploy/.env ps`. |
 | File owner | `no knowledge bases available` | Run local seed or create a knowledge base through Gateway first. |
 | Knowledge runtime | Runtime dependency preparation or startup fails | Check Knowledge runtime API/worker logs, `UV_DEFAULT_INDEX`, `VENDOR_RUNTIME_URL`, and runtime prerequisites; record the blocked dependency if it cannot be prepared. |
-| Go services | Go module download fails during host-run startup | Check the relevant `.local/logs/*.log` for `proxy.golang.org` timeout and confirm `deploy/.env` contains `GOPROXY` / `GOSUMDB`; record network blockage only after those defaults are present. |
+| Go services | Go module download fails during host-run startup | Check the terminal summary and relevant `.local/logs/*.log` for `proxy.golang.org` timeout. On mainland China networks rerun the local script with `--china`; otherwise confirm `deploy/.env` or enterprise env contains a reachable `GOPROXY` / `GOSUMDB`. |
 | QA RAG | AI Gateway/provider unavailable | Check #234 profile seed/provider setup; placeholder profiles are not real provider proof. |
 | Document MCP | `initialize MCP session` / unauthorized | Check Document `/mcp`, `MCP_SERVER_TOKEN`, `DOCUMENT_MCP_SERVICE_TOKEN`, and token header. |

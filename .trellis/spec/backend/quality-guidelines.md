@@ -272,30 +272,41 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - `run-backend.sh` must not prepare or start the retired standalone Parser.
   Knowledge parsing runs through the RAGFlow runtime API/worker path.
 - Host-run uv package downloads should use `UV_DEFAULT_INDEX` from
-  `deploy/.env.example` for mainland China developer networks. This is separate
-  from Docker registry rewrite and should not be handled in Docker policy.
+  `deploy/.env.example`, with official PyPI as the committed default. Mainland
+  China mirror usage must be explicit, preferably through `dev-up.sh --china`
+  which prepares Knowledge runtime dependencies/artifacts, or through local
+  untracked env overrides. `ragflow_deps/download_deps.py --china` remains the
+  manual fallback when runtime dependency preparation was intentionally skipped.
+  This is separate from Docker registry rewrite and should not be handled in
+  Docker policy.
 - Runtime Python dependency changes belong under `services/knowledge-runtime`;
   the default local backend startup path must not depend on `services/parser`.
 - Host-run Go module downloads should use `GOPROXY` and `GOSUMDB` from
-  `deploy/.env.example` for mainland China developer networks. This covers
-  `dev-up.sh` goose migrations and `run-backend.sh` Go service startups; it is
-  separate from Docker registry rewrite and Knowledge runtime `UV_DEFAULT_INDEX`.
+  `deploy/.env.example`, with official upstream values as the committed
+  default. Mainland China mirror usage must be explicit through
+  `dev-up.sh --china`, `run-backend.sh --china`, or local untracked env
+  overrides. This covers `dev-up.sh` goose migrations and `run-backend.sh` Go
+  service startups; it is separate from Docker registry rewrite and Knowledge
+  runtime `UV_DEFAULT_INDEX`.
 - `dev-up.sh` should check effective Go module settings before host-run goose
   migrations, and `run-backend.sh` should preflight Go module downloads with
   `go mod download` for each host-run Go service before forking background
-  processes. If an old `deploy/.env` lacks Go mirror settings, the scripts may
-  use the repository default `GOPROXY` / `GOSUMDB` values for the current
-  process and tell the user to persist them locally. If module download still
-  fails, the script must fail in the terminal with the current effective values
-  and remediation hints instead of only writing `go run` errors to
+  processes. If `--china` is passed, scripts may use mainland China mirrors for
+  the current process without rewriting `deploy/.env`. If an old `deploy/.env`
+  still contains mirror values while `--china` was not passed, scripts should
+  warn but respect the user's local config. If module download still fails, the
+  script must fail in the terminal with the current effective values and
+  remediation hints instead of only writing `go run` errors to
   `.local/logs/*.log`.
 - Host-run backend processes should be started in managed process groups and
   stopped by process group so `go run` or `uv run` wrapper processes do not
   leave child service binaries listening on local ports.
 - Local entrypoint scripts under `scripts/local/` must print clear command-line
-  status: starting, per-stage success where useful, final success, and final
-  failure with the current stage and next diagnostic location. Do not rely on
-  `set -e` alone or force users to infer failure from missing output.
+  status: starting, per-stage success where useful, warnings, final success,
+  final failure with the current stage, and next diagnostic hints. Use
+  human-scannable colored status labels when stdout/stderr supports color, with
+  `NO_COLOR=1` disabling color. Do not rely on `set -e` alone or force users to
+  infer failure from missing output.
 - After forking host-run backend services, `run-backend.sh` should watch a short
   configurable startup window and report any process group that exits early with
   the corresponding service log tail. This prevents `backend started` from
@@ -321,10 +332,11 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   or enterprise registry is required, expose it through image variables such as
   `POSTGRES_IMAGE`, `REDIS_IMAGE`, `QDRANT_IMAGE`, `MINIO_IMAGE`, and
   `MINIO_MC_IMAGE`; do not replace pinned defaults with `latest`.
-- For mainland China Docker usage, prefer the pinned registry rewrite in
-  `deploy/.env.example` over daemon mirrors and proxies. Existing
-  daemon mirrors or proxies are acceptable only after
-  `python3 scripts/check_docker_environment.py --profile all --clean-env`
+- For mainland China Docker usage, prefer explicit `dev-up.sh --china`
+  registry rewrite or local untracked `*_IMAGE` overrides over daemon mirrors
+  and proxies. Do not make third-party registries active defaults in
+  `deploy/.env.example`. Existing daemon mirrors or proxies are acceptable only
+  after `python3 scripts/check_docker_environment.py --profile all --clean-env`
   proves their manifest path is healthy.
 - Local Docker image tags must stay pinned and version-aligned across Compose,
   README/runbooks, and `docs/architecture/technology-decisions.md`.

@@ -129,17 +129,19 @@ Gateway 基础契约文档：
 - `psql` 客户端。PostgreSQL server 由 Docker 启动，本机不用装 PostgreSQL server。
 - `curl`。
 
-如果所在网络无法稳定访问 `proxy.golang.org`，需要在实际运行脚本的宿主机环境
-配置 Go 模块代理后再启动。WSL、Git Bash 和 Windows PowerShell 是不同环境，
-应在运行 `./scripts/local/dev-up.sh`、`./scripts/local/run-backend.sh` 的同一个
-shell 中检查：
+默认使用官方源：Docker Hub pinned images、PyPI、`proxy.golang.org` 和
+`sum.golang.org`。如果在中国大陆网络中 GitHub、Docker Hub、PyPI、HuggingFace 或
+Go modules 下载慢，直接给本地脚本加 `--china`，脚本只在本次进程使用大陆镜像，不改写
+`deploy/.env`：
 
 ```bash
-go version
-go env GOPROXY
-go env -w GOPROXY=https://goproxy.cn,direct
-go env -w GOSUMDB=sum.golang.google.cn
+./scripts/local/dev-up.sh --china
+./scripts/local/run-backend.sh --china
 ```
+
+`dev-up.sh --china` 会一并准备 Knowledge runtime 的 Python 依赖和 GitHub release/raw、
+NLTK、HuggingFace、Tika、Chrome 等 artifact 下载；重复启动或只想拉起 infra 时可加
+`--skip-knowledge-runtime-deps`。
 
 Go 模块下载只影响 `go run`、migration 和 host-run 后端服务；它不受 Docker
 registry rewrite 或 `UV_DEFAULT_INDEX` 影响。
@@ -178,34 +180,33 @@ cd apps/web && bun run dev
 默认 demo 账号来自 `deploy/.env.example`：`admin` / `LocalDemoAdmin#12345`，
 `superadmin` / `LocalDemoAdmin#12345`。
 Go 服务通过宿主机 `go run` 启动，首次运行会下载 Go modules。若 `.local/logs/auth.log`
-或 `.local/logs/gateway.log` 出现 `proxy.golang.org` 超时，先按上面的 `GOPROXY`
-检查和设置后重新执行 `./scripts/local/run-backend.sh`。
-`UV_DEFAULT_INDEX` 也在这份文件里，默认使用清华 PyPI 镜像加速 Python runtime
-依赖准备；它影响 uv，不影响 Docker。第一次启动 RAGFlow runtime 相关 Python
-依赖时仍可能下载较多包，之后会走 uv 缓存。
-`GOPROXY` 和 `GOSUMDB` 也在 `deploy/.env.example` 中，默认让宿主机 `go run`
-migration 和 Go 后端启动走 Go 模块镜像，避免 `proxy.golang.org` / `sum.golang.org`
-在部分开发网络下超时。已有旧 `deploy/.env` 的本地环境需要手动补入这两行，或重新从
-`deploy/.env.example` 复制后再调整本机私有配置。
+或 `.local/logs/gateway.log` 出现 `proxy.golang.org` 超时，在中国大陆网络中重新执行
+`./scripts/local/run-backend.sh --china`；其他网络优先检查企业代理或本机 Go 配置。
+`UV_DEFAULT_INDEX` 也在这份文件里，默认是官方 PyPI；它影响 uv，不影响 Docker。第一次
+启动 RAGFlow runtime 相关 Python 依赖时仍可能下载较多包，之后会走 uv 缓存。已有旧
+`deploy/.env` 的本地环境如果仍保留 TUNA、DaoCloud、`goproxy.cn` 或
+`sum.golang.google.cn`，默认脚本会继续尊重这些本地配置并给出提示；想恢复官方默认值，
+重新从 `deploy/.env.example` 复制后再恢复本机私有配置，或手动改回官方地址。
 
-`./scripts/local/dev-up.sh` 会先检查同一宿主机环境中的 Docker、Go、`psql`
-和必要的 `curl`，再拉取 infra 镜像，启动并等待 `postgres`、`redis`、`qdrant`、
-`minio` 健康，然后单独运行一次性 `minio-init` 创建本地 bucket；`minio-init`
+`./scripts/local/dev-up.sh` 会先检查同一宿主机环境中的 Docker、Go、`psql`、`uv`
+和必要的 `curl`（`uv` 仅 `--china` runtime 准备需要），再拉取 infra 镜像，启动并等待
+`postgres`、`redis`、`qdrant`、`minio` 健康，然后单独运行一次性 `minio-init` 创建本地 bucket；`minio-init`
 正常退出不会阻断后续流程。之后脚本会在 `QDRANT_URL` 明确配置时执行
 legacy/test-only Qdrant collection 初始化；当前 Knowledge 主路径的索引准备仍归
-宿主机 `services/knowledge-runtime` 和它配置的 doc engine。随后脚本执行本机
+宿主机 `services/knowledge-runtime` 和它配置的 doc engine。传入 `--china` 时脚本会先
+准备 Knowledge runtime 依赖和 GitHub release/raw 等 artifact 下载；随后脚本执行本机
 migration 和 demo seed。
 `./scripts/local/run-backend.sh` 会启动 `auth`、`file`、`knowledge`、
 `ai-gateway`、`qa`、`document` 和 `gateway`，日志在 `.local/logs/`。启动前会先
-对每个 Go 服务执行 `go mod download`；如果旧 `deploy/.env` 没写 Go 镜像，脚本会在
-本次进程使用仓库默认 `GOPROXY=https://goproxy.cn,direct` 和
-`GOSUMDB=sum.golang.google.cn`。如果 Go 镜像源或 checksum DB 仍不可达，脚本会在终端
-直接失败并打印当前有效 `GOPROXY` / `GOSUMDB`。服务 fork 后还会默认观察 8 秒，若某个
-进程组很快退出，会把对应 `.local/logs/<service>.log` 尾部直接汇总到终端；可用
+对每个 Go 服务执行 `go mod download`；默认使用官方 `GOPROXY` / `GOSUMDB`，传入
+`--china` 时改用 `https://goproxy.cn,direct` 和 `sum.golang.google.cn`。如果 Go proxy
+或 checksum DB 不可达，脚本会在终端直接失败并打印当前有效 `GOPROXY` / `GOSUMDB`。
+服务 fork 后还会默认观察 8 秒，若某个进程组很快退出，会把对应
+`.local/logs/<service>.log` 尾部直接汇总到终端；可用
 `LOCAL_BACKEND_STARTUP_CHECK_SECONDS` 调整观察窗口。
-`dev-up.sh`、`run-backend.sh` 和 `stop-backend.sh` 都会在命令行输出开始、成功和失败
-摘要；如果脚本失败，先看终端中的失败阶段，再看提示的 Docker 状态或 `.local/logs/`
-服务日志。
+`dev-up.sh`、`run-backend.sh` 和 `stop-backend.sh` 都会在命令行输出彩色的开始、成功、
+警告和失败摘要；`NO_COLOR=1` 可关闭颜色，`FORCE_COLOR=1` 可在非 TTY 中强制开色。
+如果脚本失败，先看终端中的失败阶段，再看提示的 Docker 状态或 `.local/logs/` 服务日志。
 
 `ai-gateway /readyz` 在 placeholder credential 下返回 `503 degraded` 是预期行为，
 不代表服务没起。默认本地模型 profile 指向宿主机 `http://localhost:11434/v1`。

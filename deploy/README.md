@@ -11,20 +11,23 @@ Host:   auth + file + knowledge + ai-gateway + qa + document + gateway + fronten
 
 ## 直接启动
 
-先安装 Docker、Go `1.25.x`、Bun、`psql` 客户端和 `curl`。
+先安装 Docker、Go `1.25.x`、uv、Bun、`psql` 客户端和 `curl`。
 Go 必须安装在实际运行这些脚本的宿主机环境中；如果使用 WSL 启动脚本，Windows
 里的 Go 不等于 WSL 里的 Go。
 
-脚本会优先读取 `deploy/.env` 中的 `GOPROXY` / `GOSUMDB`。如果本机网络访问
-`proxy.golang.org` 不稳定，默认复制 `deploy/.env.example` 即可；如果还想把同样配置
-持久写入当前宿主机环境的 Go 全局配置，可以在同一个 shell 中执行：
+默认使用官方源。`deploy/.env.example` 里的 Docker、uv 和 Go 默认值分别指向
+Docker Hub pinned images、PyPI、`proxy.golang.org` 和 `sum.golang.org`。中国大陆网络
+如果下载慢，给本地脚本加 `--china`，只在本次进程使用大陆镜像，不改写
+`deploy/.env`：
 
 ```bash
-go version
-go env GOPROXY
-go env -w GOPROXY=https://goproxy.cn,direct
-go env -w GOSUMDB=sum.golang.google.cn
+./scripts/local/dev-up.sh --china
+./scripts/local/run-backend.sh --china
 ```
+
+`dev-up.sh --china` 会一并准备 Knowledge runtime 的 Python 依赖和 GitHub release/raw、
+NLTK、HuggingFace、Tika、Chrome 等 artifact 下载。重复启动或只想拉起 infra 时可加
+`--skip-knowledge-runtime-deps`，之后需要时再手工补跑 runtime 下载脚本。
 
 ```bash
 cp deploy/.env.example deploy/.env
@@ -66,17 +69,16 @@ cp deploy/.env.example deploy/.env
 ```
 
 脚本不会生成、改写或维护另一套默认变量。它们只读取 `deploy/.env`，让宿主机
-Go 进程拿到同一份本地配置。Go modules 下载默认读取 `deploy/.env` 里的
-`GOPROXY` / `GOSUMDB`；`dev-up.sh` 执行 goose migration、`run-backend.sh`
-启动 Go 后端时都会把这两个变量传给 host-run Go 命令。旧 `deploy/.env` 缺少这两项时，
-脚本会在本次进程使用仓库默认 Go 镜像并输出提示；如果日志里出现 `proxy.golang.org`
-超时，说明后端可能没有真正启动，先修正 `deploy/.env` 后重新运行
-`./scripts/local/run-backend.sh`。
+Go 进程拿到同一份本地配置。默认使用官方源。Go modules 下载默认读取
+`deploy/.env` 里的 `GOPROXY` / `GOSUMDB`；`dev-up.sh` 执行 goose migration、
+`run-backend.sh` 启动 Go 后端时都会把这两个变量传给 host-run Go 命令。官方默认值是
+`GOPROXY=https://proxy.golang.org,direct` 和 `GOSUMDB=sum.golang.org`。
 
-如需使用 Go 官方默认值，不要只删除 `deploy/.env` 中的 `GOPROXY` / `GOSUMDB`；
-当前脚本在缺失且全局 Go 配置仍是官方默认时会回退到仓库默认镜像。请在本机
-`deploy/.env` 显式设置 `GOPROXY=https://proxy.golang.org,direct` 和
-`GOSUMDB=sum.golang.org`，或设置企业内部 Go proxy / checksum DB。
+中国大陆网络使用大陆镜像时，不要把仓库默认文件改成第三方代理；运行
+`./scripts/local/dev-up.sh --china` 和 `./scripts/local/run-backend.sh --china` 即可。
+如果已有旧 `deploy/.env` 仍保留 TUNA、DaoCloud、`goproxy.cn` 或
+`sum.golang.google.cn`，脚本会继续尊重这些本地值并提示你这是本地覆盖。想回到官方
+默认值，重新复制 `deploy/.env.example` 后再恢复私有配置，或手动改回官方地址。
 
 默认 demo 账号：
 
@@ -85,32 +87,46 @@ admin / LocalDemoAdmin#12345
 superadmin / LocalDemoAdmin#12345
 ```
 
-`deploy/.env.example` 已经内置中国大陆开发网络默认镜像源。需要直连 Docker Hub 时，
-从 `deploy/.env` 删除 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`QDRANT_IMAGE`、
-`MINIO_IMAGE` 和 `MINIO_MC_IMAGE` 这几行即可回到 Compose 里的 Docker Hub pinned tags。
+Docker 镜像默认使用 Compose 里的 Docker Hub pinned tags。中国大陆网络可用
+`./scripts/local/dev-up.sh --china` 在本次进程切换到 DaoCloud registry rewrite；企业
+镜像仓库可在本机 `deploy/.env` 设置 `POSTGRES_IMAGE`、`REDIS_IMAGE`、
+`QDRANT_IMAGE`、`MINIO_IMAGE` 和 `MINIO_MC_IMAGE`，但不要提交为默认值。
 
 `UV_DEFAULT_INDEX` 控制宿主机 uv 在解析或重锁依赖时使用的 Python 包索引，默认使用
-清华 PyPI 镜像以加速 Knowledge runtime 依赖准备。`services/parser` 已退役，默认路径
-不再准备 standalone Parser；解析、切块、embedding、索引和检索通过
-`services/knowledge-runtime` 完成。无法访问清华源的环境应先按网络/代理路径解决；如必须
-使用 PyPI 或自建源，需要确保 Knowledge runtime lock/config 与本地启动契约同步。
+官方 PyPI。`services/parser` 已退役，默认路径不再准备 standalone Parser；解析、切块、
+embedding、索引和检索通过 `services/knowledge-runtime` 完成。中国大陆网络运行
+`./scripts/local/dev-up.sh --china` 时会自动准备 runtime 依赖并下载
+NLTK/HuggingFace/GitHub release/raw artifacts。如果此前用
+`--skip-knowledge-runtime-deps` 跳过，或只想手工补跑 runtime 下载脚本，使用：
+
+```bash
+cd services/knowledge-runtime
+uv run --no-project \
+  --with "nltk>=3.9.4" \
+  --with "huggingface-hub>=1.3.1" \
+  ragflow_deps/download_deps.py --china
+```
+
+该命令会用临时 overlay 把 runtime 依赖同步到 `.venv`，并把 GitHub release、PyPI、
+NLTK、HuggingFace、Tika 和 Chrome 下载切到镜像；提交的 `pyproject.toml` / `uv.lock`
+仍保持官方 URL。需要企业源时，显式设置本机环境变量或本机 `deploy/.env`。
 
 `GOPROXY` 和 `GOSUMDB` 控制宿主机 Go 工具链下载模块和校验数据库的路径，默认使用
-`https://goproxy.cn,direct` 和 `sum.golang.google.cn`，用于 `dev-up.sh` 中的
-goose migration 以及 `run-backend.sh` 中的 Go 服务 `go run`。如果
-`.local/logs/auth.log`、`.local/logs/gateway.log` 等日志出现
-`Get "https://proxy.golang.org/...": i/o timeout`，确认当前 `deploy/.env` 是否包含这
-两行；旧环境需要从 `deploy/.env.example` 手动补入。无法访问该 Go 镜像的环境可以在
-本机 `deploy/.env` 中改为企业代理；如需直连 Go 官方默认值，请显式设置
-`GOPROXY=https://proxy.golang.org,direct` 和 `GOSUMDB=sum.golang.org`。
+`https://proxy.golang.org,direct` 和 `sum.golang.org`，用于 `dev-up.sh` 中的
+goose migration 以及 `run-backend.sh` 中的 Go 服务 `go run`。如果在中国大陆网络看到
+`Get "https://proxy.golang.org/...": i/o timeout`，重新运行对应脚本并加 `--china`。
+无法访问公开镜像的企业环境可以在本机 `deploy/.env` 中改为企业 Go proxy / checksum DB。
 
 ## 脚本职责
 
 `./scripts/local/dev-up.sh`：
 
 - 校验 `deploy/docker-compose.yml`。
-- 先检查同一宿主机环境中的 Docker、Go、`psql` 和必要的 `curl`，缺失时直接
+- 先检查同一宿主机环境中的 Docker、Go、`psql`、`uv`（仅 `--china` runtime 准备需要）
+  和必要的 `curl`，缺失时直接
   在命令行报错，避免跑到 migration/seed 中途才失败。
+- 传入 `--china` 时自动执行 Knowledge runtime 依赖和 artifact 下载；可用
+  `--skip-knowledge-runtime-deps` 或 `LOCAL_SKIP_KNOWLEDGE_RUNTIME_DEPS=1` 跳过。
 - 拉取 infra 镜像，启动并等待 `postgres`、`redis`、`qdrant`、`minio`
   Compose health checks 通过。
 - 单独运行一次性 `minio-init` 创建/校验 `software-teamwork-local` 和
@@ -118,19 +134,21 @@ goose migration 以及 `run-backend.sh` 中的 Go 服务 `go run`。如果
   migration/seed，非零失败时会提示查看 `docker compose logs minio-init`。
 - 如果 `QDRANT_URL` 已设置，则创建或校验 `QDRANT_COLLECTION`。
 - 在宿主机执行各服务 goose migration。
-- migration 前检查有效 Go module 配置；旧 `deploy/.env` 缺少 `GOPROXY` / `GOSUMDB`
-  时，本次进程会使用仓库默认 Go 镜像并提示补齐本地配置。
+- migration 前检查有效 Go module 配置；默认使用官方 `GOPROXY` / `GOSUMDB`，
+  传入 `--china` 时本次进程改用大陆镜像。旧 `deploy/.env` 仍含镜像值时，脚本会尊重
+  本地覆盖并提示。
 - 用 `psql` 依次应用本地 demo 数据、AI Gateway profile 和 QA Document MCP
   注册 seed。Document MCP seed 只保存 endpoint/alias 等非敏感元数据；token 来自
   `deploy/.env` 的 `MCP_SERVER_TOKEN`。
-- 命令行会输出每个阶段的开始、成功和失败摘要；失败摘要包含当前阶段和后续排查入口。
+- 命令行会输出彩色的开始、成功、警告和失败摘要；失败摘要包含当前阶段和后续排查入口。
+  `NO_COLOR=1` 可关闭颜色，`FORCE_COLOR=1` 可在非 TTY 中强制开色。
 
 `./scripts/local/run-backend.sh`：
 
 - 启动任何服务前，先在每个 Go 服务目录执行 `go mod download` 预检模块下载。优先用
-  当前 `deploy/.env` 的 `GOPROXY` / `GOSUMDB`；旧 `deploy/.env` 缺少这两项时，本次
-  进程会使用仓库默认 Go 镜像并提示补齐本地配置。下载失败或超时时直接在终端打印错误
-  和修复提示，不再继续伪装成后端已启动。
+  当前 `deploy/.env` 的 `GOPROXY` / `GOSUMDB`；默认是官方源，`--china` 则只在本次
+  进程使用大陆镜像。下载失败或超时时直接在终端打印错误和修复提示，不再继续伪装成
+  后端已启动。
 - 按顺序启动 `auth`、`file`、`knowledge`、`ai-gateway`、`qa`、`document`、`gateway`。
 - Knowledge 运行 `cmd/adapter`，并通过 `VENDOR_RUNTIME_URL` 调用 RAGFlow runtime。
 - Go 服务启动使用宿主机 `go run`；Go 模块下载走 `deploy/.env` 里的
@@ -140,13 +158,14 @@ goose migration 以及 `run-backend.sh` 中的 Go 服务 `go run`。如果
   `LOCAL_BACKEND_STARTUP_CHECK_SECONDS` 调整观察窗口。
 - 日志写入 `.local/logs/`，进程组 leader PID 写入 `.local/run/`，供
   `stop-backend.sh` 停掉 `go run` 及其子进程。
-- 命令行会输出开始、成功和失败摘要；失败时优先按终端提示处理，再查看服务日志。
+- 命令行会输出彩色的开始、成功、警告和失败摘要；失败时优先按终端提示处理，再查看
+  服务日志。`NO_COLOR=1` 可关闭颜色，`FORCE_COLOR=1` 可在非 TTY 中强制开色。
 
 `./scripts/local/stop-backend.sh`：
 
 - 按 `.local/run/*.pid` 停止 host-run 后端进程组并清理 pid 文件。
 - 即使没有 `.local/run/` 或没有 pid 文件，也会明确输出“nothing to stop”并成功退出。
-- 命令行会输出开始、成功和失败摘要；失败时检查 `.local/run/*.pid` 和残留进程。
+- 命令行会输出彩色的开始、成功、警告和失败摘要；失败时检查 `.local/run/*.pid` 和残留进程。
 
 ## Knowledge / RAGFlow
 

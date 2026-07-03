@@ -189,19 +189,6 @@ exclude-dependencies = [
     # `litellm` package namespace as upstream litellm and can corrupt imports.
     "unclecode-litellm",
 ]
-# trio 0.26+ (Python 3.13 compatible) is not yet on the Aliyun mirror.
-# Mark PyPI as explicit so it is used only for packages listed in [tool.uv.sources].
-[[tool.uv.index]]
-name = "pypi"
-url = "https://pypi.org/simple"
-explicit = true
-
-[[tool.uv.index]]
-url = "https://mirrors.aliyun.com/pypi/simple"
-
-[tool.uv.sources]
-trio = [{ index = "pypi" }]
-
 [tool.setuptools]
 packages = [
     'api',
