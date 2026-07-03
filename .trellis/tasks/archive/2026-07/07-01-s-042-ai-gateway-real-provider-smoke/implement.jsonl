@@ -1,3 +1,0 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": "docs/services/ai-gateway/docs/seed-runbook.md", "reason": "AI Gateway profile/key setup and real provider smoke source"}
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend service readiness, smoke, and quality rules"}
