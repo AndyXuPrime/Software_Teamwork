@@ -79,6 +79,11 @@ class LocalSeedContractTests(unittest.TestCase):
             )
             (root / "scripts" / "local").mkdir(parents=True)
             (root / "scripts" / "local" / "dev-up.sh").write_text(
+                "local dev-up: starting\n"
+                "local dev-up: completed successfully\n"
+                "local dev-up: failed during\n"
+                "checking Go module settings\n"
+                "using repository default for this run\n"
                 "goose@v3.27.1\n"
                 "psql\n"
                 "001-local-demo-seed.sql\n"
@@ -94,11 +99,24 @@ class LocalSeedContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (root / "scripts" / "local" / "run-backend.sh").write_text(
+                "local backend startup: starting\n"
+                "local backend startup: completed successfully\n"
+                "local backend startup: failed during\n"
                 "setsid\n"
-                "auth\nfile\nknowledge\ngo run ./cmd/adapter\nai-gateway\nqa\ndocument\ngateway\n",
+                "go mod download\n"
+                "checking Go modules\n"
+                "using repository default for this run\n"
+                "LOCAL_GO_MOD_DOWNLOAD_TIMEOUT_SECONDS\n"
+                "go mod download timed out\n"
+                "LOCAL_BACKEND_STARTUP_CHECK_SECONDS\n"
+                "backend startup failed\n"
+                "auth\nfile\nknowledge\n./cmd/adapter\ngo run \"$go_target\"\nai-gateway\nqa\ndocument\ngateway\n",
                 encoding="utf-8",
             )
             (root / "scripts" / "local" / "stop-backend.sh").write_text(
+                "local backend stop: starting\n"
+                "local backend stop: completed successfully\n"
+                "local backend stop: failed during\n"
                 'kill -0 -- "-$pid"\n'
                 'kill -TERM -- "-$pid"\n'
                 'kill -KILL -- "-$pid"\n',
@@ -129,7 +147,7 @@ class LocalSeedContractTests(unittest.TestCase):
         )
 
         self.assertIssueContains(issues, "# DOC_ENGINE=elasticsearch")
-        self.assertIssueContains(issues, "go run ./cmd/adapter")
+        self.assertIssueContains(issues, "./cmd/adapter")
 
     def test_verifier_reports_missing_local_runtime_gitignore(self) -> None:
         verifier = load_verifier()

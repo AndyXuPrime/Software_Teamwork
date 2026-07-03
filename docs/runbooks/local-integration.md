@@ -171,6 +171,9 @@ Go modules 下载慢或超时：
 - 如果 `.local/logs/auth.log`、`.local/logs/gateway.log` 等文件出现
   `proxy.golang.org`、`i/o timeout` 或 `go: downloading ...` 后退出，Gateway/Auth
   可能没有监听 `8080`/`8001`，前端登录会表现为 `502 Bad Gateway`。
+- 如果 `.local/logs/auth.log`、`.local/logs/gateway.log` 或其他 Go 服务日志出现
+  `Get "https://proxy.golang.org/...": i/o timeout`，通常是旧 `deploy/.env` 缺少
+  Go proxy 默认值，或本机网络无法访问当前 Go 镜像。
 - 已有旧 `deploy/.env` 的环境不会被脚本自动改写；手动补入这两行，或重新复制
   `deploy/.env.example` 后再恢复本机私有配置。
 - 如果需要把镜像配置持久写入当前 shell 使用的 Go 全局配置，在运行脚本的同一个环境中执行：
