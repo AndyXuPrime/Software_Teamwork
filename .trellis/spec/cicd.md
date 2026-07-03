@@ -882,9 +882,10 @@ infrastructure. Business services run on the host.
 Required local sequence:
 
 1. Copy local defaults with `cp deploy/.env.example deploy/.env`.
-2. Run `./scripts/local/dev-up.sh` to pull/start infra, wait for health, apply
-   Qdrant collection initialization, host migrations, and local seed.
-3. Run `./scripts/local/run-backend.sh` to start Auth, File, Parser, Knowledge,
+2. Run `./scripts/local/dev-up.sh` to pull/start infra, wait for long-running
+   service health, run the one-shot `minio-init`, apply Qdrant collection
+   initialization, host migrations, and local seed.
+3. Run `./scripts/local/run-backend.sh` to start Auth, File, Knowledge,
    AI Gateway, QA, Document, and Gateway as host processes.
 4. Run `cd apps/web && bun install && bun run dev` for the frontend.
 
@@ -902,9 +903,28 @@ Runtime rules:
   path.
 - Treat `services/knowledge-runtime/**` and its host-run API/worker scripts as
   the local runtime contract for Knowledge parsing and retrieval changes.
+- Keep `GOPROXY` and `GOSUMDB` in `deploy/.env.example` as the default host-run
+  Go module proxy/checksum settings for mainland China developer networks. They
+  affect `dev-up.sh` goose migrations and `run-backend.sh` Go service startup,
+  not Docker image pulls or Knowledge runtime uv downloads.
+- `dev-up.sh` must check effective Go module settings before host-run goose
+  migrations, and `run-backend.sh` must preflight each host-run Go service with
+  `go mod download` before forking service processes. If an old `deploy/.env`
+  lacks Go mirror settings, local scripts may use the repository default
+  `GOPROXY` / `GOSUMDB` values for the current process and tell the user to
+  persist them locally. If module download fails, it should fail visibly in the
+  terminal with the current effective values and remediation guidance.
 - Host-run process management is part of the local startup contract:
   `run-backend.sh` should start service commands in managed process groups and
   `stop-backend.sh` should stop those process groups, not just wrapper PIDs.
+- Local entrypoint scripts under `scripts/local/` must print command-line status
+  for start, success, and failure. Failure output should include the current
+  stage and next diagnostic location so contributors are not misled by missing
+  or log-only errors.
+- After forking services, `run-backend.sh` should observe a short configurable
+  startup window and report early process exits with the relevant
+  `.local/logs/<service>.log` tail instead of unconditionally printing
+  `backend started`.
 - Seeded local AI Gateway profiles should use `http://localhost:11434/v1` for
   the host-run default path; container-only hostnames such as
   `host.docker.internal` must fail the local seed/startup contract.

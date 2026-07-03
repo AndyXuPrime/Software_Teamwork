@@ -141,22 +141,6 @@ body {
   background: var(--border);
 }
 
-/* ===== Message fade-in animation ===== */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.message-enter {
-  animation: fadeInUp 0.3s ease-out;
-}
-
 /* ===== Toast notification slide-in ===== */
 @keyframes slideDown {
   from {
@@ -169,8 +153,24 @@ body {
   }
 }
 
+@keyframes notify-pop {
+  0% {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 .toast-enter {
-  animation: slideDown 0.3s ease-out;
+  animation:
+    slideDown 0.3s ease-out,
+    notify-pop 0.4s ease-out;
 }
 
 /* ===== Page transition loading circle ===== */
@@ -199,4 +199,195 @@ body {
 
 .page-enter-right {
   animation: slideInRight 0.35s ease-out;
+}
+
+/* ===== Skeleton shimmer effect ===== */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    color-mix(in oklch, var(--muted-foreground) 8%, transparent) 40%,
+    var(--muted) 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* ===== Range slider custom styling ===== */
+input[type='range'].range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--muted);
+  outline: none;
+  cursor: pointer;
+}
+input[type='range'].range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--background);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 20%, transparent);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+  cursor: pointer;
+}
+input[type='range'].range-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--primary) 30%, transparent);
+}
+input[type='range'].range-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--background);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 20%, transparent);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+  cursor: pointer;
+}
+
+/* ===== Button click ripple ===== */
+.btn-ripple {
+  position: relative;
+  overflow: hidden;
+}
+.btn-ripple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklch, var(--foreground) 15%, transparent) 10%,
+    transparent 10.1%
+  );
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition:
+    transform 0.5s ease-out,
+    opacity 0.5s ease-out;
+  transform: scale(0);
+}
+.btn-ripple:active::after {
+  transform: scale(4);
+  opacity: 1;
+  transition: 0s;
+}
+
+/* ===== Fade in up (suggested prompts stagger) ===== */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===== Message entrance stagger animation ===== */
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.msg-enter {
+  animation: msg-in 0.35s ease-out both;
+}
+
+/* ===== Upload zone pulse border ===== */
+@keyframes upload-pulse {
+  0%,
+  100% {
+    border-color: var(--border);
+  }
+  50% {
+    border-color: color-mix(in oklch, var(--primary) 30%, transparent);
+  }
+}
+
+.upload-zone {
+  animation: upload-pulse 2s ease-in-out infinite;
+}
+
+/* ===== Upload success check overlay ===== */
+@keyframes check-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  60% {
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.check-pop {
+  animation: check-pop 0.35s ease-out both;
+}
+
+/* ===== Dialog content staggered entrance ===== */
+.dialog-stagger > * {
+  animation: dialog-item-in 0.35s ease-out both;
+}
+.dialog-stagger > *:nth-child(1) {
+  animation-delay: 0.05s;
+}
+.dialog-stagger > *:nth-child(2) {
+  animation-delay: 0.1s;
+}
+.dialog-stagger > *:nth-child(3) {
+  animation-delay: 0.15s;
+}
+.dialog-stagger > *:nth-child(4) {
+  animation-delay: 0.2s;
+}
+
+@keyframes dialog-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===== Search input focus width expansion ===== */
+.search-expand {
+  max-width: 100%;
+  transition:
+    width 0.3s ease,
+    min-width 0.3s ease;
+}
+.search-expand:focus-within {
+  min-width: 280px;
 }

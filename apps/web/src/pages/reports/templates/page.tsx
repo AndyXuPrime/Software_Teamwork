@@ -144,15 +144,15 @@ export function ReportTemplatesPage() {
       )}
 
       <div className="mb-6 grid gap-4 md:grid-cols-3">
-        <section className="rounded-lg border border-border bg-card p-4 hover:shadow-sm transition-shadow duration-200">
+        <section className="rounded-lg border border-border bg-card p-4 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
           <p className="text-sm text-muted-foreground">模板数量</p>
           <p className="mt-2 text-2xl font-semibold">{overview?.templateCount ?? '-'}</p>
         </section>
-        <section className="rounded-lg border border-border bg-card p-4 hover:shadow-sm transition-shadow duration-200">
+        <section className="rounded-lg border border-border bg-card p-4 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
           <p className="text-sm text-muted-foreground">素材数量</p>
           <p className="mt-2 text-2xl font-semibold">{overview?.materialCount ?? '-'}</p>
         </section>
-        <section className="rounded-lg border border-border bg-card p-4 hover:shadow-sm transition-shadow duration-200">
+        <section className="rounded-lg border border-border bg-card p-4 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
           <p className="text-sm text-muted-foreground">近 30 天报告</p>
           <p className="mt-2 text-2xl font-semibold">
             {overview?.reportCount ??

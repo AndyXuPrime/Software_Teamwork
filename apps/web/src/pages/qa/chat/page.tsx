@@ -41,7 +41,15 @@ import { useChatStore } from '@/stores/chat-store'
 // ══════════════════════════════════════════════════════════════════════════════
 
 function nextId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2)
+  const cryptoSource = globalThis.crypto
+  if (typeof cryptoSource?.randomUUID === 'function') {
+    return cryptoSource.randomUUID()
+  }
+  if (typeof cryptoSource?.getRandomValues !== 'function') {
+    throw new Error('Secure random generator unavailable')
+  }
+  const bytes = cryptoSource.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 function toSessionListItem(s: QASession, messages: QAMessage[]): QASessionListItem {
@@ -1284,11 +1292,12 @@ export function ChatPage() {
             </div>
             {chatPhase === 'empty' && (
               <div className="flex flex-wrap justify-center gap-2">
-                {SUGGESTED_PROMPTS.map((p) => (
+                {SUGGESTED_PROMPTS.map((p, i) => (
                   <button
                     key={p}
                     type="button"
-                    className="flex items-center rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-primary transition-all hover:bg-primary/10 hover:border-primary/50"
+                    className="flex items-center rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-primary transition-all hover:bg-primary/10 hover:border-primary/50 animate-[fade-in-up_0.4s_ease-out_both]"
+                    style={{ animationDelay: `${i * 150}ms` }}
                     onClick={() => handleSuggested(p)}
                   >
                     <ArrowUpRight className="mr-1 inline-block size-3.5 shrink-0" />

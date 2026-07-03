@@ -126,19 +126,19 @@ export function SystemSettings() {
         <p className="mb-6 text-sm text-muted-foreground">
           全局系统配置，包括 LLM API 连接、向量数据库连接、系统参数等。
         </p>
-        <div className="animate-pulse space-y-4 rounded-lg border border-border bg-card p-6">
-          <div className="h-5 w-24 rounded bg-muted" />
+        <div className="space-y-4 rounded-lg border border-border bg-card p-6">
+          <div className="h-5 w-24 rounded skeleton-shimmer" />
           <div className="grid grid-cols-2 gap-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i}>
-                <div className="mb-1 h-4 w-16 rounded bg-muted" />
-                <div className="h-8 w-full rounded bg-muted" />
+                <div className="mb-1 h-4 w-16 rounded skeleton-shimmer" />
+                <div className="h-8 w-full rounded skeleton-shimmer" />
               </div>
             ))}
           </div>
           <div className="flex gap-2">
-            <div className="h-8 w-24 rounded bg-muted" />
-            <div className="h-8 w-24 rounded bg-muted" />
+            <div className="h-8 w-24 rounded skeleton-shimmer" />
+            <div className="h-8 w-24 rounded skeleton-shimmer" />
           </div>
         </div>
       </div>

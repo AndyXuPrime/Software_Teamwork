@@ -24,6 +24,7 @@ on:
       - 'scripts/local/**'
       - 'scripts/tests/test_check_docker_environment.py'
       - 'scripts/tests/test_check_docker_policy.py'
+      - 'scripts/tests/test_local_dev_up_script.py'
       - 'scripts/tests/test_local_seed_contract.py'
       - '.github/workflows/docker-deploy-checks.yml'
   push:
@@ -49,6 +50,7 @@ on:
       - 'scripts/local/**'
       - 'scripts/tests/test_check_docker_environment.py'
       - 'scripts/tests/test_check_docker_policy.py'
+      - 'scripts/tests/test_local_dev_up_script.py'
       - 'scripts/tests/test_local_seed_contract.py'
       - '.github/workflows/docker-deploy-checks.yml'
 
@@ -103,6 +105,7 @@ jobs:
               'scripts/local/stop-backend.sh',
               'scripts/tests/test_check_docker_environment.py',
               'scripts/tests/test_check_docker_policy.py',
+              'scripts/tests/test_local_dev_up_script.py',
               'scripts/tests/test_local_seed_contract.py',
             ]);
 
@@ -199,6 +202,7 @@ jobs:
           python3 -m unittest \
             scripts.tests.test_check_docker_policy \
             scripts.tests.test_check_docker_environment \
+            scripts.tests.test_local_dev_up_script \
             scripts.tests.test_local_seed_contract
 
       - name: Validate Docker policy

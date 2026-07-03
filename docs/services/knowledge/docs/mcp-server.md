@@ -1,161 +1,149 @@
 # Knowledge MCP Server 协议与运行说明
 
-## 1. 当前状态与边界
+## 1. 当前边界
 
-本文记录当前 `develop@ce0b4774` 的 Knowledge MCP 运行事实，并指出与
-[`mcp-tools.md`](mcp-tools.md) 中四个只读模型工具目标契约的差距。
+Knowledge MCP 是 `services/knowledge` contract adapter 内的 Streamable HTTP
+服务器。它复用 adapter 的 Knowledge API、权限与错误处理，不允许 QA 直接访问
+PostgreSQL、Elasticsearch、MinIO 或 Python Knowledge Runtime。
 
-当前代码已经在 `services/knowledge/internal/mcp` 提供 Streamable HTTP MCP server。
-它复用 `cmd/adapter` 内的 RAGFlow runtime contract adapter，通过 in-process bridge
-调用 `/internal/v1/**` Knowledge 契约，不新增知识业务事实，也不让 QA 直接读取
-PostgreSQL、runtime MinIO、Elasticsearch/索引后端或 provider 内部状态。
+当前实现由 `services/knowledge/cmd/adapter` 启动两个监听器：
 
-当前实现与目标文档的关键差异：
+- `KNOWLEDGE_HTTP_ADDR`：Knowledge REST adapter，默认 `:8083`；
+- `KNOWLEDGE_MCP_ADDR`：可选 MCP 监听地址；为空时不启动，local 模板使用
+  `127.0.0.1:8093`。
 
-| 项 | 当前实现 | 目标/缺口 |
-| --- | --- | --- |
-| 启动方式 | `cmd/adapter` 在 `KNOWLEDGE_MCP_ADDR` 非空时额外启动一个 MCP HTTP server。 | 不使用 `KNOWLEDGE_MCP_PATH`；部署/QA 配置必须写完整 endpoint。 |
-| endpoint | 独立监听地址的根 endpoint，例如 `http://127.0.0.1:8093`。 | 如果后续改成 `/mcp` path，需同步本文和 QA seed。 |
-| 原生工具名 | 14 个原生工具，包含检索、回答、KB CRUD、文档 CRUD、chunks/content。 | #528/#529 目标只读模型工具是 `search`、`list_documents`、`get_document`、`get_chunk`，经 QA alias 后为 `knowledge__*`。 |
-| 用户上下文 | MCP HTTP 不信任调用方传入的 `X-User-*`，只接受 `X-Request-Id`；业务调用使用服务端配置的固定 `KNOWLEDGE_MCP_USER_ID`/roles/permissions。 | 若要按最终用户做知识库可见性，需 #505 后续收敛 QA discovery 与上下文传递设计。 |
-| QA 默认路径 | QA 仍保留内置 `search_knowledge` retrieval tool；远程 MCP 通过 `mcp_servers` 或环境 bootstrap 显式注册。 | 四个 `knowledge__*` 默认白名单和 citation 识别仍需收敛验证。 |
+两者属于同一宿主机进程，但不是同一端口。Gateway 不代理 MCP 监听器。
 
-## 2. 工具目录
+## 2. 工具目录与命名
 
-当前 `tools/list` 的原生工具顺序由 `ToolCatalog()` 固定：
+Knowledge MCP 当前通过官方 Go SDK 发布以下原生工具：
 
-| 原生工具名 | 读写 | 用途 | 备注 |
-| --- | --- | --- | --- |
-| `search_knowledge` | 读 | 调 `/internal/v1/knowledge-queries`，返回 ranked chunks。 | 当前 QA citation 主路径仍识别这个名称。 |
-| `answer_from_knowledge` | 读 + 模型调用 | 检索后通过 AI Gateway chat 合成回答。 | 仅在 `KNOWLEDGE_AI_GATEWAY_URL` 配置时可用。 |
-| `list_knowledge_bases` | 读 | 列出可见知识库。 | 走 adapter list。 |
-| `get_knowledge_base` | 读 | 读取单个知识库。 | 走 adapter get。 |
-| `create_knowledge_base` | 写 | 创建知识库。 | 需要配置的 MCP caller 具备 `knowledge:write`。 |
-| `update_knowledge_base` | 写 | 更新知识库。 | 需要 `knowledge:write`。 |
-| `delete_knowledge_base` | 写 | 软删除知识库。 | 需要 `knowledge:write`。 |
-| `list_documents` | 读 | 分页列出知识库文档。 | 原生名已与目标只读工具一致。 |
-| `get_document` | 读 | 读取文档详情。 | 原生名已与目标只读工具一致。 |
-| `create_document` | 写 | 上传 base64 文档内容并触发 runtime 处理。 | 需要 `knowledge:write`。 |
-| `update_document` | 写 | 更新文档 tags。 | 需要 `knowledge:write`。 |
-| `delete_document` | 写 | 软删除文档。 | 需要 `knowledge:write`。 |
-| `list_document_chunks` | 读 | 分页列出文档 chunks。 | 目标四工具中的 `get_chunk` 尚未按 chunk ID 单点读取。 |
-| `get_document_content` | 读 | 读取原始文档内容并 base64 返回。 | 输出不得直接暴露 runtime 内部对象引用。 |
+| 分类 | 原生工具 |
+| --- | --- |
+| 检索与回答 | `search_knowledge`、`answer_from_knowledge` |
+| 知识库 | `list_knowledge_bases`、`get_knowledge_base`、`create_knowledge_base`、`update_knowledge_base`、`delete_knowledge_base` |
+| 文档 | `list_documents`、`get_document`、`create_document`、`update_document`、`delete_document` |
+| 内容 | `list_document_chunks`、`get_document_content` |
 
-QA 注册 alias 后，模型侧工具名为 `<alias>__<原生工具名>`。例如 alias 为
-`knowledge` 时，当前检索工具会变成 `knowledge__search_knowledge`，不是
-`mcp-tools.md` 目标契约中的 `knowledge__search`。
+QA 用 alias 隔离服务器命名空间。alias 为 `knowledge` 时，模型侧名称为
+`knowledge__search_knowledge`、`knowledge__list_documents` 等，QA 调用前会移除
+alias 前缀。
 
-## 3. 传输、鉴权与上下文
+首期 QA 自动切换至少要求以下只读工具全部可发现：
 
-- 传输协议为 MCP Streamable HTTP。
-- 当前 MCP server 绑定在独立 `http.Server` 上，不挂载到主 Knowledge HTTP handler。
-- MCP HTTP 请求必须携带 `X-Service-Token`，值与 `KNOWLEDGE_SERVICE_TOKEN` 或
-  `INTERNAL_SERVICE_TOKEN` 一致；缺失或错误时返回 `401`。
-- 当前不支持自定义 token header；`X-Service-Token` 是代码内固定校验 header。
-- 服务端忽略调用方伪造的 `X-User-Id`、`X-User-Roles` 和 `X-User-Permissions`。
-  这些业务上下文来自启动配置：
+- `search_knowledge`
+- `list_documents`
+- `get_document`
+- `list_document_chunks`
 
-| 环境变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `KNOWLEDGE_MCP_ADDR` | 空 | 非空时启动 MCP server，例如 `127.0.0.1:8093`。 |
-| `KNOWLEDGE_MCP_USER_ID` | `knowledge_mcp_service` | MCP bridge 调用 adapter 时使用的固定用户 ID。 |
-| `KNOWLEDGE_MCP_PERMISSIONS` | `knowledge:read` | 固定权限集合；写工具需要包含 `knowledge:write`。 |
-| `KNOWLEDGE_MCP_ROLES` | 空 | 固定角色集合。 |
-| `KNOWLEDGE_SERVICE_TOKEN` / `INTERNAL_SERVICE_TOKEN` | 无 | MCP HTTP 入口校验和 bridge 调 adapter 的服务令牌。 |
-| `KNOWLEDGE_AI_GATEWAY_URL` | 空 | 配置后启用 `answer_from_knowledge` 的 AI Gateway chat client。 |
-| `KNOWLEDGE_AI_GATEWAY_SERVICE_TOKEN` | `INTERNAL_SERVICE_TOKEN` fallback | `answer_from_knowledge` 调 AI Gateway 的服务令牌。 |
+任一工具缺失、initialize 失败或 `tools/list` 失败时，QA 关闭该 MCP session，并
+保留内置 `search_knowledge` HTTP 工具作为检索回退。
 
-`X-Request-Id` 会从 MCP HTTP 请求透传到 adapter；缺失时 server 生成 `mcp_*`
-request id。不得把 service token、provider credential、runtime URL、SQL、object key
-或内部索引 payload 写入工具输出、SSE、前端响应或日志摘要。
+> [MCP 工具字段规范](mcp-tools.md)记录 issue #528 提出的四工具目标契约。当前
+> `develop` 已随 Knowledge Runtime adapter 落地上述 14 工具目录，工具改名、缩减
+> 或增加单 chunk 读取能力时，必须同时更新实现、QA allowlist、citation consumer 和
+> 两份文档，不能把目标契约误写成当前事实。
 
-## 4. QA 接入路径
+## 3. 传输与鉴权
 
-QA 侧远程 MCP 的正式配置路径是数据库 `mcp_servers`，环境变量
-`MCP_TRANSPORT`/`MCP_SERVER_*` 只作为 bootstrap 或本地调试入口。QA Manager 会：
+- 传输协议：MCP Streamable HTTP；
+- 服务端：`github.com/modelcontextprotocol/go-sdk/mcp`；
+- 访问令牌 header：固定为 `X-Service-Token`；
+- 有效令牌：与 Knowledge adapter 的 `KNOWLEDGE_SERVICE_TOKEN` 一致；
+- 未授权请求：MCP transport 处理前返回 HTTP `401`；
+- 运行时不启用 stdio，不通过公共 Gateway 暴露。
 
-1. 读取 runtime configuration 中启用的 MCP server。
-2. 用 `streamable_http` 连接 endpoint。
-3. 调 `tools/list`。
-4. 通过 alias 把原生工具名前缀化为 `<alias>__<tool>`。
-5. 与内置工具合并；重复工具名会导致 discovery 失败。
-6. 用 agent tool policy 按 `enabledToolNames` 过滤。
+当前 MCP listener 使用配置生成的受信任 caller：
 
-本地调试 Knowledge MCP 可使用：
+| 变量 | 用途 |
+| --- | --- |
+| `KNOWLEDGE_MCP_USER_ID` | adapter 内部请求的固定用户身份 |
+| `KNOWLEDGE_MCP_ROLES` | 固定角色集合 |
+| `KNOWLEDGE_MCP_PERMISSIONS` | 固定权限，默认 `knowledge:read` |
 
-```powershell
-cd D:\PROJECTS\Software_Teamwork\services\knowledge
-$env:KNOWLEDGE_MCP_ADDR = "127.0.0.1:8093"
-$env:KNOWLEDGE_MCP_USER_ID = "knowledge_mcp_service"
-$env:KNOWLEDGE_MCP_PERMISSIONS = "knowledge:read"
-$env:KNOWLEDGE_SERVICE_TOKEN = "local-dev-internal-service-token-change-me"
-$env:VENDOR_RUNTIME_URL = "http://127.0.0.1:9380"
-$env:VENDOR_RUNTIME_SERVICE_TOKEN = "local-dev-internal-service-token-change-me"
-go run ./cmd/adapter
+客户端只能透传 `X-Request-Id`。服务端不会信任客户端提供的
+`X-User-Id`、`X-User-Roles` 或 `X-User-Permissions`，因此不能通过伪造 header
+把只读 listener 提升为写权限。若后续改为最终用户级授权，必须先设计可验证的
+Gateway/QA 身份签名或 token exchange，不能直接信任普通 HTTP header。
+
+## 4. Agent 调用流程
+
+```text
+Knowledge adapter 启动
+  -> KNOWLEDGE_MCP_ADDR 非空时启动 Streamable HTTP listener
+  -> QA 使用 KNOWLEDGE_MCP_URL + service token initialize
+  -> QA tools/list 并加 knowledge__ alias
+  -> 校验四个必需只读工具
+  -> 模型调用 knowledge__search_knowledge
+  -> QA 移除 alias 并发送 tools/call
+  -> Knowledge MCP 用固定 caller 调 adapter
+  -> adapter 调 Knowledge Runtime 并返回 structuredContent
+  -> QA 从检索结果生成 citation snapshot
+  -> 模型按需列文档或 chunk，最后生成回答
 ```
 
-QA 环境 bootstrap 示例：
+QA 的 `citations.go` 已识别原生 `search_knowledge` 以及
+`*__search_knowledge` / `*.search_knowledge`，所以 alias 后的 MCP 检索仍会生成
+document/chunk citation。
 
-```powershell
-$env:MCP_TRANSPORT = "streamable_http"
-$env:MCP_SERVER_ALIAS = "knowledge"
-$env:MCP_SERVER_URL = "http://127.0.0.1:8093"
-$env:MCP_SERVER_TOKEN = "local-dev-internal-service-token-change-me"
-$env:MCP_SERVER_TOKEN_HEADER = "X-Service-Token"
-$env:MCP_TOOL_TIMEOUT = "30s"
-```
+## 5. 输入、输出与错误
 
-当前仓库尚未提供 Knowledge MCP 的默认 QA seed；默认 RAG smoke 仍要求模型使用内置
-`search_knowledge` 工具。把 Knowledge MCP 接入默认 QA 配置时，必须同步更新
-`enabledToolNames`、citation 工具名识别和 #125 smoke。
+每个工具的 input/output schema 由 Go SDK 根据 handler 的类型生成，并通过
+`tools/list` 发布。调用成功时业务结果位于 MCP `structuredContent`；失败时返回
+`CallToolResult.isError=true`。当前实现不额外包裹
+`requestId/toolName/status/data/error` 自定义 envelope。
 
-## 5. Agent 调用建议
+`search_knowledge` 返回 `queryId` 和 `results[]`；每条结果包含 score、
+knowledgeBaseId、documentId、chunkId、documentName、contentPreview，以及可选的
+章节、chunk 序号、类型和 tags。
 
-当前默认 QA RAG 主路径仍是内置 `search_knowledge`。显式注册 Knowledge MCP 后：
+`answer_from_knowledge` 只有在 Knowledge adapter 配置 AI Gateway client 时可用，
+并要求调用方提供 `modelProfileId`。QA 自己已经拥有回答循环，默认只把
+`search_knowledge` 作为 citation-producing 检索工具。
 
-- 只读问答优先使用 alias 后的检索工具，例如 `knowledge__search_knowledge`。
-- 浏览库/文档时使用 `knowledge__list_knowledge_bases`、`knowledge__list_documents`
-  和 `knowledge__get_document`。
-- 需要上下文展开时，当前实现可用 `knowledge__list_document_chunks` 或
-  `knowledge__get_document_content`；目标 `knowledge__get_chunk` 仍待实现/收敛。
-- 写工具默认不应进入普通 Agent 白名单；只有配置了 `knowledge:write` 的受控管理场景
-  才能启用 create/update/delete 工具。
-- `answer_from_knowledge` 会调用 AI Gateway chat，属于模型调用增强工具；缺少
-  `KNOWLEDGE_AI_GATEWAY_URL` 时会返回安全错误，不应作为默认可用能力宣传。
+## 6. 配置
 
-## 6. 联调与排障
+Knowledge 侧：
 
-联调至少覆盖：
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `KNOWLEDGE_MCP_ADDR` | 空 | MCP 监听地址；local 模板为 `127.0.0.1:8093` |
+| `KNOWLEDGE_MCP_USER_ID` | `knowledge_mcp_service` | 固定受信任 caller |
+| `KNOWLEDGE_MCP_ROLES` | 空 | 固定角色 |
+| `KNOWLEDGE_MCP_PERMISSIONS` | `knowledge:read` | 固定权限 |
+| `KNOWLEDGE_SERVICE_TOKEN` | 无 | REST 与 MCP 共用的内部服务令牌 |
 
-- 无 `X-Service-Token` 调 MCP endpoint 返回 `401`。
-- `tools/list` 返回 `ToolCatalog()` 中的 14 个原生工具。
-- `search_knowledge` 能通过 adapter bridge 调用 `knowledge-queries`。
-- 调用方伪造 `X-User-Permissions: knowledge:write` 时，写工具仍按服务端固定权限拒绝。
-- `answer_from_knowledge` 未配置 `KNOWLEDGE_AI_GATEWAY_URL` 时返回安全错误。
-- QA alias 前缀后不会与内置 `search_knowledge` 或其他 MCP server 工具重名。
+QA 侧：
 
-常见排障顺序：
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `KNOWLEDGE_MCP_URL` | 空 | 非空时启用 MCP 优先；local 为 `http://localhost:8093/mcp` |
+| `KNOWLEDGE_MCP_TOKEN` | `INTERNAL_SERVICE_TOKEN` | MCP 服务令牌 |
+| `KNOWLEDGE_MCP_TOKEN_HEADER` | `X-Service-Token` | token header |
+| `KNOWLEDGE_MCP_ALIAS` | `knowledge` | 模型侧命名空间 |
+| `KNOWLEDGE_MCP_TIMEOUT` | `MCP_TOOL_TIMEOUT` | 单次工具调用上限 |
 
-1. 检查 `KNOWLEDGE_MCP_ADDR` 是否非空，以及 adapter 日志是否出现
-   `knowledge MCP server listening`。
-2. 确认 QA 的 `MCP_SERVER_URL` 指向独立 MCP endpoint 根地址，而不是
-   `KNOWLEDGE_HTTP_ADDR` 或 `/mcp` path。
-3. 对齐 QA `MCP_SERVER_TOKEN` 与 Knowledge `KNOWLEDGE_SERVICE_TOKEN` /
-   `INTERNAL_SERVICE_TOKEN`。
-4. 检查 `MCP_SERVER_TOKEN_HEADER=X-Service-Token`。
-5. 检查 `MCP_SERVER_ALIAS` 是否符合 `^[a-z0-9_]{2,32}$`，以及 Agent config
-   `enabledToolNames` 是否包含 alias 后工具名。
-6. 用 `X-Request-Id` 关联 QA 与 Knowledge adapter 日志。
+## 7. 安全与兼容性
 
-## 7. 版本与兼容性
+- 写工具除 service token 外还要求受信任 caller 包含
+  `knowledge:write`；local 默认 listener 只有读权限。
+- 工具不得返回凭据、内部 URL、对象存储 key、向量或 provider 原始错误。
+- `get_document_content` 返回 base64 原文，默认 QA allowlist 不应启用它。
+- `search_knowledge` 是 citation-producing tool；改名时必须同步 QA citation 测试。
+- QA 默认 allowlist、历史配置和自定义配置是独立状态；新增工具不会自动进入已有
+  `enabledToolNames`。
+- 工具目录、schema 或错误语义发生破坏性变化时，必须同步 Knowledge MCP 测试、
+  QA discovery/fallback 测试和文档。
 
-当前实现是 `knowledge-mcp` `0.1.0`。新增只读工具或新增可选字段属于向后兼容；
-删除/改名工具、改变原生工具名、改变鉴权 header、收紧已有字段范围或改变错误语义
-属于破坏性变更，必须同步：
+## 8. 联调检查
 
-- 本文；
-- [`mcp-tools.md`](mcp-tools.md)；
-- QA tool policy/default config；
-- citation 工具名识别；
-- MCP client/platform tests；
-- #125 或对应 env-gated smoke runbook。
+1. 启动 Knowledge adapter，确认日志包含 MCP listener 地址；
+2. 无 token 或错误 token 调用 initialize，确认返回 `401`；
+3. 正确 token 调用 `tools/list`，确认 14 个原生工具；
+4. QA 使用 alias `knowledge` 后，确认模型看到
+   `knowledge__search_knowledge` 等名称；
+5. 缺少任一必需只读工具时，确认 QA 关闭 MCP client 并保留内置
+   `search_knowledge`；
+6. 使用检索工具回答，确认 citation snapshot 包含 knowledge base、document 和
+   chunk ID；
+7. 伪造用户或写权限 header，确认服务端仍使用配置中的固定 caller。

@@ -20,9 +20,9 @@ type ChatInputProps = {
   disableAttach?: boolean
   /** Called when file validation fails (size or type). */
   onAttachError?: (message: string) => void
-  /** Whether the assistant is currently streaming a response. */
+  /** Whether the AI is currently streaming a response. */
   streaming?: boolean
-  /** Called to stop the current streaming response. */
+  /** Called when the user clicks the stop button during streaming. */
   onStop?: () => void
 }
 
@@ -53,17 +53,13 @@ export default function ChatInput({
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
-    if (streaming) {
-      onStop?.()
-      return
-    }
     if (!trimmed || disabled) return
     onSend(trimmed)
     onChange('')
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
-  }, [value, disabled, streaming, onSend, onChange, onStop])
+  }, [value, disabled, onSend, onChange])
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -125,7 +121,7 @@ export default function ChatInput({
     [onFileSelect, onAttachError],
   )
 
-  const canSend = streaming ? Boolean(onStop) : value.trim().length > 0 && !disabled
+  const canSend = value.trim().length > 0 && !disabled
   const attachDisabled = disableAttach || disabled
 
   const isLarge = size === 'large'
@@ -185,19 +181,26 @@ export default function ChatInput({
           disabled={disabled}
           rows={1}
         />
-        <Button
-          size="icon"
-          onClick={handleSend}
-          disabled={!canSend}
-          className="shrink-0 rounded-full bg-primary text-primary-foreground transition-all duration-200 hover:bg-primary/90 hover:scale-110 hover:shadow-md active:scale-90"
-          aria-label={streaming ? '停止生成' : '发送消息'}
-        >
-          {streaming ? (
-            <Square className="size-4" aria-hidden="true" />
-          ) : (
+        {streaming ? (
+          <Button
+            size="icon"
+            onClick={onStop}
+            className="shrink-0 rounded-full bg-destructive text-destructive-foreground transition-all duration-200 hover:bg-destructive/90 hover:scale-110 hover:shadow-md active:scale-90"
+            aria-label="停止生成"
+          >
+            <Square className="size-3.5" aria-hidden="true" />
+          </Button>
+        ) : (
+          <Button
+            size="icon"
+            onClick={handleSend}
+            disabled={!canSend}
+            className="shrink-0 rounded-full bg-primary text-primary-foreground transition-all duration-200 hover:bg-primary/90 hover:scale-110 hover:shadow-md active:scale-90"
+            aria-label="发送消息"
+          >
             <Send className="size-4" aria-hidden="true" />
-          )}
-        </Button>
+          </Button>
+        )}
       </div>
     </div>
   )
