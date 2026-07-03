@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	githubDevelopCompareAPI = "https://api.github.com/repos/Sakayori-Iroha-168/Software_Teamwork/compare/develop..."
+	githubDevelopCompareAPI = "https://api.github.com/repos/Sakayori-Iroha-168/Software_Teamwork/compare/"
 	appVersionCacheTTL      = 5 * time.Minute
 
 	appFreshnessCurrent   = "current"
@@ -73,9 +73,11 @@ type gitHubCommitResponse struct {
 }
 
 type gitHubCompareResponse struct {
-	AheadBy    int                  `json:"ahead_by"`
-	BehindBy   int                  `json:"behind_by"`
-	BaseCommit gitHubCommitResponse `json:"base_commit"`
+	AheadBy         int                    `json:"ahead_by"`
+	BehindBy        int                    `json:"behind_by"`
+	BaseCommit      gitHubCommitResponse   `json:"base_commit"`
+	MergeBaseCommit gitHubCommitResponse   `json:"merge_base_commit"`
+	Commits         []gitHubCommitResponse `json:"commits"`
 }
 
 func newGitHubAppVersionChecker(client *http.Client, logger *slog.Logger, token string) *gitHubAppVersionChecker {
@@ -200,27 +202,38 @@ func (c *gitHubAppVersionChecker) fetchCompareFreshness(ctx context.Context, cur
 		return unknownAppVersionFreshness(currentSHA, checkedAt, appFreshnessReasonInvalidResponse)
 	}
 
-	latestSHA := normalizeCommitSHA(body.BaseCommit.SHA)
+	latestCommit := latestDevelopCommit(body)
+	latestSHA := normalizeCommitSHA(latestCommit.SHA)
 	if latestSHA == "" {
 		c.warnGitHubFallback(ctx, checkedAt, appFreshnessReasonInvalidResponse, 0)
 		return unknownAppVersionFreshness(currentSHA, checkedAt, appFreshnessReasonInvalidResponse)
 	}
 
 	status := appFreshnessCurrent
-	if body.BehindBy > 0 {
+	if body.AheadBy > 0 {
 		status = appFreshnessDifferent
 	}
 	return AppVersionFreshness{
 		Status:     status,
 		CurrentSHA: currentSHA,
 		LatestSHA:  latestSHA,
-		LatestURL:  strings.TrimSpace(body.BaseCommit.HTMLURL),
+		LatestURL:  strings.TrimSpace(latestCommit.HTMLURL),
 		CheckedAt:  checkedAt,
 	}
 }
 
 func (c *gitHubAppVersionChecker) compareURL(currentSHA string) string {
-	return strings.TrimRight(c.apiURL, "/") + url.PathEscape(currentSHA)
+	return strings.TrimRight(c.apiURL, "/") + "/" + url.PathEscape(currentSHA) + "...develop"
+}
+
+func latestDevelopCommit(body gitHubCompareResponse) gitHubCommitResponse {
+	if body.AheadBy > 0 && len(body.Commits) > 0 {
+		return body.Commits[len(body.Commits)-1]
+	}
+	if body.BehindBy > 0 {
+		return body.MergeBaseCommit
+	}
+	return body.BaseCommit
 }
 
 func (c *gitHubAppVersionChecker) warnGitHubFallback(ctx context.Context, checkedAt time.Time, reason string, statusCode int) {

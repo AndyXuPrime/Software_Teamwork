@@ -20,10 +20,10 @@ func TestAppVersionFreshnessReturnsCurrentWhenBuildIncludesDevelop(t *testing.T)
 	var capturedAuthorization string
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedAuthorization = r.Header.Get("Authorization")
-		if r.URL.Path != "/compare/develop..."+currentSHA {
+		if r.URL.Path != "/compare/"+currentSHA+"...develop" {
 			t.Fatalf("github path = %q", r.URL.Path)
 		}
-		writeAppVersionCompareResponse(t, w, latestSHA, 1, 0)
+		writeAppVersionCompareResponse(t, w, currentSHA, latestSHA, nil, 0, 1)
 	}))
 	defer github.Close()
 
@@ -56,14 +56,14 @@ func TestAppVersionFreshnessReturnsCurrentWhenBuildIncludesDevelop(t *testing.T)
 	}
 }
 
-func TestAppVersionFreshnessReturnsDifferentWhenBuildIsBehindDevelop(t *testing.T) {
+func TestAppVersionFreshnessReturnsDifferentWhenCurrentSHAIsDevelopAncestor(t *testing.T) {
 	const latestSHA = "abcdef1234567890"
 	const currentSHA = "1111111111111111"
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/compare/develop..."+currentSHA {
+		if r.URL.Path != "/compare/"+currentSHA+"...develop" {
 			t.Fatalf("github path = %q", r.URL.Path)
 		}
-		writeAppVersionCompareResponse(t, w, latestSHA, 0, 2)
+		writeAppVersionCompareResponse(t, w, currentSHA, currentSHA, []string{"2222222222222222", latestSHA}, 2, 0)
 	}))
 	defer github.Close()
 
@@ -118,7 +118,7 @@ func TestAppVersionFreshnessCachesFreshnessByCurrentSHA(t *testing.T) {
 	calls := 0
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		writeAppVersionCompareResponse(t, w, latestSHA, 0, 1)
+		writeAppVersionCompareResponse(t, w, currentSHA, currentSHA, []string{latestSHA}, 1, 0)
 	}))
 	defer github.Close()
 
@@ -143,14 +143,14 @@ func TestAppVersionFreshnessCoalescesConcurrentGitHubRequests(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/compare/develop..."+currentSHA {
+		if r.URL.Path != "/compare/"+currentSHA+"...develop" {
 			t.Fatalf("github path = %q", r.URL.Path)
 		}
 		if atomic.AddInt64(&calls, 1) == 1 {
 			close(started)
 		}
 		<-release
-		writeAppVersionCompareResponse(t, w, latestSHA, 0, 1)
+		writeAppVersionCompareResponse(t, w, currentSHA, currentSHA, []string{latestSHA}, 1, 0)
 	}))
 	defer github.Close()
 
@@ -220,7 +220,7 @@ func newAppVersionTestServer(t *testing.T, githubURL string, githubToken string)
 func newAppVersionTestChecker(t *testing.T, githubURL string, githubToken string) *gitHubAppVersionChecker {
 	t.Helper()
 	checker := newGitHubAppVersionChecker(http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)), githubToken)
-	checker.apiURL = strings.TrimRight(githubURL, "/") + "/compare/develop..."
+	checker.apiURL = strings.TrimRight(githubURL, "/") + "/compare"
 	checker.now = func() time.Time {
 		return time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC)
 	}
@@ -239,16 +239,28 @@ func decodeAppVersionJSON(t *testing.T, r io.Reader, target any) {
 	}
 }
 
-func writeAppVersionCompareResponse(t *testing.T, w http.ResponseWriter, latestSHA string, aheadBy int, behindBy int) {
+func writeAppVersionCompareResponse(t *testing.T, w http.ResponseWriter, baseSHA string, mergeBaseSHA string, commitSHAs []string, aheadBy int, behindBy int) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
+	commits := make([]map[string]string, 0, len(commitSHAs))
+	for _, sha := range commitSHAs {
+		commits = append(commits, map[string]string{
+			"sha":      sha,
+			"html_url": "https://github.test/commit/" + sha,
+		})
+	}
 	body := map[string]any{
 		"ahead_by":  aheadBy,
 		"behind_by": behindBy,
 		"base_commit": map[string]string{
-			"sha":      latestSHA,
-			"html_url": "https://github.test/commit/" + latestSHA,
+			"sha":      baseSHA,
+			"html_url": "https://github.test/commit/" + baseSHA,
 		},
+		"merge_base_commit": map[string]string{
+			"sha":      mergeBaseSHA,
+			"html_url": "https://github.test/commit/" + mergeBaseSHA,
+		},
+		"commits": commits,
 	}
 	if err := json.NewEncoder(w).Encode(body); err != nil {
 		t.Fatalf("Encode() error = %v", err)
