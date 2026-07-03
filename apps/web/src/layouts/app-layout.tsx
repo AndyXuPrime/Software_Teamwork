@@ -188,8 +188,9 @@ export function AppLayout({ children }: PropsWithChildren) {
           <Link
             aria-label="打开个人资料"
             className={cn(
-              'hidden max-w-40 items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-2 py-1 transition-colors hover:border-border hover:bg-muted hover:text-foreground sm:inline-flex',
-              pathname === '/profile' && 'border-primary/30 bg-primary/10 text-primary font-medium',
+              'hidden max-w-40 items-center gap-1 rounded-md border border-border bg-background px-2 py-1 shadow-sm transition-all hover:border-ring/30 hover:shadow hover:text-foreground sm:inline-flex',
+              pathname === '/profile' &&
+                'border-primary/40 bg-primary/10 text-primary shadow-none font-medium',
             )}
             to="/profile"
           >
