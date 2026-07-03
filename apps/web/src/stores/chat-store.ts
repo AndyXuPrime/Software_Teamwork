@@ -151,8 +151,16 @@ export const useChatStore = create<ChatState>()(
         })
         // Delete persisted key *after* set so persist middleware
         // doesn't re-create it from the empty sessionIds.
-        try { localStorage.removeItem('qa-sessions-ids') } catch { /* noop */ }
-        try { useChatStore.persist.clearStorage() } catch { /* noop */ }
+        try {
+          localStorage.removeItem('qa-sessions-ids')
+        } catch {
+          /* noop */
+        }
+        try {
+          useChatStore.persist.clearStorage()
+        } catch {
+          /* noop */
+        }
       },
 
       clearError: () => set({ error: null, lastFailedMsg: null }),
