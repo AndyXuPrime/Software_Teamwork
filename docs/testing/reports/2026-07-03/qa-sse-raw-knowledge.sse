@@ -1,0 +1,82 @@
+event: message.created
+id: 1
+data: {"assistantMessageId":"b875278b-7b36-4e9f-8f88-affce39e779f","responseRunId":"7096279d-0729-4938-8a38-d7dab9d3643a","status":"running","userMessageId":"2462bbe2-a2d2-4ab0-a8f0-9136b3e62e6f"}
+
+event: agent.iteration.started
+id: 2
+data: {"iterationNo":1,"responseRunId":"7096279d-0729-4938-8a38-d7dab9d3643a"}
+
+event: reasoning.step
+id: 3
+data: {"detail":"模型开始处理当前步骤","label":"生成回答","status":"running","type":"generation"}
+
+event: reasoning.step
+id: 4
+data: {"detail":"模型完成当前步骤","label":"生成回答","status":"done","type":"generation"}
+
+event: tool.started
+id: 5
+data: {"arguments":{"knowledge_base_count":1,"query_empty":false,"query_length":38,"score_threshold":0.2,"tool":"search_knowledge","top_k":5},"iterationNo":1,"mcpServerName":"qa_builtin","modelInvocationId":"7bd9c281-8ca4-4e4a-9eac-4d542da19490","summary":"正在执行工具 search_knowledge","tool":"search_knowledge","toolCallId":"call_2OBQxQiOerQgEUCPB18670LQ"}
+
+event: reasoning.step
+id: 6
+data: {"detail":"开始调用工具 search_knowledge","label":"调用工具","status":"running","type":"tool_call"}
+
+event: tool.failed
+id: 7
+data: {"arguments":{"knowledge_base_count":1,"query_empty":false,"query_length":38,"score_threshold":0.2,"tool":"search_knowledge","top_k":5},"iterationNo":1,"mcpServerName":"qa_builtin","modelInvocationId":"7bd9c281-8ca4-4e4a-9eac-4d542da19490","result":{"error":"retrieval_failed","message":"knowledge retrieval service failed","sanitized":true,"tool":"search_knowledge"},"summary":"工具 search_knowledge 执行失败","tool":"search_knowledge","toolCallId":"call_2OBQxQiOerQgEUCPB18670LQ"}
+
+event: reasoning.step
+id: 8
+data: {"detail":"工具 search_knowledge 调用失败","label":"调用工具","status":"failed","type":"tool_call"}
+
+event: agent.iteration.started
+id: 9
+data: {"iterationNo":2,"responseRunId":"7096279d-0729-4938-8a38-d7dab9d3643a"}
+
+event: reasoning.step
+id: 10
+data: {"detail":"模型开始处理当前步骤","label":"生成回答","status":"running","type":"generation"}
+
+event: reasoning.step
+id: 11
+data: {"detail":"模型完成当前步骤","label":"生成回答","status":"done","type":"generation"}
+
+event: tool.started
+id: 12
+data: {"arguments":{"knowledge_base_count":1,"query_empty":false,"query_length":23,"score_threshold":0,"tool":"search_knowledge","top_k":10},"iterationNo":2,"mcpServerName":"qa_builtin","modelInvocationId":"e4dc2d53-418a-47c1-b044-b0941e7fa795","summary":"正在执行工具 search_knowledge","tool":"search_knowledge","toolCallId":"call_fBrKJkEpPmW5mWG9Av0PqcAt"}
+
+event: reasoning.step
+id: 13
+data: {"detail":"开始调用工具 search_knowledge","label":"调用工具","status":"running","type":"tool_call"}
+
+event: tool.failed
+id: 14
+data: {"arguments":{"knowledge_base_count":1,"query_empty":false,"query_length":23,"score_threshold":0,"tool":"search_knowledge","top_k":10},"iterationNo":2,"mcpServerName":"qa_builtin","modelInvocationId":"e4dc2d53-418a-47c1-b044-b0941e7fa795","result":{"error":"retrieval_failed","message":"knowledge retrieval service failed","sanitized":true,"tool":"search_knowledge"},"summary":"工具 search_knowledge 执行失败","tool":"search_knowledge","toolCallId":"call_fBrKJkEpPmW5mWG9Av0PqcAt"}
+
+event: reasoning.step
+id: 15
+data: {"detail":"工具 search_knowledge 调用失败","label":"调用工具","status":"failed","type":"tool_call"}
+
+event: agent.iteration.started
+id: 16
+data: {"iterationNo":3,"responseRunId":"7096279d-0729-4938-8a38-d7dab9d3643a"}
+
+event: reasoning.step
+id: 17
+data: {"detail":"模型开始处理当前步骤","label":"生成回答","status":"running","type":"generation"}
+
+event: heartbeat
+data: {"status":"alive"}
+
+event: reasoning.step
+id: 18
+data: {"detail":"模型完成当前步骤","label":"生成回答","status":"done","type":"generation"}
+
+event: answer.delta
+id: 19
+data: {"index":0,"messageId":"b875278b-7b36-4e9f-8f88-affce39e779f","text":"抱歉，我当前无法从知识库检索到 `kb_local_demo` 的内容，因此不能确认 local demo 的测试内容。"}
+
+event: answer.completed
+id: 20
+data: {"latencyMs":16111,"messageId":"b875278b-7b36-4e9f-8f88-affce39e779f","responseRunId":"7096279d-0729-4938-8a38-d7dab9d3643a","totalTokens":2363}

@@ -1,0 +1,8 @@
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+Connection: keep-alive
+Content-Type: text/event-stream
+X-Accel-Buffering: no
+X-Request-Id: 78601e94b9255cd8a68f7545380689fa
+Date: Fri, 03 Jul 2026 15:16:52 GMT
+Transfer-Encoding: chunked

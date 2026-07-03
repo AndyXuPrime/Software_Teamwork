@@ -1,0 +1,7 @@
+HTTP/1.1 404 Not Found
+Content-Type: application/json; charset=utf-8
+X-Request-Id: 7d8dafdaa48e63307e90e3dfd2e7e2c6
+Date: Fri, 03 Jul 2026 15:19:04 GMT
+Content-Length: 113
+
+{"error":{"code":"not_found","message":"conversation not found","requestId":"7d8dafdaa48e63307e90e3dfd2e7e2c6"}}

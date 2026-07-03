@@ -1,0 +1,7 @@
+HTTP/1.1 400 Bad Request
+Content-Type: application/json; charset=utf-8
+X-Request-Id: 03707a0aee47721f8c8642b4449de3b5
+Date: Fri, 03 Jul 2026 15:19:04 GMT
+Content-Length: 185
+
+{"error":{"code":"validation_error","message":"request validation failed","requestId":"03707a0aee47721f8c8642b4449de3b5","fields":{"message":"must be between 1 and 32000 characters"}}}

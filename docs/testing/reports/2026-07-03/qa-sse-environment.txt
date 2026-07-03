@@ -1,0 +1,41 @@
+QA SSE behavior verification environment snapshot
+Date: 2026-07-03
+Task: T-013 / GitHub issue #498
+Branch: Test/test/qa-sse-behavior-verification
+Head commit: 801ff74cceb694ac07d26cacb70521b35f44e6e5
+Base branch: upstream/develop @ 801ff74cceb694ac07d26cacb70521b35f44e6e5
+
+Tooling:
+- Go: go version go1.25.11 windows/amd64
+- Docker client/server: 29.2.1 / 29.2.1
+- Bash: GNU bash 5.3.9(1)-release (x86_64-pc-linux-gnu)
+
+Local service readiness:
+- Gateway healthz: HTTP 200, status ok
+- Gateway readyz: HTTP 200, status ready
+- QA readyz: HTTP 200, status ready
+- AI Gateway readyz: HTTP 503 degraded
+  - config_store: ok
+  - chat_profile: ok
+  - embedding_profile: missing
+  - rerank_profile: missing
+- Knowledge readyz: HTTP 503 degraded
+  - vendor_runtime_ok: false
+  - error: vendor runtime unavailable
+  - ingestion_diagnostic: knowledge runtime API is unavailable
+
+Docker infrastructure:
+- postgres: up, healthy
+- redis: up, healthy
+- qdrant: up, healthy
+- minio: up, healthy
+
+SSE run identifiers:
+- Session ID: 4965f7d6-1e15-4f76-96ba-fceafb8fc4a1
+- Completed responseRunId: 7096279d-0729-4938-8a38-d7dab9d3643a
+- Abort responseRunId: 5d19ee38-0e6d-4eb0-9d92-3594b9350a7d
+
+Security handling:
+- Internal service token was read from local deploy/.env in memory only.
+- No auth credential, API key, provider key, database URL, object key, or raw prompt was committed.
+- Raw .local logs were scanned but not committed.

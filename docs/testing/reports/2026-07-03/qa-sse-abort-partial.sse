@@ -1,0 +1,11 @@
+event: message.created
+id: 1
+data: {"assistantMessageId":"796a7e30-3639-4f29-8c0e-0b3368d37ae9","responseRunId":"5d19ee38-0e6d-4eb0-9d92-3594b9350a7d","status":"running","userMessageId":"1e8a3a8e-a9d3-4101-80c3-51e4ded5550b"}
+
+event: agent.iteration.started
+id: 2
+data: {"iterationNo":1,"responseRunId":"5d19ee38-0e6d-4eb0-9d92-3594b9350a7d"}
+
+event: reasoning.step
+id: 3
+data: {"detail":"模型开始处理当前步骤","label":"生成回答","status":"running","type":"generation"}

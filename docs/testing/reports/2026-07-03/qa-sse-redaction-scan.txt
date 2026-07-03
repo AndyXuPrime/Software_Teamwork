@@ -1,0 +1,28 @@
+{
+  "scanned_files": [
+    "docs\\testing\\reports\\2026-07-03\\qa-sse-abort-partial.sse",
+    "docs\\testing\\reports\\2026-07-03\\qa-sse-abort-run.json",
+    "docs\\testing\\reports\\2026-07-03\\qa-sse-analysis.json",
+    "docs\\testing\\reports\\2026-07-03\\qa-sse-behavior-test-report.md",
+    "docs\\testing\\reports\\2026-07-03\\qa-sse-environment.txt",
+    "docs\\testing\\reports\\2026-07-03\\qa-sse-headers.txt",
+    "docs\\testing\\reports\\2026-07-03\\qa-sse-raw-knowledge.sse",
+    "docs\\testing\\reports\\2026-07-03\\qa-sse-replay.json",
+    "docs\\testing\\reports\\2026-07-03\\qa-sse-run.json",
+    "docs\\testing\\reports\\2026-07-03\\qa-sse-tool-calls.json",
+    "docs\\testing\\reports\\2026-07-03\\qa-invalid-session-http.txt",
+    "docs\\testing\\reports\\2026-07-03\\qa-empty-message-http.txt",
+    ".local\\logs\\qa.log",
+    ".local\\logs\\gateway.log",
+    ".local\\logs\\ai-gateway.log",
+    ".local\\logs\\knowledge.log"
+  ],
+  "hit_count": 4,
+  "hits": [
+    {
+      "file": ".local\\logs\\knowledge.log",
+      "pattern": "internal_url",
+      "count": 4
+    }
+  ]
+}
