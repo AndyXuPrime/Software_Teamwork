@@ -371,6 +371,22 @@ func TestCreateOutlineRenumbersAndVersions(t *testing.T) {
 	if outline.Sections[1].Children[0].Numbering != "2.1" {
 		t.Fatalf("expected renumbered child 2.1, got %q", outline.Sections[1].Children[0].Numbering)
 	}
+	sections, err := svc.ListSections(context.Background(), actor, report.ID)
+	if err != nil {
+		t.Fatalf("ListSections() after CreateOutline error = %v", err)
+	}
+	if len(sections) != 3 {
+		t.Fatalf("ListSections() len = %d, want 3 outline skeletons: %+v", len(sections), sections)
+	}
+	if sections[0].Title != "Intro" || sections[0].Numbering != "1" || sections[0].Level != 1 {
+		t.Fatalf("first skeleton metadata = %+v", sections[0])
+	}
+	if sections[1].Title != "Body" || sections[1].Numbering != "2" || sections[1].Level != 1 {
+		t.Fatalf("second skeleton metadata = %+v", sections[1])
+	}
+	if sections[2].Title != "Detail" || sections[2].Numbering != "2.1" || sections[2].Level != 2 || sections[2].ParentID != sections[1].ID {
+		t.Fatalf("child skeleton metadata = %+v, parent = %+v", sections[2], sections[1])
+	}
 
 	second, err := svc.CreateOutline(context.Background(), actor, report.ID, CreateOutlineInput{
 		Source:   OutlineSourceAI,
@@ -399,33 +415,30 @@ func TestUpdateOutlineSyncsCurrentOutlineSectionSkeletons(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateOutline() error = %v", err)
 	}
-	repo.sections["section-overview"] = ReportSection{
-		ID:               "section-overview",
-		ReportID:         report.ID,
-		OutlineID:        outline.ID,
-		OutlineNodeID:    "node-overview",
-		Title:            "Overview",
-		Level:            1,
-		SortOrder:        0,
-		Numbering:        "1",
-		Content:          "keep generated body",
-		GenerationStatus: JobStatusSucceeded,
-		ContentSource:    ContentSourceAI,
-		Version:          3,
+	overviewID := ""
+	removedID := ""
+	for id, section := range repo.sections {
+		switch section.OutlineNodeID {
+		case "node-overview":
+			overviewID = id
+		case "node-removed":
+			removedID = id
+		}
 	}
-	repo.sections["section-removed"] = ReportSection{
-		ID:               "section-removed",
-		ReportID:         report.ID,
-		OutlineID:        outline.ID,
-		OutlineNodeID:    "node-removed",
-		Title:            "Removed",
-		Level:            1,
-		SortOrder:        1,
-		Numbering:        "2",
-		GenerationStatus: JobStatusPending,
-		ContentSource:    ContentSourceAI,
-		Version:          1,
+	if overviewID == "" || removedID == "" {
+		t.Fatalf("CreateOutline() did not create expected skeletons: %+v", repo.sections)
 	}
+	overviewSeed := repo.sections[overviewID]
+	overviewSeed.Content = "keep generated body"
+	overviewSeed.GenerationStatus = JobStatusSucceeded
+	overviewSeed.ContentSource = ContentSourceAI
+	overviewSeed.Version = 3
+	repo.sections[overviewID] = overviewSeed
+	removedSeed := repo.sections[removedID]
+	removedSeed.GenerationStatus = JobStatusPending
+	removedSeed.ContentSource = ContentSourceAI
+	removedSeed.Version = 1
+	repo.sections[removedID] = removedSeed
 
 	updated, err := svc.UpdateOutline(context.Background(), actor, report.ID, outline.ID, UpdateOutlineInput{
 		Sections: []ReportOutlineNode{
@@ -445,7 +458,7 @@ func TestUpdateOutlineSyncsCurrentOutlineSectionSkeletons(t *testing.T) {
 		t.Fatalf("updated outline was not renumbered: %+v", updated.Sections)
 	}
 
-	overview := repo.sections["section-overview"]
+	overview := repo.sections[overviewID]
 	if overview.Title != "Renamed overview" || overview.Level != 1 || overview.SortOrder != 0 || overview.Numbering != "1" {
 		t.Fatalf("existing section metadata was not synced: %+v", overview)
 	}
@@ -463,19 +476,32 @@ func TestUpdateOutlineSyncsCurrentOutlineSectionSkeletons(t *testing.T) {
 	if added.ID == "" {
 		t.Fatalf("missing section skeleton for added outline node; sections = %+v", repo.sections)
 	}
-	if added.OutlineID != outline.ID || added.ParentID != "section-overview" || added.Title != "Added child" || added.Level != 2 || added.Numbering != "1.1" || added.SortOrder != 1 {
+	if added.OutlineID != outline.ID || added.ParentID != overviewID || added.Title != "Added child" || added.Level != 2 || added.Numbering != "1.1" || added.SortOrder != 1 {
 		t.Fatalf("added section skeleton metadata = %+v", added)
 	}
 	if added.GenerationStatus != JobStatusPending || added.ContentSource != ContentSourceAI || added.Version != 1 {
 		t.Fatalf("added section skeleton generation defaults = %+v", added)
 	}
-	if _, ok := repo.sections["section-removed"]; !ok {
+	if _, ok := repo.sections[removedID]; !ok {
 		t.Fatalf("removed outline section row should remain for history and filtering")
+	}
+
+	visibleSections, err := svc.ListSections(context.Background(), actor, report.ID)
+	if err != nil {
+		t.Fatalf("ListSections() error = %v", err)
+	}
+	if len(visibleSections) != 2 {
+		t.Fatalf("visible sections len = %d, want 2 current-outline sections: %+v", len(visibleSections), visibleSections)
+	}
+	for _, section := range visibleSections {
+		if section.ID == removedID || section.OutlineNodeID == "node-removed" {
+			t.Fatalf("removed outline section was returned by ListSections: %+v", visibleSections)
+		}
 	}
 }
 
 func TestDeleteOutlineSectionRenumbersRemaining(t *testing.T) {
-	svc, _ := newTestService()
+	svc, repo := newTestService()
 	report := mustCreateReport(t, svc, "owner-1")
 	actor := RequestContext{UserID: "owner-1"}
 
@@ -491,6 +517,19 @@ func TestDeleteOutlineSectionRenumbersRemaining(t *testing.T) {
 		t.Fatalf("CreateOutline() error = %v", err)
 	}
 	bodyID := outline.Sections[1].ID
+	bodySectionID := ""
+	conclusionSectionID := ""
+	for id, section := range repo.sections {
+		switch section.OutlineNodeID {
+		case bodyID:
+			bodySectionID = id
+		case outline.Sections[2].ID:
+			conclusionSectionID = id
+		}
+	}
+	if bodySectionID == "" || conclusionSectionID == "" {
+		t.Fatalf("CreateOutline() did not create expected section skeletons: %+v", repo.sections)
+	}
 
 	updated, err := svc.DeleteOutlineSection(context.Background(), actor, report.ID, outline.ID, bodyID)
 	if err != nil {
@@ -504,6 +543,51 @@ func TestDeleteOutlineSectionRenumbersRemaining(t *testing.T) {
 	}
 	if !updated.ManualEdited {
 		t.Fatalf("expected manualEdited = true after delete")
+	}
+	conclusion := repo.sections[conclusionSectionID]
+	if conclusion.Numbering != "2" || conclusion.SortOrder != 1 || conclusion.Level != 1 {
+		t.Fatalf("remaining section metadata was not synced after delete: %+v", conclusion)
+	}
+	if _, err := svc.GetSection(context.Background(), actor, report.ID, bodySectionID); err == nil {
+		t.Fatalf("GetSection() for removed outline node error = nil, want not_found")
+	} else if appErr, ok := Classify(err); !ok || appErr.Code != CodeNotFound {
+		t.Fatalf("GetSection() for removed outline node error = %v, want not_found", err)
+	}
+	renamed := "Should not update"
+	if _, err := svc.UpdateSection(context.Background(), actor, report.ID, bodySectionID, UpdateSectionInput{Title: &renamed}); err == nil {
+		t.Fatalf("UpdateSection() for removed outline node error = nil, want not_found")
+	} else if appErr, ok := Classify(err); !ok || appErr.Code != CodeNotFound {
+		t.Fatalf("UpdateSection() for removed outline node error = %v, want not_found", err)
+	}
+}
+
+func TestListSectionsExcludesSkeletonsAfterDeletingLastOutlineSection(t *testing.T) {
+	svc, _ := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	outline, err := svc.CreateOutline(context.Background(), actor, report.ID, CreateOutlineInput{
+		Source:   OutlineSourceManual,
+		Sections: []ReportOutlineNode{{Title: "Intro"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateOutline() error = %v", err)
+	}
+
+	updated, err := svc.DeleteOutlineSection(context.Background(), actor, report.ID, outline.ID, outline.Sections[0].ID)
+	if err != nil {
+		t.Fatalf("DeleteOutlineSection() error = %v", err)
+	}
+	if len(updated.Sections) != 0 {
+		t.Fatalf("expected outline to be empty after deleting last section, got %+v", updated.Sections)
+	}
+
+	visibleSections, err := svc.ListSections(context.Background(), actor, report.ID)
+	if err != nil {
+		t.Fatalf("ListSections() error = %v", err)
+	}
+	if len(visibleSections) != 0 {
+		t.Fatalf("visible sections len = %d, want 0 after deleting last outline section: %+v", len(visibleSections), visibleSections)
 	}
 }
 

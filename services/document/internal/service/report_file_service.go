@@ -13,6 +13,7 @@ const docxContentType = "application/vnd.openxmlformats-officedocument.wordproce
 type ReportFileRepository interface {
 	GetReportByID(ctx context.Context, id string) (Report, error)
 	ListReportSections(ctx context.Context, reportID string) ([]ReportSection, error)
+	ListReportOutlines(ctx context.Context, reportID string) ([]ReportOutline, error)
 	FindReportJobByID(ctx context.Context, id string) (ReportJob, error)
 	CreateReportJob(ctx context.Context, value ReportJob) (ReportJob, error)
 	UpdateReportJobStatus(ctx context.Context, id string, status JobStatus, errorCode, errorMessage string, startedAt, finishedAt *time.Time) (ReportJob, error)
@@ -243,6 +244,11 @@ func (s *ReportFileService) ExecuteReportFileCreation(ctx context.Context, paylo
 	if err != nil {
 		_ = s.failReportFile(ctx, reportFile, "section_load_failed")
 		return dependencyError("list report sections", err)
+	}
+	sections, err = filterSectionsForCurrentOutline(ctx, s.repo, report.ID, sections)
+	if err != nil {
+		_ = s.failReportFile(ctx, reportFile, "section_load_failed")
+		return err
 	}
 	data, err := s.generator.GenerateDOCX(ctx, report, sections)
 	if err != nil {

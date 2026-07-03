@@ -220,6 +220,10 @@ func (f *contractReportFileRepository) ListReportSections(context.Context, strin
 	return nil, errors.New("unexpected ListReportSections call")
 }
 
+func (f *contractReportFileRepository) ListReportOutlines(context.Context, string) ([]service.ReportOutline, error) {
+	return nil, errors.New("unexpected ListReportOutlines call")
+}
+
 func (f *contractReportFileRepository) FindReportJobByID(context.Context, string) (service.ReportJob, error) {
 	return service.ReportJob{}, errors.New("unexpected FindReportJobByID call")
 }

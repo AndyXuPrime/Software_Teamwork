@@ -1464,9 +1464,10 @@ describe('ReportGeneratePage', () => {
     expect(await within(sectionList).findByText('已完成')).toBeVisible()
   })
 
-  it('uses saved outline titles in the content section list when section rows are stale', async () => {
+  it('auto-saves dirty outline before generating content and uses saved titles', async () => {
     let savedOutline = false
     let contentJobCreated = false
+    const requestOrder: string[] = []
     const savedOutlines: unknown[] = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init)
@@ -1497,6 +1498,7 @@ describe('ReportGeneratePage', () => {
         const body = (await request.clone().json()) as { jobType?: string }
         if (body.jobType === 'content_generation') {
           contentJobCreated = true
+          requestOrder.push('content-job')
           return jsonResponse({
             data: {
               createdAt: '2026-07-03T00:02:00Z',
@@ -1553,6 +1555,7 @@ describe('ReportGeneratePage', () => {
         url.pathname.endsWith('/reports/rpt-saved-outline/outlines/outline-saved')
       ) {
         savedOutline = true
+        requestOrder.push('save-outline')
         savedOutlines.push(await request.clone().json())
         return jsonResponse({
           data: {
@@ -1627,11 +1630,10 @@ describe('ReportGeneratePage', () => {
 
     const title = await screen.findByDisplayValue('Initial outline title')
     fireEvent.change(title, { target: { value: 'Saved edited title' } })
-    fireEvent.click(screen.getByRole('button', { name: /保存大纲/ }))
-
-    await waitFor(() => expect(savedOutlines).toHaveLength(1))
     fireEvent.click(screen.getByRole('button', { name: /^生成正文$/ }))
 
+    await waitFor(() => expect(savedOutlines).toHaveLength(1))
+    await waitFor(() => expect(requestOrder).toEqual(['save-outline', 'content-job']))
     const sectionList = await screen.findByLabelText('章节列表')
     expect(within(sectionList).getByText('Saved edited title')).toBeVisible()
     expect(within(sectionList).queryByText('Initial section title')).not.toBeInTheDocument()

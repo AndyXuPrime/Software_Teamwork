@@ -13,6 +13,7 @@ import (
 
 type fakeReportFileRepository struct {
 	reports   map[string]Report
+	outlines  []ReportOutline
 	sections  []ReportSection
 	files     map[string]ReportFile
 	jobs      map[string]ReportJob
@@ -43,6 +44,16 @@ func (f *fakeReportFileRepository) GetReportByID(_ context.Context, id string) (
 
 func (f *fakeReportFileRepository) ListReportSections(context.Context, string) ([]ReportSection, error) {
 	return f.sections, nil
+}
+
+func (f *fakeReportFileRepository) ListReportOutlines(_ context.Context, reportID string) ([]ReportOutline, error) {
+	var result []ReportOutline
+	for _, outline := range f.outlines {
+		if outline.ReportID == reportID {
+			result = append(result, outline)
+		}
+	}
+	return result, nil
 }
 
 func (f *fakeReportFileRepository) FindReportJobByID(_ context.Context, id string) (ReportJob, error) {
@@ -190,6 +201,15 @@ func (f fakeReportFileGenerator) GenerateDOCX(context.Context, Report, []ReportS
 	return []byte("docx"), nil
 }
 
+type capturingReportFileGenerator struct {
+	sections []ReportSection
+}
+
+func (f *capturingReportFileGenerator) GenerateDOCX(_ context.Context, _ Report, sections []ReportSection) ([]byte, error) {
+	f.sections = append([]ReportSection(nil), sections...)
+	return []byte("docx"), nil
+}
+
 func TestCreateReportFileCreatesPendingJobAndSafeMetadata(t *testing.T) {
 	repo := newFakeReportFileRepository()
 	repo.reports["report-1"] = Report{ID: "report-1", Name: "June / Report", CreatorID: "user-1", Status: ReportStatusGenerated}
@@ -291,6 +311,53 @@ func TestExecuteReportFileCreationUsesSavedSectionsAndStoresFileRef(t *testing.T
 	}
 	if !docxContains(t, data, "final edited content") {
 		t.Fatal("generated DOCX did not include saved section content")
+	}
+}
+
+func TestExecuteReportFileCreationExcludesSectionsRemovedFromCurrentOutline(t *testing.T) {
+	repo := newFakeReportFileRepository()
+	repo.reports["report-1"] = Report{ID: "report-1", Name: "Current outline report", CreatorID: "user-1"}
+	repo.outlines = []ReportOutline{{
+		ID:        "outline-current",
+		ReportID:  "report-1",
+		IsCurrent: true,
+		Version:   2,
+		Sections:  []ReportOutlineNode{{ID: "node-kept", Title: "Kept current title", Level: 1, Numbering: "1"}},
+	}}
+	repo.sections = []ReportSection{
+		{
+			ID:               "section-kept",
+			ReportID:         "report-1",
+			OutlineID:        "outline-current",
+			OutlineNodeID:    "node-kept",
+			Title:            "Stale kept title",
+			Content:          "kept body",
+			GenerationStatus: JobStatusSucceeded,
+		},
+		{
+			ID:               "section-removed",
+			ReportID:         "report-1",
+			OutlineID:        "outline-current",
+			OutlineNodeID:    "node-removed",
+			Title:            "Removed section",
+			Content:          "removed body",
+			GenerationStatus: JobStatusSucceeded,
+		},
+	}
+	repo.files["rf-1"] = ReportFile{ID: "rf-1", ReportID: "report-1", JobID: "job-1", Filename: "Current outline report.docx", Format: ReportFileFormatDOCX, Status: ReportFileStatusPending}
+	files := &fakeReportFileContentClient{}
+	generator := &capturingReportFileGenerator{}
+	svc := NewReportFileService(repo, files, nil, generator)
+
+	if err := svc.ExecuteReportFileCreation(context.Background(), ReportFileExecutionPayload{JobID: "job-1", UserID: "user-1"}); err != nil {
+		t.Fatalf("ExecuteReportFileCreation() error = %v", err)
+	}
+	if len(generator.sections) != 1 {
+		t.Fatalf("generated sections len = %d, want 1 current-outline section: %+v", len(generator.sections), generator.sections)
+	}
+	got := generator.sections[0]
+	if got.ID != "section-kept" || got.Title != "Kept current title" || got.OutlineNodeID != "node-kept" {
+		t.Fatalf("generated section did not use current outline metadata: %+v", got)
 	}
 }
 

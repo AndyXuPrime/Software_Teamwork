@@ -656,6 +656,77 @@ func TestReportGenerationServiceContentGenerationUsesCurrentOutlineSections(t *t
 	}
 }
 
+func TestReportGenerationServiceSectionRegenerationRejectsStaleOutlineSection(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer peak inspection",
+		ReportType: "summer_peak_inspection",
+		Topic:      "summer power supply",
+		CreatorID:  "user-1",
+		Status:     ReportStatusOutlineGenerated,
+	}
+	repo.jobs["job-1"] = ReportJob{
+		ID:         "job-1",
+		JobType:    JobTypeSectionRegeneration,
+		ReportID:   "report-1",
+		TargetID:   "section-old",
+		TargetType: "section",
+	}
+	repo.outlines["outline-old"] = ReportOutline{
+		ID:        "outline-old",
+		ReportID:  "report-1",
+		Version:   1,
+		IsCurrent: false,
+		Sections:  []ReportOutlineNode{{ID: "node-old", Title: "Old"}},
+	}
+	repo.outlines["outline-current"] = ReportOutline{
+		ID:        "outline-current",
+		ReportID:  "report-1",
+		Version:   2,
+		IsCurrent: true,
+		Sections:  []ReportOutlineNode{{ID: "node-current", Title: "Current"}},
+	}
+	repo.sections["section-old"] = ReportSection{
+		ID:               "section-old",
+		ReportID:         "report-1",
+		OutlineID:        "outline-old",
+		OutlineNodeID:    "node-old",
+		Title:            "Old section",
+		Version:          1,
+		GenerationStatus: JobStatusPending,
+	}
+	repo.sections["section-current"] = ReportSection{
+		ID:               "section-current",
+		ReportID:         "report-1",
+		OutlineID:        "outline-current",
+		OutlineNodeID:    "node-current",
+		Title:            "Current section",
+		Version:          1,
+		GenerationStatus: JobStatusPending,
+	}
+	chat := &fakeGenerationChatClient{
+		responses: []ChatCompletionResponse{{Content: `{"content":"stale body","tables":[]}`}},
+	}
+	svc := NewReportGenerationService(repo, chat)
+
+	_, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-section",
+		JobType:   JobTypeSectionRegeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	})
+	if code := errorCode(t, err); code != CodeValidation {
+		t.Fatalf("error code = %q, want %q", code, CodeValidation)
+	}
+	if len(chat.requests) != 0 {
+		t.Fatalf("chat request count = %d, want 0 for stale section regeneration", len(chat.requests))
+	}
+	if got := repo.sections["section-old"]; got.Content != "" || got.GenerationStatus != JobStatusPending || got.LastJobID != "" {
+		t.Fatalf("stale section changed: %+v", got)
+	}
+}
+
 func TestReportGenerationServiceRejectsUnknownReportTypeForContentJobs(t *testing.T) {
 	tests := []struct {
 		name       string

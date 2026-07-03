@@ -216,11 +216,9 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 	if err != nil {
 		return ReportGenerationExecutionResult{}, dependencyError("list report sections", err)
 	}
-	if job.JobType != JobTypeSectionRegeneration {
-		sections, err = s.currentOutlineSections(ctx, report.ID, sections)
-		if err != nil {
-			return ReportGenerationExecutionResult{}, err
-		}
+	sections, err = s.currentOutlineSections(ctx, report.ID, sections)
+	if err != nil {
+		return ReportGenerationExecutionResult{}, err
 	}
 	sections = targetGenerationSections(sections, job)
 	if len(sections) == 0 {
@@ -745,15 +743,7 @@ func nextOutlineVersion(existing []ReportOutline) int {
 }
 
 func (s *ReportGenerationService) currentOutlineSections(ctx context.Context, reportID string, sections []ReportSection) ([]ReportSection, error) {
-	outlines, err := s.repo.ListReportOutlines(ctx, reportID)
-	if err != nil {
-		return nil, dependencyError("list report outlines", err)
-	}
-	currentOutline, ok := currentReportOutline(outlines)
-	if !ok {
-		return sections, nil
-	}
-	return sectionsForOutline(sections, currentOutline), nil
+	return filterSectionsForCurrentOutline(ctx, s.repo, reportID, sections)
 }
 
 func currentReportOutline(outlines []ReportOutline) (ReportOutline, bool) {
@@ -775,6 +765,9 @@ func sectionsForOutline(sections []ReportSection, outline ReportOutline) []Repor
 		return sections
 	}
 	items := flattenOutlineSectionSkeletons(outline.Sections)
+	if len(items) == 0 {
+		return []ReportSection{}
+	}
 	sectionsByNodeID := make(map[string]ReportSection, len(sections))
 	for _, section := range sections {
 		if strings.TrimSpace(section.OutlineID) != outlineID {
@@ -804,14 +797,6 @@ func sectionsForOutline(sections []ReportSection, outline ReportOutline) []Repor
 		section = applyOutlineSectionMetadata(section, item, parentSectionID)
 		filtered = append(filtered, section)
 		sectionIDByNodeID[nodeID] = section.ID
-	}
-	if len(items) > 0 || len(filtered) > 0 {
-		return filtered
-	}
-	for _, section := range sections {
-		if strings.TrimSpace(section.OutlineID) == outlineID {
-			filtered = append(filtered, section)
-		}
 	}
 	return filtered
 }

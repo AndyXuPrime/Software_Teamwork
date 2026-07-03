@@ -189,6 +189,19 @@ function renumberOutline(
   })
 }
 
+function serializeOutlineNodes(nodes: ReportOutlineNode[]): string {
+  return JSON.stringify(
+    nodes.map((node) => ({
+      children: serializeOutlineNodes(node.children ?? []),
+      clientSectionId: node.clientSectionId ?? '',
+      id: node.id ?? '',
+      level: node.level,
+      numbering: node.numbering ?? '',
+      title: node.title,
+    })),
+  )
+}
+
 function updateOutlineNodeTitle(
   nodes: ReportOutlineNode[],
   path: number[],
@@ -790,6 +803,16 @@ export function ReportGeneratePage() {
     : ''
   const outline = outlineEditor.nodes
   const numberedOutline = useMemo(() => renumberOutline(outline), [outline])
+  const savedNumberedOutline = useMemo(
+    () => renumberOutline(currentOutline?.sections ?? []),
+    [currentOutline?.sections],
+  )
+  const isOutlineDirty = useMemo(
+    () =>
+      Boolean(currentOutline) &&
+      serializeOutlineNodes(numberedOutline) !== serializeOutlineNodes(savedNumberedOutline),
+    [currentOutline, numberedOutline, savedNumberedOutline],
+  )
   const flattenedOutline = useMemo(() => flattenOutline(numberedOutline), [numberedOutline])
   const effectiveJob = useMemo(
     () => getRetryAwareJob(activeJobForPolling, sectionGenerationReset),
@@ -1239,9 +1262,25 @@ export function ReportGeneratePage() {
       setNotice('请先创建报告草稿。')
       return
     }
+    if (!currentOutline) {
+      setNotice('暂无可用的服务端大纲，不能创建正文生成任务。')
+      return
+    }
     if (outline.length === 0) {
       setNotice('暂无服务端大纲数据，不能创建正文生成任务。')
       return
+    }
+
+    if (isOutlineDirty) {
+      try {
+        await saveOutlineMutation.mutateAsync({
+          outlineId: currentOutline.id,
+          sections: numberedOutline,
+        })
+      } catch (error) {
+        setNotice(formatReportGatewayError(error, '大纲保存失败，未创建正文生成任务'))
+        return
+      }
     }
 
     try {
@@ -1736,7 +1775,12 @@ export function ReportGeneratePage() {
                     保存大纲
                   </Button>
                   <Button
-                    disabled={!currentReport || outline.length === 0 || createJobMutation.isPending}
+                    disabled={
+                      !currentReport ||
+                      outline.length === 0 ||
+                      createJobMutation.isPending ||
+                      saveOutlineMutation.isPending
+                    }
                     onClick={handleGenerateContent}
                   >
                     <Play className="size-4" />
