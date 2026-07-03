@@ -1,4 +1,4 @@
-import { Paperclip, Send } from 'lucide-react'
+import { Paperclip, Send, Square } from 'lucide-react'
 import { type ChangeEvent, type KeyboardEvent, useCallback, useEffect, useRef } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -20,6 +20,10 @@ type ChatInputProps = {
   disableAttach?: boolean
   /** Called when file validation fails (size or type). */
   onAttachError?: (message: string) => void
+  /** Whether the assistant is currently streaming a response. */
+  streaming?: boolean
+  /** Called to stop the current streaming response. */
+  onStop?: () => void
 }
 
 export default function ChatInput({
@@ -33,6 +37,8 @@ export default function ChatInput({
   attachmentCount = 0,
   disableAttach = false,
   onAttachError,
+  streaming = false,
+  onStop,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -47,13 +53,17 @@ export default function ChatInput({
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
+    if (streaming) {
+      onStop?.()
+      return
+    }
     if (!trimmed || disabled) return
     onSend(trimmed)
     onChange('')
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
-  }, [value, disabled, onSend, onChange])
+  }, [value, disabled, streaming, onSend, onChange, onStop])
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -115,7 +125,7 @@ export default function ChatInput({
     [onFileSelect, onAttachError],
   )
 
-  const canSend = value.trim().length > 0 && !disabled
+  const canSend = streaming ? Boolean(onStop) : value.trim().length > 0 && !disabled
   const attachDisabled = disableAttach || disabled
 
   const isLarge = size === 'large'
@@ -180,9 +190,13 @@ export default function ChatInput({
           onClick={handleSend}
           disabled={!canSend}
           className="shrink-0 rounded-full bg-primary text-primary-foreground transition-all duration-200 hover:bg-primary/90 hover:scale-110 hover:shadow-md active:scale-90"
-          aria-label="发送消息"
+          aria-label={streaming ? '停止生成' : '发送消息'}
         >
-          <Send className="size-4" aria-hidden="true" />
+          {streaming ? (
+            <Square className="size-4" aria-hidden="true" />
+          ) : (
+            <Send className="size-4" aria-hidden="true" />
+          )}
         </Button>
       </div>
     </div>

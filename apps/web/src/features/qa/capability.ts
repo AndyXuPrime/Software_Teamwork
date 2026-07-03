@@ -301,6 +301,21 @@ function getReportArtifactKey(artifact: QAReportArtifact): string {
   )
 }
 
+function getReportArtifactStableIds(artifact: QAReportArtifact): string[] {
+  return [artifact.reportId, artifact.reportFileId, artifact.jobId].filter(
+    (value): value is string => Boolean(value),
+  )
+}
+
+function hasMatchingReportArtifactIdentity(
+  left: QAReportArtifact,
+  right: QAReportArtifact,
+): boolean {
+  const leftIds = getReportArtifactStableIds(left)
+  const rightIds = new Set(getReportArtifactStableIds(right))
+  return leftIds.some((id) => rightIds.has(id))
+}
+
 export function mergeMessageReportArtifact(
   message: QAMessageWithArtifacts | undefined,
   artifact: QAReportArtifact | undefined,
@@ -309,7 +324,10 @@ export function mergeMessageReportArtifact(
 
   const key = getReportArtifactKey(artifact)
   const existing = message?.artifacts ?? []
-  const index = existing.findIndex((item) => getReportArtifactKey(item) === key)
+  const index = existing.findIndex(
+    (item) =>
+      hasMatchingReportArtifactIdentity(item, artifact) || getReportArtifactKey(item) === key,
+  )
   if (index < 0) return [...existing, artifact]
 
   const next = [...existing]

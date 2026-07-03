@@ -216,6 +216,43 @@ describe('QA capability helpers', () => {
     expect(updated?.[0]?.fileStatus).toBe('failed')
   })
 
+  it('updates temporary report artifacts when stable report ids arrive later', () => {
+    const message: QAMessageWithArtifacts = {
+      artifacts: [
+        {
+          artifactType: 'report_generation',
+          jobId: 'job-1',
+          jobStatus: 'running',
+          reportName: '巡检报告',
+        },
+      ],
+      content: '',
+      createdAt: '2026-07-03T00:00:00.000Z',
+      id: 'msg-1',
+      role: 'assistant',
+      sessionId: 'session-1',
+      status: 'streaming',
+    }
+
+    const merged = mergeMessageReportArtifact(message, {
+      artifactType: 'report_generation',
+      downloadPath: '/api/v1/report-files/file-1/content',
+      fileStatus: 'succeeded',
+      jobId: 'job-1',
+      jobStatus: 'succeeded',
+      reportFileId: 'file-1',
+      reportId: 'report-1',
+      reportName: '巡检报告',
+    })
+
+    expect(merged).toHaveLength(1)
+    expect(merged?.[0]).toMatchObject({
+      jobId: 'job-1',
+      reportFileId: 'file-1',
+      reportId: 'report-1',
+    })
+  })
+
   it('sanitizes reasoning label and detail before display', () => {
     expect(
       getSafeReasoningStep({
