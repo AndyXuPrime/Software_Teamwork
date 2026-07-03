@@ -84,6 +84,9 @@ export function validateUpdateModelProfileForm(form: ModelProfileFormValues): Va
   ) {
     return { isValid: false, message: '请填写名称、服务商、地址和模型名称' }
   }
+  if (hasValue(form.apiKey) && form.apiKey.trim().length < 8) {
+    return { isValid: false, message: 'API Key 不能少于 8 个字符' }
+  }
   return validatePurposeFields(form)
 }
 

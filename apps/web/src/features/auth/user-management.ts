@@ -80,7 +80,11 @@ const optionalEmailSchema = z
 const profileSchema = z.object({
   displayName: z.string().trim().max(100, '显示名不能超过 100 个字符'),
   email: optionalEmailSchema,
-  phone: z.string().trim().max(32, '手机号不能超过 32 个字符'),
+  phone: z
+    .string()
+    .trim()
+    .max(32, '手机号不能超过 32 个字符')
+    .regex(/^[0-9+\- ]*$/, '手机号只能包含数字、加号、减号和空格'),
 })
 
 const passwordSchema = z
