@@ -1,6 +1,6 @@
 import { fireEvent, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/auth-store'
 import { renderWithProviders } from '@/test/render'
@@ -8,7 +8,7 @@ import { renderWithProviders } from '@/test/render'
 import { ReportRecordsPage } from './page'
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children?: ReactNode }) => <a href="/reports/generate">{children}</a>,
+  Link: ({ children, to }: { children?: ReactNode; to: string }) => <a href={to}>{children}</a>,
 }))
 
 function gatewayError(code: string, message: string, requestId: string, status = 503) {
@@ -19,6 +19,18 @@ function gatewayError(code: string, message: string, requestId: string, status =
 }
 
 describe('ReportRecordsPage', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    useAuthStore.getState().clearSession()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    useAuthStore.getState().clearSession()
+  })
+
   it('shows gateway errors instead of local fallback report records', async () => {
     vi.stubGlobal(
       'fetch',
@@ -85,5 +97,40 @@ describe('ReportRecordsPage', () => {
     expect(await screen.findByText(/Delete dependency down/)).toBeVisible()
     expect(screen.getByText(/req-delete/)).toBeVisible()
     expect(screen.getByText(/即将删除报告"真实报告记录"/)).toBeVisible()
+  })
+
+  it('renders the create report action as a link without Base UI nativeButton warnings', async () => {
+    useAuthStore.setState({
+      status: 'authenticated',
+      user: {
+        id: 'user-1',
+        username: 'tester',
+        roles: [],
+        permissions: ['report:write'],
+      },
+      userName: 'tester',
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: [],
+            page: { page: 1, pageSize: 20, total: 0 },
+            requestId: 'req-record-list',
+          }),
+          { headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    )
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    renderWithProviders(<ReportRecordsPage />)
+
+    const createReportLink = await screen.findByRole('link')
+    expect(createReportLink).toHaveAttribute('href', '/reports/generate')
+    const consoleOutput = [...warn.mock.calls, ...error.mock.calls].flat().join('\n')
+    expect(consoleOutput).not.toMatch(/nativeButton/)
   })
 })
