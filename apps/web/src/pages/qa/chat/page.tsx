@@ -804,12 +804,25 @@ export function ChatPage() {
   )
 
   const handleClearAll = useCallback(async () => {
-    const ids = sidebarItems.map((s) => s.id)
-    for (const id of ids) {
-      try { await deleteSessionMut.mutateAsync(id) } catch { /* continue */ }
-      removeSession(id)
+    let failed = 0
+    // Loop to cover all pages beyond the currently loaded one
+    while (true) {
+      const ids = useChatStore.getState().sessions.map((s) => s.id)
+      if (ids.length === 0) break
+      for (const id of ids) {
+        try {
+          await deleteSessionMut.mutateAsync(id)
+          removeSession(id)
+        } catch {
+          failed++
+        }
+      }
+      // Refetch next page if any sessions remain
+      if (ids.length < 20) break
+      await refetchSessions()
     }
-  }, [sidebarItems, deleteSessionMut, removeSession])
+    if (failed > 0) setError(`${failed} 个对话删除失败，请稍后重试`)
+  }, [deleteSessionMut, removeSession, setError, refetchSessions])
 
   // ══════════════════════════════════════════════════════════════════════════
   // Rename session
