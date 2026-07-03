@@ -158,17 +158,41 @@ function formatError(sseErr: { code?: string; message?: string }): string {
   return sanitizeErrorMessage(sseErr.message)
 }
 
-function sanitizeCitation(raw: Record<string, unknown>): QACitation {
+export function sanitizeCitation(raw: Record<string, unknown>): QACitation {
+  const documentId =
+    typeof raw.documentId === 'string'
+      ? raw.documentId
+      : typeof raw.docId === 'string'
+        ? raw.docId
+        : undefined
+  const documentName =
+    typeof raw.documentName === 'string'
+      ? raw.documentName
+      : typeof raw.docName === 'string'
+        ? raw.docName
+        : undefined
+
   // Keep only display-safe fields per OpenAPI QACitation schema
   return {
     id: String(raw.id ?? ''),
     messageId: String(raw.messageId ?? ''),
     citationNo: typeof raw.citationNo === 'number' ? raw.citationNo : undefined,
-    documentName: typeof raw.documentName === 'string' ? raw.documentName : undefined,
+    chunkId: typeof raw.chunkId === 'string' ? raw.chunkId : undefined,
+    chunkType: typeof raw.chunkType === 'string' ? raw.chunkType : undefined,
+    context: typeof raw.context === 'string' ? raw.context : undefined,
+    docId: typeof raw.docId === 'string' ? raw.docId : documentId,
+    docName: typeof raw.docName === 'string' ? raw.docName : documentName,
+    documentName,
+    knowledgeBaseId: typeof raw.knowledgeBaseId === 'string' ? raw.knowledgeBaseId : undefined,
+    pageNumber: typeof raw.pageNumber === 'number' ? raw.pageNumber : undefined,
+    rerankScore: typeof raw.rerankScore === 'number' ? raw.rerankScore : undefined,
+    sectionPath: typeof raw.sectionPath === 'string' ? raw.sectionPath : undefined,
     text: typeof raw.text === 'string' ? raw.text : undefined,
     score: typeof raw.score === 'number' ? raw.score : undefined,
     contentPreview: typeof raw.contentPreview === 'string' ? raw.contentPreview : undefined,
-    documentId: typeof raw.documentId === 'string' ? raw.documentId : undefined,
+    documentId,
+    isSourceAvailable:
+      typeof raw.isSourceAvailable === 'boolean' ? raw.isSourceAvailable : undefined,
   } as QACitation
 }
 
