@@ -7,6 +7,7 @@ import {
   deleteSessionAttachment,
   getSessionAttachment,
   listSessionAttachments,
+  listSessions,
 } from '@/api/conversations'
 import {
   AttachmentList,
@@ -123,6 +124,27 @@ function toSessionListItem(s: QASession, messages: QAMessage[]): QASessionListIt
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
   }
+}
+
+async function listAllSessionIds(): Promise<string[]> {
+  const pageSize = 50
+  const ids = new Set<string>()
+
+  for (let page = 1; ; page += 1) {
+    const result = await listSessions({ page, pageSize })
+    for (const session of result.items) {
+      ids.add(session.id)
+    }
+    if (
+      result.items.length === 0 ||
+      result.items.length < pageSize ||
+      ids.size >= result.page.total
+    ) {
+      break
+    }
+  }
+
+  return Array.from(ids)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -507,6 +529,9 @@ export function ChatPage() {
   // ── Event replay: track current responseRunId for reconnect recovery ──
   const responseRunIdRef = useRef<string | null>(null)
 
+  // The clear-all confirmation is for this exact server-confirmed collection.
+  const clearAllSessionIdsRef = useRef<string[] | null>(null)
+
   // ── Report artifact download handler ──
   const handleArtifactDownload = useCallback(
     async (downloadPath: string, filename: string) => {
@@ -802,6 +827,34 @@ export function ChatPage() {
     },
     [deleteSessionMut, removeSession, setError],
   )
+
+  const handlePrepareClearAll = useCallback(async () => {
+    const ids = await listAllSessionIds()
+    clearAllSessionIdsRef.current = ids
+    return ids.length
+  }, [])
+
+  const handleClearAll = useCallback(async () => {
+    const ids = clearAllSessionIdsRef.current
+    if (!ids) {
+      setError('无法确认将要删除的对话总数，请稍后重试')
+      return
+    }
+
+    let failed = 0
+
+    for (const id of ids) {
+      try {
+        await deleteSessionMut.mutateAsync(id)
+        removeSession(id)
+      } catch {
+        failed++
+      }
+    }
+
+    clearAllSessionIdsRef.current = null
+    if (failed > 0) setError(`${failed} 个对话删除失败，请稍后重试`)
+  }, [deleteSessionMut, removeSession, setError])
 
   // ══════════════════════════════════════════════════════════════════════════
   // Rename session
@@ -1371,6 +1424,8 @@ export function ChatPage() {
           onCreate={handleCreate}
           onDelete={handleDelete}
           onRename={handleRename}
+          onPrepareClearAll={handlePrepareClearAll}
+          onClearAll={handleClearAll}
         />
 
         {/* Right: main chat area — single input DOM node with FLIP animation */}

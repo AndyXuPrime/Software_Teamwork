@@ -13,7 +13,6 @@ import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState }
 
 import { ConfirmDialog, StateBlock } from '@/components/common'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import type { QASessionListItem } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -27,6 +26,8 @@ type ChatSidebarProps = {
   onCreate: () => void
   onDelete: (sessionId: string) => void
   onRename: (sessionId: string, title: string) => void
+  onPrepareClearAll?: () => Promise<number>
+  onClearAll?: () => Promise<void> | void
 }
 
 export default function ChatSidebar({
@@ -39,12 +40,19 @@ export default function ChatSidebar({
   onCreate,
   onDelete,
   onRename,
+  onPrepareClearAll,
+  onClearAll,
 }: ChatSidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [clearAllPending, setClearAllPending] = useState(false)
+  const [clearAllPreparing, setClearAllPreparing] = useState(false)
+  const [clearAllCount, setClearAllCount] = useState<number | null>(null)
+  const [clearAllError, setClearAllError] = useState<string | null>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
 
   const trimmedSearchQuery = searchQuery.trim()
@@ -134,6 +142,43 @@ export default function ChatSidebar({
 
   const deleteTarget = sessions.find((session) => session.id === deleteTargetId)
 
+  const openClearAllConfirm = useCallback(async () => {
+    if (!onClearAll) return
+    setShowClearConfirm(true)
+    setClearAllCount(null)
+    setClearAllError(null)
+    setClearAllPreparing(true)
+    try {
+      const count = onPrepareClearAll ? await onPrepareClearAll() : sessions.length
+      setClearAllCount(count)
+    } catch {
+      setClearAllError('无法确认将要删除的对话总数，请稍后重试。')
+    } finally {
+      setClearAllPreparing(false)
+    }
+  }, [onClearAll, onPrepareClearAll, sessions.length])
+
+  const handleConfirmClearAll = useCallback(async () => {
+    if (!onClearAll || clearAllCount === null || clearAllCount <= 0) return
+    setClearAllPending(true)
+    try {
+      await onClearAll()
+      setShowClearConfirm(false)
+    } finally {
+      setClearAllPending(false)
+    }
+  }, [clearAllCount, onClearAll])
+
+  const clearAllDescription = clearAllPreparing
+    ? '正在确认将要删除的对话总数...'
+    : clearAllError
+      ? clearAllError
+      : clearAllCount === null
+        ? '请先确认将要删除的对话总数。'
+        : clearAllCount <= 0
+          ? '服务端没有可删除的对话。'
+          : `即将删除全部 ${clearAllCount} 个对话。此操作不可撤销。`
+
   // ── Render ──
 
   return (
@@ -208,8 +253,42 @@ export default function ChatSidebar({
         </div>
       )}
 
+      {/* ── Clear all button ── */}
+      {onClearAll && sessions.length > 0 && (
+        <div className="border-t border-border/30 px-2 py-1.5">
+          {collapsed ? (
+            <button
+              aria-label="清空全部对话"
+              type="button"
+              onClick={() => void openClearAllConfirm()}
+              className="mx-auto flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+              title="清空全部对话"
+            >
+              <Trash2 className="size-4" />
+            </button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => void openClearAllConfirm()}
+            >
+              <Trash2 className="size-3.5" />
+              清空全部对话
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* ── Session list ── */}
-      <ScrollArea className="flex-1" viewportClassName="overscroll-y-contain">
+      <div
+        className="flex-1 overflow-y-auto pr-1
+        [&::-webkit-scrollbar]:w-2
+        [&::-webkit-scrollbar-thumb]:rounded-full
+        [&::-webkit-scrollbar-thumb]:bg-border
+        [&::-webkit-scrollbar-thumb]:hover:bg-muted-foreground/30
+        [&::-webkit-scrollbar-track]:bg-transparent"
+      >
         <div className="flex flex-col gap-1 p-2">
           {/* Fetch error state — hidden when collapsed */}
           {!collapsed && fetchError && !isLoading && (
@@ -386,7 +465,7 @@ export default function ChatSidebar({
             )
           })}
         </div>
-      </ScrollArea>
+      </div>
       <ConfirmDialog
         cancelLabel="取消"
         confirmLabel="确认删除"
@@ -404,6 +483,26 @@ export default function ChatSidebar({
         }}
         open={Boolean(deleteTargetId)}
         title="确定删除该会话？"
+        variant="destructive"
+      />
+      <ConfirmDialog
+        cancelLabel="取消"
+        confirmLabel="全部删除"
+        description={clearAllDescription}
+        disabled={!onClearAll || clearAllPreparing || clearAllCount === null || clearAllCount <= 0}
+        onConfirm={() => void handleConfirmClearAll()}
+        onOpenChange={(open) => {
+          if (clearAllPending) return
+          if (!open) {
+            setShowClearConfirm(false)
+            setClearAllCount(null)
+            setClearAllError(null)
+          }
+        }}
+        open={showClearConfirm}
+        pending={clearAllPreparing || clearAllPending}
+        pendingLabel={clearAllPreparing ? '确认中...' : '删除中...'}
+        title="清空全部对话？"
         variant="destructive"
       />
     </aside>
