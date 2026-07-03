@@ -57,8 +57,30 @@ function tokenFromMarker(
   return { citations: citations as QACitation[], kind: 'marker' as const, label }
 }
 
+function isConsecutiveSameDocument(citations: QACitation[]) {
+  if (citations.length < 1) return false
+
+  const firstCitation = citations[0]
+  if (!firstCitation) return false
+
+  const documentId = citationDocumentId(firstCitation)
+  if (!documentId) return false
+
+  let previousNo: number | undefined
+  for (const citation of citations) {
+    if (citationDocumentId(citation) !== documentId) return false
+
+    const no = citationNo(citation)
+    if (no == null) return false
+    if (previousNo != null && no !== previousNo + 1) return false
+    previousNo = no
+  }
+
+  return true
+}
+
 function canMergeSingleCitationMarkers(left: CitationMarker, right: CitationMarker) {
-  if (left.citations.length < 1 || right.citations.length !== 1) return false
+  if (!isConsecutiveSameDocument(left.citations) || right.citations.length !== 1) return false
 
   const leftCitation = left.citations.at(-1)
   const firstCitation = left.citations[0]

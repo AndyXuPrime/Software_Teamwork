@@ -63,4 +63,22 @@ describe('citation marker parsing', () => {
       '[2]',
     ])
   })
+
+  it('does not merge grouped markers with skipped citation numbers', () => {
+    expect(markerLabels('Answer [1,3][4]', [citation(1), citation(3), citation(4)])).toEqual([
+      'Answer ',
+      '[1,3]',
+      '[4]',
+    ])
+  })
+
+  it('does not merge grouped markers with mixed source documents', () => {
+    expect(
+      markerLabels('Answer [1,2][3]', [
+        citation(1, 'doc-1'),
+        citation(2, 'doc-2'),
+        citation(3, 'doc-1'),
+      ]),
+    ).toEqual(['Answer ', '[1,2]', '[3]'])
+  })
 })
