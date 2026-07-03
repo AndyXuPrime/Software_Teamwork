@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { ApiError } from '@/api/client'
-import type { QACitation } from '@/lib/types'
+import type { QACitation, QAMessageWithArtifacts } from '@/lib/types'
 
 import {
   createSafeToolStep,
@@ -10,6 +10,9 @@ import {
   getCitationAvailabilityText,
   getCitationDelta,
   getSafeReasoningStep,
+  getToolEventSummary,
+  getToolReportArtifact,
+  mergeMessageReportArtifact,
 } from './capability'
 
 describe('QA capability helpers', () => {
@@ -146,6 +149,106 @@ describe('QA capability helpers', () => {
       label: '整理引用',
       status: 'done',
       type: 'citation',
+    })
+  })
+
+  it('maps only sanitized SSE flat tool summaries for display', () => {
+    const event = {
+      arguments: { query: 'legacy query', topK: 3 },
+      argumentsSummary: { queryCount: 2, topK: 5 },
+      result: { hitCount: 1 },
+      resultSummary: { hitCount: 4 },
+    }
+
+    expect(getToolEventSummary(event, 'argumentsSummary')).toEqual({
+      queryCount: 2,
+      topK: 5,
+    })
+    expect(getToolEventSummary(event, 'resultSummary')).toEqual({ hitCount: 4 })
+    expect(getToolEventSummary({ arguments: { topK: 3 } }, 'argumentsSummary')).toBeUndefined()
+    expect(getToolEventSummary({ result: { hitCount: 3 } }, 'resultSummary')).toBeUndefined()
+    expect(
+      getToolEventSummary({ resultSummary: 'safe-looking free text' }, 'resultSummary'),
+    ).toBeUndefined()
+  })
+
+  it('extracts report artifacts from resultSummary and keeps message-level artifacts current', () => {
+    const artifact = getToolReportArtifact({
+      resultSummary: {
+        hitCount: 1,
+        reportArtifact: {
+          artifactType: 'report_generation',
+          downloadPath: '/api/v1/report-files/file-1/content',
+          fileStatus: 'succeeded',
+          filename: '巡检报告.docx',
+          reportId: 'report-1',
+          reportName: '巡检报告',
+        },
+      },
+    })
+
+    expect(artifact).toMatchObject({
+      artifactType: 'report_generation',
+      downloadPath: '/api/v1/report-files/file-1/content',
+      reportId: 'report-1',
+      reportName: '巡检报告',
+    })
+
+    const message: QAMessageWithArtifacts = {
+      artifacts: [],
+      content: '',
+      createdAt: '2026-07-03T00:00:00.000Z',
+      id: 'msg-1',
+      role: 'assistant',
+      sessionId: 'session-1',
+      status: 'streaming',
+    }
+
+    const firstMerge = mergeMessageReportArtifact(message, artifact)
+    expect(firstMerge).toHaveLength(1)
+
+    const updated = mergeMessageReportArtifact(
+      { ...message, artifacts: firstMerge },
+      artifact ? { ...artifact, fileStatus: 'failed' } : undefined,
+    )
+    expect(updated).toHaveLength(1)
+    expect(updated?.[0]?.fileStatus).toBe('failed')
+  })
+
+  it('updates temporary report artifacts when stable report ids arrive later', () => {
+    const message: QAMessageWithArtifacts = {
+      artifacts: [
+        {
+          artifactType: 'report_generation',
+          jobId: 'job-1',
+          jobStatus: 'running',
+          reportName: '巡检报告',
+        },
+      ],
+      content: '',
+      createdAt: '2026-07-03T00:00:00.000Z',
+      id: 'msg-1',
+      role: 'assistant',
+      sessionId: 'session-1',
+      status: 'streaming',
+    }
+
+    const merged = mergeMessageReportArtifact(message, {
+      artifactType: 'report_generation',
+      downloadPath: '/api/v1/report-files/file-1/content',
+      fileStatus: 'succeeded',
+      jobId: 'job-1',
+      jobStatus: 'succeeded',
+      reportFileId: 'file-1',
+      reportId: 'report-1',
+      reportName: '巡检报告',
+    })
+
+    expect(merged).toHaveLength(1)
+    expect(merged?.[0]).toMatchObject({
+      jobId: 'job-1',
+      reportFileId: 'file-1',
+      reportId: 'report-1',
     })
   })
 
