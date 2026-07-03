@@ -18,11 +18,16 @@ import {
   useSessionMessages,
   useSessions,
 } from '@/features/qa'
-import { parseReportArtifact } from '@/features/qa/capability'
+import {
+  getToolEventSummary,
+  getToolReportArtifact,
+  mergeMessageReportArtifact,
+} from '@/features/qa/capability'
 import { downloadFromUrl } from '@/lib/download'
 import type {
   QACitation,
   QAMessage,
+  QAMessageWithArtifacts,
   QAReportArtifact,
   QASession,
   QASessionListItem,
@@ -164,11 +169,6 @@ function getIterationNo(data: Record<string, unknown>): number | undefined {
   return typeof data.iterationNo === 'number' && Number.isFinite(data.iterationNo)
     ? data.iterationNo
     : undefined
-}
-
-function getSafeToolSummary(data: Record<string, unknown>, key: 'arguments' | 'result'): unknown {
-  const value = data[key]
-  return value && typeof value === 'object' ? value : undefined
 }
 
 function getToolFailureSummary(data: Record<string, unknown>): string | undefined {
@@ -777,6 +777,7 @@ export function ChatPage() {
         thinking?: QAThinkingStep[]
         citations?: QACitation[]
         status?: QAMessage['status']
+        artifacts?: QAReportArtifact[]
       }) => {
         useChatStore.setState((state) => {
           const msgs = [...(state.messagesBySession[uid] ?? [])]
@@ -862,7 +863,7 @@ export function ChatPage() {
               type: 'tool_call',
               label: `调用: ${toolName}`,
               status: 'running',
-              argumentsSummary: getSafeToolSummary(data, 'arguments'),
+              argumentsSummary: getToolEventSummary(data, 'argumentsSummary', 'arguments'),
               iterationNo,
               startedAt: Date.now(),
               toolCallId,
@@ -875,9 +876,7 @@ export function ChatPage() {
           if (!verifySeq(data.seq)) return
           const toolName = getToolName(data)
           const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
-          const rawResult = (data as Record<string, unknown>).result as
-            Record<string, unknown> | undefined
-          const artifact = parseReportArtifact(rawResult?.reportArtifact) ?? undefined
+          const artifact = getToolReportArtifact(data)
           // Match by toolCallId first, fallback to first running
           let idx = -1
           if (toolCallId && toolStepIndex[toolCallId] !== undefined) {
@@ -893,19 +892,24 @@ export function ChatPage() {
               label: `${toolName} 完成`,
               completedAt: Date.now(),
               reportArtifact: artifact,
-              resultSummary: getSafeToolSummary(data, 'result'),
+              resultSummary: getToolEventSummary(data, 'resultSummary', 'result'),
               toolName,
             }
           }
-          patchAssistant({ thinking: [...steps] })
+          patchAssistant({
+            artifacts: mergeMessageReportArtifact(
+              useChatStore.getState().messagesBySession[uid]?.at(-1) as
+                QAMessageWithArtifacts | undefined,
+              artifact,
+            ),
+            thinking: [...steps],
+          })
         },
         onToolFailed(data) {
           if (!verifySeq(data.seq)) return
           const toolName = getToolName(data)
           const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
-          const rawFailedResult = (data as Record<string, unknown>).result as
-            Record<string, unknown> | undefined
-          const failedArtifact = parseReportArtifact(rawFailedResult?.reportArtifact) ?? undefined
+          const failedArtifact = getToolReportArtifact(data)
           let idx = -1
           if (toolCallId && toolStepIndex[toolCallId] !== undefined) {
             idx = toolStepIndex[toolCallId]
@@ -921,11 +925,18 @@ export function ChatPage() {
               completedAt: Date.now(),
               errorSummary: getToolFailureSummary(data),
               reportArtifact: failedArtifact,
-              resultSummary: getSafeToolSummary(data, 'result'),
+              resultSummary: getToolEventSummary(data, 'resultSummary', 'result'),
               toolName,
             }
           }
-          patchAssistant({ thinking: [...steps] })
+          patchAssistant({
+            artifacts: mergeMessageReportArtifact(
+              useChatStore.getState().messagesBySession[uid]?.at(-1) as
+                QAMessageWithArtifacts | undefined,
+              failedArtifact,
+            ),
+            thinking: [...steps],
+          })
         },
         onAnswerDelta(data) {
           if (!verifySeq(data.seq)) return

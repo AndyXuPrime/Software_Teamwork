@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { ApiError } from '@/api/client'
-import type { QACitation } from '@/lib/types'
+import type { QACitation, QAMessageWithArtifacts } from '@/lib/types'
 
 import {
   createSafeToolStep,
@@ -10,6 +10,9 @@ import {
   getCitationAvailabilityText,
   getCitationDelta,
   getSafeReasoningStep,
+  getToolEventSummary,
+  getToolReportArtifact,
+  mergeMessageReportArtifact,
 } from './capability'
 
 describe('QA capability helpers', () => {
@@ -147,6 +150,70 @@ describe('QA capability helpers', () => {
       status: 'done',
       type: 'citation',
     })
+  })
+
+  it('maps real SSE flat tool summaries before falling back to legacy fields', () => {
+    const event = {
+      arguments: { query: 'legacy query', topK: 3 },
+      argumentsSummary: { queryCount: 2, topK: 5 },
+      result: { hitCount: 1 },
+      resultSummary: { hitCount: 4 },
+    }
+
+    expect(getToolEventSummary(event, 'argumentsSummary', 'arguments')).toEqual({
+      queryCount: 2,
+      topK: 5,
+    })
+    expect(getToolEventSummary(event, 'resultSummary', 'result')).toEqual({ hitCount: 4 })
+    expect(
+      getToolEventSummary({ arguments: { topK: 3 } }, 'argumentsSummary', 'arguments'),
+    ).toEqual({ topK: 3 })
+    expect(
+      getToolEventSummary({ resultSummary: 'safe-looking free text' }, 'resultSummary', 'result'),
+    ).toBeUndefined()
+  })
+
+  it('extracts report artifacts from resultSummary and keeps message-level artifacts current', () => {
+    const artifact = getToolReportArtifact({
+      resultSummary: {
+        hitCount: 1,
+        reportArtifact: {
+          artifactType: 'report_generation',
+          downloadPath: '/api/v1/report-files/file-1/content',
+          fileStatus: 'succeeded',
+          filename: '巡检报告.docx',
+          reportId: 'report-1',
+          reportName: '巡检报告',
+        },
+      },
+    })
+
+    expect(artifact).toMatchObject({
+      artifactType: 'report_generation',
+      downloadPath: '/api/v1/report-files/file-1/content',
+      reportId: 'report-1',
+      reportName: '巡检报告',
+    })
+
+    const message: QAMessageWithArtifacts = {
+      artifacts: [],
+      content: '',
+      createdAt: '2026-07-03T00:00:00.000Z',
+      id: 'msg-1',
+      role: 'assistant',
+      sessionId: 'session-1',
+      status: 'streaming',
+    }
+
+    const firstMerge = mergeMessageReportArtifact(message, artifact)
+    expect(firstMerge).toHaveLength(1)
+
+    const updated = mergeMessageReportArtifact(
+      { ...message, artifacts: firstMerge },
+      artifact ? { ...artifact, fileStatus: 'failed' } : undefined,
+    )
+    expect(updated).toHaveLength(1)
+    expect(updated?.[0]?.fileStatus).toBe('failed')
   })
 
   it('sanitizes reasoning label and detail before display', () => {

@@ -182,4 +182,45 @@ describe('ChatMessages ThinkPanel', () => {
     expect(screen.queryByText(/思考过程/)).not.toBeInTheDocument()
     expect(screen.getByText('纯文本回答')).toBeInTheDocument()
   })
+
+  it('keeps report artifacts visible at message level after completion', () => {
+    const onArtifactDownload = vi.fn()
+    const artifact: QAReportArtifact = {
+      artifactType: 'report_generation',
+      downloadPath: '/api/v1/report-files/file-1/content',
+      fileStatus: 'succeeded',
+      filename: '巡检报告.docx',
+      jobStatus: 'succeeded',
+      reportId: 'report-1',
+      reportName: '巡检报告',
+    }
+
+    renderMessage(
+      {
+        ...assistantWithThinking(
+          [
+            {
+              label: 'report_generator 完成',
+              reportArtifact: artifact,
+              status: 'done',
+              type: 'tool_call',
+            },
+          ],
+          '报告已生成',
+        ),
+        artifacts: [artifact],
+        status: 'completed',
+      } as QAMessage & { artifacts: QAReportArtifact[] },
+      onArtifactDownload,
+    )
+
+    expect(screen.getByText('巡检报告')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /下载报告/ }))
+
+    expect(onArtifactDownload).toHaveBeenCalledWith(
+      '/api/v1/report-files/file-1/content',
+      '巡检报告.docx',
+    )
+  })
 })

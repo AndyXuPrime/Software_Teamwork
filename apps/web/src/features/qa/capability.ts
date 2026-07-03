@@ -1,6 +1,7 @@
 import { ApiError } from '@/api/client'
 import type {
   QACitation,
+  QAMessageWithArtifacts,
   QAReportArtifact,
   QAReportArtifactPreview,
   QAThinkingStep,
@@ -262,6 +263,58 @@ export function getCitationDelta(payload: unknown): QACitation | undefined {
   const id = getString(citation, 'id')
   if (!id) return undefined
   return citation as QACitation
+}
+
+export function getToolEventSummary(
+  payload: Record<string, unknown>,
+  summaryKey: 'argumentsSummary' | 'resultSummary',
+  fallbackKey: 'arguments' | 'result',
+): unknown {
+  const summary = payload[summaryKey]
+  if (isRecord(summary)) return summary
+
+  const fallback = payload[fallbackKey]
+  return isRecord(fallback) ? fallback : undefined
+}
+
+export function getToolReportArtifact(
+  payload: Record<string, unknown>,
+): QAReportArtifact | undefined {
+  const summary = payload.resultSummary
+  const result = payload.result
+  return (
+    parseReportArtifact(isRecord(summary) ? summary.reportArtifact : undefined) ??
+    parseReportArtifact(isRecord(result) ? result.reportArtifact : undefined) ??
+    undefined
+  )
+}
+
+function getReportArtifactKey(artifact: QAReportArtifact): string {
+  return (
+    artifact.reportId ??
+    artifact.reportFileId ??
+    artifact.jobId ??
+    artifact.downloadPath ??
+    artifact.detailPath ??
+    artifact.reportName ??
+    JSON.stringify(artifact)
+  )
+}
+
+export function mergeMessageReportArtifact(
+  message: QAMessageWithArtifacts | undefined,
+  artifact: QAReportArtifact | undefined,
+): QAReportArtifact[] | undefined {
+  if (!artifact) return message?.artifacts
+
+  const key = getReportArtifactKey(artifact)
+  const existing = message?.artifacts ?? []
+  const index = existing.findIndex((item) => getReportArtifactKey(item) === key)
+  if (index < 0) return [...existing, artifact]
+
+  const next = [...existing]
+  next[index] = artifact
+  return next
 }
 
 export function getCitationAvailabilityText(citation: QACitation): string {
