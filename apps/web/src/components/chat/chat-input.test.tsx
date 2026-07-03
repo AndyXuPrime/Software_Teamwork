@@ -6,6 +6,12 @@ import { renderWithProviders } from '@/test/render'
 import ChatInput from './chat-input'
 
 describe('ChatInput', () => {
+  it('exposes a stable accessible name for the message textbox', () => {
+    renderWithProviders(<ChatInput onSend={vi.fn()} disabled={false} value="" onChange={vi.fn()} />)
+
+    expect(screen.getByRole('textbox', { name: '输入问题' })).toBeInTheDocument()
+  })
+
   it('sends trimmed text and clears the draft', () => {
     const onSend = vi.fn()
     const onChange = vi.fn()
