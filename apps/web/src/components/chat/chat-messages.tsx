@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { Check, ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react'
+import { Brain, Check, ChevronDown, ChevronRight, Download, Loader2, Wrench } from 'lucide-react'
 import { Children, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { type Components } from 'react-markdown'
 
 import { lookupCitations } from '@/api/citations'
 import { getDocumentContent } from '@/api/knowledge'
@@ -15,6 +15,7 @@ import type {
   QACitation,
   QACitationDetail,
   QAMessage,
+  QAMessageWithReasoning,
   QAReportArtifact,
   QAThinkingStep,
 } from '@/lib/types'
@@ -543,14 +544,18 @@ function ReasoningStep({ step }: { step: ThinkPanelStep }) {
 function ThinkPanel({
   done,
   onArtifactDownload,
+  reasoningContent,
   steps,
 }: {
   done: boolean
   onArtifactDownload?: (reportFileId: string, filename: string) => void
+  reasoningContent?: string
   steps: QAThinkingStep[]
 }) {
   const [open, setOpen] = useState(!done)
   const groups = groupThinkingSteps(steps)
+  const hasReasoningContent = Boolean(reasoningContent?.trim())
+  const reasoningMarkdownComponents = useMemo(() => createReasoningMarkdownComponents(), [])
 
   useEffect(() => {
     if (done) {
@@ -560,7 +565,7 @@ function ThinkPanel({
     setOpen(true)
   }, [done])
 
-  if (steps.length === 0) return null
+  if (!hasReasoningContent && steps.length === 0) return null
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -570,57 +575,87 @@ function ThinkPanel({
         ) : (
           <ChevronRight className="size-3 shrink-0" />
         )}
-        <span>思考过程 ({steps.length} 步)</span>
+        <span>
+          思考过程
+          {hasReasoningContent && steps.length > 0 ? ` · ${steps.length} 步` : ''}
+          {!hasReasoningContent && steps.length > 0 ? ` (${steps.length} 步)` : ''}
+        </span>
         {done && <Check className="size-3 shrink-0 text-green-500" />}
       </CollapsibleTrigger>
       <CollapsibleContent className="mt-1 space-y-3 rounded-md border border-border/50 bg-muted/50 p-3">
-        {groups.map((group) => (
-          <section key={group.iterationNo} className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="font-medium text-foreground">第 {group.iterationNo} 轮</span>
-              <span className="text-xs text-muted-foreground">
-                {group.toolSteps.length} 个工具调用 · {statusText(group)}
-              </span>
-              {formatDuration(group.durationMs) && (
-                <span className="text-xs text-muted-foreground">
-                  耗时 {formatDuration(group.durationMs)}
-                </span>
-              )}
+        {hasReasoningContent && (
+          <section className="space-y-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Brain className="size-3.5 shrink-0 text-primary" />
+              <span>💭 深度思考</span>
             </div>
-            {group.reasoningSteps.length > 0 && (
-              <div className="space-y-1">
-                {group.reasoningSteps.map((step, index) => (
-                  <ReasoningStep key={`${group.iterationNo}-${step.type}-${index}`} step={step} />
-                ))}
-              </div>
-            )}
-            {group.toolSteps.length > 0 && (
-              <div className="space-y-1">
-                {group.toolSteps.map((step, index) => (
-                  <ToolCallStep
-                    key={step.toolCallId ?? `${group.iterationNo}-${index}`}
-                    onArtifactDownload={onArtifactDownload}
-                    step={step}
-                  />
-                ))}
-              </div>
-            )}
-            {group.reasoningSteps.length === 0 && group.toolSteps.length === 0 && (
-              <div className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground">
-                <span
-                  className={cn(
-                    'size-1.5 shrink-0 rounded-full',
-                    group.status === 'running' ? 'bg-primary animate-pulse' : 'bg-green-500',
-                  )}
-                />
-                <span>{group.title ?? '直接生成回答'}</span>
-                {group.status === 'running' && (
-                  <span className="animate-pulse text-xs text-primary">▊</span>
-                )}
-              </div>
-            )}
+            <div className="rounded-md bg-background/70 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+              <ReactMarkdown components={reasoningMarkdownComponents}>
+                {reasoningContent}
+              </ReactMarkdown>
+            </div>
           </section>
-        ))}
+        )}
+        {steps.length > 0 && (
+          <section className="space-y-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Wrench className="size-3.5 shrink-0 text-primary" />
+              <span>🔧 工具调用</span>
+            </div>
+            <div className="space-y-3">
+              {groups.map((group) => (
+                <section key={group.iterationNo} className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="font-medium text-foreground">第 {group.iterationNo} 轮</span>
+                    <span className="text-xs text-muted-foreground">
+                      {group.toolSteps.length} 个工具调用 · {statusText(group)}
+                    </span>
+                    {formatDuration(group.durationMs) && (
+                      <span className="text-xs text-muted-foreground">
+                        耗时 {formatDuration(group.durationMs)}
+                      </span>
+                    )}
+                  </div>
+                  {group.reasoningSteps.length > 0 && (
+                    <div className="space-y-1">
+                      {group.reasoningSteps.map((step, index) => (
+                        <ReasoningStep
+                          key={`${group.iterationNo}-${step.type}-${index}`}
+                          step={step}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {group.toolSteps.length > 0 && (
+                    <div className="space-y-1">
+                      {group.toolSteps.map((step, index) => (
+                        <ToolCallStep
+                          key={step.toolCallId ?? `${group.iterationNo}-${index}`}
+                          onArtifactDownload={onArtifactDownload}
+                          step={step}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {group.reasoningSteps.length === 0 && group.toolSteps.length === 0 && (
+                    <div className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground">
+                      <span
+                        className={cn(
+                          'size-1.5 shrink-0 rounded-full',
+                          group.status === 'running' ? 'bg-primary animate-pulse' : 'bg-green-500',
+                        )}
+                      />
+                      <span>{group.title ?? '直接生成回答'}</span>
+                      {group.status === 'running' && (
+                        <span className="animate-pulse text-xs text-primary">▊</span>
+                      )}
+                    </div>
+                  )}
+                </section>
+              ))}
+            </div>
+          </section>
+        )}
       </CollapsibleContent>
     </Collapsible>
   )
@@ -702,6 +737,62 @@ function createMarkdownComponents(citations: QACitation[]) {
       </pre>
     ),
   }
+}
+
+function createReasoningMarkdownComponents(): Components {
+  const components: Components = {
+    h1: ({ children, ...rest }) => (
+      <h1 className="my-2 text-sm font-semibold text-foreground/90" {...rest}>
+        {children}
+      </h1>
+    ),
+    h2: ({ children, ...rest }) => (
+      <h2 className="my-2 text-sm font-semibold text-foreground/90" {...rest}>
+        {children}
+      </h2>
+    ),
+    h3: ({ children, ...rest }) => (
+      <h3 className="my-1.5 text-xs font-semibold text-foreground/90" {...rest}>
+        {children}
+      </h3>
+    ),
+    p: ({ children, ...rest }) => (
+      <p className="my-1" {...rest}>
+        {children}
+      </p>
+    ),
+    ul: ({ children, ...rest }) => (
+      <ul className="my-1 list-disc pl-4" {...rest}>
+        {children}
+      </ul>
+    ),
+    ol: ({ children, ...rest }) => (
+      <ol className="my-1 list-decimal pl-4" {...rest}>
+        {children}
+      </ol>
+    ),
+    li: ({ children, ...rest }) => (
+      <li className="my-0.5" {...rest}>
+        {children}
+      </li>
+    ),
+    strong: ({ children, ...rest }) => (
+      <strong className="font-medium text-foreground/90" {...rest}>
+        {children}
+      </strong>
+    ),
+    code: ({ children, ...rest }) => (
+      <code className="rounded bg-muted px-1 py-0.5 text-[0.7rem]" {...rest}>
+        {children}
+      </code>
+    ),
+    pre: ({ children, ...rest }) => (
+      <pre className="my-1 overflow-x-auto rounded-md bg-background p-2 text-xs" {...rest}>
+        {children}
+      </pre>
+    ),
+  }
+  return components
 }
 
 /* ── Status label for assistant messages ── */
@@ -801,6 +892,8 @@ function MessageBubble({
 }) {
   const isUser = msg.role === 'user'
   const hasThinking = msg.thinking && msg.thinking.length > 0
+  const reasoningContent = (msg as QAMessageWithReasoning).reasoningContent
+  const hasReasoningContent = Boolean(reasoningContent?.trim())
   const hasCitations = msg.citations && msg.citations.length > 0
   const markdownComponents = useMemo(
     () => createMarkdownComponents(msg.citations ?? []),
@@ -845,10 +938,11 @@ function MessageBubble({
         )}
       >
         {/* Thinking steps (assistant only) */}
-        {hasThinking && (
+        {(hasThinking || hasReasoningContent) && (
           <div className="mb-2">
             <ThinkPanel
-              steps={msg.thinking!}
+              steps={msg.thinking ?? []}
+              reasoningContent={reasoningContent}
               done={thinkingDone}
               onArtifactDownload={onArtifactDownload}
             />

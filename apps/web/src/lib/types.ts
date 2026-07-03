@@ -85,6 +85,11 @@ export type QAMessageWithArtifacts = QAMessage & {
   artifacts?: QAReportArtifact[]
 }
 
+/** QAMessage extended with streamed reasoning text (frontend-only until backend persists it). */
+export type QAMessageWithReasoning = QAMessage & {
+  reasoningContent?: string
+}
+
 // ── Knowledge Bases ──
 export type ChunkStrategy = components['schemas']['ChunkStrategy']
 export type RetrievalStrategy = components['schemas']['RetrievalStrategy']

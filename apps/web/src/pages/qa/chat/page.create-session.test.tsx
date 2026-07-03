@@ -16,7 +16,9 @@ type MockSidebarSession = {
 
 type MockSidebarProps = {
   activeId: string
+  onClearAll?: () => Promise<void> | void
   onCreate: () => void
+  onPrepareClearAll?: () => Promise<number>
   sessions: MockSidebarSession[]
 }
 
@@ -24,6 +26,7 @@ const qaHookState = vi.hoisted(() => ({
   createPending: false,
   createSession: vi.fn(),
   deleteSession: vi.fn(),
+  listSessions: vi.fn(),
   refetchSessions: vi.fn(),
   renameSession: vi.fn(),
   sessionsData: { items: [] as QASession[] },
@@ -42,6 +45,7 @@ vi.mock('@/api/chat', () => ({
 vi.mock('@/api/conversations', () => ({
   deleteSessionAttachment: vi.fn(),
   getSessionAttachment: vi.fn(),
+  listSessions: qaHookState.listSessions,
   listSessionAttachments: vi.fn(async () => ({ items: [] })),
 }))
 
@@ -50,11 +54,28 @@ vi.mock('@/components/chat', () => ({
   AttachmentUploadStatus: () => null,
   ChatInput: () => null,
   ChatMessages: () => null,
-  ChatSidebar: ({ activeId, onCreate, sessions }: MockSidebarProps) => (
+  ChatSidebar: ({
+    activeId,
+    onClearAll,
+    onCreate,
+    onPrepareClearAll,
+    sessions,
+  }: MockSidebarProps) => (
     <aside>
       <button type="button" onClick={onCreate}>
         新建对话
       </button>
+      {onClearAll && (
+        <button
+          type="button"
+          onClick={async () => {
+            await onPrepareClearAll?.()
+            await onClearAll()
+          }}
+        >
+          清空全部对话
+        </button>
+      )}
       <div data-testid="active-session">{activeId}</div>
       <div data-testid="session-count">{sessions.length}</div>
       {sessions.map((session) => (
@@ -168,9 +189,11 @@ describe('ChatPage create conversation action', () => {
     qaHookState.createPending = false
     qaHookState.createSession.mockReset()
     qaHookState.deleteSession.mockReset()
+    qaHookState.listSessions.mockReset()
     qaHookState.refetchSessions.mockReset()
     qaHookState.renameSession.mockReset()
     qaHookState.sessionsData = { items: [] }
+    qaHookState.listSessions.mockResolvedValue({ items: [], page: { total: 0 } })
     qaHookState.uploadSessionId = null
     qaHookState.uploadState = { phase: 'idle' }
     setChatState({ activeId: null, sessions: [] })
@@ -311,5 +334,29 @@ describe('ChatPage create conversation action', () => {
     await waitFor(() => expect(qaHookState.createSession).toHaveBeenCalledWith('新对话'))
     await waitFor(() => expect(screen.getByTestId('active-session')).toHaveTextContent(next.id))
     expect(screen.getByTestId('session-count')).toHaveTextContent('1')
+  })
+
+  it('passes clear-all handlers to the sidebar and deletes the confirmed sessions', async () => {
+    const first = makeSession({ id: 'session-1', messageCount: 1, title: '会话 1' })
+    const second = makeSession({ id: 'session-2', messageCount: 1, title: '会话 2' })
+    qaHookState.sessionsData = { items: [first, second] }
+    qaHookState.listSessions.mockResolvedValueOnce({
+      items: [first, second],
+      page: { total: 2 },
+    })
+    qaHookState.deleteSession.mockResolvedValue(undefined)
+    setChatState({ activeId: first.id, sessions: [first, second] })
+
+    renderWithProviders(<ChatPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: '清空全部对话' }))
+
+    await waitFor(() => {
+      expect(qaHookState.listSessions).toHaveBeenCalledWith({ page: 1, pageSize: 50 })
+    })
+    await waitFor(() => {
+      expect(qaHookState.deleteSession).toHaveBeenCalledWith(first.id)
+      expect(qaHookState.deleteSession).toHaveBeenCalledWith(second.id)
+    })
   })
 })

@@ -1,10 +1,11 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type {
   QACitation,
   QACitationDetail,
   QAMessage,
+  QAMessageWithReasoning,
   QAReportArtifact,
   QAThinkingStep,
 } from '@/lib/types'
@@ -63,6 +64,23 @@ function renderMessage(message: QAMessage, onArtifactDownload = vi.fn()) {
   )
 }
 
+function reasoningMessage(
+  reasoningContent: string,
+  overrides: Partial<QAMessageWithReasoning> = {},
+): QAMessageWithReasoning {
+  return {
+    content: overrides.content ?? '',
+    createdAt: '2026-07-03T00:00:00.000Z',
+    id: 'assistant-1',
+    reasoningContent,
+    role: 'assistant',
+    sessionId: 'session-1',
+    status: 'streaming',
+    thinking: [],
+    ...overrides,
+  }
+}
+
 function citation(overrides: Partial<QACitation> = {}): QACitation {
   const citationNo = overrides.citationNo ?? 1
   return {
@@ -108,6 +126,84 @@ function firstCitationTrigger(label: string): HTMLElement {
 }
 
 describe('ChatMessages ThinkPanel', () => {
+  it('renders streamed reasoning content incrementally with lightweight Markdown', () => {
+    const initial = reasoningMessage('先判断问题类型')
+    const view = renderMessage(initial)
+
+    expect(screen.getByText('💭 深度思考')).toBeInTheDocument()
+    expect(screen.getByText('先判断问题类型')).toBeInTheDocument()
+
+    view.rerender(
+      <ChatMessages
+        messages={[
+          reasoningMessage('先判断问题类型\n\n**再检索**安全摘要', {
+            content: '回答生成中',
+          }),
+        ]}
+        streaming
+        error={null}
+      />,
+    )
+
+    expect(screen.getByText('再检索')).toBeInTheDocument()
+    expect(screen.getByText(/安全摘要/)).toBeInTheDocument()
+  })
+
+  it('hides the deep reasoning panel when no reasoning content is present', () => {
+    renderMessage(
+      assistantWithThinking([
+        { iterationNo: 1, label: 'Agent 迭代 1', status: 'running', type: 'agent_iteration' },
+        {
+          iterationNo: 1,
+          label: 'search_knowledge 执行中',
+          status: 'running',
+          type: 'tool_call',
+        },
+      ]),
+    )
+
+    expect(screen.queryByText('💭 深度思考')).not.toBeInTheDocument()
+    expect(screen.getByText('🔧 工具调用')).toBeInTheDocument()
+  })
+
+  it('auto-collapses the reasoning panel three seconds after completion', async () => {
+    vi.useFakeTimers()
+    try {
+      const view = renderMessage(reasoningMessage('整理安全推理摘要'))
+      const trigger = screen.getByRole('button', { name: /思考过程/ })
+
+      expect(trigger).toHaveAttribute('aria-expanded', 'true')
+
+      await act(async () => {
+        view.rerender(
+          <ChatMessages
+            messages={[
+              reasoningMessage('整理安全推理摘要', {
+                content: '回答完成',
+                status: 'completed',
+              }),
+            ]}
+            streaming={false}
+            error={null}
+          />,
+        )
+      })
+
+      expect(trigger).toHaveAttribute('aria-expanded', 'true')
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000)
+      })
+
+      expect(screen.getByRole('button', { name: /思考过程/ })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('groups a single iteration with one expandable tool call', () => {
     renderMessage(
       assistantWithThinking([

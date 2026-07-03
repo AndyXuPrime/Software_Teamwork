@@ -7,6 +7,7 @@ import {
   finalizeThinkingStepsOnAnswerCompleted,
   isReusableEmptyNewSession,
   sanitizeCitation,
+  sanitizeReasoningDelta,
   sanitizeThinkingStep,
   type ToolThinkingStep,
   upsertReasoningStep,
@@ -191,6 +192,22 @@ describe('isReusableEmptyNewSession', () => {
 })
 
 describe('ChatPage stream thinking helpers', () => {
+  it('extracts safe reasoning delta text from supported payload fields', () => {
+    expect(sanitizeReasoningDelta({ text: '第一段推理' })).toBe('第一段推理')
+    expect(sanitizeReasoningDelta({ content: '第二段推理' })).toBe('第二段推理')
+    expect(sanitizeReasoningDelta({ delta: '第三段推理' })).toBe('第三段推理')
+  })
+
+  it('drops reasoning delta chunks that contain sensitive internals', () => {
+    expect(sanitizeReasoningDelta({ text: 'system prompt: keep API key sk-secret' })).toBe('')
+    expect(sanitizeReasoningDelta({ text: 'internal URL http://10.0.0.2/provider' })).toBe('')
+  })
+
+  it('drops reasoning delta chunks that become sensitive only after concatenation', () => {
+    expect(sanitizeReasoningDelta({ text: '-secret' }, 'sk')).toBe('')
+    expect(sanitizeReasoningDelta({ text: '://10.0.0.2/provider' }, 'http')).toBe('')
+  })
+
   it('keeps same-type reasoning steps separated across iterations', () => {
     const first = sanitizeThinkingStep({
       detail: '第 1 轮生成',

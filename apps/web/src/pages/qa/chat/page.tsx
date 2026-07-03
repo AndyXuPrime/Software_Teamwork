@@ -37,6 +37,7 @@ import type {
   QACitation,
   QAMessage,
   QAMessageWithArtifacts,
+  QAMessageWithReasoning,
   QAReportArtifact,
   QASession,
   QASessionListItem,
@@ -161,6 +162,24 @@ function sanitizeLabel(raw: string | undefined): string | undefined {
   if (typeof raw !== 'string' || raw.length === 0) return undefined
   const trimmed = raw.slice(0, 200)
   if (SENSITIVE_PATTERN.test(trimmed)) return undefined
+  return trimmed
+}
+
+export function sanitizeReasoningDelta(raw: Record<string, unknown>, existingContent = ''): string {
+  const value =
+    typeof raw.text === 'string'
+      ? raw.text
+      : typeof raw.content === 'string'
+        ? raw.content
+        : typeof raw.delta === 'string'
+          ? raw.delta
+          : typeof raw.reasoning === 'string'
+            ? raw.reasoning
+            : ''
+  if (!value) return ''
+  const trimmed = value.slice(0, 4000)
+  if (SENSITIVE_PATTERN.test(trimmed)) return ''
+  if (SENSITIVE_PATTERN.test(`${existingContent}${trimmed}`)) return ''
   return trimmed
 }
 
@@ -973,6 +992,7 @@ export function ChatPage() {
 
       // Accumulators for SSE events
       let content = ''
+      let reasoningContent = ''
       let steps: ToolThinkingStep[] = []
       const toolStepIndex: Record<string, number> = {}
       const cites: QACitation[] = []
@@ -986,6 +1006,7 @@ export function ChatPage() {
         content?: string
         thinking?: QAThinkingStep[]
         citations?: QACitation[]
+        reasoningContent?: string
         status?: QAMessage['status']
         artifacts?: QAReportArtifact[]
       }) => {
@@ -994,7 +1015,7 @@ export function ChatPage() {
           const lastIdx = msgs.length - 1
           const last = msgs[lastIdx]
           if (!last || last.role !== 'assistant') return state
-          msgs[lastIdx] = { ...last, ...patch }
+          msgs[lastIdx] = { ...last, ...patch } as QAMessageWithReasoning
           return {
             messagesBySession: {
               ...state.messagesBySession,
@@ -1060,6 +1081,13 @@ export function ChatPage() {
           })
           steps = upsertReasoningStep(steps, safe)
           patchAssistant({ thinking: [...steps] })
+        },
+        onReasoningDelta(data) {
+          if (!verifySeq(data.seq)) return
+          const delta = sanitizeReasoningDelta(data, reasoningContent)
+          if (!delta) return
+          reasoningContent += delta
+          patchAssistant({ reasoningContent, status: 'streaming' })
         },
         onToolStarted(data) {
           if (!verifySeq(data.seq)) return
@@ -1176,12 +1204,14 @@ export function ChatPage() {
             content: string
             thinking: QAThinkingStep[]
             citations: QACitation[]
+            reasoningContent: string
             status: 'completed'
             id?: string
           } = {
             content,
             thinking: [...steps],
             citations: [...cites],
+            reasoningContent,
             status: 'completed',
           }
           if (typeof serverMsgId === 'string') patch.id = serverMsgId
@@ -1233,6 +1263,7 @@ export function ChatPage() {
               content,
               thinking: [...steps],
               citations: [...cites],
+              reasoningContent,
               status: 'failed',
             })
             abort()
@@ -1276,8 +1307,9 @@ export function ChatPage() {
               content,
               thinking: [...steps],
               citations: [...cites],
+              reasoningContent,
               status: 'stopped',
-            }
+            } as QAMessageWithReasoning
             return {
               messagesBySession: { ...prev.messagesBySession, [uid]: msgs },
               streaming: false,
