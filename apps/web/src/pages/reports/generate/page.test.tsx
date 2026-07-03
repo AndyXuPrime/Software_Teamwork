@@ -164,7 +164,7 @@ describe('ReportGeneratePage', () => {
       target: { value: '自定义审计标题' },
     })
     // Switch back report type
-    fireEvent.click(screen.getByRole('combobox'))
+    fireEvent.click(screen.getAllByRole('combobox')[0]!)
     const coalOption = await screen.findByRole('option', { name: /煤库存审计报告/ })
     fireEvent.click(coalOption)
 
