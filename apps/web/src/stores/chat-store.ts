@@ -138,9 +138,6 @@ export const useChatStore = create<ChatState>()(
       setLastFailedMsg: (msg) => set({ lastFailedMsg: msg }),
 
       reset: () => {
-        // Clear persisted sessionIds so the next rehydrate starts empty
-        try { localStorage.removeItem('qa-sessions-ids') } catch { /* noop */ }
-        try { useChatStore.persist.clearStorage() } catch { /* noop */ }
         set({
           sessions: [],
           sessionIds: [],
@@ -152,6 +149,10 @@ export const useChatStore = create<ChatState>()(
           attachmentsBySession: {},
           excludedAttachmentIds: {},
         })
+        // Delete persisted key *after* set so persist middleware
+        // doesn't re-create it from the empty sessionIds.
+        try { localStorage.removeItem('qa-sessions-ids') } catch { /* noop */ }
+        try { useChatStore.persist.clearStorage() } catch { /* noop */ }
       },
 
       clearError: () => set({ error: null, lastFailedMsg: null }),
