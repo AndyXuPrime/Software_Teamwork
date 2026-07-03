@@ -594,7 +594,10 @@ class MistralEmbed(Base):
     _FACTORY_NAME = "Mistral"
 
     def __init__(self, key, model_name="mistral-embed", base_url=None):
-        from mistralai.client import Mistral
+        try:
+            from mistralai import Mistral
+        except ImportError:
+            from mistralai.client import Mistral
 
         self.client = Mistral(api_key=key)
         self.model_name = model_name

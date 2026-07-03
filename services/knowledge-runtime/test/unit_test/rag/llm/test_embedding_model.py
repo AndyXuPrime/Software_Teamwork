@@ -238,20 +238,25 @@ class TestTruncationBoundary:
     def test_mistral_uses_v2_embeddings_create_inputs(self, monkeypatch):
         fake_client = MagicMock()
         fake_client.embeddings.create = MagicMock(side_effect=_openai_create(total_tokens=5))
-        fake_client_module = types.ModuleType("mistralai.client")
-        fake_client_module.Mistral = MagicMock(return_value=fake_client)
         fake_package = types.ModuleType("mistralai")
-        fake_package.client = fake_client_module
+        fake_package.Mistral = MagicMock(return_value=fake_client)
         monkeypatch.setitem(sys.modules, "mistralai", fake_package)
-        monkeypatch.setitem(sys.modules, "mistralai.client", fake_client_module)
 
         embed = MistralEmbed("key", "mistral-embed")
         vectors, token_count = embed.encode(["hello"])
 
-        fake_client_module.Mistral.assert_called_once_with(api_key="key")
+        fake_package.Mistral.assert_called_once_with(api_key="key")
         fake_client.embeddings.create.assert_called_once_with(inputs=["hello"], model="mistral-embed")
         assert vectors.shape == (1, 3)
         assert token_count == 5
+
+    def test_mistral_import_path_available(self):
+        try:
+            from mistralai import Mistral
+        except ImportError:
+            from mistralai.client import Mistral
+
+        assert Mistral is not None
 
 
 # --------------------------------------------------------------------------- #
