@@ -125,6 +125,13 @@ Qdrant/File/AI provider 原始响应不得进入输出。
 在当前用户可见的知识库中做语义检索，返回按相关度排序的安全 chunk 摘要和后续读取
 所需的资源 ID。模型应优先调用此工具，再按需调用 `knowledge__get_chunk`。
 
+这里的参数边界是 **MCP wrapper 有意收窄的模型工具契约**，不继承现有
+`/knowledge-queries` HTTP API 的默认值。HTTP API 仍使用 `topK=10`、最大 `100`、
+`scoreThreshold=0.35`；#505 的 `MCPToolService.search` 独立应用下表中的
+`topK=5`、最大 `20`、`scoreThreshold=0` 和 `0..1` 边界，再把规范化后的显式值传给
+Knowledge 检索服务。该限制用于约束单次 Agent 工具结果规模，不修改 REST 契约；
+#505 的 MCP service/schema 测试必须锁定这些独立默认值和越界行为。
+
 ### 3.1 输入参数
 
 | 字段 | 类型 | 必填 | 默认值 | 约束与语义 |
@@ -312,6 +319,11 @@ Qdrant/File/AI provider 原始响应不得进入输出。
 ### 5.2 `DocumentSummary`
 
 `get_document.data` 以及 `list_documents.data.documents[]` 使用同一结构：
+
+MCP 不直接复用 OpenAPI 中 `updatedAt` 可空的 REST `DocumentSummary`。#505 定义独立
+`MCPDocumentSummary`，从 Knowledge service 的非指针 `KnowledgeDocument.UpdatedAt`
+映射并统一格式化为 UTC RFC 3339，因此 MCP 输出中的 `updatedAt` 是必填字符串；
+这不会收紧现有 REST response schema。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
