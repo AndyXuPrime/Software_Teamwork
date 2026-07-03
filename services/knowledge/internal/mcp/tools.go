@@ -1,6 +1,13 @@
 package mcp
 
 const (
+	// Read-only tools exposed via MCP (v1 contract).
+	toolSearch        = "search"
+	toolListDocuments = "list_documents"
+	toolGetDocument   = "get_document"
+	toolGetChunk      = "get_chunk"
+
+	// Deprecated / internal: not published in the v1 MCP tool list.
 	toolSearchKnowledge      = "search_knowledge"
 	toolAnswerFromKnowledge  = "answer_from_knowledge"
 	toolListKnowledgeBases   = "list_knowledge_bases"
@@ -8,8 +15,6 @@ const (
 	toolCreateKnowledgeBase  = "create_knowledge_base"
 	toolUpdateKnowledgeBase  = "update_knowledge_base"
 	toolDeleteKnowledgeBase  = "delete_knowledge_base"
-	toolListDocuments        = "list_documents"
-	toolGetDocument          = "get_document"
 	toolCreateDocument       = "create_document"
 	toolUpdateDocument       = "update_document"
 	toolDeleteDocument       = "delete_document"
@@ -17,23 +22,13 @@ const (
 	toolGetDocumentContent   = "get_document_content"
 )
 
-// ToolCatalog returns the v1 MCP tool names in stable order.
+// ToolCatalog returns the v1 MCP read-only tool names in stable order.
 func ToolCatalog() []string {
 	return []string{
-		toolSearchKnowledge,
-		toolAnswerFromKnowledge,
-		toolListKnowledgeBases,
-		toolGetKnowledgeBase,
-		toolCreateKnowledgeBase,
-		toolUpdateKnowledgeBase,
-		toolDeleteKnowledgeBase,
+		toolSearch,
 		toolListDocuments,
 		toolGetDocument,
-		toolCreateDocument,
-		toolUpdateDocument,
-		toolDeleteDocument,
-		toolListDocumentChunks,
-		toolGetDocumentContent,
+		toolGetChunk,
 	}
 }
 

@@ -34,74 +34,24 @@ func newMCPServer(adapterServer *adapter.Server, caller CallerContext, chatClien
 	}
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
-		Name:        toolSearchKnowledge,
-		Description: "Pure retrieval over knowledge bases; returns ranked chunks with citation fields and no LLM synthesis.",
+		Name:        toolSearch,
+		Description: "Semantic search across knowledge bases. Returns ranked chunks with citation fields and no LLM synthesis. Use this first, then call get_chunk for full context when needed.",
 	}, h.searchKnowledge)
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
-		Name:        toolAnswerFromKnowledge,
-		Description: "Retrieve relevant chunks and synthesize an answer via AI Gateway.",
-	}, h.answerFromKnowledge)
-
-	sdkmcp.AddTool(server, &sdkmcp.Tool{
-		Name:        toolListKnowledgeBases,
-		Description: "List knowledge bases visible to the caller.",
-	}, h.listKnowledgeBases)
-
-	sdkmcp.AddTool(server, &sdkmcp.Tool{
-		Name:        toolGetKnowledgeBase,
-		Description: "Get a knowledge base by ID.",
-	}, h.getKnowledgeBase)
-
-	sdkmcp.AddTool(server, &sdkmcp.Tool{
-		Name:        toolCreateKnowledgeBase,
-		Description: "Create a new knowledge base.",
-	}, h.createKnowledgeBase)
-
-	sdkmcp.AddTool(server, &sdkmcp.Tool{
-		Name:        toolUpdateKnowledgeBase,
-		Description: "Update knowledge base metadata.",
-	}, h.updateKnowledgeBase)
-
-	sdkmcp.AddTool(server, &sdkmcp.Tool{
-		Name:        toolDeleteKnowledgeBase,
-		Description: "Soft-delete a knowledge base.",
-	}, h.deleteKnowledgeBase)
-
-	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        toolListDocuments,
-		Description: "List documents in a knowledge base.",
+		Description: "Paginated list of documents in a knowledge base, filterable by processing status.",
 	}, h.listDocuments)
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
 		Name:        toolGetDocument,
-		Description: "Get document processing details by ID.",
+		Description: "Get document metadata and processing status by ID.",
 	}, h.getDocument)
 
 	sdkmcp.AddTool(server, &sdkmcp.Tool{
-		Name:        toolCreateDocument,
-		Description: "Upload a document for async parse and indexing.",
-	}, h.createDocument)
-
-	sdkmcp.AddTool(server, &sdkmcp.Tool{
-		Name:        toolUpdateDocument,
-		Description: "Update document metadata such as tags.",
-	}, h.updateDocument)
-
-	sdkmcp.AddTool(server, &sdkmcp.Tool{
-		Name:        toolDeleteDocument,
-		Description: "Soft-delete a document and queue cleanup.",
-	}, h.deleteDocument)
-
-	sdkmcp.AddTool(server, &sdkmcp.Tool{
-		Name:        toolListDocumentChunks,
-		Description: "List indexed chunks for a document.",
+		Name:        toolGetChunk,
+		Description: "Read the full text of a single chunk by its ID (obtained from search results).",
 	}, h.listDocumentChunks)
-
-	sdkmcp.AddTool(server, &sdkmcp.Tool{
-		Name:        toolGetDocumentContent,
-		Description: "Download original document content.",
-	}, h.getDocumentContent)
 
 	return server
 }

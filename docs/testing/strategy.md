@@ -1,6 +1,6 @@
 # 测试策略
 
-日期：2026-07-01
+日期：2026-07-03
 
 本文把当前仓库已经可执行的检查、CI 覆盖和仍缺的测试能力放在一起，作为 PR 前验证基线。具体服务实现状态仍以各服务 `docs/implementation.md` 为准。
 
@@ -19,6 +19,7 @@
 - 测试组 `T-*` 任务必须实际运行测试并留下可复核证据；纯单元/组件自动化或静态检查可在 issue/PR 中保留轻量执行记录，集成、E2E、权限/安全边界、文件/Knowledge runtime 边界、migration、环境验收、人工验收、回归或缺陷复现必须按 `docs/testing/templates/test-report-template.md` 生成完整报告并归档到 `docs/testing/reports/YYYY-MM-DD/`。
 - 当前有前端 Playwright 基础 smoke，但没有后端跨服务完整 E2E smoke；不要用单服务测试或前端 mock E2E 替代跨服务验收。
 - 旧 `services/parser` 已退役；PDF 解析、切块、embedding、索引和检索由 Knowledge 的 RAGFlow runtime API/worker 链路覆盖。相关变更优先运行 Knowledge、knowledge-runtime、Docker policy、Compose config 和真实 PDF E2E。
+- 当前有前端 Playwright 基础 smoke 和 #125 后端/跨服务 smoke slices，但没有完整前端到后端 E2E smoke；不要用单服务测试、局部 smoke 或前端 mock E2E 替代完整跨服务验收。
 - open PR、未合入 issue 和草案不能写成当前 `develop` 已实现；测试记录也不能把未稳定依赖的检查写成 required。
 
 ## 自动化测试分层
@@ -62,13 +63,13 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | --- | --- |
 | 文档 | `git diff --check`；检查新增链接和实现事实。 |
 | Gateway OpenAPI / owner map | `python3 -m unittest scripts.tests.test_verify_gateway_active_api`；`python3 scripts/verify_gateway_active_api.py`。 |
-| Gateway QA active path schema contract | `cd services/gateway && go test ./internal/http -run QA`；覆盖 QA-owned active paths、OpenAPI schema/auth/content type、QA internal `$ref` drift 和 proxy namespace/query 映射。 |
+| Gateway QA active path schema contract | `cd services/gateway && go test ./internal/http -run QA`；覆盖 29 个 QA-owned active paths、OpenAPI schema/auth/content type、session attachments、settings `systemPrompt` contract、QA internal `$ref` drift 和 proxy namespace/query 映射。 |
 | 前端 | `bun install --frozen-lockfile`；`bun run --cwd apps/web check`；`bun run --cwd apps/web build`；`bun run --cwd apps/web test:unit`；关键页面改动再跑 `bun run --cwd apps/web test:e2e`。 |
 | 前端 API 类型 | `bun run --cwd apps/web api:generate`；确认 generated diff 符合预期。 |
 | 单个 Go 服务 | `cd services/<service> && go test ./...`；`go build ./cmd/server`。 |
 | QA 服务 | `cd services/qa && go test ./...`；`go build ./cmd/server`；`go build ./cmd/agent`。 |
 | Docker policy | `python3 scripts/check_docker_policy.py`；验证根级 Compose 只包含 `postgres`、`redis`、`qdrant`、`minio`、`minio-init`，不包含 `build:`，基础设施镜像默认值不使用 `latest`，`deploy/.env.example` 只覆盖 infra image。 |
-| 本地启动脚本 / 文档 | `bash -n scripts/local/dev-up.sh scripts/local/run-backend.sh scripts/local/stop-backend.sh`；`python3 scripts/verify_local_seed_contract.py`；确认 README/deploy/runbook 第一屏仍是 `cp deploy/.env.example deploy/.env`、`./scripts/local/dev-up.sh`、`./scripts/local/run-backend.sh`、`cd apps/web && bun install && bun run dev`，并确认 `dev-up.sh` 在 migration/seed 前等待 infra health、创建或校验 Qdrant collection，AI Gateway 本地 seed 使用 `localhost:11434`，stop 脚本按进程组停止 host-run 服务。 |
+| 本地启动脚本 / 文档 | `bash -n scripts/local/dev-up.sh scripts/local/run-backend.sh scripts/local/stop-backend.sh`；`python3 scripts/verify_local_seed_contract.py`；确认 README/deploy/runbook 第一屏仍是 `cp deploy/.env.example deploy/.env`、`./scripts/local/dev-up.sh`、`./scripts/local/run-backend.sh`、`cd apps/web && bun install && bun run dev`，并确认 `dev-up.sh` 在 migration/seed 前等待 infra health、创建或校验 Qdrant collection，Go module proxy 排障说明区分 `GOPROXY`、Docker registry rewrite 和 `UV_DEFAULT_INDEX`，AI Gateway 本地 seed 使用 `localhost:11434`，stop 脚本按进程组停止 host-run 服务。 |
 | Docker environment | `python3 scripts/check_docker_environment.py --profile all --clean-env`；用于区分 registry rewrite、daemon mirror、Docker Hub direct 和 shell proxy 的问题。CI 只跑 `--skip-network`，真实 manifest 探测作为本地/排障检查。 |
 | Compose | `docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config --quiet`；服务清单只能是五个 infra 服务。 |
 | Knowledge repository / SQL | `cd services/knowledge && KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' go test ./internal/repository -count=1`。 |
@@ -97,6 +98,7 @@ CI 自动化用于保护 `develop`，只放入可以在 GitHub Actions 中稳定
 | Auth/Gateway/Redis full smoke | `AUTH_GATEWAY_REDIS_FULL_SMOKE=1` 显式启用；`scripts/run_issue_352_smoke.sh` 准备 PostgreSQL/Redis infra 并在宿主机启动 Auth/Gateway。 | 验证 Auth migration apply、Gateway 创建用户/登录/当前用户/登出、Redis session key/value/TTL 脱敏，以及 fake owner 捕获 Gateway 注入认证上下文 header。 |
 | Cross-service smoke | 已有 `scripts/run_issue_125_smoke.sh` 汇总入口；真实依赖仍按 slice 显式启用。 | Auth -> Gateway -> Domain、Document -> File/AI Gateway、QA -> Knowledge/AI Gateway 等链路。 |
 | Knowledge PDF E2E | 显式启用；使用真实 Knowledge adapter、RAGFlow runtime API/worker、PostgreSQL、MinIO、Elasticsearch/向量索引和 provider credential。 | 验证真实 PDF 上传、解析、切块、embedding、索引和检索结果；不替代完整 Gateway/MCP/QA 总入口。 |
+| Issue #125 smoke slices | `bash scripts/run_issue_125_smoke.sh --list` / `--all` | 汇总 Auth/Gateway/Redis、File owner、QA RAG、Document REST 和 Document MCP slices；仍是显式 opt-in smoke，不等同于完整前端 E2E 或真实 provider 验收。 |
 
 env-gated repository tests：
 
@@ -208,7 +210,7 @@ prompts, document text, embedding payloads, or provider raw bodies.
 
 ## 跨服务 smoke 目标
 
-当前还没有统一 E2E 脚本。#125 完成后至少应覆盖：
+当前已有 `scripts/run_issue_125_smoke.sh` 作为 #125 smoke slices 的汇总入口，但它仍按显式 opt-in 运行，并按 slice 报告跳过、阻断或通过状态。后续升级为完整一键前端到后端 E2E 前，至少还应覆盖：
 
 1. Auth 创建会话，Gateway 写入 Redis session cache。
 2. Gateway 使用认证上下文代理一个 Knowledge/QA/Document active path。

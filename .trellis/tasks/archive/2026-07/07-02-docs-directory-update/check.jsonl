@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "verify changed architecture docs do not overstate pending or unmerged cross-service capabilities"}
+{"file": "docs/collaboration/documentation-workflow.md", "reason": "verify current-state/gap content remains in architecture docs and service implementation facts stay linked rather than duplicated"}

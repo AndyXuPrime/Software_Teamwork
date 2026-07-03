@@ -5516,7 +5516,7 @@ components:
       type: string
       description: |
         Lifecycle status of a QA session attachment. `uploaded` after the raw
-        object is stored, `parsing` while parser runs, `ready` when parsed
+        object is stored, `parsing` while runtime parsing runs, `ready` when parsed
         content is available for retrieval and message association, `failed`
         when parsing fails, and `purged` as the terminal state after TTL
         cleanup removes temporary content.

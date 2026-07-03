@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,6 +15,31 @@ func TestDefaultAgentConfigEnablesAttachmentSearch(t *testing.T) {
 	config := DefaultAgentConfig()
 	if !containsString(config.EnabledToolNames, "search_session_attachments") {
 		t.Fatalf("enabledToolNames=%v, want search_session_attachments", config.EnabledToolNames)
+	}
+	if !containsString(config.EnabledToolNames, "document__generate_report_from_content") {
+		t.Fatalf("enabledToolNames=%v, want document__generate_report_from_content", config.EnabledToolNames)
+	}
+}
+
+func TestReportGenerationDirectiveMentionsContentReportTool(t *testing.T) {
+	directive := requestDirective(AskInput{Mode: "report_generation"})
+	if !strings.Contains(directive, "document__generate_report_from_content") ||
+		!strings.Contains(directive, "search_session_attachments") ||
+		!strings.Contains(directive, "include_report_source=true") ||
+		!strings.Contains(directive, "report_source_excerpt") {
+		t.Fatalf("directive=%q, want attachment-to-report tool guidance", directive)
+	}
+}
+
+func TestDefaultAgentConfigEnablesKnowledgeMCPTools(t *testing.T) {
+	config := DefaultAgentConfig()
+	for _, name := range []string{
+		"knowledge__search", "knowledge__list_documents",
+		"knowledge__get_document", "knowledge__get_chunk",
+	} {
+		if !containsString(config.EnabledToolNames, name) {
+			t.Fatalf("enabledToolNames=%v, want %s", config.EnabledToolNames, name)
+		}
 	}
 }
 

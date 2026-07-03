@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "docs/ is the repository contract source of truth and develop code is the current fact baseline"}
+{"file": "docs/collaboration/documentation-workflow.md", "reason": "defines where architecture current-state summaries belong and how to avoid duplicating service implementation docs"}

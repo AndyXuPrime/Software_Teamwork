@@ -86,10 +86,10 @@
 - Knowledge-owned 知识库、文档上传、文档处理状态、原文件内容、切片详情和知识检索接口。
 - Parser 内部文档解析运行时接口草案。
 - Document-owned 报告模板、素材、报告记录、大纲、章节、生成任务、报告文件、配置、统计和日志接口。
-- QA-owned 会话、消息、非流式/流式回答、SSE 事件回放、引用、配置、检索体验测试和统计接口。
+- QA-owned 会话、消息、session attachments、非流式/流式回答、SSE 事件回放、引用、版本化 `systemPrompt` 配置、检索体验测试和统计接口。
 - AI Gateway 内部模型配置、OpenAI-compatible chat/function calling/embedding 和 OpenAI-style rerank 接口草案。
 
-所有 planed public API 已转为 active contracts，无待补齐契约。
+所有 planned public API 已转为 active contracts，无待补齐契约。
 
 新增或调整公开接口或内部模型接口时，需要同步更新：
 
