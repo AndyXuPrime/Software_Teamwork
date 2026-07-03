@@ -53,8 +53,12 @@ out/
 *.dll
 *.so
 *.dylib
-services/knowledge/adapter
-services/knowledge/server
+# Service-root binaries produced by running `go build ./cmd/<name>` from a
+# service directory.
+services/*/server
+services/*/adapter
+services/*/agent
+services/*/mcp-echo
 
 # Go test binaries and coverage artifacts
 *.test
