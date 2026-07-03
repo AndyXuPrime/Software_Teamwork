@@ -47,6 +47,11 @@ Do not put paginated lists, documents, report records, model settings, or permis
 - Use local persistence for client-only drafts and temporary session recovery.
 - Message state should distinguish `pending`, `streaming`, `done`, and `error`.
 - Persist enough metadata to restore sessions after refresh, but avoid caching sensitive documents or credentials in localStorage.
+- Derive "empty active chat" behavior from the active session's own messages,
+  message count, attachments, draft text, and upload state. Do not use a global
+  `streaming` flag alone to decide whether the selected session is empty,
+  because another session can still be generating while the selected session is
+  a reusable empty draft.
 
 Recommended shape:
 
@@ -74,6 +79,9 @@ type ChatMessage = {
 - Keeping filters only in component state when they should survive refresh.
 - Persisting secrets, API keys, or sensitive source content in browser storage.
 - Treating streaming content as a final answer before the `done` event.
+- Using global chat streaming state as a proxy for whether the active session
+  has content; session creation and empty-draft reuse checks must be
+  session-scoped.
 
 ## Scenario: Auth Session Store And Route Guards
 
