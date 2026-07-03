@@ -20,7 +20,8 @@ const (
 	ragflowLayoutOpenDataLoader = "OpenDataLoader"
 	ragflowLayoutPlainText      = "Plain Text"
 
-	parserConfigTraceKey = "software_teamwork_parser_config"
+	parserConfigTraceKey       = "software_teamwork_parser_config"
+	parserConfigCredentialsKey = "software_teamwork_parser_config_credentials"
 )
 
 type knowledgeBaseSummary struct {
@@ -367,6 +368,9 @@ func buildCreateDatasetBody(req createKnowledgeBaseRequest, defaultParserConfig 
 		}
 	} else if len(defaultParserConfig) > 0 {
 		payload["parser_config"] = vendorParserConfig(defaultParserConfig)
+		if credentials := parserConfigCredentials(defaultParserConfig); len(credentials) > 0 {
+			payload["parser_config_credentials"] = credentials
+		}
 	}
 	return json.Marshal(payload)
 }
@@ -377,12 +381,23 @@ func vendorParserConfig(in map[string]any) map[string]any {
 	}
 	out := make(map[string]any, len(in))
 	for key, value := range in {
-		if key == parserConfigTraceKey {
+		if key == parserConfigTraceKey || key == parserConfigCredentialsKey {
 			continue
 		}
 		out[key] = value
 	}
 	return out
+}
+
+func parserConfigCredentials(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	raw, ok := in[parserConfigCredentialsKey].(map[string]any)
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	return cloneAnyMap(raw)
 }
 
 func buildUpdateDatasetBody(req updateKnowledgeBaseRequest) ([]byte, error) {
@@ -414,7 +429,7 @@ func ragflowParserConfigFromSnapshot(snapshot service.ParserConfigSnapshot) map[
 	cfg := map[string]any{}
 	for key, value := range defaultParameters {
 		key = normalizeParserParameterKey(key)
-		if key == "" || key == "layout_recognize" || isSensitiveParserParameter(key) {
+		if key == "" || key == "layout_recognize" || isSensitiveParserParameter(key) || isPaddleOCRCloudParameter(key) {
 			continue
 		}
 		if sanitized, ok := sanitizeParserParameterValue(value); ok {
@@ -422,15 +437,39 @@ func ragflowParserConfigFromSnapshot(snapshot service.ParserConfigSnapshot) map[
 		}
 	}
 	cfg["layout_recognize"] = layoutRecognize
+	if snapshot.Backend == service.ParserBackendPaddleOCRCloud {
+		if credentials := paddleOCRCloudCredentials(defaultParameters); len(credentials) > 0 {
+			cfg[parserConfigCredentialsKey] = credentials
+		}
+	}
 	cfg[parserConfigTraceKey] = parserConfigTrace(snapshot, layoutRecognize)
 	return cfg
+}
+
+func paddleOCRCloudCredentials(defaultParameters map[string]any) map[string]any {
+	accessToken := parserParameterString(defaultParameters, service.PaddleOCRAccessTokenParameter)
+	if accessToken == "" {
+		return nil
+	}
+	baseURL := parserParameterString(defaultParameters, service.PaddleOCRBaseURLParameter)
+	algorithm := parserParameterString(defaultParameters, service.PaddleOCRAlgorithmParameter)
+	if algorithm == "" {
+		algorithm = service.PaddleOCRDefaultModel
+	}
+	return map[string]any{
+		"paddleocr_cloud": map[string]any{
+			service.PaddleOCRBaseURLParameter:     baseURL,
+			service.PaddleOCRAccessTokenParameter: accessToken,
+			service.PaddleOCRAlgorithmParameter:   algorithm,
+		},
+	}
 }
 
 func ragflowLayoutFromParserConfig(snapshot service.ParserConfigSnapshot, defaultParameters map[string]any) string {
 	switch snapshot.Backend {
 	case service.ParserBackendBuiltin:
 		return ragflowLayoutDeepDOC
-	case service.ParserBackendLocalOCR:
+	case service.ParserBackendLocalOCR, service.ParserBackendPaddleOCRCloud:
 		return ragflowLayoutPaddleOCR
 	case service.ParserBackendRemoteCompatible:
 		if layout := parserParameterString(defaultParameters, "layout_recognize", "layoutRecognize", "layoutRecognizer"); layout != "" {
@@ -500,13 +539,16 @@ func normalizeParserParameterKey(key string) string {
 }
 
 func isSensitiveParserParameter(key string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(key))
-	for _, marker := range []string{"secret", "password", "credential", "api_key", "apikey", "access_key", "accesskey", "private_key", "privatekey", "access_token", "accesstoken", "auth_token", "authtoken", "refresh_token", "refreshtoken", "bearer_token", "bearertoken"} {
-		if strings.Contains(normalized, marker) {
-			return true
-		}
+	return service.IsSensitiveParserParameterKey(key)
+}
+
+func isPaddleOCRCloudParameter(key string) bool {
+	switch key {
+	case service.PaddleOCRBaseURLParameter, service.PaddleOCRAccessTokenParameter, service.PaddleOCRAlgorithmParameter:
+		return true
+	default:
+		return false
 	}
-	return normalized == "token"
 }
 
 func sanitizeParserParameterValue(value any) (any, bool) {

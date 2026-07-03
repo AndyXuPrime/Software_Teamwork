@@ -38,6 +38,17 @@ func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 			writeTestVendorJSON(w, `{"code":0,"data":{"redis":{"status":"green"},"task_executor_heartbeats":{"task_executor_common_1":[{"ts":1700000000}]}}}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/datasets":
 			writeTestVendorJSON(w, `{"code":0,"data":[],"total_datasets":0}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/datasets":
+			writeTestVendorJSON(w, `{"code":0,"data":{"id":"kb_plain","name":"Plain"}}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/internal/datasets":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode internal create body: %v", err)
+			}
+			if _, ok := body["parser_config_credentials"]; !ok {
+				t.Fatalf("internal create missing parser_config_credentials")
+			}
+			writeTestVendorJSON(w, `{"code":0,"data":{"id":"kb_internal","name":"Internal"}}`)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/datasets/kb_1/documents" && r.URL.Query().Get("type") == "local":
 			if err := r.ParseMultipartForm(1024); err != nil {
 				t.Fatalf("parse multipart form: %v", err)
@@ -82,6 +93,12 @@ func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 	if _, _, err := client.ListDatasets(ctx, "tenant_1", 2, 10); err != nil {
 		t.Fatalf("ListDatasets: %v", err)
 	}
+	if _, err := client.CreateDataset(ctx, "tenant_1", []byte(`{"name":"Plain"}`)); err != nil {
+		t.Fatalf("CreateDataset plain: %v", err)
+	}
+	if _, err := client.CreateDataset(ctx, "tenant_1", []byte(`{"name":"Internal","parser_config_credentials":{"paddleocr_cloud":{"paddleocr_access_token":"sk-secret"}}}`)); err != nil {
+		t.Fatalf("CreateDataset internal credentials: %v", err)
+	}
 	if _, err := client.UploadDocument(ctx, "tenant_1", "kb_1", "notes.txt", "text/plain", strings.NewReader("hello")); err != nil {
 		t.Fatalf("UploadDocument: %v", err)
 	}
@@ -105,6 +122,8 @@ func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 		{method: http.MethodGet, path: "/api/v1/system/ping"},
 		{method: http.MethodGet, path: "/api/v1/system/status", tenant: "tenant_1", serviceToken: "runtime-token"},
 		{method: http.MethodGet, path: "/api/v1/datasets", query: "page=2&page_size=10", tenant: "tenant_1", serviceToken: "runtime-token"},
+		{method: http.MethodPost, path: "/api/v1/datasets", tenant: "tenant_1", serviceToken: "runtime-token"},
+		{method: http.MethodPost, path: "/api/v1/internal/datasets", tenant: "tenant_1", serviceToken: "runtime-token"},
 		{method: http.MethodPost, path: "/api/v1/datasets/kb_1/documents", query: "type=local", tenant: "tenant_1", serviceToken: "runtime-token"},
 		{method: http.MethodPost, path: "/api/v1/datasets/kb_1/documents/parse", tenant: "tenant_1", serviceToken: "runtime-token"},
 		{method: http.MethodGet, path: "/api/v1/datasets/kb_1/documents", query: "page=1&page_size=100", tenant: "tenant_1", serviceToken: "runtime-token"},

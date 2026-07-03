@@ -46,3 +46,56 @@ def test_resolve_instance_for_model_falls_back_from_default_to_single_active_ins
     )
 
     assert got is resolved
+
+
+def test_ensure_paddleocr_from_config_normalizes_ui_credentials(monkeypatch):
+    calls = {}
+
+    def fake_ensure(tenant_id, provider_name, model_name, config):
+        calls.update(
+            tenant_id=tenant_id,
+            provider_name=provider_name,
+            model_name=model_name,
+            config=config,
+        )
+        return f"{model_name}@{model_name}@{provider_name}"
+
+    monkeypatch.setattr(module, "_ensure_ocr_provider_from_env", fake_ensure)
+
+    got = module.ensure_paddleocr_from_config(
+        "tenant-1",
+        {
+            "paddleocr_base_url": "https://paddleocr.example.com/api",
+            "paddleocr_access_token": "sk-secret",
+            "paddleocr_algorithm": "PaddleOCR-VL-1.6",
+        },
+    )
+
+    assert got == "PaddleOCR-VL-1.6@PaddleOCR-VL-1.6@PaddleOCR"
+    assert calls["tenant_id"] == "tenant-1"
+    assert calls["provider_name"] == "PaddleOCR"
+    assert calls["model_name"] == "PaddleOCR-VL-1.6"
+    assert calls["config"]["PADDLEOCR_BASE_URL"] == "https://paddleocr.example.com/api"
+    assert calls["config"]["PADDLEOCR_ACCESS_TOKEN"] == "sk-secret"
+    assert calls["config"]["PADDLEOCR_ALGORITHM"] == "PaddleOCR-VL-1.6"
+
+
+def test_ensure_paddleocr_from_config_requires_token(monkeypatch):
+    called = False
+
+    def fake_ensure(*_args, **_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(module, "_ensure_ocr_provider_from_env", fake_ensure)
+
+    got = module.ensure_paddleocr_from_config(
+        "tenant-1",
+        {
+            "paddleocr_base_url": "https://paddleocr.example.com/api",
+            "paddleocr_algorithm": "PaddleOCR-VL-1.6",
+        },
+    )
+
+    assert got is None
+    assert called is False

@@ -132,6 +132,38 @@ def ensure_paddleocr_from_env(tenant_id: str) -> str | None:
     )
 
 
+def ensure_paddleocr_from_config(tenant_id: str, config: dict | None, model_name: str | None = None) -> str | None:
+    """Provision a tenant PaddleOCR OCR model from protected parser credentials."""
+    if not isinstance(config, dict):
+        return None
+
+    normalized = dict(PADDLEOCR_DEFAULT_CONFIG)
+    key_map = {
+        "paddleocr_base_url": "PADDLEOCR_BASE_URL",
+        "paddleocr_api_url": "PADDLEOCR_API_URL",
+        "paddleocr_access_token": "PADDLEOCR_ACCESS_TOKEN",
+        "paddleocr_algorithm": "PADDLEOCR_ALGORITHM",
+    }
+    for source_key, target_key in key_map.items():
+        value = config.get(source_key)
+        if value not in (None, ""):
+            normalized[target_key] = value
+    for key in PADDLEOCR_ENV_KEYS:
+        value = config.get(key)
+        if value not in (None, ""):
+            normalized[key] = value
+
+    if not normalized.get("PADDLEOCR_ACCESS_TOKEN"):
+        return None
+
+    selected_model = str(model_name or normalized.get("PADDLEOCR_ALGORITHM") or PADDLEOCR_DEFAULT_CONFIG["PADDLEOCR_ALGORITHM"]).strip()
+    if not selected_model:
+        selected_model = PADDLEOCR_DEFAULT_CONFIG["PADDLEOCR_ALGORITHM"]
+    normalized["PADDLEOCR_ALGORITHM"] = selected_model
+
+    return _ensure_ocr_provider_from_env(tenant_id, "PaddleOCR", selected_model, normalized)
+
+
 def get_tenant_default_model_by_type(tenant_id: str, model_type: str|enum.Enum):
     exist, tenant = TenantService.get_by_id(tenant_id)
     if not exist:

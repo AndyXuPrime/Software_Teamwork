@@ -96,10 +96,26 @@ func (c *Client) ListDatasets(ctx context.Context, userID string, page, pageSize
 
 func (c *Client) CreateDataset(ctx context.Context, userID string, body []byte) (map[string]interface{}, error) {
 	var payload envelope
-	if err := c.doJSON(ctx, userID, http.MethodPost, "/api/v1/datasets", body, &payload); err != nil {
+	if err := c.doJSON(ctx, userID, http.MethodPost, createDatasetPath(body), body, &payload); err != nil {
 		return nil, err
 	}
 	return decodeObject(payload.Data)
+}
+
+func createDatasetPath(body []byte) string {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "/api/v1/datasets"
+	}
+	raw, ok := payload["parser_config_credentials"]
+	if !ok {
+		return "/api/v1/datasets"
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return "/api/v1/datasets"
+	}
+	return "/api/v1/internal/datasets"
 }
 
 func (c *Client) GetDataset(ctx context.Context, userID, datasetID string) (map[string]interface{}, error) {

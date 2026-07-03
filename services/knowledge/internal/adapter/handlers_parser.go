@@ -34,25 +34,27 @@ type updateParserConfigRequest struct {
 }
 
 type parserConfigResponse struct {
-	ID                    string                `json:"id"`
-	Name                  string                `json:"name"`
-	Backend               service.ParserBackend `json:"backend"`
-	Enabled               bool                  `json:"enabled"`
-	IsDefault             bool                  `json:"isDefault"`
-	Concurrency           int                   `json:"concurrency"`
-	SupportedContentTypes []string              `json:"supportedContentTypes,omitempty"`
-	EndpointURL           *string               `json:"endpointUrl"`
-	DefaultParameters     json.RawMessage       `json:"defaultParameters,omitempty"`
-	CreatedAt             time.Time             `json:"createdAt"`
-	UpdatedAt             time.Time             `json:"updatedAt"`
+	ID                             string                `json:"id"`
+	Name                           string                `json:"name"`
+	Backend                        service.ParserBackend `json:"backend"`
+	Enabled                        bool                  `json:"enabled"`
+	IsDefault                      bool                  `json:"isDefault"`
+	Concurrency                    int                   `json:"concurrency"`
+	SupportedContentTypes          []string              `json:"supportedContentTypes,omitempty"`
+	EndpointURL                    *string               `json:"endpointUrl"`
+	DefaultParameters              json.RawMessage       `json:"defaultParameters,omitempty"`
+	PaddleOCRAccessTokenConfigured bool                  `json:"paddleocrAccessTokenConfigured"`
+	CreatedAt                      time.Time             `json:"createdAt"`
+	UpdatedAt                      time.Time             `json:"updatedAt"`
 }
 
 func parserConfigFromDomain(c service.ParserConfig) parserConfigResponse {
 	return parserConfigResponse{
 		ID: c.ID, Name: c.Name, Backend: c.Backend, Enabled: c.Enabled, IsDefault: c.IsDefault,
 		Concurrency: c.Concurrency, SupportedContentTypes: c.SupportedContentTypes,
-		EndpointURL: c.EndpointURL, DefaultParameters: c.DefaultParameters,
-		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		EndpointURL: c.EndpointURL, DefaultParameters: service.RedactParserConfigDefaultParameters(c.DefaultParameters),
+		PaddleOCRAccessTokenConfigured: service.PaddleOCRAccessTokenConfigured(c.DefaultParameters),
+		CreatedAt:                      c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 }
 

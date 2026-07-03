@@ -9,6 +9,20 @@ import (
 	"strings"
 )
 
+const (
+	paddleOCRBaseURLKey     = "paddleocr_base_url"
+	paddleOCRAccessTokenKey = "paddleocr_access_token"
+	paddleOCRAlgorithmKey   = "paddleocr_algorithm"
+	paddleOCRDefaultModel   = "PaddleOCR-VL"
+)
+
+const (
+	PaddleOCRBaseURLParameter     = paddleOCRBaseURLKey
+	PaddleOCRAccessTokenParameter = paddleOCRAccessTokenKey
+	PaddleOCRAlgorithmParameter   = paddleOCRAlgorithmKey
+	PaddleOCRDefaultModel         = paddleOCRDefaultModel
+)
+
 func (s *Service) ListParserConfigs(ctx context.Context, reqCtx RequestContext, enabled *bool) (ParserConfigList, error) {
 	if err := requireParserAdmin(reqCtx); err != nil {
 		return ParserConfigList{}, err
@@ -53,6 +67,7 @@ func (s *Service) CreateParserConfig(ctx context.Context, reqCtx RequestContext,
 		EndpointURL:           normalizeEndpoint(input.EndpointURL), DefaultParameters: normalizeParameters(input.DefaultParameters),
 		CreatedAt: s.now(), UpdatedAt: s.now(),
 	}
+	config = normalizeParserConfigForBackend(config, nil)
 	if fields := validateParserConfig(config); len(fields) > 0 {
 		return ParserConfig{}, ValidationError("request validation failed", fields)
 	}
@@ -72,6 +87,7 @@ func (s *Service) UpdateParserConfig(ctx context.Context, reqCtx RequestContext,
 	if err != nil {
 		return ParserConfig{}, repositoryError(err)
 	}
+	previousParameters := current.DefaultParameters
 	changed := make([]string, 0, 8)
 	if input.Name != nil {
 		current.Name = strings.TrimSpace(*input.Name)
@@ -111,6 +127,7 @@ func (s *Service) UpdateParserConfig(ctx context.Context, reqCtx RequestContext,
 	if len(changed) == 0 {
 		return ParserConfig{}, ValidationError("request validation failed", map[string]string{"body": "must contain at least one field"})
 	}
+	current = normalizeParserConfigForBackend(current, previousParameters)
 	current.UpdatedAt = s.now()
 	if fields := validateParserConfig(current); len(fields) > 0 {
 		return ParserConfig{}, ValidationError("request validation failed", fields)
@@ -191,7 +208,7 @@ func validateParserConfig(config ParserConfig) map[string]string {
 		fields["name"] = "must be at most 120 characters"
 	}
 	switch config.Backend {
-	case ParserBackendBuiltin, ParserBackendTika, ParserBackendUnstructured, ParserBackendLocalOCR, ParserBackendRemoteCompatible:
+	case ParserBackendBuiltin, ParserBackendTika, ParserBackendUnstructured, ParserBackendLocalOCR, ParserBackendRemoteCompatible, ParserBackendPaddleOCRCloud:
 	default:
 		fields["backend"] = "is not supported"
 	}
@@ -213,6 +230,18 @@ func validateParserConfig(config ParserConfig) map[string]string {
 	} else if config.EndpointURL != nil && !validEndpoint(*config.EndpointURL) {
 		fields["endpointUrl"] = "must be an absolute http or https URI without credentials"
 	}
+	if config.Backend == ParserBackendPaddleOCRCloud {
+		params := parserParameterObject(config.DefaultParameters)
+		baseURL := parserParameterString(params, paddleOCRBaseURLKey)
+		if baseURL == "" {
+			fields[paddleOCRBaseURLKey] = "is required for paddleocr_cloud backend"
+		} else if !validEndpoint(baseURL) {
+			fields[paddleOCRBaseURLKey] = "must be an absolute http or https URI without credentials"
+		}
+		if parserParameterString(params, paddleOCRAccessTokenKey) == "" {
+			fields[paddleOCRAccessTokenKey] = "is required for paddleocr_cloud backend"
+		}
+	}
 	for _, value := range config.SupportedContentTypes {
 		if !strings.Contains(value, "/") {
 			fields["supportedContentTypes"] = "must contain valid media types"
@@ -220,6 +249,150 @@ func validateParserConfig(config ParserConfig) map[string]string {
 		}
 	}
 	return fields
+}
+
+func normalizeParserConfigForBackend(config ParserConfig, previousParameters json.RawMessage) ParserConfig {
+	config.DefaultParameters = normalizeParameters(config.DefaultParameters)
+	if config.Backend != ParserBackendRemoteCompatible {
+		config.EndpointURL = nil
+	}
+	if config.Backend == ParserBackendPaddleOCRCloud {
+		config.DefaultParameters = normalizePaddleOCRParameters(config.DefaultParameters, previousParameters)
+		return config
+	}
+	config.DefaultParameters = removePaddleOCRParameters(config.DefaultParameters)
+	return config
+}
+
+func normalizePaddleOCRParameters(raw, previousRaw json.RawMessage) json.RawMessage {
+	params := parserParameterObject(raw)
+	if params == nil {
+		params = map[string]any{}
+	}
+	baseURL := parserParameterString(params, paddleOCRBaseURLKey)
+	accessToken := parserParameterString(params, paddleOCRAccessTokenKey)
+	if accessToken == "" {
+		accessToken = parserParameterString(parserParameterObject(previousRaw), paddleOCRAccessTokenKey)
+	}
+	algorithm := parserParameterString(params, paddleOCRAlgorithmKey)
+	if algorithm == "" {
+		algorithm = paddleOCRDefaultModel
+	}
+
+	setOrDeleteString(params, paddleOCRBaseURLKey, baseURL)
+	setOrDeleteString(params, paddleOCRAccessTokenKey, accessToken)
+	params[paddleOCRAlgorithmKey] = algorithm
+	return marshalParameterObject(params)
+}
+
+func removePaddleOCRParameters(raw json.RawMessage) json.RawMessage {
+	params := parserParameterObject(raw)
+	if params == nil {
+		return normalizeParameters(raw)
+	}
+	delete(params, paddleOCRBaseURLKey)
+	delete(params, paddleOCRAccessTokenKey)
+	delete(params, paddleOCRAlgorithmKey)
+	return marshalParameterObject(params)
+}
+
+func parserParameterObject(raw json.RawMessage) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var params map[string]any
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil
+	}
+	return params
+}
+
+func parserParameterString(params map[string]any, key string) string {
+	if params == nil {
+		return ""
+	}
+	value, ok := params[key]
+	if !ok {
+		return ""
+	}
+	raw, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(raw)
+}
+
+func setOrDeleteString(params map[string]any, key, value string) {
+	if strings.TrimSpace(value) == "" {
+		delete(params, key)
+		return
+	}
+	params[key] = strings.TrimSpace(value)
+}
+
+func marshalParameterObject(params map[string]any) json.RawMessage {
+	body, err := json.Marshal(params)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return body
+}
+
+func PaddleOCRAccessTokenConfigured(raw json.RawMessage) bool {
+	return parserParameterString(parserParameterObject(raw), paddleOCRAccessTokenKey) != ""
+}
+
+func RedactParserConfigDefaultParameters(raw json.RawMessage) json.RawMessage {
+	params := parserParameterObject(raw)
+	if params == nil {
+		return normalizeParameters(raw)
+	}
+	sanitized, ok := sanitizeParserParameterValue(params)
+	if !ok {
+		return json.RawMessage(`{}`)
+	}
+	out, ok := sanitized.(map[string]any)
+	if !ok {
+		return json.RawMessage(`{}`)
+	}
+	return marshalParameterObject(out)
+}
+
+func IsSensitiveParserParameterKey(key string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	for _, marker := range []string{"secret", "password", "credential", "api_key", "apikey", "access_key", "accesskey", "private_key", "privatekey", "access_token", "accesstoken", "auth_token", "authtoken", "refresh_token", "refreshtoken", "bearer_token", "bearertoken"} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return normalized == "token"
+}
+
+func sanitizeParserParameterValue(value any) (any, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, value := range typed {
+			key = strings.TrimSpace(key)
+			if key == "" || IsSensitiveParserParameterKey(key) {
+				continue
+			}
+			if sanitized, ok := sanitizeParserParameterValue(value); ok {
+				out[key] = sanitized
+			}
+		}
+		return out, true
+	case []any:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			if sanitized, ok := sanitizeParserParameterValue(item); ok {
+				out = append(out, sanitized)
+			}
+		}
+		return out, true
+	default:
+		return value, true
+	}
 }
 
 func validParameterObject(raw json.RawMessage) bool {

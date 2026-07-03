@@ -23,6 +23,8 @@ from pydantic import ValidationError
 
 from api.utils.pagination_utils import REST_API_MAX_PAGE_SIZE, validate_rest_api_page_size
 from api.utils.validation_utils import (
+    CreateDatasetReq,
+    InternalCreateDatasetReq,
     ListDatasetReq,
     ListFileReq,
     ParserConfig,
@@ -44,6 +46,37 @@ def test_rest_api_page_size_rejects_values_above_100():
         ListDatasetReq(page_size=REST_API_MAX_PAGE_SIZE + 1)
     with pytest.raises(ValidationError, match="page_size must be less than or equal to 100"):
         ListFileReq(page_size=REST_API_MAX_PAGE_SIZE + 1)
+
+
+def test_create_dataset_req_rejects_protected_parser_config_credentials():
+    with pytest.raises(ValidationError, match="parser_config_credentials"):
+        CreateDatasetReq(
+            name="Manuals",
+            parser_config_credentials={
+                "paddleocr_cloud": {
+                    "paddleocr_base_url": "https://paddleocr.example.com/api",
+                    "paddleocr_access_token": "sk-secret",
+                    "paddleocr_algorithm": "PaddleOCR-VL-1.6",
+                }
+            },
+        )
+
+
+def test_internal_create_dataset_req_accepts_protected_parser_config_credentials():
+    req = InternalCreateDatasetReq(
+        name="Manuals",
+        parser_config_credentials={
+            "paddleocr_cloud": {
+                "paddleocr_base_url": "https://paddleocr.example.com/api",
+                "paddleocr_access_token": "sk-secret",
+                "paddleocr_algorithm": "PaddleOCR-VL-1.6",
+            }
+        },
+    )
+
+    data = req.model_dump(by_alias=True)
+
+    assert data["parser_config_credentials"]["paddleocr_cloud"]["paddleocr_access_token"] == "sk-secret"
 
 
 def test_validate_immutable_fields_no_changes():

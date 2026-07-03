@@ -24,6 +24,7 @@ from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
+    InternalCreateDatasetReq,
     ListDatasetReq,
     SearchDatasetReq,
     SearchDatasetsReq,
@@ -32,6 +33,28 @@ from api.utils.validation_utils import (
     validate_and_parse_request_args,
 )
 from api.apps.services import dataset_api_service
+
+
+async def _create_dataset_with_validator(tenant_id: str | None, validator):
+    req, err = await validate_and_parse_json_request(request, validator)
+    if err is not None:
+        return get_error_argument_result(err)
+
+    try:
+        if not tenant_id:
+            tenant_id = current_user.id
+        success, result = await dataset_api_service.create_dataset(tenant_id, req)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except LookupError as e:
+        return get_error_argument_result(str(e))
+    except ValueError as e:
+        return get_error_argument_result(str(e))
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
 
 
 @manager.route("/datasets/tags/aggregation", methods=["GET"])  # noqa: F821
@@ -137,25 +160,15 @@ async def create(tenant_id: str = None):
             data:
               type: object
     """
-    req, err = await validate_and_parse_json_request(request, CreateDatasetReq)
-    if err is not None:
-        return get_error_argument_result(err)
+    return await _create_dataset_with_validator(tenant_id, CreateDatasetReq)
 
-    try:
-        if not tenant_id:
-            tenant_id = current_user.id
-        success, result = await dataset_api_service.create_dataset(tenant_id, req)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_error_data_result(message=result)
-    except LookupError as e:
-        return get_error_argument_result(str(e))
-    except ValueError as e:
-        return get_error_argument_result(str(e))
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+
+@manager.route("/internal/datasets", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def create_internal(tenant_id: str = None):
+    """Create a dataset from trusted internal services."""
+    return await _create_dataset_with_validator(tenant_id, InternalCreateDatasetReq)
 
 
 @manager.route("/datasets", methods=["DELETE"])  # noqa: F821

@@ -22,6 +22,7 @@ const (
 	ParserBackendUnstructured     ParserBackend = "unstructured"
 	ParserBackendLocalOCR         ParserBackend = "local_ocr"
 	ParserBackendRemoteCompatible ParserBackend = "remote_compatible"
+	ParserBackendPaddleOCRCloud   ParserBackend = "paddleocr_cloud"
 )
 
 type ParserConfig struct {

@@ -776,6 +776,12 @@ class CreateDatasetReq(Base):
         return result
 
 
+class InternalCreateDatasetReq(CreateDatasetReq):
+    """Trusted internal dataset creation request."""
+
+    parser_config_credentials: Annotated[dict[str, Any] | None, Field(default=None)]
+
+
 class UpdateDatasetReq(CreateDatasetReq):
     """Request model for updating a dataset."""
 

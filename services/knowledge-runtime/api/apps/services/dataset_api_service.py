@@ -18,7 +18,7 @@ import json
 import os
 import re
 
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import ensure_paddleocr_from_config, get_model_config_from_provider_instance
 from common.constants import PAGERANK_FLD
 from common import settings
 from api.db.db_models import File
@@ -52,6 +52,29 @@ _INDEX_TYPE_TO_DISPLAY_NAME = {
 }
 
 
+def _apply_parser_config_credentials(tenant_id: str, req: dict, credentials: dict | None):
+    if not isinstance(credentials, dict):
+        return
+
+    paddleocr_config = credentials.get("paddleocr_cloud")
+    if not isinstance(paddleocr_config, dict):
+        return
+
+    model_name = ensure_paddleocr_from_config(
+        tenant_id,
+        paddleocr_config,
+        paddleocr_config.get("paddleocr_algorithm") or paddleocr_config.get("PADDLEOCR_ALGORITHM"),
+    )
+    if not model_name:
+        return
+
+    # Protected credentials are consumed here; only the runtime model reference
+    # is allowed to flow into the persisted dataset parser_config.
+    parser_cfg = req.get("parser_config") or {}
+    parser_cfg["layout_recognize"] = model_name
+    req["parser_config"] = parser_cfg
+
+
 async def create_dataset(tenant_id: str, req: dict):
     """
     Create a new dataset.
@@ -62,6 +85,7 @@ async def create_dataset(tenant_id: str, req: dict):
     """
     # Extract ext field for additional parameters
     ext_fields = req.pop("ext", {})
+    parser_config_credentials = req.pop("parser_config_credentials", None)
 
     # Map auto_metadata_config (if provided) into parser_config structure
     auto_meta = req.pop("auto_metadata_config", {})
@@ -82,6 +106,8 @@ async def create_dataset(tenant_id: str, req: dict):
         parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
         req["parser_config"] = parser_cfg
     req.update(ext_fields)
+    req.pop("parser_config_credentials", None)
+    _apply_parser_config_credentials(tenant_id, req, parser_config_credentials)
 
     e, create_dict = KnowledgebaseService.create_with_name(name=req.pop("name", None), tenant_id=tenant_id, parser_id=req.pop("parser_id", None), **req)
 

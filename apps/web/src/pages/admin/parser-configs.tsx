@@ -27,7 +27,12 @@ import {
   useUpdateParserConfig,
 } from '@/features/admin-config'
 import { formatGatewayCapabilityError, getGatewayCapabilityIssue } from '@/features/knowledge'
-import type { ParserBackend, ParserConfig } from '@/lib/types'
+import type {
+  CreateParserConfigRequest,
+  ParserBackend,
+  ParserConfig,
+  UpdateParserConfigRequest,
+} from '@/lib/types'
 
 // ── Constants ──
 
@@ -37,6 +42,7 @@ const BACKEND_OPTIONS = [
   { value: 'unstructured', label: 'Unstructured' },
   { value: 'local_ocr', label: '本地 OCR' },
   { value: 'remote_compatible', label: '远程兼容' },
+  { value: 'paddleocr_cloud', label: 'PaddleOCR 云端' },
 ] as const
 
 const BACKEND_LABELS: Record<string, string> = {
@@ -45,7 +51,11 @@ const BACKEND_LABELS: Record<string, string> = {
   unstructured: 'Unstructured',
   local_ocr: '本地 OCR',
   remote_compatible: '远程兼容',
+  paddleocr_cloud: 'PaddleOCR 云端',
 }
+
+const PADDLEOCR_BACKEND: ParserBackend = 'paddleocr_cloud'
+const PADDLEOCR_DEFAULT_ALGORITHM = 'PaddleOCR-VL'
 
 // ── Types ──
 
@@ -60,6 +70,9 @@ interface FormData {
   chunkOverlap: number
   separators: string
   endpointUrl: string
+  paddleocrBaseUrl: string
+  paddleocrAccessToken: string
+  paddleocrAlgorithm: string
 }
 
 type NotificationState = {
@@ -80,17 +93,66 @@ const EMPTY_FORM: FormData = {
   chunkOverlap: 64,
   separators: '',
   endpointUrl: '',
+  paddleocrBaseUrl: '',
+  paddleocrAccessToken: '',
+  paddleocrAlgorithm: PADDLEOCR_DEFAULT_ALGORITHM,
 }
 
 // ── Helpers ──
 
-function formToCreateRequest(form: FormData) {
-  const params: Record<string, unknown> = {
+type UpdateFormField = <K extends keyof FormData>(field: K, value: FormData[K]) => void
+
+function parserParameterString(
+  parameters: ParserConfig['defaultParameters'] | undefined,
+  key: string,
+  fallback = '',
+) {
+  const value = parameters?.[key]
+  return typeof value === 'string' ? value : fallback
+}
+
+function buildDefaultParameters(form: FormData, includePaddleOCRToken: boolean) {
+  const defaultParameters: Record<string, unknown> = {
+    chunk_size: form.chunkSize,
+    chunk_overlap: form.chunkOverlap,
+    separators: form.separators.trim()
+      ? form.separators
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [],
+  }
+
+  if (form.backend === PADDLEOCR_BACKEND) {
+    defaultParameters.paddleocr_base_url = form.paddleocrBaseUrl.trim()
+    defaultParameters.paddleocr_algorithm =
+      form.paddleocrAlgorithm.trim() || PADDLEOCR_DEFAULT_ALGORITHM
+
+    const token = form.paddleocrAccessToken.trim()
+    if (includePaddleOCRToken && token) {
+      defaultParameters.paddleocr_access_token = token
+    }
+  }
+
+  return defaultParameters
+}
+
+function paddleOCRFormReady(form: FormData, mode: 'create' | 'edit', hasConfiguredToken = false) {
+  if (form.backend !== PADDLEOCR_BACKEND) return true
+  if (!form.paddleocrBaseUrl.trim()) return false
+  if (mode === 'create' && !form.paddleocrAccessToken.trim()) return false
+  if (mode === 'edit' && !hasConfiguredToken && !form.paddleocrAccessToken.trim()) return false
+  return true
+}
+
+function formToCreateRequest(form: FormData): CreateParserConfigRequest {
+  const params: CreateParserConfigRequest = {
     name: form.name,
     backend: form.backend,
     concurrency: form.concurrency,
     enabled: form.enabled,
     isDefault: form.isDefault,
+    defaultParameters: buildDefaultParameters(form, true),
   }
 
   if (form.backend === 'remote_compatible' && form.endpointUrl.trim()) {
@@ -103,22 +165,11 @@ function formToCreateRequest(form: FormData) {
       .map((s) => s.trim())
       .filter(Boolean)
   }
-
-  params.defaultParameters = {
-    chunk_size: form.chunkSize,
-    chunk_overlap: form.chunkOverlap,
-    separators: form.separators.trim()
-      ? form.separators
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : [],
-  }
   return params
 }
 
-function formToUpdateRequest(form: FormData) {
-  const params: Record<string, unknown> = {
+function formToUpdateRequest(form: FormData): UpdateParserConfigRequest {
+  const params: UpdateParserConfigRequest = {
     name: form.name,
     backend: form.backend,
     enabled: form.enabled,
@@ -131,18 +182,73 @@ function formToUpdateRequest(form: FormData) {
           .map((s) => s.trim())
           .filter(Boolean)
       : [],
-    defaultParameters: {
-      chunk_size: form.chunkSize,
-      chunk_overlap: form.chunkOverlap,
-      separators: form.separators.trim()
-        ? form.separators
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : [],
-    },
+    defaultParameters: buildDefaultParameters(form, form.paddleocrAccessToken.trim() !== ''),
   }
   return params
+}
+
+function PaddleOCRCloudFields({
+  form,
+  mode,
+  tokenRequired,
+  updateField,
+}: {
+  form: FormData
+  mode: 'create' | 'edit'
+  tokenRequired: boolean
+  updateField: UpdateFormField
+}) {
+  return (
+    <div className="grid gap-3 rounded-md border border-border/70 p-3 sm:grid-cols-2">
+      <div className="sm:col-span-2">
+        <label
+          htmlFor={`pc-${mode}-paddleocr-base-url`}
+          className="mb-1 block text-sm font-medium text-foreground"
+        >
+          API 地址 <span className="text-destructive">*</span>
+        </label>
+        <Input
+          id={`pc-${mode}-paddleocr-base-url`}
+          type="url"
+          placeholder="https://paddleocr-api.example.com"
+          value={form.paddleocrBaseUrl}
+          onChange={(e) => updateField('paddleocrBaseUrl', e.target.value)}
+        />
+      </div>
+
+      <div>
+        <label
+          htmlFor={`pc-${mode}-paddleocr-access-token`}
+          className="mb-1 block text-sm font-medium text-foreground"
+        >
+          API Token {tokenRequired && <span className="text-destructive">*</span>}
+        </label>
+        <Input
+          id={`pc-${mode}-paddleocr-access-token`}
+          type="password"
+          placeholder={mode === 'edit' ? '留空保持不变' : '请输入 API Token'}
+          value={form.paddleocrAccessToken}
+          onChange={(e) => updateField('paddleocrAccessToken', e.target.value)}
+        />
+      </div>
+
+      <div>
+        <label
+          htmlFor={`pc-${mode}-paddleocr-algorithm`}
+          className="mb-1 block text-sm font-medium text-foreground"
+        >
+          模型名称
+        </label>
+        <Input
+          id={`pc-${mode}-paddleocr-algorithm`}
+          type="text"
+          placeholder={PADDLEOCR_DEFAULT_ALGORITHM}
+          value={form.paddleocrAlgorithm}
+          onChange={(e) => updateField('paddleocrAlgorithm', e.target.value)}
+        />
+      </div>
+    </div>
+  )
 }
 
 // ── Skeleton ──
@@ -214,6 +320,20 @@ export function ParserConfigsPage() {
     setForm((prev) => ({ ...prev, [field]: value }))
   }, [])
 
+  const updateBackend = useCallback((backend: ParserBackend) => {
+    setForm((prev) => ({
+      ...prev,
+      backend,
+      endpointUrl: backend === 'remote_compatible' ? prev.endpointUrl : '',
+      paddleocrBaseUrl: backend === PADDLEOCR_BACKEND ? prev.paddleocrBaseUrl : '',
+      paddleocrAccessToken: '',
+      paddleocrAlgorithm:
+        backend === PADDLEOCR_BACKEND
+          ? prev.paddleocrAlgorithm || PADDLEOCR_DEFAULT_ALGORITHM
+          : PADDLEOCR_DEFAULT_ALGORITHM,
+    }))
+  }, [])
+
   const openCreate = useCallback(() => {
     setForm(EMPTY_FORM)
     setCreateOpen(true)
@@ -235,6 +355,13 @@ export function ParserConfigsPage() {
           ? (config.defaultParameters.separators as string[]).join(', ')
           : '',
       endpointUrl: config.endpointUrl ?? '',
+      paddleocrBaseUrl: parserParameterString(config.defaultParameters, 'paddleocr_base_url'),
+      paddleocrAccessToken: '',
+      paddleocrAlgorithm: parserParameterString(
+        config.defaultParameters,
+        'paddleocr_algorithm',
+        PADDLEOCR_DEFAULT_ALGORITHM,
+      ),
     })
     setEditOpen(true)
   }, [])
@@ -307,6 +434,13 @@ export function ParserConfigsPage() {
   const items = data ?? []
   const isEmpty = !isLoading && !isError && items.length === 0
   const parserConfigIssue = isError ? getGatewayCapabilityIssue(error, '解析器配置') : null
+  const createDisabled = !form.name.trim() || !paddleOCRFormReady(form, 'create') || isMutating
+  const editHasPaddleOCRToken =
+    editingConfig?.backend === PADDLEOCR_BACKEND &&
+    editingConfig.paddleocrAccessTokenConfigured === true
+  const editTokenRequired = form.backend === PADDLEOCR_BACKEND && !editHasPaddleOCRToken
+  const editDisabled =
+    !form.name.trim() || !paddleOCRFormReady(form, 'edit', editHasPaddleOCRToken) || isMutating
 
   // ── Render ──
 
@@ -490,7 +624,7 @@ export function ParserConfigsPage() {
               </label>
               <Select
                 value={form.backend}
-                onValueChange={(v) => updateField('backend', String(v) as ParserBackend)}
+                onValueChange={(v) => updateBackend(String(v) as ParserBackend)}
               >
                 <SelectTrigger id="pc-create-backend" className="h-8 w-full">
                   <SelectValue />
@@ -541,6 +675,15 @@ export function ParserConfigsPage() {
                   onChange={(e) => updateField('endpointUrl', e.target.value)}
                 />
               </div>
+            )}
+
+            {form.backend === PADDLEOCR_BACKEND && (
+              <PaddleOCRCloudFields
+                form={form}
+                mode="create"
+                tokenRequired
+                updateField={updateField}
+              />
             )}
 
             {/* Concurrency */}
@@ -648,7 +791,7 @@ export function ParserConfigsPage() {
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={isMutating}>
               取消
             </Button>
-            <Button onClick={handleCreate} disabled={!form.name.trim() || isMutating}>
+            <Button onClick={handleCreate} disabled={createDisabled}>
               {createMutation.isPending && (
                 <Loader2 aria-hidden="true" className="mr-1.5 size-3.5 animate-spin" />
               )}
@@ -694,7 +837,7 @@ export function ParserConfigsPage() {
               </label>
               <Select
                 value={form.backend}
-                onValueChange={(v) => updateField('backend', String(v) as ParserBackend)}
+                onValueChange={(v) => updateBackend(String(v) as ParserBackend)}
               >
                 <SelectTrigger id="pc-edit-backend" className="h-8 w-full">
                   <SelectValue />
@@ -745,6 +888,15 @@ export function ParserConfigsPage() {
                   onChange={(e) => updateField('endpointUrl', e.target.value)}
                 />
               </div>
+            )}
+
+            {form.backend === PADDLEOCR_BACKEND && (
+              <PaddleOCRCloudFields
+                form={form}
+                mode="edit"
+                tokenRequired={editTokenRequired}
+                updateField={updateField}
+              />
             )}
 
             {/* Concurrency */}
@@ -859,7 +1011,7 @@ export function ParserConfigsPage() {
             >
               取消
             </Button>
-            <Button onClick={handleEdit} disabled={!form.name.trim() || isMutating}>
+            <Button onClick={handleEdit} disabled={editDisabled}>
               {updateMutation.isPending && (
                 <Loader2 aria-hidden="true" className="mr-1.5 size-3.5 animate-spin" />
               )}

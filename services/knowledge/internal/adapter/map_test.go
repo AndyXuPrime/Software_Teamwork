@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/knowledge/internal/service"
@@ -167,6 +168,114 @@ func TestRAGFlowParserConfigFromSnapshotMapsBackends(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRAGFlowParserConfigFromSnapshotSplitsPaddleOCRCloudCredentials(t *testing.T) {
+	cfg := ragflowParserConfigFromSnapshot(service.ParserConfigSnapshot{
+		ParserConfigID:    "parser_paddleocr",
+		Backend:           service.ParserBackendPaddleOCRCloud,
+		Concurrency:       4,
+		DefaultParameters: json.RawMessage(`{"paddleocr_base_url":"https://paddleocr.example.com/api","paddleocr_access_token":"sk-secret","paddleocr_algorithm":"PaddleOCR-VL-1.6"}`),
+	})
+
+	if cfg["layout_recognize"] != ragflowLayoutPaddleOCR {
+		t.Fatalf("layout_recognize=%v", cfg["layout_recognize"])
+	}
+	for _, key := range []string{"paddleocr_base_url", "paddleocr_access_token", "paddleocr_algorithm"} {
+		if _, ok := cfg[key]; ok {
+			t.Fatalf("ordinary parser config should not include PaddleOCR cloud key %q", key)
+		}
+	}
+	credentials, ok := cfg[parserConfigCredentialsKey].(map[string]any)
+	if !ok {
+		t.Fatalf("%s missing", parserConfigCredentialsKey)
+	}
+	paddleOCR, ok := credentials["paddleocr_cloud"].(map[string]any)
+	if !ok {
+		t.Fatalf("paddleocr_cloud credentials missing")
+	}
+	if paddleOCR["paddleocr_base_url"] != "https://paddleocr.example.com/api" {
+		t.Fatalf("paddleocr_base_url=%v", paddleOCR["paddleocr_base_url"])
+	}
+	if paddleOCR["paddleocr_access_token"] != "sk-secret" {
+		t.Fatalf("paddleocr_access_token was not preserved in protected credentials")
+	}
+	if paddleOCR["paddleocr_algorithm"] != "PaddleOCR-VL-1.6" {
+		t.Fatalf("paddleocr_algorithm=%v", paddleOCR["paddleocr_algorithm"])
+	}
+	trace, ok := cfg[parserConfigTraceKey].(map[string]any)
+	if !ok {
+		t.Fatalf("%s=%v", parserConfigTraceKey, cfg[parserConfigTraceKey])
+	}
+	if _, ok := trace["paddleocr_access_token"]; ok {
+		t.Fatalf("trace leaked token: %v", trace)
+	}
+}
+
+func TestBuildCreateDatasetBodySendsPaddleOCRCredentialsOutsideParserConfig(t *testing.T) {
+	cfg := ragflowParserConfigFromSnapshot(service.ParserConfigSnapshot{
+		ParserConfigID:    "parser_paddleocr",
+		Backend:           service.ParserBackendPaddleOCRCloud,
+		Concurrency:       4,
+		DefaultParameters: json.RawMessage(`{"paddleocr_base_url":"https://paddleocr.example.com/api","paddleocr_access_token":"sk-secret","paddleocr_algorithm":"PaddleOCR-VL-1.6"}`),
+	})
+
+	body, err := buildCreateDatasetBody(createKnowledgeBaseRequest{Name: "Manuals"}, cfg, createDatasetOptions{})
+	if err != nil {
+		t.Fatalf("buildCreateDatasetBody: %v", err)
+	}
+	payload := decodeMap(t, body)
+	parserConfig, ok := payload["parser_config"].(map[string]any)
+	if !ok {
+		t.Fatalf("parser_config=%v", payload["parser_config"])
+	}
+	if parserConfig["layout_recognize"] != ragflowLayoutPaddleOCR {
+		t.Fatalf("layout_recognize=%v", parserConfig["layout_recognize"])
+	}
+	for _, key := range []string{"paddleocr_base_url", "paddleocr_access_token", "paddleocr_algorithm", parserConfigCredentialsKey} {
+		if _, ok := parserConfig[key]; ok {
+			t.Fatalf("parser_config leaked protected PaddleOCR key %q: %v", key, parserConfig)
+		}
+	}
+
+	credentials, ok := payload["parser_config_credentials"].(map[string]any)
+	if !ok {
+		t.Fatalf("parser_config_credentials missing")
+	}
+	paddleOCR, ok := credentials["paddleocr_cloud"].(map[string]any)
+	if !ok {
+		t.Fatalf("paddleocr_cloud credentials missing")
+	}
+	if paddleOCR["paddleocr_access_token"] != "sk-secret" {
+		t.Fatalf("paddleocr_access_token was not preserved in protected credentials")
+	}
+	if paddleOCR["paddleocr_base_url"] != "https://paddleocr.example.com/api" {
+		t.Fatalf("paddleocr_base_url=%v", paddleOCR["paddleocr_base_url"])
+	}
+	if paddleOCR["paddleocr_algorithm"] != "PaddleOCR-VL-1.6" {
+		t.Fatalf("paddleocr_algorithm=%v", paddleOCR["paddleocr_algorithm"])
+	}
+}
+
+func TestParserConfigResponseRedactsPaddleOCRToken(t *testing.T) {
+	response := parserConfigFromDomain(service.ParserConfig{
+		ID:                "parser_paddleocr",
+		Name:              "PaddleOCR Cloud",
+		Backend:           service.ParserBackendPaddleOCRCloud,
+		Enabled:           true,
+		Concurrency:       4,
+		DefaultParameters: json.RawMessage(`{"paddleocr_base_url":"https://paddleocr.example.com/api","paddleocr_access_token":"sk-secret","paddleocr_algorithm":"PaddleOCR-VL"}`),
+	})
+	body, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !response.PaddleOCRAccessTokenConfigured {
+		t.Fatal("paddleocr token should be reported as configured")
+	}
+	if string(body) == "" || strings.Contains(string(body), "sk-secret") || strings.Contains(string(body), "paddleocr_access_token") {
+		t.Fatalf("response leaked token: %s", body)
 	}
 }
 

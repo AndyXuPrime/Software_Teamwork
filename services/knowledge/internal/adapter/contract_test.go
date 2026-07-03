@@ -31,6 +31,7 @@ type fakeVendorState struct {
 	failParse   bool
 	searchBody  []byte
 	createBody  []byte
+	createPath  string
 }
 
 type deleteCall struct {
@@ -87,9 +88,10 @@ func startFakeVendor(t *testing.T, state *fakeVendorState) *httptest.Server {
 			}
 			writeVendorJSON(w, http.StatusOK, map[string]any{"code": 0, "data": items, "total_datasets": total})
 			return
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/datasets":
+		case r.Method == http.MethodPost && (r.URL.Path == "/api/v1/datasets" || r.URL.Path == "/api/v1/internal/datasets"):
 			var body map[string]any
 			raw, _ := io.ReadAll(r.Body)
+			state.createPath = r.URL.Path
 			state.createBody = append([]byte(nil), raw...)
 			_ = json.Unmarshal(raw, &body)
 			id := "kb_fake_1"
@@ -259,6 +261,67 @@ func TestAdapterCreateKnowledgeBaseAppliesDefaultParserConfig(t *testing.T) {
 	}
 	if _, ok := cfg[parserConfigTraceKey]; ok {
 		t.Fatalf("parser config trace must not be sent to vendor payload: %v", cfg[parserConfigTraceKey])
+	}
+	if state.createPath != "/api/v1/datasets" {
+		t.Fatalf("create path=%s", state.createPath)
+	}
+}
+
+func TestAdapterCreateKnowledgeBaseUsesInternalDatasetPathForPaddleOCRCredentials(t *testing.T) {
+	state := newFakeVendorState()
+	vendor := startFakeVendor(t, state)
+	defer vendor.Close()
+
+	repo := repository.NewMemoryRepository()
+	now := time.Date(2026, 7, 2, 0, 0, 0, 0, time.UTC)
+	repo.SeedParserConfig(service.ParserConfig{
+		ID:                    "parser_default_paddleocr",
+		Name:                  "Default PaddleOCR",
+		Backend:               service.ParserBackendPaddleOCRCloud,
+		Enabled:               true,
+		IsDefault:             true,
+		Concurrency:           2,
+		SupportedContentTypes: []string{"application/pdf"},
+		DefaultParameters:     json.RawMessage(`{"paddleocr_base_url":"https://paddleocr.example.com/api","paddleocr_access_token":"sk-secret","paddleocr_algorithm":"PaddleOCR-VL-1.6"}`),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	})
+	server := NewServer(adapterconfig.Config{
+		ServiceVersion:    "test",
+		VendorRuntimeURL:  vendor.URL,
+		ServiceToken:      testServiceToken,
+		VendorEmbeddingID: "BAAI/bge-m3@SILICONFLOW",
+	}, nil, WithParserConfigService(service.New(repo)))
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/knowledge-bases", strings.NewReader(`{"name":"Manuals"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-Service-Token", testServiceToken)
+	req.Header.Set("X-User-Permissions", "knowledge:write")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.createPath != "/api/v1/internal/datasets" {
+		t.Fatalf("create path=%s", state.createPath)
+	}
+	createBody := decodeMap(t, state.createBody)
+	cfg, ok := createBody["parser_config"].(map[string]any)
+	if !ok {
+		t.Fatalf("parser_config=%v", createBody["parser_config"])
+	}
+	if cfg["layout_recognize"] != ragflowLayoutPaddleOCR {
+		t.Fatalf("layout_recognize=%v", cfg["layout_recognize"])
+	}
+	if _, ok := cfg["paddleocr_access_token"]; ok {
+		t.Fatalf("parser_config leaked PaddleOCR access token")
+	}
+	if _, ok := createBody["parser_config_credentials"].(map[string]any); !ok {
+		t.Fatalf("parser_config_credentials missing")
 	}
 }
 

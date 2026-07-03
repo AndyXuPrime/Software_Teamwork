@@ -238,7 +238,7 @@ export interface paths {
         post?: never;
         /**
          * Delete document
-         * @description Delete the knowledge-owned document resource. Knowledge service coordinates chunk/index cleanup and any underlying file reference cleanup through its document lifecycle.
+         * @description Delete the knowledge-owned document resource. Knowledge service coordinates RAGFlow runtime document, chunk, and index lifecycle through its document adapter; no File reference is exposed in the public contract.
          */
         delete: operations["deleteDocument"];
         options?: never;
@@ -1980,7 +1980,7 @@ export interface components {
             requestId: string;
         };
         /** @enum {string} */
-        ParserBackend: "builtin" | "tika" | "unstructured" | "local_ocr" | "remote_compatible";
+        ParserBackend: "builtin" | "tika" | "unstructured" | "local_ocr" | "remote_compatible" | "paddleocr_cloud";
         ParserConfig: {
             id: string;
             name: string;
@@ -1995,9 +1995,12 @@ export interface components {
              * @description Optional internal endpoint for remote-compatible parser backends. Must not contain credentials.
              */
             endpointUrl?: string | null;
+            /** @description Parser backend parameters. For paddleocr_cloud, accepts paddleocr_base_url, write-only paddleocr_access_token, and optional paddleocr_algorithm; responses never include paddleocr_access_token. */
             defaultParameters?: {
                 [key: string]: unknown;
             };
+            /** @description True when a PaddleOCR cloud access token is configured. The token value is never returned. */
+            paddleocrAccessTokenConfigured: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2014,6 +2017,7 @@ export interface components {
             supportedContentTypes?: string[];
             /** Format: uri */
             endpointUrl?: string | null;
+            /** @description Parser backend parameters. For paddleocr_cloud, paddleocr_base_url and paddleocr_access_token are required; paddleocr_algorithm defaults to PaddleOCR-VL. */
             defaultParameters?: {
                 [key: string]: unknown;
             };
@@ -2027,6 +2031,7 @@ export interface components {
             supportedContentTypes?: string[];
             /** Format: uri */
             endpointUrl?: string | null;
+            /** @description Parser backend parameters. For paddleocr_cloud, an omitted or empty paddleocr_access_token keeps the existing token. */
             defaultParameters?: {
                 [key: string]: unknown;
             };

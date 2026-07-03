@@ -3944,6 +3944,7 @@ components:
       - unstructured
       - local_ocr
       - remote_compatible
+      - paddleocr_cloud
     ParserConfig:
       type: object
       required:
@@ -3953,6 +3954,7 @@ components:
       - enabled
       - isDefault
       - concurrency
+      - paddleocrAccessTokenConfigured
       - createdAt
       - updatedAt
       properties:
@@ -3983,6 +3985,10 @@ components:
         defaultParameters:
           type: object
           additionalProperties: true
+          description: Parser backend parameters. For paddleocr_cloud, accepts paddleocr_base_url, write-only paddleocr_access_token, and optional paddleocr_algorithm; responses never include paddleocr_access_token.
+        paddleocrAccessTokenConfigured:
+          type: boolean
+          description: True when a PaddleOCR cloud access token is configured. The token value is never returned.
         createdAt:
           type: string
           format: date-time
@@ -4021,6 +4027,7 @@ components:
         defaultParameters:
           type: object
           additionalProperties: true
+          description: Parser backend parameters. For paddleocr_cloud, paddleocr_base_url and paddleocr_access_token are required; paddleocr_algorithm defaults to PaddleOCR-VL.
     UpdateParserConfigRequest:
       type: object
       properties:
@@ -4047,6 +4054,7 @@ components:
         defaultParameters:
           type: object
           additionalProperties: true
+          description: Parser backend parameters. For paddleocr_cloud, an omitted or empty paddleocr_access_token keeps the existing token.
     ParserConfigResponse:
       type: object
       required:
