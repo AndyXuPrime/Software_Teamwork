@@ -47,6 +47,8 @@ from rag.llm.embedding_model import (
     OpenAIEmbed,
     ZhipuEmbed,
 )
+from rag.llm.chat_model import MistralChat
+from rag.llm.mistral_sdk import import_mistral_v2_client
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string
 
@@ -251,13 +253,44 @@ class TestTruncationBoundary:
         assert vectors.shape == (1, 3)
         assert token_count == 5
 
-    def test_mistral_import_path_available(self):
-        try:
-            from mistralai import Mistral
-        except ImportError:
-            from mistralai.client import Mistral
+    def test_mistral_v2_client_import_path_available(self):
+        Mistral = import_mistral_v2_client()
 
         assert Mistral is not None
+
+    def test_mistral_v2_client_import_accepts_client_module_export(self, monkeypatch):
+        expected = MagicMock()
+        fake_package = types.ModuleType("mistralai")
+        fake_package.__path__ = []
+        fake_client_module = types.ModuleType("mistralai.client")
+        fake_client_module.Mistral = expected
+        monkeypatch.setitem(sys.modules, "mistralai", fake_package)
+        monkeypatch.setitem(sys.modules, "mistralai.client", fake_client_module)
+
+        assert import_mistral_v2_client() is expected
+
+    def test_mistral_v2_client_import_rejects_legacy_mistral_client(self, monkeypatch):
+        fake_package = types.ModuleType("mistralai")
+        fake_package.__path__ = []
+        fake_client_module = types.ModuleType("mistralai.client")
+        fake_client_module.MistralClient = MagicMock()
+        monkeypatch.setitem(sys.modules, "mistralai", fake_package)
+        monkeypatch.setitem(sys.modules, "mistralai.client", fake_client_module)
+
+        with pytest.raises(ImportError, match="legacy mistralai.MistralClient SDKs are not supported"):
+            import_mistral_v2_client()
+
+    def test_mistral_chat_uses_v2_top_level_client(self, monkeypatch):
+        fake_client = MagicMock()
+        fake_package = types.ModuleType("mistralai")
+        fake_package.Mistral = MagicMock(return_value=fake_client)
+        monkeypatch.setitem(sys.modules, "mistralai", fake_package)
+
+        chat = MistralChat("key", "mistral-large")
+
+        fake_package.Mistral.assert_called_once_with(api_key="key")
+        assert chat.client is fake_client
+        assert chat.model_name == "mistral-large"
 
 
 # --------------------------------------------------------------------------- #

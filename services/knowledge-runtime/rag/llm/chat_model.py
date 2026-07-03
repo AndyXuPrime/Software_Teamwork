@@ -35,6 +35,7 @@ from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.mistral_sdk import import_mistral_v2_client
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 
@@ -928,10 +929,7 @@ class MistralChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
-        try:
-            from mistralai import Mistral
-        except ImportError:
-            from mistralai.client import Mistral
+        Mistral = import_mistral_v2_client()
 
         self.client = Mistral(api_key=key)
         self.model_name = model_name

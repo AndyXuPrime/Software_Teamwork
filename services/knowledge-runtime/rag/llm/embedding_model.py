@@ -31,6 +31,7 @@ from common import settings
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.mistral_sdk import import_mistral_v2_client
 import logging
 import base64
 
@@ -594,10 +595,7 @@ class MistralEmbed(Base):
     _FACTORY_NAME = "Mistral"
 
     def __init__(self, key, model_name="mistral-embed", base_url=None):
-        try:
-            from mistralai import Mistral
-        except ImportError:
-            from mistralai.client import Mistral
+        Mistral = import_mistral_v2_client()
 
         self.client = Mistral(api_key=key)
         self.model_name = model_name
