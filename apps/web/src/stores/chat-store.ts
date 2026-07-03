@@ -48,6 +48,8 @@ export interface ChatState {
   setStreaming: (streaming: boolean) => void
   setError: (error: string | null) => void
   setLastFailedMsg: (msg: string | null) => void
+  /** Reset all state and clear persisted sessionIds from localStorage. */
+  reset: () => void
   clearError: () => void
   /** Replace all attachments for a session. */
   setSessionAttachments: (sessionId: string, attachments: SessionAttachmentSummary[]) => void
@@ -134,6 +136,32 @@ export const useChatStore = create<ChatState>()(
       setError: (error) => set({ error }),
 
       setLastFailedMsg: (msg) => set({ lastFailedMsg: msg }),
+
+      reset: () => {
+        set({
+          sessions: [],
+          sessionIds: [],
+          activeId: null,
+          streaming: false,
+          error: null,
+          lastFailedMsg: null,
+          messagesBySession: {},
+          attachmentsBySession: {},
+          excludedAttachmentIds: {},
+        })
+        // Delete persisted key *after* set so persist middleware
+        // doesn't re-create it from the empty sessionIds.
+        try {
+          localStorage.removeItem('qa-sessions-ids')
+        } catch {
+          /* noop */
+        }
+        try {
+          useChatStore.persist.clearStorage()
+        } catch {
+          /* noop */
+        }
+      },
 
       clearError: () => set({ error: null, lastFailedMsg: null }),
 

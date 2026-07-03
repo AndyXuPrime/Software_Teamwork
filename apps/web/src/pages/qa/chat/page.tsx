@@ -1040,7 +1040,8 @@ export function ChatPage() {
             // HTTP errors (401/403/404/502) mean the backend is alive — surface them.
             const isOffline =
               !firstToken && steps.length === 0 && !content && sseErr.code === 'network_error'
-            if (isOffline) {
+            // Only write mock if store still belongs to this session
+            if (isOffline && useChatStore.getState().activeId === uid) {
               useChatStore.setState((prev) => {
                 const msgs = [...(prev.messagesBySession[uid] ?? [])]
                 const lastIdx = msgs.length - 1
@@ -1062,9 +1063,11 @@ export function ChatPage() {
               abort()
               return
             }
-            // Real backend error: surface to user
-            setError(formatError(sseErr))
-            setLastFailedMsg(trimmed)
+            // Real backend error: surface to user (only if session unchanged)
+            if (useChatStore.getState().activeId === uid) {
+              setError(formatError(sseErr))
+              setLastFailedMsg(trimmed)
+            }
             patchAssistant({
               content,
               thinking: [...steps],
@@ -1074,7 +1077,7 @@ export function ChatPage() {
             abort()
           } else {
             // Non-fatal error: surface a brief summary but keep streaming
-            setError(formatError(sseErr))
+            if (useChatStore.getState().activeId === uid) setError(formatError(sseErr))
             console.warn(`[SSE] Non-fatal: ${sseErr.code}`)
             const runId = responseRunIdRef.current
             if (runId) {
