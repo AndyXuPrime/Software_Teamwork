@@ -3,6 +3,7 @@ import { ChevronRight, Loader2, LogOut, RefreshCw, ShieldAlert, UserRound } from
 import { type PropsWithChildren, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { apiClient } from '@/api/client'
+import { AppVersionBadge } from '@/components/common/app-version-badge'
 import { Button } from '@/components/ui/button'
 import { adminShellAccess } from '@/lib/access'
 import type { PermissionRequirement } from '@/lib/permissions'
@@ -185,6 +186,7 @@ export function AppLayout({ children }: PropsWithChildren) {
         </nav>
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <AppVersionBadge className="hidden lg:inline-flex" />
           <Link
             aria-label="打开个人资料"
             className={cn(
