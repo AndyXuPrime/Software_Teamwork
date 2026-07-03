@@ -44,8 +44,243 @@ function CitationTooltip({ c }: { c: QACitation }) {
 }
 
 /* ── Thinking panel ── */
-function ThinkPanel({ steps, done }: { steps: QAThinkingStep[]; done: boolean }) {
+type ThinkPanelStep = QAThinkingStep & {
+  argumentsSummary?: unknown
+  completedAt?: number
+  errorSummary?: string
+  iterationNo?: number
+  reportArtifact?: QAReportArtifact
+  resultSummary?: unknown
+  startedAt?: number
+  toolCallId?: string
+  toolName?: string
+}
+
+type IterationGroup = {
+  durationMs?: number
+  iterationNo: number
+  status: QAThinkingStep['status']
+  steps: ThinkPanelStep[]
+  title?: string
+  toolSteps: ThinkPanelStep[]
+}
+
+const SUMMARY_LIMIT = 500
+const SUMMARY_KEY_LABELS: Record<string, string> = {
+  citationCount: '引用数',
+  citations: '引用数',
+  chunkCount: '片段数',
+  hitCount: '命中数',
+  hits: '命中数',
+  knowledgeBaseCount: '知识库数',
+  query: '查询词',
+  queryCount: '查询数',
+  queryText: '查询词',
+  rerankTopN: '重排序 TopN',
+  resultCount: '结果数',
+  topK: 'TopK',
+}
+const SENSITIVE_SUMMARY_PATTERN =
+  /https?:\/\/|s3:\/\/|gs:\/\/|minio:\/\/|localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|api[_-]?key|authorization|bearer\s|credential|object[_-]?key|password|prompt|secret|token/i
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function safeSummaryValue(value: unknown): string | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed || SENSITIVE_SUMMARY_PATTERN.test(trimmed)) return undefined
+  return trimmed
+}
+
+function collectSummaryRows(value: unknown): Array<{ label: string; value: string }> {
+  if (!isRecord(value)) return []
+  const rows: Array<{ label: string; value: string }> = []
+  for (const [key, entry] of Object.entries(value)) {
+    const label = SUMMARY_KEY_LABELS[key]
+    if (label) {
+      const displayValue =
+        Array.isArray(entry) && (key === 'citations' || key === 'hits')
+          ? String(entry.length)
+          : safeSummaryValue(entry)
+      if (displayValue) rows.push({ label, value: displayValue })
+      continue
+    }
+    if (isRecord(entry)) rows.push(...collectSummaryRows(entry))
+  }
+  return rows.slice(0, 8)
+}
+
+function SummarySection({ title, value }: { title: string; value: unknown }) {
+  const [expanded, setExpanded] = useState(false)
+  const rows = collectSummaryRows(value)
+
+  if (rows.length === 0) return null
+
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium text-muted-foreground">{title}</p>
+      <dl className="space-y-1">
+        {rows.map((row, index) => {
+          const shouldTruncate = row.value.length > SUMMARY_LIMIT
+          const display =
+            shouldTruncate && !expanded ? row.value.slice(0, SUMMARY_LIMIT) : row.value
+          return (
+            <div key={`${row.label}-${index}`} className="grid grid-cols-[5rem_1fr] gap-2 text-xs">
+              <dt className="text-muted-foreground">{row.label}</dt>
+              <dd className="break-words text-foreground/90">
+                {display}
+                {shouldTruncate && !expanded && '...'}
+              </dd>
+            </div>
+          )
+        })}
+      </dl>
+      {rows.some((row) => row.value.length > SUMMARY_LIMIT) && (
+        <button
+          className="text-xs font-medium text-primary hover:underline"
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? '收起' : '展开更多'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function getStepIteration(step: ThinkPanelStep, fallback: number): number {
+  return typeof step.iterationNo === 'number' && Number.isFinite(step.iterationNo)
+    ? step.iterationNo
+    : fallback
+}
+
+function groupThinkingSteps(steps: QAThinkingStep[]): IterationGroup[] {
+  const groups = new Map<number, IterationGroup>()
+  let currentIteration = 1
+
+  for (const rawStep of steps as ThinkPanelStep[]) {
+    if (rawStep.type === 'agent_iteration') {
+      currentIteration = getStepIteration(rawStep, currentIteration)
+    }
+    const iterationNo = getStepIteration(rawStep, currentIteration)
+    currentIteration = iterationNo
+    const group =
+      groups.get(iterationNo) ??
+      ({
+        iterationNo,
+        status: 'done',
+        steps: [],
+        toolSteps: [],
+      } satisfies IterationGroup)
+
+    group.steps.push(rawStep)
+    if (rawStep.type === 'agent_iteration') {
+      group.title = rawStep.label
+      group.status = rawStep.status
+    }
+    if (rawStep.type === 'tool_call') group.toolSteps.push(rawStep)
+    groups.set(iterationNo, group)
+  }
+
+  return [...groups.values()].map((group) => {
+    const starts = group.toolSteps
+      .map((step) => step.startedAt)
+      .filter((value): value is number => typeof value === 'number')
+    const ends = group.toolSteps
+      .map((step) => step.completedAt)
+      .filter((value): value is number => typeof value === 'number')
+    const durationMs =
+      starts.length > 0 && ends.length > 0 ? Math.max(...ends) - Math.min(...starts) : undefined
+    return { ...group, durationMs }
+  })
+}
+
+function statusText(group: IterationGroup): string {
+  if (group.toolSteps.some((step) => step.status === 'failed')) return '有失败'
+  if (group.toolSteps.some((step) => step.status === 'running') || group.status === 'running') {
+    return '执行中'
+  }
+  return '已完成'
+}
+
+function formatDuration(ms: number | undefined): string | undefined {
+  if (ms == null || ms < 0) return undefined
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
+function ToolCallStep({
+  onArtifactDownload,
+  step,
+}: {
+  onArtifactDownload?: (reportFileId: string, filename: string) => void
+  step: ThinkPanelStep
+}) {
+  const [open, setOpen] = useState(false)
+  const hasDetails =
+    Boolean(step.argumentsSummary) ||
+    Boolean(step.resultSummary) ||
+    Boolean(step.errorSummary) ||
+    Boolean(step.reportArtifact)
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger
+        className={cn(
+          'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-background/80',
+          step.status === 'failed' && 'bg-red-500/10 text-red-600 hover:bg-red-500/15',
+        )}
+      >
+        {open ? (
+          <ChevronDown className="size-3 shrink-0" />
+        ) : (
+          <ChevronRight className="size-3 shrink-0" />
+        )}
+        <span
+          className={cn(
+            'size-1.5 shrink-0 rounded-full',
+            step.status === 'done' && 'bg-green-500',
+            step.status === 'running' && 'bg-primary animate-pulse',
+            step.status === 'pending' && 'bg-muted-foreground/40 animate-pulse',
+            step.status === 'failed' && 'bg-red-500',
+          )}
+        />
+        <span className="min-w-0 flex-1 truncate">{step.label ?? step.toolName ?? '工具调用'}</span>
+        {step.status === 'done' && <Check className="size-3 shrink-0 text-green-500" />}
+        {step.status === 'running' && <span className="animate-pulse text-xs text-primary">▊</span>}
+        {step.status === 'failed' && <span className="shrink-0 text-xs text-red-600">失败</span>}
+      </CollapsibleTrigger>
+      {hasDetails && (
+        <CollapsibleContent className="ml-5 space-y-3 border-l border-border/60 py-2 pl-3">
+          <SummarySection title="参数" value={step.argumentsSummary} />
+          <SummarySection title="结果" value={step.resultSummary} />
+          {step.errorSummary && (
+            <p className="text-xs leading-relaxed text-red-600">失败原因：{step.errorSummary}</p>
+          )}
+          {step.reportArtifact && (
+            <ReportArtifactCard artifact={step.reportArtifact} onDownload={onArtifactDownload} />
+          )}
+        </CollapsibleContent>
+      )}
+    </Collapsible>
+  )
+}
+
+function ThinkPanel({
+  done,
+  onArtifactDownload,
+  steps,
+}: {
+  done: boolean
+  onArtifactDownload?: (reportFileId: string, filename: string) => void
+  steps: QAThinkingStep[]
+}) {
   const [open, setOpen] = useState(!done)
+  const groups = groupThinkingSteps(steps)
 
   useEffect(() => {
     if (done) {
@@ -68,26 +303,45 @@ function ThinkPanel({ steps, done }: { steps: QAThinkingStep[]; done: boolean })
         <span>思考过程 ({steps.length} 步)</span>
         {done && <Check className="size-3 shrink-0 text-green-500" />}
       </CollapsibleTrigger>
-      <CollapsibleContent className="mt-1 space-y-1 rounded-md border border-border/50 bg-muted/50 p-3">
-        {steps.map((s, i) => (
-          <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
-            {/* Status dot */}
-            <span
-              className={cn(
-                'size-1.5 shrink-0 rounded-full',
-                s.status === 'done' && 'bg-green-500',
-                s.status === 'running' && 'bg-primary animate-pulse',
-                s.status === 'pending' && 'bg-muted-foreground/40 animate-pulse',
-                s.status === 'failed' && 'bg-red-500',
+      <CollapsibleContent className="mt-1 space-y-3 rounded-md border border-border/50 bg-muted/50 p-3">
+        {groups.map((group) => (
+          <section key={group.iterationNo} className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-medium text-foreground">第 {group.iterationNo} 轮</span>
+              <span className="text-xs text-muted-foreground">
+                {group.toolSteps.length} 个工具调用 · {statusText(group)}
+              </span>
+              {formatDuration(group.durationMs) && (
+                <span className="text-xs text-muted-foreground">
+                  耗时 {formatDuration(group.durationMs)}
+                </span>
               )}
-            />
-            <span className="flex-1">{s.label ?? s.type}</span>
-            {s.status === 'done' && <Check className="size-3 shrink-0 text-green-500" />}
-            {s.status === 'running' && (
-              <span className="animate-pulse text-xs text-primary">...</span>
+            </div>
+            {group.toolSteps.length > 0 ? (
+              <div className="space-y-1">
+                {group.toolSteps.map((step, index) => (
+                  <ToolCallStep
+                    key={step.toolCallId ?? `${group.iterationNo}-${index}`}
+                    onArtifactDownload={onArtifactDownload}
+                    step={step}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground">
+                <span
+                  className={cn(
+                    'size-1.5 shrink-0 rounded-full',
+                    group.status === 'running' ? 'bg-primary animate-pulse' : 'bg-green-500',
+                  )}
+                />
+                <span>{group.title ?? '直接生成回答'}</span>
+                {group.status === 'running' && (
+                  <span className="animate-pulse text-xs text-primary">▊</span>
+                )}
+              </div>
             )}
-            {s.status === 'failed' && <span className="text-xs text-red-500">失败</span>}
-          </div>
+          </section>
         ))}
       </CollapsibleContent>
     </Collapsible>
@@ -237,7 +491,11 @@ function MessageBubble({
         {/* Thinking steps (assistant only) */}
         {hasThinking && (
           <div className="mb-2">
-            <ThinkPanel steps={msg.thinking!} done={thinkingDone} />
+            <ThinkPanel
+              steps={msg.thinking!}
+              done={thinkingDone}
+              onArtifactDownload={onArtifactDownload}
+            />
           </div>
         )}
 
