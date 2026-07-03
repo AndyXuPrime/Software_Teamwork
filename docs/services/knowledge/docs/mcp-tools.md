@@ -100,7 +100,7 @@
 ```
 
 稳定错误码为 `validation_error`、`unauthorized`、`forbidden`、`not_found`、
-`conflict_error`、`rate_limited`、`dependency_error`、`internal_error`。底层错误、凭据、SQL、内部 URL、
+`conflict`、`rate_limited`、`dependency_error`、`internal_error`。底层错误、凭据、SQL、内部 URL、
 Qdrant/File/AI provider 原始响应不得进入输出。
 
 失败示例：
