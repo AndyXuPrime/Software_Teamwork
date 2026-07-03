@@ -732,6 +732,7 @@ export function ReportGeneratePage() {
                       <SelectValue placeholder="请选择报告类型" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="">请选择报告类型</SelectItem>
                       {reportTypes.map((type) => (
                         <SelectItem key={type.code} value={type.code}>
                           {type.name}
@@ -753,6 +754,7 @@ export function ReportGeneratePage() {
                       <SelectValue placeholder="请选择报告模板" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="">请选择报告模板</SelectItem>
                       {templates.map((template) => (
                         <SelectItem key={template.id} value={template.id}>
                           <SelectItemText>
