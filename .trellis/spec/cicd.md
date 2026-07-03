@@ -882,8 +882,9 @@ infrastructure. Business services run on the host.
 Required local sequence:
 
 1. Copy local defaults with `cp deploy/.env.example deploy/.env`.
-2. Run `./scripts/local/dev-up.sh` to pull/start infra, wait for health, apply
-   Qdrant collection initialization, host migrations, and local seed.
+2. Run `./scripts/local/dev-up.sh` to pull/start infra, wait for long-running
+   service health, run the one-shot `minio-init`, apply Qdrant collection
+   initialization, host migrations, and local seed.
 3. Run `./scripts/local/run-backend.sh` to start Auth, File, Knowledge,
    AI Gateway, QA, Document, and Gateway as host processes.
 4. Run `cd apps/web && bun install && bun run dev` for the frontend.
