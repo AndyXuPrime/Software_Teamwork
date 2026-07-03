@@ -138,6 +138,33 @@ func TestAppVersionFreshnessCachesFreshnessByCurrentSHA(t *testing.T) {
 	}
 }
 
+func TestAppVersionFreshnessChecksConfiguredCurrentSHAWhenAllowlistIsEmpty(t *testing.T) {
+	latestSHA := strings.Repeat("a", 40)
+	currentSHA := strings.Repeat("b", 40)
+	calls := 0
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path != "/compare/"+currentSHA+"...develop" {
+			t.Fatalf("github path = %q", r.URL.Path)
+		}
+		writeAppVersionCompareResponse(t, w, currentSHA, currentSHA, []string{latestSHA}, 1, 0)
+	}))
+	defer github.Close()
+
+	checker := newAppVersionTestCheckerWithCurrentSHA(t, github.URL, "", currentSHA)
+
+	freshness := checker.CheckFreshness(context.Background(), currentSHA)
+
+	if freshness.Status != appFreshnessDifferent ||
+		freshness.CurrentSHA != currentSHA ||
+		freshness.LatestSHA != latestSHA {
+		t.Fatalf("freshness = %+v", freshness)
+	}
+	if calls != 1 {
+		t.Fatalf("GitHub calls = %d, want 1", calls)
+	}
+}
+
 func TestAppVersionFreshnessCoalescesConcurrentGitHubRequests(t *testing.T) {
 	latestSHA := strings.Repeat("a", 40)
 	currentSHA := strings.Repeat("1", 40)
@@ -233,7 +260,7 @@ func TestAppVersionFreshnessRejectsInvalidCurrentSHAWithoutGitHubCall(t *testing
 	}
 }
 
-func TestAppVersionFreshnessReturnsUnknownWhenAllowlistIsEmptyWithoutGitHubOrCache(t *testing.T) {
+func TestAppVersionFreshnessReturnsUnknownWhenNoTrustedSHAsAreConfiguredWithoutGitHubOrCache(t *testing.T) {
 	currentSHA := strings.Repeat("b", 40)
 	githubCalls := 0
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -390,7 +417,12 @@ func newAppVersionTestServer(t *testing.T, githubURL string, githubToken string,
 
 func newAppVersionTestChecker(t *testing.T, githubURL string, githubToken string, allowedSHAs ...string) *gitHubAppVersionChecker {
 	t.Helper()
-	checker := newGitHubAppVersionChecker(http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)), githubToken, allowedSHAs)
+	return newAppVersionTestCheckerWithCurrentSHA(t, githubURL, githubToken, "", allowedSHAs...)
+}
+
+func newAppVersionTestCheckerWithCurrentSHA(t *testing.T, githubURL string, githubToken string, currentSHA string, allowedSHAs ...string) *gitHubAppVersionChecker {
+	t.Helper()
+	checker := newGitHubAppVersionChecker(http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)), githubToken, currentSHA, allowedSHAs)
 	checker.apiURL = strings.TrimRight(githubURL, "/") + "/compare"
 	checker.now = func() time.Time {
 		return time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC)

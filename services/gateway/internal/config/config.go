@@ -47,6 +47,7 @@ type Config struct {
 	InternalServiceToken   string
 	AuthAdminServiceToken  string
 	GitHubToken            string
+	AppVersionCurrentSHA   string
 	AppVersionAllowedSHAs  []string
 	AuthBaseURL            string
 	KnowledgeBaseURL       string
@@ -56,6 +57,10 @@ type Config struct {
 }
 
 func Load() (Config, error) {
+	appVersionCurrentSHA, err := optionalCommitSHA("GATEWAY_APP_VERSION_CURRENT_SHA")
+	if err != nil {
+		return Config{}, err
+	}
 	appVersionAllowedSHAs, err := commitSHAList("GATEWAY_APP_VERSION_ALLOWED_SHAS")
 	if err != nil {
 		return Config{}, err
@@ -82,6 +87,7 @@ func Load() (Config, error) {
 		InternalServiceToken:   firstNonEmptyEnv("GATEWAY_INTERNAL_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
 		AuthAdminServiceToken:  strings.TrimSpace(os.Getenv("GATEWAY_AUTH_ADMIN_SERVICE_TOKEN")),
 		GitHubToken:            strings.TrimSpace(os.Getenv("GATEWAY_GITHUB_TOKEN")),
+		AppVersionCurrentSHA:   appVersionCurrentSHA,
 		AppVersionAllowedSHAs:  appVersionAllowedSHAs,
 		AuthBaseURL:            stringValue("GATEWAY_AUTH_BASE_URL", "http://localhost:8001"),
 		KnowledgeBaseURL:       strings.TrimSpace(os.Getenv("GATEWAY_KNOWLEDGE_BASE_URL")),
@@ -243,6 +249,17 @@ func commitSHAList(key string) ([]string, error) {
 		values = append(values, sha)
 	}
 	return values, nil
+}
+
+func optionalCommitSHA(key string) (string, error) {
+	sha := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if sha == "" {
+		return "", nil
+	}
+	if !isFullCommitSHA(sha) {
+		return "", fmt.Errorf("%s must be a 40 character hexadecimal Git SHA", key)
+	}
+	return sha, nil
 }
 
 func isFullCommitSHA(value string) bool {

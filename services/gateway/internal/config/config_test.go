@@ -28,6 +28,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("GATEWAY_INTERNAL_SERVICE_TOKEN", "")
 	t.Setenv("GATEWAY_AUTH_ADMIN_SERVICE_TOKEN", "auth-admin-token")
 	t.Setenv("GATEWAY_GITHUB_TOKEN", "")
+	t.Setenv("GATEWAY_APP_VERSION_CURRENT_SHA", "")
 	t.Setenv("GATEWAY_APP_VERSION_ALLOWED_SHAS", "")
 	t.Setenv("GATEWAY_AUTH_BASE_URL", "")
 	t.Setenv("GATEWAY_KNOWLEDGE_BASE_URL", "")
@@ -84,6 +85,7 @@ func TestLoadParsesEnvironment(t *testing.T) {
 	t.Setenv("GATEWAY_INTERNAL_SERVICE_TOKEN", "svc-token")
 	t.Setenv("GATEWAY_AUTH_ADMIN_SERVICE_TOKEN", "auth-admin-token")
 	t.Setenv("GATEWAY_GITHUB_TOKEN", "github-token")
+	t.Setenv("GATEWAY_APP_VERSION_CURRENT_SHA", strings.Repeat("C", 40))
 	allowedSHAs := strings.Repeat("A", 40) + ", " + strings.Repeat("b", 40) + ", " + strings.Repeat("a", 40)
 	t.Setenv("GATEWAY_APP_VERSION_ALLOWED_SHAS", allowedSHAs)
 	t.Setenv("GATEWAY_AUTH_BASE_URL", "http://auth:8001")
@@ -113,6 +115,9 @@ func TestLoadParsesEnvironment(t *testing.T) {
 	}
 	if cfg.GitHubToken != "github-token" {
 		t.Fatalf("GitHubToken = %q", cfg.GitHubToken)
+	}
+	if got, want := cfg.AppVersionCurrentSHA, strings.Repeat("c", 40); got != want {
+		t.Fatalf("AppVersionCurrentSHA = %q, want %q", got, want)
 	}
 	if got, want := cfg.AppVersionAllowedSHAs, []string{strings.Repeat("a", 40), strings.Repeat("b", 40)}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("AppVersionAllowedSHAs = %#v, want %#v", got, want)
@@ -173,6 +178,8 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		{name: "downstream timeout", key: "GATEWAY_DOWNSTREAM_TIMEOUT", val: "0s"},
 		{name: "redis db", key: "GATEWAY_REDIS_DB", val: "-1"},
 		{name: "cors credentials", key: "GATEWAY_CORS_ALLOW_CREDENTIALS", val: "maybe"},
+		{name: "app version current sha short", key: "GATEWAY_APP_VERSION_CURRENT_SHA", val: strings.Repeat("a", 39)},
+		{name: "app version current sha non hex", key: "GATEWAY_APP_VERSION_CURRENT_SHA", val: strings.Repeat("a", 39) + "g"},
 		{name: "app version allowed sha short", key: "GATEWAY_APP_VERSION_ALLOWED_SHAS", val: strings.Repeat("a", 39)},
 		{name: "app version allowed sha non hex", key: "GATEWAY_APP_VERSION_ALLOWED_SHAS", val: strings.Repeat("a", 39) + "g"},
 	}

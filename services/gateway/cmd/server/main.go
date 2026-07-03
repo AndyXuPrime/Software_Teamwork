@@ -82,6 +82,7 @@ func main() {
 		InternalServiceToken:   cfg.InternalServiceToken,
 		AuthAdminServiceToken:  cfg.AuthAdminServiceToken,
 		GitHubToken:            cfg.GitHubToken,
+		AppVersionCurrentSHA:   cfg.AppVersionCurrentSHA,
 		AppVersionAllowedSHAs:  cfg.AppVersionAllowedSHAs,
 		AuthClient:             authClient,
 		SessionStore:           sessionStore,

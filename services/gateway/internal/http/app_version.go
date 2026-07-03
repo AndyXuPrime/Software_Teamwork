@@ -84,17 +84,21 @@ type gitHubCompareResponse struct {
 	Commits         []gitHubCommitResponse `json:"commits"`
 }
 
-func newGitHubAppVersionChecker(client *http.Client, logger *slog.Logger, token string, allowedSHAs []string) *gitHubAppVersionChecker {
+func newGitHubAppVersionChecker(client *http.Client, logger *slog.Logger, token string, currentSHA string, allowedSHAs []string) *gitHubAppVersionChecker {
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
+	trustedSHAs := commitSHASet(allowedSHAs)
+	if sha := normalizeCommitSHA(currentSHA); isFullCommitSHA(sha) {
+		trustedSHAs[sha] = struct{}{}
+	}
 	return &gitHubAppVersionChecker{
 		apiURL:          githubDevelopCompareAPI,
 		token:           strings.TrimSpace(token),
-		allowedSHAs:     commitSHASet(allowedSHAs),
+		allowedSHAs:     trustedSHAs,
 		client:          client,
 		logger:          logger,
 		cacheTTL:        appVersionCacheTTL,
@@ -121,7 +125,7 @@ func (s *Server) handleAppVersionFreshness(w http.ResponseWriter, r *http.Reques
 
 	checker := s.appVersionChecker
 	if checker == nil {
-		checker = newGitHubAppVersionChecker(s.httpClient, s.logger, "", nil)
+		checker = newGitHubAppVersionChecker(s.httpClient, s.logger, "", "", nil)
 	}
 	freshness := checker.CheckFreshness(r.Context(), currentSHA)
 	response.WriteJSON(w, http.StatusOK, freshness, middleware.RequestIDFromContext(r.Context()))
