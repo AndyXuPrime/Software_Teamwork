@@ -152,7 +152,7 @@ describe('QA capability helpers', () => {
     })
   })
 
-  it('maps real SSE flat tool summaries before falling back to legacy fields', () => {
+  it('maps only sanitized SSE flat tool summaries for display', () => {
     const event = {
       arguments: { query: 'legacy query', topK: 3 },
       argumentsSummary: { queryCount: 2, topK: 5 },
@@ -160,16 +160,15 @@ describe('QA capability helpers', () => {
       resultSummary: { hitCount: 4 },
     }
 
-    expect(getToolEventSummary(event, 'argumentsSummary', 'arguments')).toEqual({
+    expect(getToolEventSummary(event, 'argumentsSummary')).toEqual({
       queryCount: 2,
       topK: 5,
     })
-    expect(getToolEventSummary(event, 'resultSummary', 'result')).toEqual({ hitCount: 4 })
+    expect(getToolEventSummary(event, 'resultSummary')).toEqual({ hitCount: 4 })
+    expect(getToolEventSummary({ arguments: { topK: 3 } }, 'argumentsSummary')).toBeUndefined()
+    expect(getToolEventSummary({ result: { hitCount: 3 } }, 'resultSummary')).toBeUndefined()
     expect(
-      getToolEventSummary({ arguments: { topK: 3 } }, 'argumentsSummary', 'arguments'),
-    ).toEqual({ topK: 3 })
-    expect(
-      getToolEventSummary({ resultSummary: 'safe-looking free text' }, 'resultSummary', 'result'),
+      getToolEventSummary({ resultSummary: 'safe-looking free text' }, 'resultSummary'),
     ).toBeUndefined()
   })
 

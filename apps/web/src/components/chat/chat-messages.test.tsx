@@ -142,6 +142,34 @@ describe('ChatMessages ThinkPanel', () => {
     expect(screen.getByRole('button', { name: /get_citation_source 完成/ })).toBeInTheDocument()
   })
 
+  it('renders non-tool thinking steps that are included in the step count', () => {
+    renderMessage(
+      assistantWithThinking([
+        { iterationNo: 1, label: 'Agent 迭代 1', status: 'running', type: 'agent_iteration' },
+        {
+          detail: '已整理引用快照',
+          iterationNo: 1,
+          label: '整理引用',
+          status: 'done',
+          type: 'citation',
+        },
+        {
+          detail: '正在生成回答',
+          iterationNo: 1,
+          label: '生成回答',
+          status: 'running',
+          type: 'generation',
+        },
+      ]),
+    )
+
+    expect(screen.getByText('思考过程 (3 步)')).toBeInTheDocument()
+    expect(screen.getByText('整理引用')).toBeInTheDocument()
+    expect(screen.getByText('已整理引用快照')).toBeInTheDocument()
+    expect(screen.getByText('生成回答')).toBeInTheDocument()
+    expect(screen.getByText('正在生成回答')).toBeInTheDocument()
+  })
+
   it('highlights failed tool calls and shows a safe failure summary', () => {
     renderMessage(
       assistantWithThinking([

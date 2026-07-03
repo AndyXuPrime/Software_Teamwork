@@ -268,13 +268,9 @@ export function getCitationDelta(payload: unknown): QACitation | undefined {
 export function getToolEventSummary(
   payload: Record<string, unknown>,
   summaryKey: 'argumentsSummary' | 'resultSummary',
-  fallbackKey: 'arguments' | 'result',
 ): unknown {
   const summary = payload[summaryKey]
-  if (isRecord(summary)) return summary
-
-  const fallback = payload[fallbackKey]
-  return isRecord(fallback) ? fallback : undefined
+  return isRecord(summary) ? summary : undefined
 }
 
 export function getToolReportArtifact(

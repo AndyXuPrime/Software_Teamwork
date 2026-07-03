@@ -59,6 +59,7 @@ type ThinkPanelStep = QAThinkingStep & {
 type IterationGroup = {
   durationMs?: number
   iterationNo: number
+  reasoningSteps: ThinkPanelStep[]
   status: QAThinkingStep['status']
   steps: ThinkPanelStep[]
   title?: string
@@ -172,6 +173,7 @@ function groupThinkingSteps(steps: QAThinkingStep[]): IterationGroup[] {
       groups.get(iterationNo) ??
       ({
         iterationNo,
+        reasoningSteps: [],
         status: 'done',
         steps: [],
         toolSteps: [],
@@ -183,6 +185,9 @@ function groupThinkingSteps(steps: QAThinkingStep[]): IterationGroup[] {
       group.status = rawStep.status
     }
     if (rawStep.type === 'tool_call') group.toolSteps.push(rawStep)
+    if (rawStep.type !== 'agent_iteration' && rawStep.type !== 'tool_call') {
+      group.reasoningSteps.push(rawStep)
+    }
     groups.set(iterationNo, group)
   }
 
@@ -200,8 +205,8 @@ function groupThinkingSteps(steps: QAThinkingStep[]): IterationGroup[] {
 }
 
 function statusText(group: IterationGroup): string {
-  if (group.toolSteps.some((step) => step.status === 'failed')) return '有失败'
-  if (group.toolSteps.some((step) => step.status === 'running') || group.status === 'running') {
+  if (group.steps.some((step) => step.status === 'failed')) return '有失败'
+  if (group.steps.some((step) => step.status === 'running') || group.status === 'running') {
     return '执行中'
   }
   return '已完成'
@@ -270,6 +275,28 @@ function ToolCallStep({
   )
 }
 
+function ReasoningStep({ step }: { step: ThinkPanelStep }) {
+  return (
+    <div className="flex items-start gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground">
+      <span
+        className={cn(
+          'mt-1.5 size-1.5 shrink-0 rounded-full',
+          step.status === 'done' && 'bg-green-500',
+          step.status === 'running' && 'bg-primary animate-pulse',
+          step.status === 'pending' && 'bg-muted-foreground/40 animate-pulse',
+          step.status === 'failed' && 'bg-red-500',
+        )}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground/90">{step.label ?? '思考步骤'}</span>
+        {step.detail && <span className="ml-2 text-xs leading-relaxed">{step.detail}</span>}
+      </span>
+      {step.status === 'running' && <span className="animate-pulse text-xs text-primary">▊</span>}
+      {step.status === 'failed' && <span className="shrink-0 text-xs text-red-600">失败</span>}
+    </div>
+  )
+}
+
 function ThinkPanel({
   done,
   onArtifactDownload,
@@ -317,7 +344,14 @@ function ThinkPanel({
                 </span>
               )}
             </div>
-            {group.toolSteps.length > 0 ? (
+            {group.reasoningSteps.length > 0 && (
+              <div className="space-y-1">
+                {group.reasoningSteps.map((step, index) => (
+                  <ReasoningStep key={`${group.iterationNo}-${step.type}-${index}`} step={step} />
+                ))}
+              </div>
+            )}
+            {group.toolSteps.length > 0 && (
               <div className="space-y-1">
                 {group.toolSteps.map((step, index) => (
                   <ToolCallStep
@@ -327,7 +361,8 @@ function ThinkPanel({
                   />
                 ))}
               </div>
-            ) : (
+            )}
+            {group.reasoningSteps.length === 0 && group.toolSteps.length === 0 && (
               <div className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground">
                 <span
                   className={cn(

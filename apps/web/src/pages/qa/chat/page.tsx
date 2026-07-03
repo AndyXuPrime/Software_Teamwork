@@ -871,7 +871,7 @@ export function ChatPage() {
               type: 'tool_call',
               label: `调用: ${toolName}`,
               status: 'running',
-              argumentsSummary: getToolEventSummary(data, 'argumentsSummary', 'arguments'),
+              argumentsSummary: getToolEventSummary(data, 'argumentsSummary'),
               iterationNo,
               startedAt: Date.now(),
               toolCallId,
@@ -900,7 +900,7 @@ export function ChatPage() {
               label: `${toolName} 完成`,
               completedAt: Date.now(),
               reportArtifact: artifact,
-              resultSummary: getToolEventSummary(data, 'resultSummary', 'result'),
+              resultSummary: getToolEventSummary(data, 'resultSummary'),
               toolName,
             }
           }
@@ -933,7 +933,7 @@ export function ChatPage() {
               completedAt: Date.now(),
               errorSummary: getToolFailureSummary(data),
               reportArtifact: failedArtifact,
-              resultSummary: getToolEventSummary(data, 'resultSummary', 'result'),
+              resultSummary: getToolEventSummary(data, 'resultSummary'),
               toolName,
             }
           }
