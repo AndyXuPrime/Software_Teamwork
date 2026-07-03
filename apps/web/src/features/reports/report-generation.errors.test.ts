@@ -37,4 +37,17 @@ describe('report generation gateway error helpers', () => {
       '请先配置模型：请在模型管理中新增并启用聊天模型，并在问答或报告配置中发布生效。（requestId: req-model-missing）',
     )
   })
+
+  it('does not treat generic model runtime errors as missing configuration', () => {
+    const error = new ApiError({
+      code: 'model_error',
+      message: 'Provider timeout while generating answer',
+      requestId: 'req-model-timeout',
+      status: 502,
+    })
+
+    expect(formatReportGatewayError(error)).toBe(
+      'Provider timeout while generating answer（requestId: req-model-timeout）',
+    )
+  })
 })

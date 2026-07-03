@@ -46,6 +46,21 @@ const emptyUploadForm: TemplateUploadForm = {
   templateName: '',
 }
 
+const reportTemplateAcceptedMime =
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+const reportTemplateFileAccept = `.docx,${reportTemplateAcceptedMime}`
+const reportTemplateMaxUploadBytes = 32 * 1024 * 1024
+
+function getTemplateFileValidationError(file: File): string | null {
+  const filename = file.name.trim().toLowerCase()
+  if (!filename.endsWith('.docx')) return '仅支持上传 DOCX 模板文件。'
+  if (file.type && file.type !== reportTemplateAcceptedMime) {
+    return '仅支持上传 DOCX 模板文件。'
+  }
+  if (file.size > reportTemplateMaxUploadBytes) return '模板文件不能超过 32 MiB。'
+  return null
+}
+
 export function ReportTemplatesPage() {
   const [structureTarget, setStructureTarget] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
@@ -112,6 +127,11 @@ export function ReportTemplatesPage() {
     }
     if (!uploadForm.file) {
       setUploadError('请选择要上传的模板文件。')
+      return
+    }
+    const fileValidationError = getTemplateFileValidationError(uploadForm.file)
+    if (fileValidationError) {
+      setUploadError(fileValidationError)
       return
     }
 
@@ -404,7 +424,7 @@ export function ReportTemplatesPage() {
               <label className="grid gap-1.5 text-sm">
                 <span className="font-medium">模板文件</span>
                 <Input
-                  accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  accept={reportTemplateFileAccept}
                   type="file"
                   onChange={(event) =>
                     setUploadForm((prev) => ({

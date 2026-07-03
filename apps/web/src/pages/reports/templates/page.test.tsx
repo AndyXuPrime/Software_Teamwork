@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -35,6 +35,59 @@ function getButtonByText(pattern: RegExp) {
   }
 
   return button
+}
+
+function createTemplatesPageFetchMock() {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(input, init)
+    const url = new URL(request.url)
+
+    if (request.method === 'POST' && url.pathname.endsWith('/report-templates')) {
+      return jsonResponse({
+        data: {
+          createdAt: '2026-07-03T00:00:00Z',
+          enabled: true,
+          filename: 'uploaded.docx',
+          id: 'tpl-uploaded',
+          reportType: 'summer_peak_inspection',
+          templateName: '上传模板',
+          version: 1,
+        },
+        requestId: 'req-upload',
+      })
+    }
+    if (url.pathname.endsWith('/report-types')) {
+      return jsonResponse({
+        data: [{ code: 'summer_peak_inspection', name: '迎峰度夏巡检' }],
+        requestId: 'req-types',
+      })
+    }
+    if (url.pathname.endsWith('/report-templates')) {
+      return pageResponse([])
+    }
+    if (url.pathname.endsWith('/report-materials')) {
+      return pageResponse([])
+    }
+    if (url.pathname.endsWith('/report-statistics/overview')) {
+      return jsonResponse({
+        data: { materialCount: 0, reportCount: 0, templateCount: 0 },
+        requestId: 'req-overview',
+      })
+    }
+    if (url.pathname.endsWith('/report-statistics/daily')) {
+      return jsonResponse({ data: [], requestId: 'req-daily' })
+    }
+
+    return jsonResponse({ data: [], requestId: 'req-default' })
+  })
+}
+
+async function openUploadDialog(user: ReturnType<typeof userEvent.setup>) {
+  renderWithProviders(<ReportTemplatesPage />)
+
+  await screen.findByText('报告模板与素材')
+  await user.click(screen.getByRole('button', { name: /上传模板/ }))
+  return await screen.findByRole('dialog', { name: '上传报告模板' })
 }
 
 describe('ReportTemplatesPage', () => {
@@ -170,5 +223,61 @@ describe('ReportTemplatesPage', () => {
     expect(await screen.findByText(/Template delete dependency down/)).toBeVisible()
     expect(screen.getByText(/req-template-delete/)).toBeVisible()
     expect(screen.getByText(/即将删除模板"真实模板"/)).toBeVisible()
+  })
+
+  it('blocks legacy DOC template uploads before posting to the backend', async () => {
+    const user = userEvent.setup()
+    const fetchMock = createTemplatesPageFetchMock()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const dialog = await openUploadDialog(user)
+    const fileInput = within(dialog).getByLabelText('模板文件')
+
+    expect(fileInput).toHaveAttribute(
+      'accept',
+      '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    )
+
+    await user.type(within(dialog).getByLabelText('模板名称'), '旧版模板')
+    fireEvent.change(fileInput, {
+      target: { files: [new File(['legacy'], 'legacy.doc', { type: 'application/msword' })] },
+    })
+    await user.click(within(dialog).getByRole('button', { name: '上传' }))
+
+    expect(await within(dialog).findByText('仅支持上传 DOCX 模板文件。')).toBeVisible()
+    expect(
+      fetchMock.mock.calls.some((call) => {
+        const request = call[0] instanceof Request ? call[0] : new Request(call[0], call[1])
+        return (
+          request.method === 'POST' && new URL(request.url).pathname.endsWith('/report-templates')
+        )
+      }),
+    ).toBe(false)
+  })
+
+  it('blocks DOCX template uploads above the backend 32 MiB limit before posting', async () => {
+    const user = userEvent.setup()
+    const fetchMock = createTemplatesPageFetchMock()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const dialog = await openUploadDialog(user)
+    const oversizedFile = new File(['template'], 'large.docx', {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    })
+    Object.defineProperty(oversizedFile, 'size', { value: 32 * 1024 * 1024 + 1 })
+
+    await user.type(within(dialog).getByLabelText('模板名称'), '超大模板')
+    await user.upload(within(dialog).getByLabelText('模板文件'), oversizedFile)
+    await user.click(within(dialog).getByRole('button', { name: '上传' }))
+
+    expect(await within(dialog).findByText('模板文件不能超过 32 MiB。')).toBeVisible()
+    expect(
+      fetchMock.mock.calls.some((call) => {
+        const request = call[0] instanceof Request ? call[0] : new Request(call[0], call[1])
+        return (
+          request.method === 'POST' && new URL(request.url).pathname.endsWith('/report-templates')
+        )
+      }),
+    ).toBe(false)
   })
 })

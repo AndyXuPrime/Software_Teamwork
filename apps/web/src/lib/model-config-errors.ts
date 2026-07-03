@@ -8,8 +8,6 @@ type ModelConfigurationErrorLike = {
   status?: number
 }
 
-const modelConfigCodes = new Set(['model_error'])
-
 const modelConfigMessagePatterns = [
   /\bLLM configuration not found\b/i,
   /\bmodel profile not found\b/i,
@@ -31,7 +29,6 @@ function fieldText(fields: Record<string, string> | undefined): string {
 }
 
 export function isModelConfigurationError(error: ModelConfigurationErrorLike): boolean {
-  if (error.code && modelConfigCodes.has(error.code)) return true
   const searchable = [error.message, fieldText(error.fields)].filter(Boolean).join('\n')
   if (!searchable) return false
   return modelConfigMessagePatterns.some((pattern) => pattern.test(searchable))
