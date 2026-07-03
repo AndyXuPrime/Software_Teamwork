@@ -48,6 +48,8 @@ export interface ChatState {
   setStreaming: (streaming: boolean) => void
   setError: (error: string | null) => void
   setLastFailedMsg: (msg: string | null) => void
+  /** Reset all state and clear persisted sessionIds from localStorage. */
+  reset: () => void
   clearError: () => void
   /** Replace all attachments for a session. */
   setSessionAttachments: (sessionId: string, attachments: SessionAttachmentSummary[]) => void
@@ -134,6 +136,19 @@ export const useChatStore = create<ChatState>()(
       setError: (error) => set({ error }),
 
       setLastFailedMsg: (msg) => set({ lastFailedMsg: msg }),
+
+      reset: () => {
+        useChatStore.persist.clearStorage()
+        set({
+          sessions: [],
+          sessionIds: [],
+          activeId: null,
+          streaming: false,
+          error: null,
+          lastFailedMsg: null,
+          messagesBySession: {},
+        })
+      },
 
       clearError: () => set({ error: null, lastFailedMsg: null }),
 

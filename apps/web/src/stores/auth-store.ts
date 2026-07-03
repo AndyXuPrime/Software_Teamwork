@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { createSession, createUserSession, deleteCurrentSession, getCurrentUser } from '@/api/auth'
 import { apiClient, ApiError } from '@/api/client'
 import type { CreateSessionRequest, CreateUserRequest, UserSummary } from '@/lib/types'
+import { useChatStore } from '@/stores/chat-store'
 
 export type AuthStatus = 'idle' | 'restoring' | 'authenticated' | 'anonymous' | 'error'
 
@@ -35,6 +36,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   userName: null,
   clearSession: () => {
+    // Clear chat store first to avoid showing previous user's sessions
+    useChatStore.getState().reset()
     apiClient.setToken(null)
     set({
       accessToken: null,
