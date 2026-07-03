@@ -181,3 +181,37 @@ Implemented QA chat empty-session reuse, added regression coverage for repeated 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: F-038 review follow-up
+
+**Date**: 2026-07-03
+**Task**: F-038 review follow-up
+**Branch**: `Frontend/fix/qa-reuse-empty-chat-session`
+
+### Summary
+
+Addressed PR review feedback by scoping QA attachment upload state to the owning session, adding cross-session upload regression tests, and cleaning archived F-038 placeholder context rows.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `72e72fda` | (see git log) |
+| `c00fc391` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
