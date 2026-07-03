@@ -17,6 +17,8 @@ goose PostgreSQL tables when `DATABASE_URL` or `KNOWLEDGE_DATABASE_URL` is set.
 - Parser-config storage: `pgx/v5` + hand-written SQL (optional)
 
 See `../knowledge-runtime/README.md` for host-run vendor runtime wiring.
+The MCP transport and QA integration workflow are documented in
+[`docs/services/knowledge/docs/mcp-server.md`](../../docs/services/knowledge/docs/mcp-server.md).
 
 ## Configuration
 
