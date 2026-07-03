@@ -100,6 +100,7 @@ type AttachmentParserClient interface {
 
 type SessionAttachmentSearcher interface {
 	SearchSessionAttachments(context.Context, string, string, []string, string, int) ([]SessionAttachmentChunk, error)
+	ListSessionAttachmentReportSource(context.Context, string, string, []string, int) ([]SessionAttachmentChunk, error)
 }
 
 type AttachmentRepository interface {
@@ -114,6 +115,7 @@ type AttachmentRepository interface {
 	ValidateReadyAttachments(context.Context, string, string, []string) ([]SessionAttachment, error)
 	BindMessageAttachments(context.Context, string, string, string, []string, time.Time) error
 	SearchSessionAttachmentChunks(context.Context, string, string, []string, string, int) ([]SessionAttachmentChunk, error)
+	ListSessionAttachmentChunks(context.Context, string, string, []string, int) ([]SessionAttachmentChunk, error)
 	ListExpiredAttachments(context.Context, time.Time, int) ([]SessionAttachment, error)
 	PurgeAttachments(context.Context, []string, time.Time) error
 	CheckAttachmentQuota(context.Context, string, string, int64, int, int64) error
@@ -282,6 +284,16 @@ func (s *AttachmentService) SearchSessionAttachments(ctx context.Context, userID
 		return nil, err
 	}
 	return s.repository.SearchSessionAttachmentChunks(ctx, userID, sessionID, normalizeIDList(attachmentIDs), query, limit)
+}
+
+func (s *AttachmentService) ListSessionAttachmentReportSource(ctx context.Context, userID, sessionID string, attachmentIDs []string, limit int) ([]SessionAttachmentChunk, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, NewError(CodeUnauthorized, "authentication required", nil)
+	}
+	if _, err := s.repository.GetConversation(ctx, userID, sessionID); err != nil {
+		return nil, err
+	}
+	return s.repository.ListSessionAttachmentChunks(ctx, userID, sessionID, normalizeIDList(attachmentIDs), limit)
 }
 
 func (s *AttachmentService) CleanupExpired(ctx context.Context, limit int) ([]SessionAttachment, error) {
