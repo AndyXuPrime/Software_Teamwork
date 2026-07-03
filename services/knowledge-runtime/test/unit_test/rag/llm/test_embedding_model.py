@@ -28,6 +28,8 @@
 """
 
 import json
+import sys
+import types
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -223,15 +225,33 @@ class TestTruncationBoundary:
         embed.model_name = "mistral-embed"
         captured = {}
 
-        def _embeddings(input, model):
-            captured["input"] = input
+        def _embeddings(inputs, model):
+            captured["input"] = inputs
             return _OpenAIResp([[0.0, 0.0]], total_tokens=1)
 
         embed.client = MagicMock()
-        embed.client.embeddings = MagicMock(side_effect=_embeddings)
+        embed.client.embeddings.create = MagicMock(side_effect=_embeddings)
         huge = "word " * 12000
         embed.encode([huge])
         assert num_tokens_from_string(captured["input"][0]) <= DEFAULT_MAX_TOKENS
+
+    def test_mistral_uses_v2_embeddings_create_inputs(self, monkeypatch):
+        fake_client = MagicMock()
+        fake_client.embeddings.create = MagicMock(side_effect=_openai_create(total_tokens=5))
+        fake_client_module = types.ModuleType("mistralai.client")
+        fake_client_module.Mistral = MagicMock(return_value=fake_client)
+        fake_package = types.ModuleType("mistralai")
+        fake_package.client = fake_client_module
+        monkeypatch.setitem(sys.modules, "mistralai", fake_package)
+        monkeypatch.setitem(sys.modules, "mistralai.client", fake_client_module)
+
+        embed = MistralEmbed("key", "mistral-embed")
+        vectors, token_count = embed.encode(["hello"])
+
+        fake_client_module.Mistral.assert_called_once_with(api_key="key")
+        fake_client.embeddings.create.assert_called_once_with(inputs=["hello"], model="mistral-embed")
+        assert vectors.shape == (1, 3)
+        assert token_count == 5
 
 
 # --------------------------------------------------------------------------- #

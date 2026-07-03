@@ -68,15 +68,9 @@ class LLMBundle(LLM4Tenant):
             if text is None or not str(text).strip():
                 marker = "None" if text is None else "whitespace-only"
                 logging.warning(
-                    # codeql[py/clear-text-logging-sensitive-data] False positive:
-                    # model_config["llm_name"] is the model identifier (e.g.
-                    # "gpt-4"), not an API key or credential. CodeQL flags
-                    # it as a sensitive data source only because it lives
-                    # in the same dict as api_key.
-                    "LLMBundle.encode: empty input at index %d (%s) coerced to placeholder 'None' for model %s",
+                    "LLMBundle.encode: empty input at index %d (%s) coerced to placeholder 'None'",
                     idx,
                     marker,
-                    self.model_config["llm_name"],
                 )
                 safe_texts.append("None")
                 continue
@@ -89,7 +83,7 @@ class LLMBundle(LLM4Tenant):
 
         embeddings, used_tokens = self.mdl.encode(safe_texts)
         if self.model_config["llm_factory"] == "Builtin":
-            logging.debug("LLMBundle.encode query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(texts, len(embeddings), used_tokens))
+            logging.debug("LLMBundle.encode emd len: %d, used_tokens: %d. Builtin model does not need to update token usage", len(embeddings), used_tokens)
         else:
             logging.info("LLMBundle.encode used_tokens: %d", used_tokens)
 
@@ -99,17 +93,13 @@ class LLMBundle(LLM4Tenant):
         if query is None or not str(query).strip():
             marker = "None" if query is None else "whitespace-only"
             logging.warning(
-                # codeql[py/clear-text-logging-sensitive-data] False positive:
-                # llm_name is a model identifier, not a credential. See the
-                # matching suppression on the encode() warning above.
-                "LLMBundle.encode_queries: empty query (%s) coerced to placeholder 'None' for model %s",
+                "LLMBundle.encode_queries: empty query (%s) coerced to placeholder 'None'",
                 marker,
-                self.model_config["llm_name"],
             )
             query = "None"
         emd, used_tokens = self.mdl.encode_queries(query)
         if self.model_config["llm_factory"] == "Builtin":
-            logging.info("LLMBundle.encode_queries query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(query, len(emd), used_tokens))
+            logging.info("LLMBundle.encode_queries emd len: %d, used_tokens: %d. Builtin model does not need to update token usage", len(emd), used_tokens)
         else:
             logging.info("LLMBundle.encode_queries used_tokens: %d", used_tokens)
 
@@ -176,10 +166,7 @@ class LLMBundle(LLM4Tenant):
     def tts(self, text: str) -> Generator[bytes, None, None]:
         for chunk in self.mdl.tts(text):
             if isinstance(chunk, int):
-                # codeql[py/clear-text-logging-sensitive-data] False positive:
-                # llm_name is a model identifier (e.g. "tts-1"), not a
-                # credential. The token count is non-sensitive.
-                logging.info("LLMBundle.tts used_tokens: {}, model_name: {}".format(chunk, self.model_config["llm_name"]))
+                logging.info("LLMBundle.tts used_tokens: %d", chunk)
                 return
             yield chunk
 

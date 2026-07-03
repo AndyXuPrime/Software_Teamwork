@@ -68,7 +68,7 @@ def _run_local_server_flow(client_config: dict[str, Any], source: DocumentSource
     print("Launching Google OAuth flow. A browser window should open shortly.")
     print("If it does not, copy the URL shown in the console into your browser manually.")
     if timeout_secs > 0:
-        print(f"You have {timeout_secs} seconds to finish granting access before the request times out.")
+        print("Finish granting access before the configured request timeout expires.")
 
     try:
         creds = _run_with_timeout(

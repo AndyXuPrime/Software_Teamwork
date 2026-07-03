@@ -43,19 +43,7 @@ def get_opendal_config():
             config_data = opendal_config.get("config", {})
             kwargs = {"scheme": scheme, **config_data}
 
-        # Only include non-sensitive keys in logs. Do NOT
-        # add 'password' or any key containing embedded credentials
-        # (like 'connection_string').
-        safe_log_info = {
-            "scheme": kwargs.get("scheme"),
-            "host": kwargs.get("host"),
-            "port": kwargs.get("port"),
-            "database": kwargs.get("database"),
-            "table": kwargs.get("table"),
-            # indicate presence of credentials without logging them
-            "has_credentials": any(k in kwargs for k in ("password", "connection_string")),
-        }
-        logging.info("Loaded OpenDAL configuration (non sensitive fields only): %s", safe_log_info)
+        logging.info("Loaded OpenDAL configuration")
         return kwargs
     except Exception as e:
         logging.error("Failed to load OpenDAL configuration from yaml: %s", str(e))
@@ -110,7 +98,7 @@ class OpenDALStorage:
             conn.commit()
             cursor.close()
             conn.close()
-            logging.info(f"Database configuration initialized with max_allowed_packet={max_packet}")
+            logging.info("Database configuration initialized")
         except Exception as e:
             logging.error(f"Failed to initialize database configuration: {str(e)}")
             raise
@@ -133,4 +121,4 @@ class OpenDALStorage:
         conn.commit()
         cursor.close()
         conn.close()
-        logging.info(f"Table `{table_name}` initialized.")
+        logging.info("OpenDAL metadata table initialized.")

@@ -260,14 +260,10 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
         while True:
             attempt += 1
             jql = self._build_jql(attempt_start, end)
-            adjusted_start = self._adjust_start_for_query(attempt_start)
             logger.info(
-                "[Jira] Executing Jira JQL attempt %s (buffered_retry=%s, start=%s, adjusted_start=%s, end=%s, overlap_buffer_s=%s)",
+                "[Jira] Executing Jira JQL attempt %s (buffered_retry=%s, overlap_buffer_s=%s)",
                 attempt,
                 retried_with_buffer,
-                attempt_start,
-                adjusted_start,
-                end,
                 self.time_buffer_seconds,
             )
             try:
@@ -276,7 +272,7 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
                 if attempt_start is not None and not retried_with_buffer and is_atlassian_date_error(exc):
                     attempt_start = attempt_start - ONE_HOUR
                     retried_with_buffer = True
-                    logger.info(f"[Jira] Atlassian date error detected; retrying with start={attempt_start}.")
+                    logger.info("[Jira] Atlassian date error detected; retrying with buffered start.")
                     continue
                 raise
 

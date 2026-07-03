@@ -30,6 +30,13 @@ when present, and download only what is still missing.
 import os
 
 import nltk
+from nltk.downloader import Downloader
+
+_GITHUB_PROXY_PREFIX = "https://gh-proxy.com/"
+_NLTK_DATA_INDEX_URL = "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/index.xml"
+_NLTK_DATA_MIRROR_INDEX_URL = f"{_GITHUB_PROXY_PREFIX}{_NLTK_DATA_INDEX_URL}"
+_NLTK_DATA_PACKAGE_PREFIX = "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/"
+_NLTK_DATA_MIRROR_PACKAGE_PREFIX = f"{_GITHUB_PROXY_PREFIX}{_NLTK_DATA_PACKAGE_PREFIX}"
 
 # Reuse data already fetched by download_deps.py (the directory the app exports
 # as NLTK_DATA) so provisioned environments do not download it again.
@@ -43,8 +50,32 @@ _REQUIRED_NLTK_DATA = (
     ("punkt_tab", "tokenizers/punkt_tab"),
     ("wordnet", "corpora/wordnet"),
 )
+_NLTK_DOWNLOADER = None
+
+
+def _nltk_downloader():
+    global _NLTK_DOWNLOADER
+    if _NLTK_DOWNLOADER is not None:
+        return _NLTK_DOWNLOADER
+
+    index_url = os.environ.get("NLTK_DOWNLOAD_INDEX_URL", _NLTK_DATA_MIRROR_INDEX_URL)
+    package_prefix = os.environ.get("NLTK_DOWNLOAD_PACKAGE_PREFIX", _NLTK_DATA_MIRROR_PACKAGE_PREFIX)
+    downloader = Downloader(server_index_url=index_url)
+
+    if index_url.startswith(_GITHUB_PROXY_PREFIX) or package_prefix != _NLTK_DATA_PACKAGE_PREFIX:
+        # NLTK's index embeds raw.githubusercontent.com package URLs. Rewrite
+        # those after loading the index so package zip downloads use the same mirror.
+        downloader._update_index()
+        for package in downloader._packages.values():
+            if package.url.startswith(_NLTK_DATA_PACKAGE_PREFIX):
+                package.url = package_prefix + package.url[len(_NLTK_DATA_PACKAGE_PREFIX):]
+
+    _NLTK_DOWNLOADER = downloader
+    return downloader
+
+
 for _name, _find_path in _REQUIRED_NLTK_DATA:
     try:
         nltk.data.find(_find_path)
     except LookupError:
-        nltk.download(_name, quiet=True)
+        _nltk_downloader().download(_name, quiet=True, raise_on_error=True)

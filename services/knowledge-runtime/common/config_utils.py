@@ -21,6 +21,7 @@ from filelock import FileLock
 
 from common.file_utils import get_project_base_directory
 from common.constants import SERVICE_CONF
+from common.logging_utils import sanitize_for_logging
 from ruamel.yaml import YAML
 
 
@@ -72,32 +73,6 @@ def read_config(conf_name=SERVICE_CONF):
 
 
 CONFIGS = read_config()
-
-_SENSITIVE_KEY_PARTS = (
-    "api_key",
-    "access_key",
-    "secret_key",
-    "secret",
-    "password",
-    "token",
-    "credential",
-)
-
-
-def sanitize_for_logging(value):
-    if isinstance(value, dict):
-        sanitized = {}
-        for key, item in value.items():
-            key_lower = str(key).lower()
-            if any(part in key_lower for part in _SENSITIVE_KEY_PARTS):
-                sanitized[key] = "*" * 8 if item else item
-            else:
-                sanitized[key] = sanitize_for_logging(item)
-        return sanitized
-    if isinstance(value, list):
-        return [sanitize_for_logging(item) for item in value]
-    return value
-
 
 def show_configs():
     msg = f"Current configs, from {conf_realpath(SERVICE_CONF)}:"
