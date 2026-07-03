@@ -172,8 +172,7 @@ function filterMenu(
 }
 
 export function AdminSidebar() {
-  const routerState = useRouterState()
-  const pathname = routerState.location.pathname
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
   const user = useAuthStore((state) => state.user)
   const visibleMenuItems = useMemo(() => filterMenu(menuItems, user), [user])
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['system', 'reports', 'rag']))
@@ -267,7 +266,7 @@ export function AdminSidebar() {
               <div key={item.key}>
                 <button
                   className={cn(
-                    'flex w-full items-center text-left text-sm font-medium text-sidebar-foreground transition-all duration-300 hover:bg-primary/5 hover:text-primary',
+                    'flex w-full items-center text-left text-sm font-medium text-sidebar-foreground transition-colors hover:bg-primary/5 hover:text-primary',
                     sidebarCollapsed ? 'justify-center px-0 py-2' : 'gap-1.5 px-4 py-2',
                   )}
                   title={sidebarCollapsed ? item.label : undefined}
@@ -278,7 +277,7 @@ export function AdminSidebar() {
                     Icon && (
                       <span
                         className={cn(
-                          'inline-flex items-center justify-center rounded-full p-1.5 transition-all duration-300',
+                          'inline-flex items-center justify-center rounded-full p-1.5 transition-colors',
                           hasActiveChild(item) && 'shadow-[0_0_0_2px_var(--primary)] bg-primary/5',
                         )}
                       >
@@ -302,7 +301,7 @@ export function AdminSidebar() {
                       )}
                       <span
                         className={cn(
-                          'inline-block h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-300',
+                          'inline-block h-1.5 w-1.5 shrink-0 rounded-full transition-colors',
                           hasActiveChild(item)
                             ? 'bg-primary shadow-[0_0_4px_var(--primary)]'
                             : 'bg-muted-foreground/30',
@@ -318,7 +317,7 @@ export function AdminSidebar() {
                       <Link
                         key={child.key}
                         className={cn(
-                          'relative block whitespace-nowrap px-4 py-1.5 pl-10 text-sm text-muted-foreground transition-all duration-300 hover:bg-primary/5 hover:text-primary',
+                          'relative block whitespace-nowrap px-4 py-1.5 pl-10 text-sm text-muted-foreground transition-colors hover:bg-primary/5 hover:text-primary',
                           isExactActive(child.path) &&
                             'border-l-[3px] border-l-primary bg-primary/5 font-medium text-primary pl-[37px]',
                         )}
@@ -337,7 +336,7 @@ export function AdminSidebar() {
             <Link
               key={item.key}
               className={cn(
-                'relative flex items-center gap-2 text-sm font-medium text-sidebar-foreground transition-all duration-300 hover:bg-primary/5 hover:text-primary',
+                'relative flex items-center gap-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-primary/5 hover:text-primary',
                 sidebarCollapsed ? 'justify-center px-0 py-2' : 'px-4 py-2',
                 isExactActive(item.path) &&
                   !sidebarCollapsed &&
@@ -350,7 +349,7 @@ export function AdminSidebar() {
               {sidebarCollapsed && Icon ? (
                 <span
                   className={cn(
-                    'inline-flex items-center justify-center rounded-full p-1.5 transition-all duration-300',
+                    'inline-flex items-center justify-center rounded-full p-1.5 transition-colors',
                     isExactActive(item.path) && 'shadow-[0_0_0_2px_var(--primary)] bg-primary/5',
                   )}
                 >

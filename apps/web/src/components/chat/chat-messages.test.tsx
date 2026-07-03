@@ -236,6 +236,27 @@ describe('ChatMessages ThinkPanel', () => {
     expect(screen.getByText('正在生成回答')).toBeInTheDocument()
   })
 
+  it('shows a live elapsed timer while the assistant response is loading', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-03T00:00:05.000Z'))
+
+    try {
+      renderMessage({
+        content: '',
+        createdAt: '2026-07-03T00:00:00.000Z',
+        id: 'assistant-1',
+        role: 'assistant',
+        sessionId: 'session-1',
+        status: 'streaming',
+        thinking: [],
+      })
+
+      expect(screen.getByText(/正在生成 · 已等待 00:05/)).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('highlights failed tool calls and shows a safe failure summary', () => {
     renderMessage(
       assistantWithThinking([

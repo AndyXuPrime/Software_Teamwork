@@ -436,6 +436,31 @@ function formatDuration(ms: number | undefined): string | undefined {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+function formatElapsedClock(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function StreamingElapsed({ startedAt }: { startedAt?: string }) {
+  const startTime = startedAt ? Date.parse(startedAt) : Number.NaN
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const elapsed = Number.isFinite(startTime) ? now - startTime : 0
+
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+      正在生成 · 已等待 {formatElapsedClock(elapsed)}
+    </span>
+  )
+}
+
 function ToolCallStep({
   onArtifactDownload,
   step,
@@ -842,13 +867,19 @@ function MessageBubble({
                 components={markdownComponents}
               />
               <StatusLabel status={msg.status} />
+              {effectiveStreaming && (
+                <span className="mt-2 block">
+                  <StreamingElapsed startedAt={msg.createdAt} />
+                </span>
+              )}
             </span>
           ) : effectiveStreaming ? (
-            <span>
+            <span className="inline-flex items-center gap-2">
               <span
                 className="ml-0.5 inline-block h-[1em] w-[0.1em] animate-pulse bg-primary align-middle select-none"
                 aria-label="助手正在回复中"
               />
+              <StreamingElapsed startedAt={msg.createdAt} />
               <StatusLabel status={msg.status} />
             </span>
           ) : msg.status === 'stopped' || msg.status === 'cancelled' || msg.status === 'failed' ? (

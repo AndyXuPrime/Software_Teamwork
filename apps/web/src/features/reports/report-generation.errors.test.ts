@@ -24,4 +24,30 @@ describe('report generation gateway error helpers', () => {
       'Document service unavailable（requestId: req-report-1）',
     )
   })
+
+  it('maps missing model configuration errors to a friendly setup hint', () => {
+    const error = new ApiError({
+      code: 'dependency_error',
+      message: 'ai gateway chat client is not configured',
+      requestId: 'req-model-missing',
+      status: 502,
+    })
+
+    expect(formatReportGatewayError(error)).toBe(
+      '请先配置模型：请在模型管理中新增并启用聊天模型，并在问答或报告配置中发布生效。（requestId: req-model-missing）',
+    )
+  })
+
+  it('does not treat generic model runtime errors as missing configuration', () => {
+    const error = new ApiError({
+      code: 'model_error',
+      message: 'Provider timeout while generating answer',
+      requestId: 'req-model-timeout',
+      status: 502,
+    })
+
+    expect(formatReportGatewayError(error)).toBe(
+      'Provider timeout while generating answer（requestId: req-model-timeout）',
+    )
+  })
 })

@@ -31,6 +31,7 @@ import {
   mergeMessageReportArtifact,
 } from '@/features/qa/capability'
 import { downloadFromUrl } from '@/lib/download'
+import { isModelConfigurationError, MODEL_CONFIGURATION_HINT } from '@/lib/model-config-errors'
 import type {
   QACitation,
   QAMessage,
@@ -209,7 +210,12 @@ function sanitizeErrorMessage(raw: string | undefined): string {
   return trimmed
 }
 
-function formatError(sseErr: { code?: string; message?: string }): string {
+function formatError(sseErr: {
+  code?: string
+  fields?: Record<string, string>
+  message?: string
+}): string {
+  if (isModelConfigurationError(sseErr)) return MODEL_CONFIGURATION_HINT
   if (sseErr.code) {
     const mapped = SAFE_ERROR_MAP[sseErr.code]
     if (mapped) return mapped

@@ -1,4 +1,5 @@
 import { ApiError } from '@/api/client'
+import { isModelConfigurationError, MODEL_CONFIGURATION_HINT } from '@/lib/model-config-errors'
 
 export type ReportGatewayErrorDetails = {
   code?: string
@@ -15,10 +16,14 @@ export function getReportGatewayErrorDetails(
   defaultMessage = '请求失败，请稍后重试',
 ): ReportGatewayErrorDetails {
   if (error instanceof ApiError) {
+    const message = isModelConfigurationError(error)
+      ? MODEL_CONFIGURATION_HINT
+      : error.message || defaultMessage
+
     return {
       code: error.code,
       isCapabilityUnavailable: unavailableCodes.has(error.code) || error.status === 501,
-      message: error.message || defaultMessage,
+      message,
       requestId: error.requestId,
       status: error.status,
     }
