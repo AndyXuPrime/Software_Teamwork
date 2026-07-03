@@ -37,6 +37,9 @@ export function useStreamChat(handlers: ChatStreamHandlers) {
       onReasoningStep: (data) => {
         handlersRef.current.onReasoningStep?.(data)
       },
+      onReasoningDelta: (data) => {
+        handlersRef.current.onReasoningDelta?.(data)
+      },
       onToolStarted: (data) => {
         handlersRef.current.onToolStarted?.(data)
       },

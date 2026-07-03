@@ -126,6 +126,110 @@ func TestRunnerReturnsDirectModelAnswerWithoutTool(t *testing.T) {
 	}
 }
 
+func TestRunnerEmitsReasoningDeltaSeparatelyFromAnswer(t *testing.T) {
+	model := &fakeModel{responses: []Completion{{
+		Message:          Message{Role: RoleAssistant, Content: "final answer"},
+		FinishReason:     "stop",
+		ReasoningContent: "safe provider reasoning",
+	}}}
+	tools := &fakeTools{}
+	runner, err := NewRunner(model, tools, Config{
+		MaxIterations:      2,
+		ToolTimeout:        time.Second,
+		MaxToolResultBytes: 1024,
+		ReasoningFilterFactory: func() ReasoningFilter {
+			return func(delta string, _ bool) []string {
+				return []string{delta}
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []Event
+	result, err := runner.RunWithObserver(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, func(event Event) {
+		events = append(events, event)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Final.Content != "final answer" {
+		t.Fatalf("final = %+v", result.Final)
+	}
+	for _, message := range result.Messages {
+		if strings.Contains(message.Content, "safe provider reasoning") {
+			t.Fatalf("reasoning content leaked into model messages: %+v", result.Messages)
+		}
+	}
+	for _, event := range events {
+		if event.Type == EventReasoningDelta && event.ReasoningContent == "safe provider reasoning" {
+			return
+		}
+	}
+	t.Fatalf("missing reasoning delta event: %+v", events)
+}
+
+func TestRunnerDoesNotEmitReasoningDeltaWithoutFilter(t *testing.T) {
+	model := &fakeModel{responses: []Completion{{
+		Message:          Message{Role: RoleAssistant, Content: "final answer"},
+		FinishReason:     "stop",
+		ReasoningContent: "raw provider secret",
+	}}}
+	runner := testRunner(t, model, &fakeTools{}, 2)
+	var events []Event
+	_, err := runner.RunWithObserver(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, func(event Event) {
+		events = append(events, event)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if event.Type == EventReasoningDelta {
+			t.Fatalf("raw reasoning delta emitted without filter: %+v", events)
+		}
+	}
+}
+
+func TestRunnerAppliesReasoningFilterBeforeObserver(t *testing.T) {
+	model := &fakeModel{responses: []Completion{{
+		Message:          Message{Role: RoleAssistant, Content: "final answer"},
+		FinishReason:     "stop",
+		ReasoningContent: "raw provider secret",
+	}}}
+	runner, err := NewRunner(model, &fakeTools{}, Config{
+		MaxIterations:      2,
+		ToolTimeout:        time.Second,
+		MaxToolResultBytes: 1024,
+		ReasoningFilterFactory: func() ReasoningFilter {
+			return func(delta string, _ bool) []string {
+				if strings.Contains(delta, "secret") {
+					return []string{"safe reasoning summary"}
+				}
+				return []string{delta}
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []Event
+	_, err = runner.RunWithObserver(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, func(event Event) {
+		events = append(events, event)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reasoning []string
+	for _, event := range events {
+		if event.Type == EventReasoningDelta {
+			reasoning = append(reasoning, event.ReasoningContent)
+		}
+	}
+	if strings.Join(reasoning, "") != "safe reasoning summary" {
+		t.Fatalf("reasoning events=%q, want filtered safe summary; all events=%+v", reasoning, events)
+	}
+}
+
 func TestRunnerReturnsUnknownToolToModel(t *testing.T) {
 	model := &fakeModel{responses: []Completion{
 		{Message: Message{Role: RoleAssistant, ToolCalls: []ToolCall{{

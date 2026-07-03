@@ -2866,11 +2866,11 @@ export interface components {
             requestId: string;
         };
         /** @enum {string} */
-        QASseEventType: "message.created" | "agent.iteration.started" | "reasoning.step" | "tool.started" | "tool.completed" | "tool.failed" | "answer.delta" | "citation.delta" | "answer.completed" | "error" | "heartbeat";
+        QASseEventType: "message.created" | "agent.iteration.started" | "reasoning.step" | "reasoning.delta" | "tool.started" | "tool.completed" | "tool.failed" | "answer.delta" | "citation.delta" | "answer.completed" | "error" | "heartbeat";
         QASseEvent: {
             eventSeq: number;
             eventType: components["schemas"]["QASseEventType"];
-            /** @description Event payload. `tool.completed` and `tool.failed` events may include `result.reportArtifact` with schema `QAReportArtifact`. */
+            /** @description Event payload. `reasoning.delta` payload includes safe provider reasoning text as `{ messageId, text, index }`. `tool.completed` and `tool.failed` events may include `result.reportArtifact` with schema `QAReportArtifact`. */
             payload: components["schemas"]["JsonObject"];
             /** Format: date-time */
             createdAt: string;

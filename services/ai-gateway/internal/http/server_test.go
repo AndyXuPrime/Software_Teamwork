@@ -358,7 +358,7 @@ func TestCreateChatCompletionWithFakeProvider(t *testing.T) {
 func TestCreateChatCompletionStreamWithFakeProvider(t *testing.T) {
 	fakeProvider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_chunk\",\"object\":\"chat.completion.chunk\",\"created\":1782631200,\"model\":\"provider-model\",\"provider_trace\":\"raw-provider-secret\",\"choices\":[{\"index\":0,\"provider_debug\":\"raw-provider-secret\",\"delta\":{\"provider_context\":\"raw-provider-secret\",\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"provider_extra\":\"raw-provider-secret\",\"function\":{\"name\":\"search\",\"arguments\":\"{\\\"q\\\":\\\"x\\\"}\",\"provider_meta\":\"raw-provider-secret\"}}]},\"finish_reason\":null}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_chunk\",\"object\":\"chat.completion.chunk\",\"created\":1782631200,\"model\":\"provider-model\",\"provider_trace\":\"raw-provider-secret\",\"choices\":[{\"index\":0,\"provider_debug\":\"raw-provider-secret\",\"delta\":{\"provider_context\":\"raw-provider-secret\",\"reasoning_content\":\"plan \",\"reasoning\":\"visible reasoning\",\"reasoningContent\":\"camel reasoning\",\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"provider_extra\":\"raw-provider-secret\",\"function\":{\"name\":\"search\",\"arguments\":\"{\\\"q\\\":\\\"x\\\"}\",\"provider_meta\":\"raw-provider-secret\"}}]},\"finish_reason\":null}]}\n\n"))
 		_, _ = w.Write([]byte("data: [DONE]\n\n"))
 	}))
 	defer fakeProvider.Close()
@@ -389,11 +389,31 @@ func TestCreateChatCompletionStreamWithFakeProvider(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "delta") || !strings.Contains(rec.Body.String(), "tool_calls") || !strings.Contains(rec.Body.String(), "[DONE]") {
 		t.Fatalf("stream body missing tool-call delta or DONE: %s", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), "reasoning_content") || !strings.Contains(rec.Body.String(), "reasoningContent") || !strings.Contains(rec.Body.String(), "visible reasoning") {
+		t.Fatalf("stream body missing provider reasoning fields: %s", rec.Body.String())
+	}
 	if strings.Contains(rec.Body.String(), "requestId") || strings.Contains(rec.Body.String(), "sk-stream-secret") || strings.Contains(rec.Body.String(), "tool result secret") {
 		t.Fatalf("stream response leaked envelope or sensitive data: %s", rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), "raw-provider-secret") || strings.Contains(rec.Body.String(), "provider_trace") {
 		t.Fatalf("stream response leaked provider private fields: %s", rec.Body.String())
+	}
+}
+
+func TestSanitizeStreamDeltaDropsNonStringReasoningFields(t *testing.T) {
+	raw := json.RawMessage(`{"role":"assistant","content":"ok","reasoning_content":"safe text","reasoning":null,"reasoningContent":{"raw_prompt":"secret"},"tool_calls":[]}`)
+
+	sanitized, valid := sanitizeStreamDelta(raw)
+
+	if !valid {
+		t.Fatal("sanitizeStreamDelta returned invalid")
+	}
+	body := string(sanitized)
+	if !strings.Contains(body, `"reasoning_content":"safe text"`) || !strings.Contains(body, `"reasoning":null`) {
+		t.Fatalf("string/null reasoning fields were not preserved: %s", body)
+	}
+	if strings.Contains(body, "reasoningContent") || strings.Contains(body, "raw_prompt") || strings.Contains(body, "secret") {
+		t.Fatalf("non-string reasoning field leaked: %s", body)
 	}
 }
 

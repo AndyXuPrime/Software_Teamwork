@@ -103,10 +103,42 @@ type usagePayload struct {
 
 type completionResponse struct {
 	Choices []struct {
-		Message      agent.Message `json:"message"`
-		FinishReason string        `json:"finish_reason"`
+		Message      messagePayload `json:"message"`
+		FinishReason string         `json:"finish_reason"`
 	} `json:"choices"`
 	Usage usagePayload `json:"usage"`
+}
+
+type messagePayload struct {
+	Message          agent.Message
+	ReasoningContent string
+}
+
+func (m *messagePayload) UnmarshalJSON(data []byte) error {
+	var decoded struct {
+		Role             string           `json:"role"`
+		Content          *string          `json:"content"`
+		ToolCalls        []agent.ToolCall `json:"tool_calls"`
+		ToolCallID       string           `json:"tool_call_id"`
+		Name             string           `json:"name"`
+		ReasoningContent json.RawMessage  `json:"reasoning_content"`
+		Reasoning        json.RawMessage  `json:"reasoning"`
+		ReasoningCamel   json.RawMessage  `json:"reasoningContent"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	m.Message = agent.Message{
+		Role:       decoded.Role,
+		ToolCalls:  decoded.ToolCalls,
+		ToolCallID: decoded.ToolCallID,
+		Name:       decoded.Name,
+	}
+	if decoded.Content != nil {
+		m.Message.Content = *decoded.Content
+	}
+	m.ReasoningContent = firstNonBlankRawString(decoded.ReasoningContent, decoded.Reasoning, decoded.ReasoningCamel)
+	return nil
 }
 
 func (c *Client) Complete(ctx context.Context, messages []agent.Message, tools []agent.ToolDefinition) (agent.Completion, error) {
@@ -153,7 +185,7 @@ func (c *Client) Complete(ctx context.Context, messages []agent.Message, tools [
 		return agent.Completion{}, normalizeGatewayError(response.StatusCode, response.Body)
 	}
 	if isEventStream(response.Header.Get("Content-Type")) {
-		return decodeStreamCompletion(response.Body)
+		return decodeStreamCompletion(ctx, response.Body)
 	}
 	limited := io.LimitReader(response.Body, maxResponseBytes+1)
 	data, err := io.ReadAll(limited)
@@ -171,7 +203,12 @@ func (c *Client) Complete(ctx context.Context, messages []agent.Message, tools [
 		return agent.Completion{}, errors.New("completion response has no choices")
 	}
 	choice := decoded.Choices[0]
-	return agent.Completion{Message: choice.Message, FinishReason: choice.FinishReason, Usage: tokenUsageFromPayload(decoded.Usage)}, nil
+	return agent.Completion{
+		Message:          choice.Message.Message,
+		FinishReason:     choice.FinishReason,
+		Usage:            tokenUsageFromPayload(decoded.Usage),
+		ReasoningContent: choice.Message.ReasoningContent,
+	}, nil
 }
 
 func normalizeGatewayError(statusCode int, body io.Reader) error {
@@ -184,8 +221,8 @@ func normalizeGatewayError(statusCode int, body io.Reader) error {
 
 type streamChunk struct {
 	Choices []struct {
-		Delta        agent.Message `json:"delta"`
-		FinishReason string        `json:"finish_reason"`
+		Delta        messagePayload `json:"delta"`
+		FinishReason string         `json:"finish_reason"`
 	} `json:"choices"`
 	Usage usagePayload `json:"usage"`
 }
@@ -228,11 +265,13 @@ func isEventStream(contentType string) bool {
 	return strings.Contains(strings.ToLower(contentType), "text/event-stream")
 }
 
-func decodeStreamCompletion(body io.Reader) (agent.Completion, error) {
+func decodeStreamCompletion(ctx context.Context, body io.Reader) (agent.Completion, error) {
 	message := agent.Message{Role: agent.RoleAssistant}
 	accumulator := newToolCallAccumulator()
 	var finishReason string
 	var usage agent.TokenUsage
+	var reasoningContent strings.Builder
+	reasoningStreamed := false
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
 	var totalBytes int
@@ -259,11 +298,19 @@ func decodeStreamCompletion(body io.Reader) (agent.Completion, error) {
 			return agent.Completion{}, fmt.Errorf("decode completion stream chunk: %w", err)
 		}
 		for _, choice := range chunk.Choices {
-			if choice.Delta.Role != "" {
-				message.Role = choice.Delta.Role
+			delta := choice.Delta.Message
+			if delta.Role != "" {
+				message.Role = delta.Role
 			}
-			message.Content += choice.Delta.Content
-			accumulator.apply(choice.Delta.ToolCalls)
+			message.Content += delta.Content
+			accumulator.apply(delta.ToolCalls)
+			if choice.Delta.ReasoningContent != "" {
+				reasoningContent.WriteString(choice.Delta.ReasoningContent)
+				reasoningStreamed = true
+				if observer := agent.ReasoningDeltaObserverFromContext(ctx); observer != nil {
+					observer(choice.Delta.ReasoningContent)
+				}
+			}
 			if choice.FinishReason != "" {
 				finishReason = choice.FinishReason
 			}
@@ -279,7 +326,29 @@ func decodeStreamCompletion(body io.Reader) (agent.Completion, error) {
 		return agent.Completion{}, service.NewError(service.CodeDependency, "AI gateway request failed", errors.New("AI gateway stream ended before done"))
 	}
 	message.ToolCalls = accumulator.calls
-	return agent.Completion{Message: message, FinishReason: finishReason, Usage: usage}, nil
+	return agent.Completion{
+		Message:                  message,
+		FinishReason:             finishReason,
+		Usage:                    usage,
+		ReasoningContent:         reasoningContent.String(),
+		ReasoningContentStreamed: reasoningStreamed,
+	}, nil
+}
+
+func firstNonBlankRawString(values ...json.RawMessage) string {
+	for _, value := range values {
+		if len(value) == 0 {
+			continue
+		}
+		var decoded string
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			continue
+		}
+		if decoded != "" {
+			return decoded
+		}
+	}
+	return ""
 }
 
 func tokenUsageFromPayload(payload usagePayload) agent.TokenUsage {

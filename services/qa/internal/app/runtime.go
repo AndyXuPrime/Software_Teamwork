@@ -10,6 +10,7 @@ import (
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/platform/mcpclient"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/platform/modelclient"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/platform/toolclient"
+	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/service"
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/qa/internal/service/agent"
 )
 
@@ -70,10 +71,11 @@ func New(ctx context.Context, cfg config.Config, observer agent.Observer) (*Runt
 		return nil, err
 	}
 	runner, err := agent.NewRunner(model, tools, agent.Config{
-		MaxIterations:      cfg.MaxIterations,
-		ToolTimeout:        cfg.MCPToolTimeout,
-		MaxToolResultBytes: cfg.MaxToolResultBytes,
-		Observer:           observer,
+		MaxIterations:          cfg.MaxIterations,
+		ToolTimeout:            cfg.MCPToolTimeout,
+		MaxToolResultBytes:     cfg.MaxToolResultBytes,
+		Observer:               observer,
+		ReasoningFilterFactory: service.NewReasoningFilter,
 	})
 	if err != nil {
 		closeRemote(remoteTools)

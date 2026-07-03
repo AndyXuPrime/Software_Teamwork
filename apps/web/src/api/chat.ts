@@ -30,6 +30,7 @@ export interface ChatStreamHandlers {
   onMessageCreated?: (data: Record<string, unknown> & { seq: number }) => void
   onAgentIterationStarted?: (data: Record<string, unknown> & { seq: number }) => void
   onReasoningStep?: (data: Record<string, unknown> & { seq: number }) => void
+  onReasoningDelta?: (data: Record<string, unknown> & { seq: number }) => void
   onToolStarted?: (data: Record<string, unknown> & { seq: number }) => void
   onToolCompleted?: (data: Record<string, unknown> & { seq: number }) => void
   onToolFailed?: (data: Record<string, unknown> & { seq: number }) => void
@@ -51,6 +52,9 @@ function dispatch(event: QASseEventType, data: unknown, handlers: ChatStreamHand
       break
     case 'reasoning.step':
       handlers.onReasoningStep?.(data as Record<string, unknown> & { seq: number })
+      break
+    case 'reasoning.delta':
+      handlers.onReasoningDelta?.(data as Record<string, unknown> & { seq: number })
       break
     case 'tool.started':
       handlers.onToolStarted?.(data as Record<string, unknown> & { seq: number })

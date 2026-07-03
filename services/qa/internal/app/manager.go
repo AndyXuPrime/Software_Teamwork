@@ -349,8 +349,10 @@ func (m *Manager) buildState(ctx context.Context, runtimeConfig service.RuntimeC
 	}
 	overallTimeout := time.Duration(runtimeConfig.Agent.OverallTimeoutSeconds) * time.Second
 	runner, err := agent.NewRunner(model, policyClient, agent.Config{
-		MaxIterations: maxIterations, ToolTimeout: toolTimeout,
-		MaxToolResultBytes: m.cfg.MaxToolResultBytes,
+		MaxIterations:          maxIterations,
+		ToolTimeout:            toolTimeout,
+		MaxToolResultBytes:     m.cfg.MaxToolResultBytes,
+		ReasoningFilterFactory: service.NewReasoningFilter,
 	})
 	if err != nil {
 		closeClients(clients)

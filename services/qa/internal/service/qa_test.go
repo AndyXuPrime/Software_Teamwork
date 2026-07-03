@@ -408,6 +408,39 @@ func (r *fakeAgentRunner) RunWithToolResultCallback(ctx context.Context, input [
 	return r.RunWithObserver(ctx, input, observer)
 }
 
+type reasoningDeltaRunner struct {
+	deltas []string
+}
+
+func (r reasoningDeltaRunner) RunWithObserver(_ context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
+	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
+	for _, delta := range r.deltas {
+		observer(agent.Event{Type: agent.EventReasoningDelta, Iteration: 1, ReasoningContent: delta})
+	}
+	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1, Usage: agent.TokenUsage{PromptTokens: 2, CompletionTokens: 3, TotalTokens: 5}})
+	final := agent.Message{Role: agent.RoleAssistant, Content: "answer after reasoning"}
+	return agent.Result{Final: final, Messages: append(input, final), Iterations: 1}, nil
+}
+
+func (r reasoningDeltaRunner) RunWithToolResultCallback(ctx context.Context, input []agent.Message, observer agent.Observer, _ agent.ToolObserver) (agent.Result, error) {
+	return r.RunWithObserver(ctx, input, observer)
+}
+
+type interleavedReasoningDeltaRunner struct{}
+
+func (interleavedReasoningDeltaRunner) RunWithObserver(_ context.Context, input []agent.Message, observer agent.Observer) (agent.Result, error) {
+	observer(agent.Event{Type: agent.EventModelStarted, Iteration: 1})
+	observer(agent.Event{Type: agent.EventReasoningDelta, Iteration: 1, ReasoningContent: strings.Repeat("a", 160)})
+	observer(agent.Event{Type: agent.EventToolStarted, Iteration: 1, ToolCallID: "call-1", ToolName: "search_knowledge"})
+	observer(agent.Event{Type: agent.EventModelCompleted, Iteration: 1, Usage: agent.TokenUsage{PromptTokens: 2, CompletionTokens: 3, TotalTokens: 5}})
+	final := agent.Message{Role: agent.RoleAssistant, Content: "answer after reasoning"}
+	return agent.Result{Final: final, Messages: append(input, final), Iterations: 1}, nil
+}
+
+func (r interleavedReasoningDeltaRunner) RunWithToolResultCallback(ctx context.Context, input []agent.Message, observer agent.Observer, _ agent.ToolObserver) (agent.Result, error) {
+	return r.RunWithObserver(ctx, input, observer)
+}
+
 type errorAgentRunner struct{ err error }
 
 func (r errorAgentRunner) RunWithObserver(_ context.Context, _ []agent.Message, observer agent.Observer) (agent.Result, error) {
@@ -1204,6 +1237,215 @@ func TestAskSSEPayloadsDoNotLeakPromptRawToolOrProviderSecrets(t *testing.T) {
 		assertProgressPayloadsDoNotLeakSensitiveData(t, observed)
 		assertStreamPayloadsDoNotLeakSensitiveData(t, repository.savedEvents)
 	})
+}
+
+func TestAskEmitsReasoningDeltaBeforeAnswerDelta(t *testing.T) {
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"}}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{
+		runner: reasoningDeltaRunner{deltas: []string{"checked source A", "compared public result B"}},
+		prompt: "system",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var observed []ProgressEvent
+	_, err = qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "show reasoning"}, func(event ProgressEvent) {
+		observed = append(observed, event)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSSEEventTypesSeen(t, observed, "reasoning.delta", "answer.delta", "answer.completed")
+	reasoningSeq, answerSeq, reasoningCount := 0, 0, 0
+	for _, event := range repository.savedEvents {
+		switch event.EventType {
+		case "reasoning.delta":
+			reasoningCount++
+			if reasoningSeq == 0 {
+				reasoningSeq = event.EventSeq
+			}
+			if event.Payload["messageId"] == "" || event.Payload["text"] == "" {
+				t.Fatalf("invalid reasoning payload: %+v", event.Payload)
+			}
+		case "answer.delta":
+			answerSeq = event.EventSeq
+		}
+	}
+	if reasoningCount == 0 {
+		t.Fatalf("reasoning.delta count=%d events=%+v", reasoningCount, repository.savedEvents)
+	}
+	if reasoningSeq == 0 || answerSeq == 0 || reasoningSeq > answerSeq {
+		t.Fatalf("reasoning sequence=%d answer sequence=%d events=%+v", reasoningSeq, answerSeq, repository.savedEvents)
+	}
+	assertProgressPayloadsDoNotLeakSensitiveData(t, observed)
+	assertStreamPayloadsDoNotLeakSensitiveData(t, repository.savedEvents)
+}
+
+func TestAskDropsUnsafeReasoningDelta(t *testing.T) {
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"}}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{
+		runner: reasoningDeltaRunner{deltas: []string{
+			"safe visible reasoning",
+			"system prompt PRIVATE_CHAIN_OF_THOUGHT token=secret http://internal.provider/v1",
+			"tool arguments raw MCP result should stay private",
+		}},
+		prompt: "system",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "show reasoning"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reasoningTexts []string
+	for _, event := range repository.savedEvents {
+		if event.EventType == "reasoning.delta" {
+			reasoningTexts = append(reasoningTexts, fmt.Sprint(event.Payload["text"]))
+		}
+	}
+	if len(reasoningTexts) != 0 {
+		t.Fatalf("unsafe reasoning deltas were not filtered: %v events=%+v", reasoningTexts, repository.savedEvents)
+	}
+	assertStreamPayloadsDoNotLeakSensitiveData(t, repository.savedEvents)
+}
+
+func TestAskPreservesReasoningDeltaWhitespace(t *testing.T) {
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"}}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{
+		runner: reasoningDeltaRunner{deltas: []string{"plan", " ", "next\n"}},
+		prompt: "system",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "show reasoning"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reasoningTexts []string
+	for _, event := range repository.savedEvents {
+		if event.EventType == "reasoning.delta" {
+			reasoningTexts = append(reasoningTexts, fmt.Sprint(event.Payload["text"]))
+		}
+	}
+	if strings.Join(reasoningTexts, "") != "plan next\n" {
+		t.Fatalf("reasoning texts=%q events=%+v", reasoningTexts, repository.savedEvents)
+	}
+}
+
+func TestAskDropsReasoningDeltaSplitUnsafeMarker(t *testing.T) {
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"}}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{
+		runner: reasoningDeltaRunner{deltas: []string{"safe prefix", " s", "k-secret", "safe suffix"}},
+		prompt: "system",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "show reasoning"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reasoningTexts []string
+	for _, event := range repository.savedEvents {
+		if event.EventType == "reasoning.delta" {
+			reasoningTexts = append(reasoningTexts, fmt.Sprint(event.Payload["text"]))
+		}
+	}
+	if len(reasoningTexts) != 0 {
+		t.Fatalf("split unsafe marker leaked: %q events=%+v", reasoningTexts, repository.savedEvents)
+	}
+	assertStreamPayloadsDoNotLeakSensitiveData(t, repository.savedEvents)
+}
+
+func TestAskDropsReasoningDeltaLongPrefixBeforeUnsafeMarker(t *testing.T) {
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"}}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{
+		runner: reasoningDeltaRunner{deltas: []string{
+			strings.Repeat("safe looking prefix ", 20),
+			"system prompt should block the whole reasoning block",
+		}},
+		prompt: "system",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "show reasoning"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range repository.savedEvents {
+		if event.EventType == "reasoning.delta" {
+			t.Fatalf("long unsafe reasoning prefix leaked: %+v", repository.savedEvents)
+		}
+	}
+	assertStreamPayloadsDoNotLeakSensitiveData(t, repository.savedEvents)
+}
+
+func TestAskBuffersReasoningDeltaUntilModelCompleted(t *testing.T) {
+	repository := &fakeRepository{conversation: Conversation{ID: "conversation-id", OwnerUserID: "user-id", Status: "active"}}
+	qa, err := NewQAService(repository, fakeRuntimeProvider{
+		runner: interleavedReasoningDeltaRunner{},
+		prompt: "system",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = qa.Ask(context.Background(), "user-id", "conversation-id", AskInput{Message: "show reasoning"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reasoningSeq, toolSeq := 0, 0
+	for _, event := range repository.savedEvents {
+		switch event.EventType {
+		case "reasoning.delta":
+			if reasoningSeq == 0 {
+				reasoningSeq = event.EventSeq
+			}
+		case "tool.started":
+			if toolSeq == 0 {
+				toolSeq = event.EventSeq
+			}
+		}
+	}
+	if reasoningSeq == 0 || toolSeq == 0 || reasoningSeq <= toolSeq {
+		t.Fatalf("reasoning sequence=%d tool sequence=%d events=%+v", reasoningSeq, toolSeq, repository.savedEvents)
+	}
+}
+
+func TestContainsUnsafeReasoningContentRejectsInternalConnectionReferences(t *testing.T) {
+	tests := []string{
+		"postgres://user:pass@localhost:5432/app",
+		"redis://redis:6379/0",
+		"http://knowledge-vendor:9380/api/v1/system/healthz",
+		"http://ai-gateway:8086/internal/v1/chat/completions",
+		"http://internal.provider/v1",
+		"http://qa.default.svc.cluster.local/v1",
+		"http://postgres.service.consul:5432",
+		"http://minio.local:9000",
+		"localhost:9000",
+		"qdrant:6333",
+		"postgres.service.consul:5432",
+		"DATABASE_URL=postgres://postgres:postgres@localhost:5432/app",
+		"connection_string=host=knowledge-vendor port=9380",
+		"host=ai-gateway port=8086",
+		"provider raw error: upstream failed",
+	}
+	for _, tt := range tests {
+		t.Run(tt, func(t *testing.T) {
+			if !containsUnsafeReasoningContent(tt) {
+				t.Fatalf("containsUnsafeReasoningContent(%q)=false, want true", tt)
+			}
+		})
+	}
+}
+
+func TestContainsUnsafeReasoningContentAllowsPublicReferenceText(t *testing.T) {
+	value := "checked the public docs at https://example.com/reference and compared the summary"
+	if containsUnsafeReasoningContent(value) {
+		t.Fatalf("containsUnsafeReasoningContent(%q)=true, want false", value)
+	}
 }
 
 func TestAskEmitsCitationDeltaForFallbackAgentMessageCitations(t *testing.T) {

@@ -745,6 +745,7 @@ func sanitizeStreamDelta(rawDelta json.RawMessage) (json.RawMessage, bool) {
 	}
 	sanitizedDelta := map[string]json.RawMessage{}
 	copyRawFields(sanitizedDelta, delta, "role", "content", "refusal")
+	copyStringOrNullFields(sanitizedDelta, delta, "reasoning_content", "reasoning", "reasoningContent")
 	if functionCall, ok := delta["function_call"]; ok {
 		sanitizedFunctionCall, valid := sanitizeNamedArguments(functionCall)
 		if !valid {
@@ -813,6 +814,28 @@ func copyRawFields(dst, src map[string]json.RawMessage, fields ...string) {
 			dst[field] = value
 		}
 	}
+}
+
+func copyStringOrNullFields(dst, src map[string]json.RawMessage, fields ...string) {
+	for _, field := range fields {
+		value, ok := src[field]
+		if !ok || !isStringOrNullJSON(value) {
+			continue
+		}
+		dst[field] = value
+	}
+}
+
+func isStringOrNullJSON(value json.RawMessage) bool {
+	var decoded any
+	if err := json.Unmarshal(value, &decoded); err != nil {
+		return false
+	}
+	if decoded == nil {
+		return true
+	}
+	_, ok := decoded.(string)
+	return ok
 }
 
 func streamRawString(raw json.RawMessage) string {

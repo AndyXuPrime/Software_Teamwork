@@ -71,9 +71,11 @@ type FunctionTool struct {
 }
 
 type Completion struct {
-	Message      Message
-	FinishReason string
-	Usage        TokenUsage
+	Message                  Message
+	FinishReason             string
+	Usage                    TokenUsage
+	ReasoningContent         string
+	ReasoningContentStreamed bool
 }
 
 type TokenUsage struct {
@@ -91,6 +93,22 @@ type ToolResult struct {
 
 type ModelClient interface {
 	Complete(ctx context.Context, messages []Message, tools []ToolDefinition) (Completion, error)
+}
+
+type reasoningDeltaObserverKey struct{}
+
+type ReasoningDeltaObserver func(string)
+
+func WithReasoningDeltaObserver(ctx context.Context, observer ReasoningDeltaObserver) context.Context {
+	if observer == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, reasoningDeltaObserverKey{}, observer)
+}
+
+func ReasoningDeltaObserverFromContext(ctx context.Context) ReasoningDeltaObserver {
+	observer, _ := ctx.Value(reasoningDeltaObserverKey{}).(ReasoningDeltaObserver)
+	return observer
 }
 
 // ToolClient is implemented by the MCP adapter. Keeping this interface at the

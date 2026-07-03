@@ -195,6 +195,7 @@ Gateway OpenAPI 定义 browser-facing schema；本文只记录字段来源和边
 | `message.created` | 用户消息已保存，Agent Run 已创建 | 前端创建消息占位和运行状态。 | `messages`、`response_runs`。 |
 | `agent.iteration.started` | 新一轮 ReAct 迭代开始 | 展示 Agent 正在规划或调用模型。 | `response_runs.current_iteration`、`agent_model_invocations`。 |
 | `reasoning.step` | 可展示步骤变化 | 更新前端处理步骤列表。 | `response_process_steps`。 |
+| `reasoning.delta` | 模型 provider 明确返回的安全推理文本增量 | 可选展示模型 reasoning 面板；不支持该字段的 provider 不发送此事件。 | `response_stream_events`。 |
 | `tool.started` | 工具调用开始 | 展示正在执行的工具摘要。 | `agent_tool_calls`。 |
 | `tool.completed` | 工具调用成功 | 展示工具结果摘要。 | `agent_tool_calls`。 |
 | `tool.failed` | 工具调用失败 | 展示工具失败摘要，可继续或终止。 | `agent_tool_calls`。 |
@@ -206,7 +207,7 @@ Gateway OpenAPI 定义 browser-facing schema；本文只记录字段来源和边
 
 历史事件名 `intent`、`step`、`token`、`citation`、`done` 可以作为迁移前兼容别名，但新 Agent 契约应优先使用上表事件。`heartbeat` 是传输层事件，不要求持久化。
 
-SSE 不得返回完整工具参数、完整 MCP tool result、内部 URL、原始文档全文或私有 chain-of-thought。需要展示推理过程时，只返回 `reasoning.step` 的安全摘要。
+SSE 不得返回完整工具参数、完整 MCP tool result、内部 URL、原始文档全文、系统/开发者提示词、API key、provider 原始错误或私有 chain-of-thought。`reasoning.step` 仅表示可展示流程/工具步骤摘要；`reasoning.delta` 仅用于 provider 明确暴露且经安全过滤的 reasoning text，两者不得混用语义。
 
 ## 配置、引用、测试和统计边界
 

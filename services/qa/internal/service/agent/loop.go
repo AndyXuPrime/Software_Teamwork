@@ -19,25 +19,37 @@ type EventType string
 const (
 	EventModelStarted   EventType = "model.started"
 	EventModelCompleted EventType = "model.completed"
+	EventReasoningDelta EventType = "reasoning.delta"
 	EventToolStarted    EventType = "tool.started"
 	EventToolCompleted  EventType = "tool.completed"
 	EventToolFailed     EventType = "tool.failed"
 	EventAgentCompleted EventType = "agent.completed"
 )
 
-// Event intentionally excludes tool arguments, tool results, prompts, and
-// credentials. It is safe to adapt into logs or public progress summaries.
+// Event intentionally excludes tool arguments, tool results, prompts, raw
+// provider reasoning, and credentials. It is safe to adapt into logs or public
+// progress summaries; provider-originated reasoning is emitted only after the
+// configured ReasoningFilterFactory returns safe public deltas.
 type Event struct {
-	Type         EventType
-	Iteration    int
-	ToolCallID   string
-	ToolName     string
-	FinishReason string
-	Usage        TokenUsage
-	Err          error
+	Type             EventType
+	Iteration        int
+	ToolCallID       string
+	ToolName         string
+	FinishReason     string
+	ReasoningContent string
+	Usage            TokenUsage
+	Err              error
 }
 
 type Observer func(Event)
+
+// ReasoningFilter receives provider-originated reasoning text and returns only
+// safe public deltas. Passing final=true flushes any safe pending content.
+type ReasoningFilter func(delta string, final bool) []string
+
+// ReasoningFilterFactory creates request/iteration-local reasoning filters.
+// Implementations may buffer state and must not be shared across concurrent runs.
+type ReasoningFilterFactory func() ReasoningFilter
 
 // ToolObservation carries raw tool input/output for internal persistence and
 // citation extraction. It must not be logged or exposed directly.
@@ -54,10 +66,11 @@ type ToolObservation struct {
 type ToolObserver func(ToolObservation)
 
 type Config struct {
-	MaxIterations      int
-	ToolTimeout        time.Duration
-	MaxToolResultBytes int
-	Observer           Observer
+	MaxIterations          int
+	ToolTimeout            time.Duration
+	MaxToolResultBytes     int
+	Observer               Observer
+	ReasoningFilterFactory ReasoningFilterFactory
 }
 
 type Runner struct {
@@ -136,7 +149,24 @@ func (r *Runner) run(ctx context.Context, input []Message, observer Observer, to
 	messages := append([]Message(nil), input...)
 	for iteration := 1; iteration <= r.cfg.MaxIterations; iteration++ {
 		emit(observer, Event{Type: EventModelStarted, Iteration: iteration})
-		completion, err := r.model.Complete(ctx, messages, toolDefs)
+		var reasoningFilter ReasoningFilter
+		if r.cfg.ReasoningFilterFactory != nil {
+			reasoningFilter = r.cfg.ReasoningFilterFactory()
+		}
+		emitReasoningDelta := func(delta string, final bool) {
+			if reasoningFilter == nil {
+				return
+			}
+			for _, safeDelta := range reasoningFilter(delta, final) {
+				if safeDelta != "" {
+					emit(observer, Event{Type: EventReasoningDelta, Iteration: iteration, ReasoningContent: safeDelta})
+				}
+			}
+		}
+		modelCtx := WithReasoningDeltaObserver(ctx, func(delta string) {
+			emitReasoningDelta(delta, false)
+		})
+		completion, err := r.model.Complete(modelCtx, messages, toolDefs)
 		if err != nil {
 			return Result{}, fmt.Errorf("complete model iteration %d: %w", iteration, err)
 		}
@@ -148,6 +178,11 @@ func (r *Runner) run(ctx context.Context, input []Message, observer Observer, to
 			return Result{}, fmt.Errorf("%w: expected assistant role, got %q", ErrInvalidResponse, assistant.Role)
 		}
 		messages = append(messages, assistant)
+		if strings.TrimSpace(completion.ReasoningContent) != "" && !completion.ReasoningContentStreamed {
+			emitReasoningDelta(completion.ReasoningContent, true)
+		} else if completion.ReasoningContentStreamed {
+			emitReasoningDelta("", true)
+		}
 		emit(observer, Event{Type: EventModelCompleted, Iteration: iteration, FinishReason: completion.FinishReason, Usage: completion.Usage})
 
 		if len(assistant.ToolCalls) == 0 {

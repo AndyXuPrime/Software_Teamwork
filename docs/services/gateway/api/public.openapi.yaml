@@ -2128,7 +2128,7 @@ paths:
             text/event-stream:
               schema:
                 type: string
-                description: Server-Sent Events with event types `message.created`, `agent.iteration.started`, `reasoning.step`, `tool.started`, `tool.completed`, `tool.failed`, `answer.delta`, `citation.delta`, `answer.completed`, `error`, and optional `heartbeat`. For `tool.completed` and `tool.failed`, Document report-generation tools may include `payload.result.reportArtifact` using the `QAReportArtifact` schema.
+                description: Server-Sent Events with event types `message.created`, `agent.iteration.started`, `reasoning.step`, optional `reasoning.delta`, `tool.started`, `tool.completed`, `tool.failed`, `answer.delta`, `citation.delta`, `answer.completed`, `error`, and optional `heartbeat`. `reasoning.delta` is provider-supplied safe reasoning text only; private chain-of-thought, prompts, tool raw arguments/results, internal URLs, API keys, and raw provider errors must not appear. For `tool.completed` and `tool.failed`, Document report-generation tools may include `payload.result.reportArtifact` using the `QAReportArtifact` schema.
         '400':
           $ref: '#/components/responses/Error'
         '403':
@@ -5926,6 +5926,7 @@ components:
       - message.created
       - agent.iteration.started
       - reasoning.step
+      - reasoning.delta
       - tool.started
       - tool.completed
       - tool.failed
@@ -5950,7 +5951,7 @@ components:
         payload:
           allOf:
           - $ref: '#/components/schemas/JsonObject'
-          description: Event payload. `tool.completed` and `tool.failed` events may include `result.reportArtifact` with schema `QAReportArtifact`.
+          description: Event payload. `reasoning.delta` payload includes safe provider reasoning text as `{ messageId, text, index }`. `tool.completed` and `tool.failed` events may include `result.reportArtifact` with schema `QAReportArtifact`.
         createdAt:
           type: string
           format: date-time

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,15 @@ const (
 	CodeUnsupportedMedia  Code = "unsupported_media_type"
 	CodeUnsupportedIntent Code = "unsupported_intent"
 	CodeTooLarge          Code = "too_large"
+)
+
+var (
+	reasoningInternalHTTPURLPattern = regexp.MustCompile(`(?i)\bhttps?://(?:localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|[a-z0-9-]+(?:\.[a-z0-9-]+)*(?:\.internal|\.svc(?:\.cluster\.local)?|\.cluster\.local|\.local|\.consul)|(?:ai-gateway|gateway|auth|file|knowledge|document|qa|redis|postgres|postgresql|qdrant|minio|knowledge-vendor|document-mcp|knowledge-runtime|knowledge-api))(?:[/:?#][^\s]*)?`)
+	reasoningInternalHostURLPattern = regexp.MustCompile(`(?i)\bhttps?://[a-z0-9.-]*internal[a-z0-9.-]*(?::\d{1,5})?(?:[/?#][^\s]*)?`)
+	reasoningNonHTTPURLPattern      = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s]+`)
+	reasoningHostPortPattern        = regexp.MustCompile(`(?i)\b(?:localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|(?:ai-gateway|gateway|auth|file|knowledge|document|qa|redis|postgres|postgresql|qdrant|minio|knowledge-vendor|document-mcp|knowledge-runtime|knowledge-api)|[a-z0-9-]+(?:\.[a-z0-9-]+)*(?:\.internal|\.svc(?:\.cluster\.local)?|\.cluster\.local|\.local|\.consul)|[a-z][a-z0-9]*(?:-[a-z0-9]+)+):\d{2,5}\b`)
+	reasoningEnvConnectionPattern   = regexp.MustCompile(`(?i)\b(?:database_url|postgres(?:ql)?_url|redis_url|qdrant_url|minio_endpoint|connection_string|conn_string|dsn)\s*[:=]\s*\S+`)
+	reasoningKVHostPattern          = regexp.MustCompile(`(?i)\b(?:host|server|addr|address|endpoint)\s*=\s*(?:localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|(?:ai-gateway|gateway|auth|file|knowledge|document|qa|redis|postgres|postgresql|qdrant|minio|knowledge-vendor|document-mcp|knowledge-runtime|knowledge-api)|[a-z][a-z0-9]*(?:-[a-z0-9]+)+)\b`)
 )
 
 type AppError struct {
@@ -492,6 +502,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 
 	steps := make([]ReasoningStep, 0, 4)
 	citations := make([]Citation, 0, 8)
+	reasoningDeltaIndex := 0
 	iterationStartedAt := map[int]time.Time{}
 	completedIterations := map[int]struct{}{}
 	modelInvocationIDs := map[int]string{}
@@ -506,6 +517,34 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 		toolObservations[observation.ToolCallID] = observation
 	}
 	seenCitationKeys := map[string]struct{}{}
+	reasoningBuffers := map[int]*reasoningDeltaBuffer{}
+	emitReasoningDelta := func(text string) {
+		emit("reasoning.delta", map[string]any{"messageId": assistantMessage.ID, "text": text, "index": reasoningDeltaIndex})
+		reasoningDeltaIndex++
+	}
+	bufferReasoningDelta := func(iteration int, raw string) {
+		if raw == "" {
+			return
+		}
+		buffer := reasoningBuffers[iteration]
+		if buffer == nil {
+			buffer = newReasoningDeltaBuffer()
+			reasoningBuffers[iteration] = buffer
+		}
+		for _, text := range buffer.add(raw) {
+			emitReasoningDelta(text)
+		}
+	}
+	flushReasoningDeltas := func(iteration int) {
+		buffer := reasoningBuffers[iteration]
+		if buffer == nil {
+			return
+		}
+		for _, text := range buffer.flush() {
+			emitReasoningDelta(text)
+		}
+		delete(reasoningBuffers, iteration)
+	}
 	emitSearchCitations := func(observation agent.ToolObservation) {
 		if observation.Type != agent.EventToolCompleted {
 			return
@@ -580,6 +619,7 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 			if invocationID != "" {
 				modelInvocationIDs[event.Iteration] = invocationID
 			}
+			flushReasoningDeltas(event.Iteration)
 		case agent.EventToolStarted:
 			observation := toolObservations[event.ToolCallID]
 			emit("tool.started", toolProgressPayload("正在执行工具 "+event.ToolName, event, observation, modelInvocationIDs[event.Iteration], false))
@@ -589,6 +629,9 @@ func (s *QAService) Ask(ctx context.Context, userID, conversationID string, inpu
 		case agent.EventToolFailed:
 			observation := toolObservations[event.ToolCallID]
 			emit("tool.failed", toolProgressPayload("工具 "+event.ToolName+" 执行失败", event, observation, modelInvocationIDs[event.Iteration], true))
+		case agent.EventReasoningDelta:
+			bufferReasoningDelta(event.Iteration, event.ReasoningContent)
+			return
 		}
 		step, ok := stepFromAgentEvent(assistantMessage.ID, event, s.now().UTC())
 		if !ok {
@@ -800,6 +843,147 @@ func publicStepStatus(value string) string {
 		return "done"
 	}
 	return value
+}
+
+func sanitizeReasoningContent(value string) string {
+	if value == "" || containsUnsafeReasoningContent(value) {
+		return ""
+	}
+	return truncateUTF8String(value, 4000)
+}
+
+type reasoningDeltaBuffer struct {
+	seen    strings.Builder
+	pending string
+	blocked bool
+}
+
+func newReasoningDeltaBuffer() *reasoningDeltaBuffer {
+	return &reasoningDeltaBuffer{}
+}
+
+// NewReasoningFilter returns a stateful filter for one model iteration. It
+// buffers the full provider reasoning block so later unsafe markers can prevent
+// earlier text from being exposed through public events or replay storage.
+func NewReasoningFilter() agent.ReasoningFilter {
+	buffer := newReasoningDeltaBuffer()
+	return func(delta string, final bool) []string {
+		var out []string
+		if delta != "" {
+			out = append(out, buffer.add(delta)...)
+		}
+		if final {
+			out = append(out, buffer.flush()...)
+		}
+		return out
+	}
+}
+
+func (b *reasoningDeltaBuffer) add(value string) []string {
+	if b == nil || b.blocked || value == "" {
+		return nil
+	}
+	candidate := b.seen.String() + value
+	if containsUnsafeReasoningContent(candidate) {
+		b.blocked = true
+		b.pending = ""
+		return nil
+	}
+	b.seen.WriteString(value)
+	b.pending += value
+	return nil
+}
+
+func (b *reasoningDeltaBuffer) flush() []string {
+	if b == nil || b.blocked {
+		return nil
+	}
+	pendingRunes := []rune(b.pending)
+	if len(pendingRunes) == 0 {
+		return nil
+	}
+	b.pending = ""
+	return splitSafeReasoningDelta(string(pendingRunes))
+}
+
+func splitSafeReasoningDelta(value string) []string {
+	if value == "" || containsUnsafeReasoningContent(value) {
+		return nil
+	}
+	values := make([]string, 0, 1)
+	for value != "" {
+		chunk := truncateUTF8String(value, 4000)
+		if chunk == "" {
+			break
+		}
+		values = append(values, chunk)
+		value = value[len(chunk):]
+	}
+	return values
+}
+
+func containsUnsafeReasoningContent(value string) bool {
+	normalized := strings.ToLower(value)
+	for _, marker := range []string{
+		"private_chain_of_thought",
+		"chain-of-thought",
+		"chain of thought",
+		"system prompt",
+		"developer prompt",
+		"tool arguments",
+		"tool result",
+		"mcp result",
+		"raw provider",
+		"provider raw",
+		"raw error",
+		"api_key",
+		"apikey",
+		"api key",
+		"authorization:",
+		"bearer ",
+		"token=",
+		"sk-",
+		"object key",
+		"objectkey",
+		"file_ref",
+		"database_url",
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return containsInternalConnectionReference(value)
+}
+
+func containsInternalConnectionReference(value string) bool {
+	if reasoningInternalHTTPURLPattern.MatchString(value) ||
+		reasoningInternalHostURLPattern.MatchString(value) ||
+		reasoningHostPortPattern.MatchString(value) ||
+		reasoningEnvConnectionPattern.MatchString(value) ||
+		reasoningKVHostPattern.MatchString(value) {
+		return true
+	}
+	matches := reasoningNonHTTPURLPattern.FindAllString(value, -1)
+	for _, match := range matches {
+		if !strings.HasPrefix(strings.ToLower(match), "http://") && !strings.HasPrefix(strings.ToLower(match), "https://") {
+			return true
+		}
+	}
+	return false
+}
+
+func truncateUTF8String(value string, maxBytes int) string {
+	if len(value) <= maxBytes {
+		return value
+	}
+	if maxBytes <= 0 {
+		return ""
+	}
+	limit := maxBytes
+	for limit > 0 && (value[limit]&0xC0) == 0x80 {
+		limit--
+	}
+	return value[:limit]
 }
 
 func validateAskInput(input AskInput) error {

@@ -128,7 +128,7 @@ paths:
             text/event-stream:
               schema:
                 type: string
-                description: SSE stream. Events include message.created, agent.iteration.started, tool.started, tool.completed, tool.failed, reasoning.step, answer.delta, citation.delta, answer.completed, error, heartbeat.
+                description: SSE stream. Events include message.created, agent.iteration.started, tool.started, tool.completed, tool.failed, reasoning.step, optional reasoning.delta, answer.delta, citation.delta, answer.completed, error, heartbeat. reasoning.delta carries provider-supplied safe reasoning text only and must not include private chain-of-thought, prompts, raw tool input/output, internal URLs, API keys, or raw provider errors.
         default: { $ref: '#/components/responses/Error' }
   /qa-sessions/{sessionId}/attachments:
     parameters:
@@ -756,9 +756,10 @@ components:
         eventSeq: { type: integer }
         eventType:
           type: string
-          enum: [message.created, agent.iteration.started, reasoning.step, tool.started, tool.completed, tool.failed, answer.delta, citation.delta, answer.completed, error, heartbeat]
+          enum: [message.created, agent.iteration.started, reasoning.step, reasoning.delta, tool.started, tool.completed, tool.failed, answer.delta, citation.delta, answer.completed, error, heartbeat]
         payload:
           type: object
+          description: reasoning.delta payload uses { messageId, text, index } with safe provider reasoning text.
           additionalProperties: true
         createdAt: { type: string, format: date-time }
     StreamEventListResponse:
