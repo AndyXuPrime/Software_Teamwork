@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend verification and service boundary checklist for QA/Gateway work."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Required backend test/build checks before completion."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Sensitive data logging and redaction expectations for QA SSE evidence."}
+{"file":".trellis/spec/backend/api-contracts.md","reason":"Gateway and internal API contract expectations for SSE/replay/error behavior."}
+{"file":"docs/testing/strategy.md","reason":"Quality gate for test report completeness and command evidence."}

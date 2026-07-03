@@ -1,0 +1,29 @@
+{
+  "id": "qa-sse-behavior-verification",
+  "name": "qa-sse-behavior-verification",
+  "title": "QA SSE real-environment behavior and redaction verification",
+  "description": "Complete GitHub issue #498 / T-013 by running or explicitly blocking real-environment QA SSE behavior and safety verification.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "liu",
+  "assignee": "liu",
+  "createdAt": "2026-07-03",
+  "completedAt": "2026-07-03",
+  "branch": "Test/test/qa-sse-behavior-verification",
+  "base_branch": "develop",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "Source issue: https://github.com/Sakayori-Iroha-168/Software_Teamwork/issues/498",
+  "meta": {
+    "github_issue": 498,
+    "task_code": "T-013"
+  }
+}

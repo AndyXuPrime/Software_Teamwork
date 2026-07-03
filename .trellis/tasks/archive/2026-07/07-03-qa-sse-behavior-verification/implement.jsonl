@@ -1,0 +1,6 @@
+{"file":"docs/services/qa/README.md","reason":"Defines QA SSE event semantics, Agent Loop behavior, and public redaction boundaries for issue #498."}
+{"file":"docs/services/qa/docs/implementation.md","reason":"Records current QA implementation status, env-gated smoke paths, and known real-provider gaps."}
+{"file":"docs/testing/strategy.md","reason":"Defines T-* test task reporting expectations, real-environment evidence rules, and QA/Gateway verification commands."}
+{"file":"docs/testing/templates/test-report-template.md","reason":"Required structure for the archived QA SSE behavior report."}
+{"file":"docs/runbooks/local-integration.md","reason":"Authoritative local stack startup, readiness, and QA/Gateway/AI Gateway smoke guidance."}
+{"file":"deploy/README.md","reason":"Local deployment entry point and environment prerequisite reference."}
