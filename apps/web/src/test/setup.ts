@@ -4,7 +4,6 @@ import { cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
 
 import { resetApiClientForTests } from '@/api/client'
-import { useAuthStore } from '@/stores/auth-store'
 
 function createTestStorage(): Storage {
   const items = new Map<string, string>()
@@ -62,13 +61,14 @@ beforeEach(() => {
   vi.stubEnv('VITE_API_BASE_URL', 'http://127.0.0.1/api/v1')
 })
 
-afterEach(() => {
+afterEach(async () => {
   cleanup()
   resetApiClientForTests()
   window.localStorage.clear()
   window.sessionStorage.clear()
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
+  const { useAuthStore } = await import('@/stores/auth-store')
   useAuthStore.setState({
     accessToken: null,
     error: null,
