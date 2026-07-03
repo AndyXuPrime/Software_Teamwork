@@ -51,7 +51,12 @@ const retrievalTestPayloadSchema = z.object({
     .optional(),
 }) satisfies z.ZodType<CreateQARetrievalTestRunRequest>
 
-function optionalNumber(value: string, label: string, min?: number): number | undefined {
+function optionalNumber(
+  value: string,
+  label: string,
+  min?: number,
+  max?: number,
+): number | undefined {
   const normalized = value.trim()
   if (normalized === '') return undefined
 
@@ -62,12 +67,20 @@ function optionalNumber(value: string, label: string, min?: number): number | un
   if (min !== undefined && parsed < min) {
     throw new Error(`${label} 不能小于 ${min}`)
   }
+  if (max !== undefined && parsed > max) {
+    throw new Error(`${label} 不能大于 ${max}`)
+  }
 
   return parsed
 }
 
-function optionalInteger(value: string, label: string, min?: number): number | undefined {
-  const parsed = optionalNumber(value, label, min)
+function optionalInteger(
+  value: string,
+  label: string,
+  min?: number,
+  max?: number,
+): number | undefined {
+  const parsed = optionalNumber(value, label, min, max)
   if (parsed !== undefined && !Number.isInteger(parsed)) {
     throw new Error(`${label} 必须是整数`)
   }
@@ -89,11 +102,11 @@ function buildPayload(form: RetrievalFormState): CreateQARetrievalTestRunRequest
     question: form.question.trim(),
     knowledgeBaseIds: splitIds(form.knowledgeBaseIds),
     retrieval: {
-      topK: optionalInteger(form.topK, 'Top K', 1),
-      scoreThreshold: optionalNumber(form.scoreThreshold, '阈值', 0),
+      topK: optionalInteger(form.topK, 'Top K', 1, 100),
+      scoreThreshold: optionalNumber(form.scoreThreshold, '阈值', 0, 1),
       enableRerank: form.enableRerank,
-      rerankThreshold: optionalNumber(form.rerankThreshold, 'Rerank 阈值', 0),
-      rerankTopN: optionalInteger(form.rerankTopN, 'Rerank Top N', 1),
+      rerankThreshold: optionalNumber(form.rerankThreshold, 'Rerank 阈值', 0, 1),
+      rerankTopN: optionalInteger(form.rerankTopN, 'Rerank Top N', 1, 100),
     },
   })
 
