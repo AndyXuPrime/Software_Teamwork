@@ -21,7 +21,7 @@ assignees: ''
 - View：`Platform / QA / Report / Frontend / Special / Test`
 - 优先级：`P0 / P1 / P2`
 - 批次：`Batch 0 / Batch 1 / Batch 2 / Batch 3 / Batch 4`
-- 模块：`gateway / auth / file / knowledge / qa / document / frontend / ai-gateway / parser / openapi / deploy / ci`
+- 模块：`gateway / auth / file / knowledge / knowledge-runner / qa / document / frontend / ai-gateway / openapi / deploy / ci`
 - 预期工时（小时数）：`1`
 - 实际工时（小时数）：`0`
 - Risk：`Normal / Needs Decision / Blocked`

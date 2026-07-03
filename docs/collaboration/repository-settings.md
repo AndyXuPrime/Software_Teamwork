@@ -22,6 +22,8 @@ service:auth
 service:file
 service:qa
 service:knowledge
+service:knowledge-runner
+service:parser
 service:document
 service:ai-gateway
 blocked
@@ -77,7 +79,8 @@ check 名称补入 `contexts`。
 - 根据主责小组和所有可识别模块自动补可用 label；当前 `L1nggTeam`、`JerryTeam`、`PrimeTeam` 和 `Test`
   会作为小组 label，`Frontend` 和 `Special` 只同步为 Project `Group`，通常通过
   `frontend`、`ci`、`deployment`、`service:<name>` 等模块 label 标记。仓库不存在的
-  label 会跳过并在日志中提示。
+  label 会跳过并在日志中提示。旧 `parser` 模块值作为兼容别名映射到
+  `knowledge-runner`；新任务应填写 `knowledge-runner`。
 - 同步成功后把正文中的 `Project sync` 改为 `synced`；同步失败则改为
   `blocked`，并将本次 workflow run 标记为失败，方便维护者发现权限问题。
 
@@ -230,6 +233,10 @@ Issue label、Assignee 和正文更新仍使用默认 `GITHUB_TOKEN`，`PROJECTS
     {
       "paths": ["services/knowledge/**", "docs/services/knowledge/**"],
       "labels": ["service:knowledge"]
+    },
+    {
+      "paths": ["services/knowledge-runtime/**"],
+      "labels": ["service:knowledge-runner"]
     }
   ]
 }
@@ -237,10 +244,12 @@ Issue label、Assignee 和正文更新仍使用默认 `GITHUB_TOKEN`，`PROJECTS
 
 服务实现目录和对应服务文档目录应使用同一个 `service:<name>` label。例如，
 `services/knowledge/**` 和 `docs/services/knowledge/**` 都会添加
-`service:knowledge`。
+`service:knowledge`；原 Parser 能力已迁到 Knowledge runner，`services/knowledge-runtime/**`
+会添加 `service:knowledge-runner`。
 
 workflow 只添加仓库中已经存在的 label。新增小组或领域 label 后，需要先在
-GitHub 仓库创建 label，再更新 `.github/labeler.json`。
+GitHub 仓库创建 label，再更新 `.github/labeler.json`。`service:parser` 作为历史
+label 保留在仓库中，但新的自动化规则不再主动添加它。
 
 ## Commitlint 规则
 

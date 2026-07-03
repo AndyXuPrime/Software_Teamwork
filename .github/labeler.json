@@ -112,6 +112,14 @@
     },
     {
       "paths": [
+        "services/knowledge-runtime/**"
+      ],
+      "labels": [
+        "service:knowledge-runner"
+      ]
+    },
+    {
+      "paths": [
         "services/document/**",
         "docs/services/document/**"
       ],

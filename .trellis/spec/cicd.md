@@ -211,7 +211,8 @@ service directory layout, or service documentation layout.
 
 ### 3. Contracts
 
-Each service label must cover both implementation and documentation paths:
+Each service label must cover its implementation path and, when a dedicated
+service documentation path exists, that documentation path:
 
 | Label | Required paths |
 |-------|----------------|
@@ -219,7 +220,8 @@ Each service label must cover both implementation and documentation paths:
 | `service:auth` | `services/auth/**`, `docs/services/auth/**` |
 | `service:file` | `services/file/**`, `docs/services/file/**` |
 | `service:qa` | `services/qa/**`, `docs/services/qa/**` |
-| `service:knowledge` | `services/knowledge/**`, `services/knowledge-runtime/**`, `docs/services/knowledge/**` |
+| `service:knowledge` | `services/knowledge/**`, `docs/services/knowledge/**` |
+| `service:knowledge-runner` | `services/knowledge-runtime/**` |
 | `service:document` | `services/document/**`, `docs/services/document/**` |
 | `service:ai-gateway` | `services/ai-gateway/**`, `docs/services/ai-gateway/**` |
 
@@ -242,6 +244,8 @@ local changes must verify remote label existence when adding a new label name.
   `service:knowledge`.
 - Base: `services/knowledge/internal/service/service.go` matches `backend` and
   `service:knowledge`.
+- Base: `services/knowledge-runtime/api/apps/runtime_app.py` matches `backend`
+  and `service:knowledge-runner`.
 - Bad: `docs/services/knowledge/README.md` matches only `documentation`.
 
 ### 6. Tests Required
