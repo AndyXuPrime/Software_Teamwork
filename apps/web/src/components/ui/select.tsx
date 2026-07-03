@@ -178,9 +178,11 @@ function SelectTrigger({ className, children, id, ...props }: SelectTriggerProps
       data-slot="select-trigger"
       id={id}
       disabled={disabled}
+      role="combobox"
       aria-expanded={open}
       aria-haspopup="listbox"
-      aria-activedescendant={activeDescendant}
+      aria-controls={open ? 'select-listbox' : undefined}
+      aria-activedescendant={activeDescendant ?? undefined}
       onClick={() => {
         setOpen(!open)
         setHighlightedIndex(-1)
@@ -289,6 +291,7 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
       data-slot="select-content"
       className={cn('absolute top-full left-0 z-50 min-w-full w-fit', className)}
       role="listbox"
+      id="select-listbox"
       hidden={!open}
       aria-hidden={!open || undefined}
       {...props}
@@ -296,9 +299,9 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
       <div
         className={cn(
           'mt-1 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-md transition-all duration-300 ease-out',
-          open ? 'opacity-100' : 'max-h-0 opacity-0 border-0',
+          open ? 'opacity-100 overflow-y-auto' : 'max-h-0 opacity-0 border-0',
         )}
-        style={open ? { maxHeight: contentHeight } : undefined}
+        style={open ? { maxHeight: Math.min(contentHeight, 360) } : undefined}
       >
         <div ref={innerRef} className="p-1">
           <SelectContentInner>{children}</SelectContentInner>
