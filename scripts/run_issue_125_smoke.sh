@@ -79,7 +79,6 @@ Local defaults:
   as defaults without overriding variables already exported in the shell.
 
 Useful overrides:
-  FILE_OWNER_E2E_EXPECT_FILE_FAILURE=1  # only when Knowledge is intentionally wired to a failing File dependency
   QA_MCP_RAG_REAL_PROVIDER=1 AI_GATEWAY_BASE_URL=http://127.0.0.1:8086  # only when AI Gateway has a real provider profile
 
 Document MCP smoke derives the local endpoint/token from deploy/.env when
@@ -118,7 +117,7 @@ list_smokes() {
 Available #125 smoke slices:
   --auth           Auth/Gateway/Redis session lifecycle, spoofed header rejection, Redis token-cache safety
   --auth-full      Issue #352 full Auth/Gateway/Redis smoke: infra, Auth migrations, host-run Auth/Gateway, fake owner header capture
-  --file-owner     Gateway -> Knowledge/Document owner-service File access and public-response no-leak checks
+  --file-owner     File internal token protection plus Gateway -> Document public-response no-leak checks
   --qa-rag         Gateway -> QA MCP RAG, SSE, tool-call summary, citation snapshot, final-answer checks
   --document-rest  Gateway -> Document REST contract and error/no-leak checks
   --document-mcp   QA -> Document Streamable HTTP MCP report tool discovery/status/result/export checks

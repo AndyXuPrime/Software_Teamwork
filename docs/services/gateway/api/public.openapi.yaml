@@ -43,7 +43,7 @@ tags:
 - name: knowledge
   description: Knowledge base, document processing, chunk, and retrieval APIs owned by knowledge service.
 - name: documents
-  description: Knowledge-owned document upload, metadata, deletion, and original content APIs that may reuse file service internally.
+  description: Knowledge-owned document upload, metadata, deletion, and original content APIs backed by the Knowledge runtime boundary.
 - name: report-generation
   description: Document-owned report records, templates, jobs, generated files, settings, statistics, and logs.
 - name: admin-runtime-config
@@ -413,7 +413,7 @@ paths:
       summary: Upload a document to a knowledge base
       operationId: uploadKnowledgeBaseDocument
       x-owner-service: knowledge
-      description: Gateway exposes the knowledge-base document upload workflow. Knowledge service owns the document resource, knowledge-base association, metadata, ingestion state, chunks, embeddings, and retrieval lifecycle, and may call file service internally for the raw file object. Report templates, report materials, and generated report files are separate document-owned resources and must not be modeled through this path.
+      description: Gateway exposes the knowledge-base document upload workflow. Knowledge service owns the document resource, knowledge-base association, metadata, ingestion state, chunks, embeddings, and retrieval lifecycle through its runtime adapter. Report templates, report materials, and generated report files are separate document-owned resources and must not be modeled through this path.
       requestBody:
         required: true
         content:
@@ -546,7 +546,7 @@ paths:
                 format: binary
         '404':
           $ref: '#/components/responses/Error'
-      description: Return the original knowledge document content through gateway. Knowledge service owns the document content resource and may read the underlying bytes from file service internally.
+      description: Return the original knowledge document content through gateway. Knowledge service owns the document content resource and serves it through the Knowledge runtime boundary.
   /api/v1/knowledge-queries:
     post:
       tags:

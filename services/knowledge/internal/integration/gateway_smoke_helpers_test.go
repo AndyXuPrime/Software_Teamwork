@@ -24,7 +24,6 @@ import (
 
 type gatewayOwnerSmokeConfig struct {
 	gatewayBaseURL          string
-	fileServiceBaseURL      string
 	knowledgeServiceBaseURL string
 	knowledgeDatabaseURL    string
 	redisAddr               string
@@ -179,6 +178,31 @@ func createGatewayKnowledgeBase(t *testing.T, ctx context.Context, cfg gatewayOw
 		t.Fatalf("gateway knowledge base create returned HTTP %d", res.StatusCode)
 	}
 	return decodeGatewayKnowledgeBaseResponse(t, res.Body, requestID)
+}
+
+func deleteGatewayKnowledgeBase(ctx context.Context, t *testing.T, cfg gatewayOwnerSmokeConfig, session gatewaySmokeSession, requestID string, knowledgeBaseID string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, cfg.gatewayBaseURL+"/api/v1/knowledge-bases/"+url.PathEscape(knowledgeBaseID), nil)
+	if err != nil {
+		t.Errorf("cleanup Gateway knowledge base %q: build delete request: %v", knowledgeBaseID, err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	req.Header.Set("X-Request-Id", requestID)
+
+	res, err := smokeHTTPClient().Do(req)
+	if err != nil {
+		t.Errorf("cleanup Gateway knowledge base %q: request failed: %v", knowledgeBaseID, err)
+		return
+	}
+	defer res.Body.Close()
+	discardResponse(res.Body)
+	switch res.StatusCode {
+	case http.StatusNoContent, http.StatusNotFound:
+		return
+	default:
+		t.Errorf("cleanup Gateway knowledge base %q: DELETE returned HTTP %d", knowledgeBaseID, res.StatusCode)
+	}
 }
 
 func decodeGatewayKnowledgeBaseResponse(t *testing.T, body io.Reader, requestID string) gatewayKnowledgeBaseSummary {

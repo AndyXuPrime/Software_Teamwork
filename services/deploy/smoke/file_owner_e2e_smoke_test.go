@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,7 +29,6 @@ func TestFileOwnerE2ESmoke(t *testing.T) {
 	defer cancel()
 
 	assertHTTPReady(t, ctx, "file", cfg.fileBaseURL)
-	assertHTTPReady(t, ctx, "knowledge", cfg.knowledgeBaseURL)
 	assertHTTPReady(t, ctx, "document", cfg.documentBaseURL)
 	assertHTTPReady(t, ctx, "gateway", cfg.gatewayBaseURL)
 
@@ -38,20 +36,10 @@ func TestFileOwnerE2ESmoke(t *testing.T) {
 	client := smokeHTTPClient()
 
 	t.Run("spoofed_auth_rejected", func(t *testing.T) {
-		assertFileEndpointRejectsUnauthorized(t, ctx, client, cfg, requestID+"_spoof")
+		assertGatewayRejectsSpoofedAuth(t, ctx, client, cfg, requestID+"_spoof")
 	})
 	t.Run("file_internal_requires_service_token", func(t *testing.T) {
 		assertFileInternalRequiresServiceToken(t, ctx, client, cfg, requestID+"_file_token")
-	})
-	t.Run("knowledge_upload_via_gateway", func(t *testing.T) {
-		if cfg.expectFileFailure {
-			t.Skip("FILE_OWNER_E2E_EXPECT_FILE_FAILURE=1 expects Knowledge upload to fail")
-		}
-		session := createSmokeSession(t, ctx, client, cfg.gatewayBaseURL, cfg.username, cfg.password, requestID)
-		assertKnowledgeUploadAndReadViaGateway(t, ctx, client, cfg, session, requestID)
-	})
-	t.Run("knowledge_upload_file_dependency_failure", func(t *testing.T) {
-		assertKnowledgeUploadHandlesFileDependencyFailure(t, ctx, client, cfg, requestID+"_file_down")
 	})
 	t.Run("document_read_via_gateway", func(t *testing.T) {
 		session := createSmokeSession(t, ctx, client, cfg.gatewayBaseURL, cfg.username, cfg.password, requestID)
@@ -60,20 +48,17 @@ func TestFileOwnerE2ESmoke(t *testing.T) {
 }
 
 type fileOwnerSmokeConfig struct {
-	gatewayBaseURL    string
-	knowledgeBaseURL  string
-	documentBaseURL   string
-	fileBaseURL       string
-	expectFileFailure bool
-	username          string
-	password          string
+	gatewayBaseURL  string
+	documentBaseURL string
+	fileBaseURL     string
+	username        string
+	password        string
 }
 
 func loadFileOwnerSmokeConfig(t *testing.T) fileOwnerSmokeConfig {
 	t.Helper()
 	required := map[string]string{
 		"GATEWAY_BASE_URL":                               os.Getenv("GATEWAY_BASE_URL"),
-		"KNOWLEDGE_SERVICE_BASE_URL":                     os.Getenv("KNOWLEDGE_SERVICE_BASE_URL"),
 		"DOCUMENT_SERVICE_BASE_URL":                      os.Getenv("DOCUMENT_SERVICE_BASE_URL"),
 		"FILE_SERVICE_BASE_URL":                          os.Getenv("FILE_SERVICE_BASE_URL"),
 		"GATEWAY_SMOKE_USERNAME or LOCAL_ADMIN_USERNAME": firstNonEmptyEnv("GATEWAY_SMOKE_USERNAME", "LOCAL_ADMIN_USERNAME"),
@@ -90,13 +75,11 @@ func loadFileOwnerSmokeConfig(t *testing.T) fileOwnerSmokeConfig {
 		t.Fatalf("missing required environment variables:\n - %s", strings.Join(missing, "\n - "))
 	}
 	return fileOwnerSmokeConfig{
-		gatewayBaseURL:    trimBaseURL(t, "GATEWAY_BASE_URL", required["GATEWAY_BASE_URL"]),
-		knowledgeBaseURL:  trimBaseURL(t, "KNOWLEDGE_SERVICE_BASE_URL", required["KNOWLEDGE_SERVICE_BASE_URL"]),
-		documentBaseURL:   trimBaseURL(t, "DOCUMENT_SERVICE_BASE_URL", required["DOCUMENT_SERVICE_BASE_URL"]),
-		fileBaseURL:       trimBaseURL(t, "FILE_SERVICE_BASE_URL", required["FILE_SERVICE_BASE_URL"]),
-		expectFileFailure: os.Getenv("FILE_OWNER_E2E_EXPECT_FILE_FAILURE") == "1",
-		username:          strings.TrimSpace(required["GATEWAY_SMOKE_USERNAME or LOCAL_ADMIN_USERNAME"]),
-		password:          strings.TrimSpace(required["GATEWAY_SMOKE_PASSWORD or LOCAL_ADMIN_PASSWORD"]),
+		gatewayBaseURL:  trimBaseURL(t, "GATEWAY_BASE_URL", required["GATEWAY_BASE_URL"]),
+		documentBaseURL: trimBaseURL(t, "DOCUMENT_SERVICE_BASE_URL", required["DOCUMENT_SERVICE_BASE_URL"]),
+		fileBaseURL:     trimBaseURL(t, "FILE_SERVICE_BASE_URL", required["FILE_SERVICE_BASE_URL"]),
+		username:        strings.TrimSpace(required["GATEWAY_SMOKE_USERNAME or LOCAL_ADMIN_USERNAME"]),
+		password:        strings.TrimSpace(required["GATEWAY_SMOKE_PASSWORD or LOCAL_ADMIN_PASSWORD"]),
 	}
 }
 
@@ -274,7 +257,7 @@ func assertNoLeakedInternals(t *testing.T, body []byte) {
 
 // ---- test cases ----
 
-func assertFileEndpointRejectsUnauthorized(t *testing.T, ctx context.Context, client *http.Client, cfg fileOwnerSmokeConfig, requestID string) {
+func assertGatewayRejectsSpoofedAuth(t *testing.T, ctx context.Context, client *http.Client, cfg fileOwnerSmokeConfig, requestID string) {
 	t.Helper()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, cfg.gatewayBaseURL+"/api/v1/knowledge-bases?page=1&pageSize=1", nil)
 	req.Header.Set("X-User-Id", "spoofed-user-must-not-authenticate")
@@ -310,158 +293,6 @@ func assertFileInternalRequiresServiceToken(t *testing.T, ctx context.Context, c
 	}
 	assertErrorEnvelope(t, body, requestID, "unauthorized")
 	assertNoLeakedInternals(t, body)
-}
-
-func assertKnowledgeUploadAndReadViaGateway(t *testing.T, ctx context.Context, client *http.Client, cfg fileOwnerSmokeConfig, session smokeSession, requestID string) {
-	t.Helper()
-
-	// 1. List knowledge bases — must be able to reach Knowledge through Gateway
-	kbs := gatewayAuthRequest(http.MethodGet, cfg.gatewayBaseURL+"/api/v1/knowledge-bases?page=1&pageSize=5", session.AccessToken, requestID, nil)
-	kbResp, err := client.Do(kbs)
-	if err != nil {
-		t.Fatalf("list knowledge bases: %v", err)
-	}
-	defer kbResp.Body.Close()
-	kbBody, _ := io.ReadAll(io.LimitReader(kbResp.Body, 65536))
-	if kbResp.StatusCode != http.StatusOK {
-		t.Fatalf("list knowledge bases returned %d: %s", kbResp.StatusCode, responseBodySummary(kbBody))
-	}
-	assertNoLeakedInternals(t, kbBody)
-
-	// 2. Get the first knowledge base ID to use for a test document upload
-	firstKBID := extractFirstKnowledgeBaseID(t, kbBody)
-
-	// 3. Upload a small text file through Gateway -> Knowledge -> File
-	uploadRunID := shortID(newSmokeRunID())
-	docID := "doc_smoke_file_e2e_" + uploadRunID
-	docName := "smoke-test-file.txt"
-
-	var mpBuf bytes.Buffer
-	mpWriter := multipart.NewWriter(&mpBuf)
-	mpWriter.WriteField("id", docID)
-	mpWriter.WriteField("name", docName)
-	mpWriter.WriteField("docType", "text")
-	filePart, _ := mpWriter.CreateFormFile("file", docName)
-	filePart.Write([]byte("Smoke test content for File E2E validation.\n"))
-	mpWriter.Close()
-
-	uploadReq, _ := http.NewRequestWithContext(ctx, http.MethodPost,
-		cfg.gatewayBaseURL+"/api/v1/knowledge-bases/"+firstKBID+"/documents",
-		bytes.NewReader(mpBuf.Bytes()))
-	uploadReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
-	uploadReq.Header.Set("Content-Type", mpWriter.FormDataContentType())
-	uploadReq.Header.Set("X-Request-Id", requestID+"_upload")
-	uploadResp, err := client.Do(uploadReq)
-	if err != nil {
-		t.Fatalf("document upload request failed (Gateway -> Knowledge -> File): %v", err)
-	}
-	defer uploadResp.Body.Close()
-	uploadBody, _ := io.ReadAll(io.LimitReader(uploadResp.Body, 65536))
-	if uploadResp.StatusCode != http.StatusCreated && uploadResp.StatusCode != http.StatusAccepted {
-		t.Fatalf("document upload returned %d (expected 201/202): %s", uploadResp.StatusCode, responseBodySummary(uploadBody))
-	}
-	assertNoLeakedInternals(t, uploadBody)
-	assertResponseEnvelope(t, uploadBody, requestID+"_upload")
-
-	// Parse the real document ID from the upload response envelope.
-	var uploadEnv struct {
-		Data struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(uploadBody, &uploadEnv); err != nil || uploadEnv.Data.ID == "" {
-		t.Fatalf("failed to extract document ID from upload response")
-	}
-	realDocID := uploadEnv.Data.ID
-
-	// Clean up the uploaded document after the test.
-	t.Cleanup(func() {
-		cleanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		delReq, _ := http.NewRequestWithContext(cleanCtx, http.MethodDelete,
-			cfg.gatewayBaseURL+"/api/v1/documents/"+realDocID, nil)
-		delReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
-		delReq.Header.Set("X-Request-Id", requestID+"_cleanup")
-		resp, err := client.Do(delReq)
-		if err != nil {
-			return
-		}
-		resp.Body.Close()
-	})
-
-	// Read back the uploaded document metadata through Gateway to verify the full round-trip.
-	readReq := gatewayAuthRequest(http.MethodGet,
-		cfg.gatewayBaseURL+"/api/v1/documents/"+realDocID,
-		session.AccessToken, requestID+"_readback", nil)
-	readResp, err := client.Do(readReq)
-	if err != nil {
-		t.Fatalf("read back document: %v", err)
-	}
-	defer readResp.Body.Close()
-	readBody, _ := io.ReadAll(io.LimitReader(readResp.Body, 65536))
-	if readResp.StatusCode != http.StatusOK {
-		t.Fatalf("read back document returned %d: %s", readResp.StatusCode, responseBodySummary(readBody))
-	}
-	assertNoLeakedInternals(t, readBody)
-}
-
-func assertKnowledgeUploadHandlesFileDependencyFailure(t *testing.T, ctx context.Context, client *http.Client, cfg fileOwnerSmokeConfig, requestID string) {
-	t.Helper()
-	if !cfg.expectFileFailure {
-		t.Skip("set FILE_OWNER_E2E_EXPECT_FILE_FAILURE=1 after starting Knowledge with a failing File dependency")
-	}
-
-	session := createSmokeSession(t, ctx, client, cfg.gatewayBaseURL, cfg.username, cfg.password, requestID+"_login")
-	kbReq := gatewayAuthRequest(http.MethodGet, cfg.gatewayBaseURL+"/api/v1/knowledge-bases?page=1&pageSize=5", session.AccessToken, requestID+"_kbs", nil)
-	kbResp, err := client.Do(kbReq.WithContext(ctx))
-	if err != nil {
-		t.Fatalf("list knowledge bases for dependency failure smoke: %v", err)
-	}
-	defer kbResp.Body.Close()
-	kbBody, _ := io.ReadAll(io.LimitReader(kbResp.Body, 65536))
-	if kbResp.StatusCode != http.StatusOK {
-		t.Fatalf("list knowledge bases returned %d: %s", kbResp.StatusCode, responseBodySummary(kbBody))
-	}
-	kbID := extractFirstKnowledgeBaseID(t, kbBody)
-
-	var mpBuf bytes.Buffer
-	mpWriter := multipart.NewWriter(&mpBuf)
-	mpWriter.WriteField("name", "smoke-file-dependency-failure.txt")
-	mpWriter.WriteField("docType", "text")
-	filePart, _ := mpWriter.CreateFormFile("file", "smoke-file-dependency-failure.txt")
-	filePart.Write([]byte("Smoke test content for File dependency failure validation.\n"))
-	mpWriter.Close()
-
-	uploadReq, _ := http.NewRequestWithContext(ctx, http.MethodPost,
-		cfg.gatewayBaseURL+"/api/v1/knowledge-bases/"+kbID+"/documents",
-		bytes.NewReader(mpBuf.Bytes()))
-	uploadReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
-	uploadReq.Header.Set("Content-Type", mpWriter.FormDataContentType())
-	uploadReq.Header.Set("X-Request-Id", requestID+"_upload")
-	resp, err := client.Do(uploadReq)
-	if err != nil {
-		t.Fatalf("dependency failure upload request failed: %v", err)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 65536))
-	if resp.StatusCode < http.StatusBadRequest {
-		t.Fatalf("expected dependency failure response, got %d: %s", resp.StatusCode, responseBodySummary(body))
-	}
-	assertErrorEnvelope(t, body, requestID+"_upload", "dependency_error")
-	assertNoLeakedInternals(t, body)
-}
-
-func extractFirstKnowledgeBaseID(t *testing.T, body []byte) string {
-	t.Helper()
-	var envelope struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &envelope); err != nil || len(envelope.Data) == 0 {
-		t.Skip("no knowledge bases available; local seed required")
-	}
-	return envelope.Data[0].ID
 }
 
 func assertDocumentReportReadViaGateway(t *testing.T, ctx context.Context, client *http.Client, cfg fileOwnerSmokeConfig, session smokeSession, requestID string) {

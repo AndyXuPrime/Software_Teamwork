@@ -968,9 +968,9 @@ the document transaction; if cleanup fails the document stays visible
 #### Correct
 
 ```text
-DELETE /documents/doc_1 -> transaction sets knowledge_documents.deleted_at and
-creates processing_jobs(job_type='delete_cleanup'); later worker handles
-retryable file/vector cleanup
+DELETE /documents/doc_1 -> knowledge authorizes doc_1, delegates RAGFlow
+runtime document/chunk/index lifecycle, and returns 204 without exposing
+runtime storage details
 ```
 
 ## Scenario: Knowledge Adapter Runtime Mode
