@@ -27,7 +27,8 @@ Infrastructure dependencies:
 
 - PostgreSQL for relational application data.
 - Redis for cache, sessions, lightweight queues, or short-lived coordination.
-- Qdrant for vector search.
+- Qdrant remains part of the local infrastructure baseline, but the current
+  Knowledge Go adapter does not maintain a direct Qdrant client.
 - MinIO for object storage.
 - `services/knowledge-runtime/` for Knowledge-owned RAGFlow parsing, chunking,
   embedding, indexing, and retrieval support.
@@ -44,7 +45,7 @@ boundary.
 | Guide | Description | Status |
 |-------|-------------|--------|
 | [Directory Structure](./directory-structure.md) | Service layout and module boundaries | Active |
-| [Database Guidelines](./database-guidelines.md) | PostgreSQL, migrations, transactions, Qdrant, Redis, MinIO | Active |
+| [Database Guidelines](./database-guidelines.md) | PostgreSQL, migrations, transactions, Redis, MinIO, runtime-owned index stores | Active |
 | [API Contracts](./api-contracts.md) | Gateway OpenAPI, response envelopes, route ownership, context headers | Active |
 | [Error Handling](./error-handling.md) | Go error propagation and HTTP error responses | Active |
 | [Quality Guidelines](./quality-guidelines.md) | Build, test, lint, review expectations | Active |

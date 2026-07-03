@@ -518,7 +518,7 @@ running -> cancelled
 | Provider API key | `ai-gateway` | 保存 secret 引用或加密密文元数据，响应只返回 `apiKeyConfigured`。 |
 | Chat/embedding/rerank 调用适配 | `ai-gateway` | 归一化请求/响应和错误，不保存业务状态。 |
 | QA 会话、消息、工具调用、引用 | `qa` | 只接收调用请求并返回 OpenAI-compatible 输出。 |
-| Knowledge chunk、embedding 持久化、Qdrant point | `knowledge` | 只生成 embedding 或 rerank 分数，不写向量库。 |
+| Knowledge chunk、embedding/index 持久化 | `knowledge` | 只生成 embedding 或 rerank 分数，不写向量库。 |
 | Report 任务、大纲、章节、文件 | `document` | 只提供 chat/streaming 输出，不保存报告状态。 |
 | Public admin model-profile API | `gateway` + `ai-gateway` | Gateway 负责公开入口和管理员鉴权；AI Gateway 负责配置存储和密钥状态。 |
 

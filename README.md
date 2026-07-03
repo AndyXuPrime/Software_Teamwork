@@ -191,8 +191,10 @@ migration 和 Go 后端启动走 Go 模块镜像，避免 `proxy.golang.org` / `
 `./scripts/local/dev-up.sh` 会先检查同一宿主机环境中的 Docker、Go、`psql`
 和必要的 `curl`，再拉取 infra 镜像，启动并等待 `postgres`、`redis`、`qdrant`、
 `minio` 健康，然后单独运行一次性 `minio-init` 创建本地 bucket；`minio-init`
-正常退出不会阻断后续流程。之后脚本会创建/校验 Knowledge 的 Qdrant collection，
-再执行本机 migration 和 demo seed。
+正常退出不会阻断后续流程。之后脚本会在 `QDRANT_URL` 明确配置时执行
+legacy/test-only Qdrant collection 初始化；当前 Knowledge 主路径的索引准备仍归
+宿主机 `services/knowledge-runtime` 和它配置的 doc engine。随后脚本执行本机
+migration 和 demo seed。
 `./scripts/local/run-backend.sh` 会启动 `auth`、`file`、`knowledge`、
 `ai-gateway`、`qa`、`document` 和 `gateway`，日志在 `.local/logs/`。启动前会先
 对每个 Go 服务执行 `go mod download`；如果旧 `deploy/.env` 没写 Go 镜像，脚本会在

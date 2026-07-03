@@ -6,8 +6,9 @@ info:
     File has no direct frontend-facing or gateway-public API. This file exists
     to make the service-level public/internal API split explicit.
 
-    Knowledge and Document own the public business resources that reuse File
-    internally. Gateway exposes those owner-service resources through
+    Document and QA attachment resources reuse File internally. Current
+    Knowledge document ingestion/content paths use the Knowledge runtime
+    boundary instead of File. Gateway exposes owner-service resources through
     docs/services/gateway/api/public.openapi.yaml.
 x-api-scope: gateway-public
 x-owner-service: file

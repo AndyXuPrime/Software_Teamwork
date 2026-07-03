@@ -127,9 +127,12 @@ client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue
 
 - `dev-up.sh`：检查同一宿主机环境中的 Docker、Go、`psql` 和必要的 `curl`，
   infra pull/up、等待 `postgres` / `redis` / `qdrant` / `minio` Compose
-  health checks、单独运行一次性 `minio-init`、Qdrant collection 初始化、
-  Go module 配置检查、migration、demo seed。`minio-init` 正常 `Exited (0)`
-  不应阻断后续步骤；非零失败时看 `docker compose logs minio-init`。
+  health checks、单独运行一次性 `minio-init`、Go module 配置检查、migration、
+  demo seed；如果 `QDRANT_URL` 明确配置，则额外执行 legacy/test-only Qdrant
+  collection 初始化。当前 Knowledge 索引准备属于宿主机 RAGFlow runtime/doc engine
+  路径，不通过恢复 Go 侧 Qdrant collection bootstrap 作为必需默认路径。
+  `minio-init` 正常 `Exited (0)` 不应阻断后续步骤；非零失败时看
+  `docker compose logs minio-init`。
 - `run-backend.sh`：后端进程启动、日志和进程组 PID。Knowledge 使用 `cmd/adapter`
   调用宿主机 RAGFlow runtime API/worker。启动前会用当前 `deploy/.env` 对每个 Go
   服务执行 `go mod download` 预检；服务 fork 后默认观察 8 秒，若进程组很快退出，
@@ -198,7 +201,7 @@ Go modules 下载慢或超时：
   指向可访问的 runtime API，并检查宿主机 runtime worker 是否在处理任务。
 - Auth、File、Knowledge、QA、Document、AI Gateway 优先查数据库和 migration。
 - Gateway 优先查 Redis、Auth URL 和下游服务端口。
-- File/Knowledge 内部调用 `401` 时，检查 `INTERNAL_SERVICE_TOKEN` 是否一致。
+- File/Document/QA 内部 file 调用 `401` 时，检查 `INTERNAL_SERVICE_TOKEN` 是否一致；Knowledge runtime 调用 `401` 时，检查 `VENDOR_RUNTIME_SERVICE_TOKEN` 与 `KNOWLEDGE_RUNTIME_SERVICE_TOKEN` 是否一致。
 
 WSL 内存高：
 
@@ -495,9 +498,9 @@ curl -X POST http://localhost:8086/internal/v1/chat/completions \
 | Gateway contract | `python3 scripts/verify_gateway_active_api.py` | active path、owner、security 和 owner map 不漂移。 |
 | File PostgreSQL + MinIO | `FILE_MINIO_POSTGRES_SMOKE=1 ... go test ./internal/integration -run TestFileMinIOPostgresSmoke -count=1 -v` | 只在真实 PostgreSQL/MinIO 可用时运行；验证 upload、metadata、content read、delete 和清理状态。 |
 | Knowledge runtime route/config | `cd services/knowledge-runtime && PYTHONPATH=. uv run --no-project --with pytest --with pytest-asyncio --with filelock --with ruamel-yaml python -m pytest test/routes/test_config_utils.py test/routes/test_route_registry.py test/routes/test_gateway_auth.py test/routes/test_runtime_dependency_check.py -q` | 验证 runtime 配置脱敏、路由 allowlist、service token、clean DB provisioning 纯逻辑和 host-run dependency guard。 |
-| Knowledge ingestion real deps | `KNOWLEDGE_INGESTION_SMOKE=1 ... go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v` | 只在 Knowledge adapter 以 `KNOWLEDGE_AUTO_START_INGESTION=true` 重启后，且 Knowledge runtime API、runtime worker、Redis/MinIO/Elasticsearch/PostgreSQL 和 embedding provider 均可用时运行；验证 Markdown fixture 上传、解析、切片、embedding、索引写入、ready 状态、chunk 回看和检索命中。 |
-| Gateway -> Knowledge owner route | `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v` | 只在 Gateway/Auth/Redis/Knowledge/File/PostgreSQL 和 Knowledge runtime 可用时运行；验证伪造 `X-User-*` 未认证请求被拒绝，并用 KB `createdBy` 断言 Gateway 注入真实 session user。 |
-| Gateway -> Knowledge -> QA RAG | `GATEWAY_RAG_E2E_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayRAGE2ESmoke$' -count=1 -v` | 只在 Gateway/Auth/Redis/File/Knowledge/Knowledge runtime/QA/AI Gateway 和可用 chat profile/provider 可用时运行；验证上传、ingestion ready、`knowledge-queries` 命中、QA answer 和 citation 摘要。 |
+| Knowledge ingestion real deps | `KNOWLEDGE_INGESTION_SMOKE=1 ... go test ./internal/integration -run '^TestKnowledgeIngestionRealDepsSmoke$' -count=1 -v` | 只在 Knowledge adapter 以 `KNOWLEDGE_AUTO_START_INGESTION=true` 重启后，且 Knowledge runtime API、runtime worker、Redis/MinIO/Elasticsearch/PostgreSQL 和 embedding provider 均可用时运行；验证 Markdown fixture 上传、解析、切片、embedding、索引写入、ready 状态、chunk 回看和检索命中。当前 Knowledge 主路径不依赖 File Service。 |
+| Gateway -> Knowledge owner route | `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -count=1 -v` | 只在 Gateway/Auth/Redis/Knowledge/PostgreSQL 和 Knowledge runtime 可用时运行；验证伪造 `X-User-*` 未认证请求被拒绝，并用 KB `createdBy` 断言 Gateway 注入真实 session user。 |
+| Gateway -> Knowledge -> QA RAG | `GATEWAY_RAG_E2E_SMOKE=1 ... go test ./internal/integration -run '^TestGatewayRAGE2ESmoke$' -count=1 -v` | 只在 Gateway/Auth/Redis/Knowledge/Knowledge runtime/QA/AI Gateway 和可用 chat profile/provider 可用时运行；验证上传、ingestion ready、`knowledge-queries` 命中、QA answer 和 citation 摘要。 |
 | 前端 Gateway 类型 | `bun run --cwd apps/web api:generate` 后检查 diff | 生成类型应与 Gateway OpenAPI 保持同步。 |
 
 ## 已知缺口
@@ -508,7 +511,7 @@ curl -X POST http://localhost:8086/internal/v1/chat/completions \
 | 跨服务契约测试和 E2E smoke 缺失 | 不能自动证明前端 -> Gateway -> 多服务链路可用。 | #125 |
 | Gateway `/readyz` 非完整依赖诊断 | `/readyz` 不请求所有 owner service `/readyz`，也不执行业务级 smoke；它通过不等于 Knowledge/QA/Document/AI Gateway 全链路可用。 | #353、#125、#352 |
 | Knowledge runtime 真实解析/检索 smoke 不在普通 CI 中运行 | CI 覆盖 route/config/auth/provisioning 和语法门禁；真实 PDF 解析、OCR 质量、embedding、Elasticsearch/MinIO/Redis 组合仍需在具备依赖的本地或部署环境手动记录。 | #125 |
-| Knowledge/QA RAG smoke 仍为显式 opt-in | File 自身 PostgreSQL + MinIO smoke 已有；Knowledge ingestion 真实依赖 smoke 覆盖 File/Knowledge runtime/PostgreSQL/Redis/MinIO/Elasticsearch 写入和状态更新；Gateway -> Knowledge -> QA RAG smoke 已提供最小验收样例，但依赖可用 AI Gateway chat profile/provider，且不覆盖 MCP、前端或 #125 完整一键 E2E。 | #125、#152、#154、#304 |
+| Knowledge/QA RAG smoke 仍为显式 opt-in | File 自身 PostgreSQL + MinIO smoke 已有；Knowledge ingestion 真实依赖 smoke 覆盖 Knowledge runtime/PostgreSQL/Redis/MinIO/Elasticsearch 写入和状态更新，当前 Knowledge 主路径不依赖 File Service；Gateway -> Knowledge -> QA RAG smoke 已提供最小验收样例，但依赖可用 AI Gateway chat profile/provider，且不覆盖 MCP、前端或 #125 完整一键 E2E。 | #125、#152、#154、#304 |
 | 生产部署基线缺失 | 当前 `deploy/docker-compose.yml` 是本地/演示基线，不能直接当生产部署。 | #150 |
 | Document 真实 AI 生成和富 DOCX 工具链未落地 | 报告 job 状态机和基础 DOCX 导出可用；真实大纲/正文生成、Pandoc/LibreOffice 富 DOCX 转换和跨服务内容读取 smoke 仍需补齐。 | #160、#223 |
 | Document 跨服务 smoke 仍缺失 | settings/statistics/logs 已在服务端落地，但管理端、Gateway、File Service、Document worker 串联 smoke 仍未一键化。 | #159、#221 |

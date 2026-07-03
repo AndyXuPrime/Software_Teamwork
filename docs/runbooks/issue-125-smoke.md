@@ -141,7 +141,7 @@ bash scripts/run_issue_125_smoke.sh --all
 | --- | --- | --- |
 | Auth/Gateway/Redis | `AUTH_GATEWAY_REDIS_SMOKE=1` | Gateway login, `/users/me`, spoofed header rejection, logout invalidation, Redis `gateway:session:*` TTL/value safety. |
 | Auth/Gateway/Redis full | `AUTH_GATEWAY_REDIS_FULL_SMOKE=1` | Auth migration apply, host-run Auth/Gateway startup, Gateway `POST /api/v1/users`, `/api/v1/sessions`, `/api/v1/users/me`, logout invalidation, Redis TTL/value/token safety, and fake owner capture of Gateway-injected `X-Caller-Service`, `X-Service-Token`, `X-User-Id`, roles, and permissions. |
-| File owner E2E | `FILE_OWNER_E2E_SMOKE=1` | Gateway -> Knowledge -> File upload/read, Gateway -> Document read paths, File internal missing-token rejection, optional File dependency failure envelope, and public-response no-leak checks. |
+| File owner E2E | `FILE_OWNER_E2E_SMOKE=1` | Gateway -> Document/QA file-backed paths, File internal missing-token rejection, optional File dependency failure envelope, and public-response no-leak checks. Current Knowledge document paths use the Knowledge runtime boundary instead of File. |
 | QA MCP RAG | `QA_MCP_RAG_SMOKE=1` | Knowledge tool availability, QA SSE `tool.completed` / `citation.delta` / `answer.completed`, safe tool-call summary, citation snapshots, final answer evidence. |
 | Document REST | `DOCUMENT_REST_SMOKE=1` | Gateway -> Document report type/report/outlines routes, 404 envelope, and no-leak checks. |
 | Document MCP | `QA_DOCUMENT_MCP_SMOKE=1` | Document Streamable HTTP MCP tools/list, `document__*` prefixing, generation status/result/export, `reportArtifact`, permission-denied summary, optional Gateway file download. |

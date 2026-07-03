@@ -101,12 +101,12 @@
 
 ### 5.2 解耦原则
 
-- `knowledge` 是 Qdrant 的唯一业务所有者，负责向量集合、payload 结构、索引写入、重建和检索策略。
-- `qa` 不直接读写 Qdrant，只通过 MCP Client 或受控内部客户端调用知识检索能力获取候选片段和引用元数据。
+- `knowledge` 是知识检索能力的唯一业务所有者；当前索引写入、重建和检索支持由 RAGFlow runtime/doc engine 承载。
+- `qa` 不直接读写 Knowledge runtime/doc engine 或 Qdrant，只通过 MCP Client 或受控内部客户端调用知识检索能力获取候选片段和引用元数据。
 - `document` 不直接绕过 `knowledge` 做向量检索；报告生成需要业务材料时，通过知识检索或报告支撑材料接口获取。
 - `file` 是 MinIO 对象存储边界，业务服务只保存文件引用和业务元数据，不直接把对象 key 当作权限依据。
 - `file` service 是后端与文件上传、下载授权和 MinIO 对象存储沟通的中间件，业务模块不得绕过它直接暴露 object key。
-- PostgreSQL 保存业务真相；Qdrant 保存检索向量和最小检索 payload；MinIO 保存原始文件、解析产物和生成文档；Redis 用于队列、短期任务状态、缓存和 SSE 辅助状态，不作为长期业务真相。
+- PostgreSQL 保存业务真相；Knowledge runtime/doc engine 保存知识检索向量和最小检索 payload；MinIO/File 或 runtime 对象存储保存原始文件、解析产物和生成文档；Redis 用于队列、短期任务状态、缓存和 SSE 辅助状态，不作为长期业务真相。
 - 模型调用通过 `ai-gateway` 统一封装为 OpenAI-compatible API；业务服务通过 AI Gateway `profileId`、模型名和业务默认参数调用，不各自保存 provider `baseURL`、`apiKey` 或实现供应商适配层。AI Gateway 只透传 Function Calling 字段，不执行 MCP 工具。
 
 ## 6. 基础设施职责
@@ -114,7 +114,7 @@
 | 基础设施 | 职责 | 不能承担的职责 |
 | --- | --- | --- |
 | PostgreSQL | 用户、角色、权限、知识库、文档元数据、处理状态、切片元数据、会话、消息、报告任务、模板、统计聚合所需业务数据 | 不存储大体积原始文件，不替代向量检索 |
-| Qdrant | 文档切片向量、检索 payload、相似度查询 | 不保存完整业务真相，不由 QA 或 Document 直接写入 |
+| Knowledge runtime/doc engine | 文档切片向量、检索 payload、相似度查询 | 不保存完整业务真相，不由 QA、Document 或 Gateway 直接写入 |
 | MinIO | 原始上传文件、模板文件、生成 DOCX、较大的解析文本或中间产物 | 不作为权限判断唯一依据 |
 | Redis | 异步任务队列、会话缓存、短期任务状态、热点配置缓存、SSE 连接辅助状态 | 不保存必须长期追溯的业务状态 |
 | AI Gateway | 统一 LLM、Embedding、Rerank 等模型调用，提供 OpenAI-compatible API | 不保存业务真相，不把模型密钥透传给前端 |
@@ -166,11 +166,11 @@
 ### 8.1 知识入库流程
 
 1. 用户或管理员创建知识库，配置文档类型、分段策略和检索策略。
-2. 用户上传文档，文件进入 MinIO，文件元数据进入 PostgreSQL。
-3. `knowledge` 创建处理任务，状态从 `uploaded` 流转到 `parsing`。
-4. 文档解析器把文件转换为文本或结构化内容；较大解析产物可落 MinIO。
-5. 系统按知识库分段策略生成切片，并写入 PostgreSQL。
-6. 嵌入模型生成向量，`knowledge` 写入 Qdrant。
+2. 用户上传文档，Knowledge adapter 交给 RAGFlow runtime 保存原始 bytes 和处理状态。
+3. `knowledge` 创建或映射处理任务，状态从 `uploaded` 流转到 `parsing`。
+4. RAGFlow runtime 把文件转换为文本或结构化内容，并维护内部解析产物。
+5. runtime 按知识库分段策略生成切片，并通过 Knowledge DTO 暴露安全摘要。
+6. 嵌入模型生成向量，runtime/doc engine 写入索引后端。
 7. 文档状态变为 `ready`；失败时记录错误原因并支持重试。
 8. 当知识库分段策略或检索策略变更时，系统触发就绪文档的后台重处理。
 
@@ -219,13 +219,13 @@
 | 小功能 | 用于实现什么 | 需要什么数据/API | 对外提供什么数据/API | 优先级 |
 | --- | --- | --- | --- | --- |
 | 知识库管理 | 管理不同业务领域、文档类型和权限范围的知识集合，为文档入库、检索和问答限定边界 | 用户身份与权限；知识库名称、描述、文档类型、可见范围；分段策略；检索策略；PostgreSQL 元数据表 | 知识库创建、列表、详情、更新、删除、批量删除 API；知识库元数据；文档数量、创建人、创建时间 | P0 |
-| 文档上传 | 将 PDF、DOCX、PPTX、XLSX、MD、TXT、图片等资料纳入知识库 | 知识库 ID；文件名、MIME、大小；标签；`file` 服务上传 URL；MinIO 对象存储 | 上传 URL 申请 API；创建文档 API；文档 ID、fileId、上传状态、处理任务 ID | P0 |
+| 文档上传 | 将 PDF、DOCX、PPTX、XLSX、MD、TXT、图片等资料纳入知识库 | 知识库 ID；文件名、MIME、大小；标签；Knowledge adapter/runtime 上传入口；runtime 对象存储 | 创建文档 API；文档 ID、上传状态、处理任务 ID | P0 |
 | 文档标签管理 | 支持按专业、年份、电厂、材料类型等维度过滤和检索文档 | 文档 ID；标签键值对；标签变更权限 | 文档标签更新 API；标签过滤参数；文档列表中的标签数据 | P0 |
 | 文档状态跟踪 | 让用户明确看到上传、解析、切片、向量化、就绪、失败等处理进度 | 文档处理任务；解析器状态；embedding 状态；错误信息；PostgreSQL 任务状态；尝试次数 | 文档详情 API；处理任务详情 API；状态枚举、进度、失败原因、最近尝试摘要 | P0 |
 | 文档解析 | 把原始文件转换为文本化或结构化内容，为切片和引用做准备 | MinIO 原始文件；Knowledge RAGFlow runtime API/worker；解析配置；文档类型 | 解析产物引用；解析状态；失败原因；可选解析文本预览 | P0 |
 | 文档分段切片 | 按标题层级或固定长度把文档拆成适合检索和引用的片段 | 解析文本；知识库分段策略；章节路径；页码/表格/图片元数据 | 切片列表 API；切片详情；章节路径、切片类型、内容预览、token 数 | P0 |
-| 向量化与索引 | 将切片写入 Qdrant，支撑语义检索和 RAG | 切片文本；AI Gateway embedding profile；Qdrant collection；向量维度；版本信息 | 向量索引状态；文档 ready 状态；版本化 collection；重建索引任务 API | P0 |
-| 知识检索 | 为前台检索、智能问答和报告生成提供统一召回能力 | 查询文本；知识库范围；标签过滤；Top K；相似度阈值；重排序配置；Qdrant；Rerank API | 检索 API；命中文档、章节路径、相关度分数、重排序分数、片段内容 | P0 |
+| 向量化与索引 | 将切片写入 Knowledge runtime/doc engine，支撑语义检索和 RAG | 切片文本；embedding profile；runtime/doc-engine 索引；向量维度；版本信息 | 索引状态；文档 ready 状态；索引版本；重建索引任务 API | P0 |
+| 知识检索 | 为前台检索、智能问答和报告生成提供统一召回能力 | 查询文本；知识库范围；标签过滤；Top K；相似度阈值；重排序配置；Knowledge runtime/doc engine；Rerank API | 检索 API；命中文档、章节路径、相关度分数、重排序分数、片段内容 | P0 |
 | 文档重处理 | 当分段策略、检索策略、模型维度或解析后端变更时重新生成切片和向量 | 知识库 ID；待重处理文档；新策略；异步任务机制 | 重处理 API；处理任务列表；新旧索引状态 | P1 |
 | 原文下载授权 | 用户从引用或文档详情追溯原始文件时进行权限校验 | 文档 ID；用户权限；file metadata；MinIO object key | 下载 URL API；短时有效 URL；审计记录候选数据 | P1 |
 | 报告支撑材料管理 | 管理报告生成复用的专业业务文档，例如厂级专业报告、技术文档、检查报告 | 文件上传能力；材料类型；标签；可选知识处理链路；权限 | 支撑材料创建、列表、标签更新、删除 API；可供报告生成引用的材料元数据 | P1 |
@@ -330,7 +330,7 @@
 - 各服务只写自己拥有的数据表。
 - 跨服务依赖通过 HTTP API 或明确契约完成。
 - 运行时配置变更应可追踪，并尽量不要求重启服务。
-- Qdrant collection 和 embedding 模型版本需要可追溯；embedding 维度变化时创建新版本 collection，并通过后台任务重建索引。
+- Knowledge runtime/doc-engine 索引版本和 embedding 模型版本需要可追溯；embedding 维度变化时创建新版本索引，并通过后台任务重建索引。
 
 ### 11.5 扩展性
 
@@ -383,7 +383,7 @@
 | Q8 | 报告支撑材料作为独立资源，复用 `file` service 和必要的 `knowledge` 检索能力。 | 影响知识管理与报告生成 API 边界 |
 | Q9 | 首期采用角色级 RBAC，不做组织/电厂/专业多维权限。 | 影响知识库、文档、报告记录权限模型 |
 | Q10 | 审计日志首期暂缓，后续可能独立成服务；首期只保留配置变更、任务失败、删除结果等基础排查字段。 | 影响安全与合规演进 |
-| Q11 | Qdrant 使用版本化 collection；embedding 维度或模型族变化时创建新 collection 并重建索引。 | 影响知识库重处理和索引迁移 |
+| Q11 | Knowledge runtime/doc engine 使用可追溯索引版本；embedding 维度或模型族变化时创建新索引版本并重建索引。 | 影响知识库重处理和索引迁移 |
 | Q12 | 报告大纲首期以数据库模板结构配置为权威，不从 DOCX 自动解析；`mode=ai` 不进入首期验收。 | 影响报告模板和大纲生成 |
 | Q13 | DOCX 导出首期使用默认 style profile 和全局编号；`by_chapter` 与复杂图表编号保留为后续能力。 | 影响报告导出配置和验收范围 |
 

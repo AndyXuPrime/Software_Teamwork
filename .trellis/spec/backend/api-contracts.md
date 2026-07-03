@@ -307,7 +307,7 @@ GET /readyz -> gateway performs upload/retrieval/QA/provider smoke
 
 ```text
 GET /readyz -> Redis ready + Auth ready + owner base URLs configured
-targeted smoke -> Gateway public API -> owner services -> File/Parser/Qdrant/AI Gateway
+targeted smoke -> Gateway public API -> owner services -> File/Knowledge runtime/doc engine/AI Gateway
 ```
 
 ## Scenario: Knowledge Active Operation Proxy Contracts
@@ -320,8 +320,9 @@ targeted smoke -> Gateway public API -> owner services -> File/Parser/Qdrant/AI 
 - Applies to `services/gateway/internal/http/routes.go`,
   `services/gateway/internal/http/*_test.go`,
   `services/knowledge/internal/http`, `services/knowledge/internal/service`,
-  `services/knowledge/api/openapi.yaml`, Knowledge docs, and local Compose
-  env wiring for File, Redis, Qdrant, Parser, or AI Gateway.
+  `services/knowledge/api/openapi.yaml`, Knowledge docs, `services/knowledge-runtime/**`,
+  and local host-run env wiring for RAGFlow runtime, Redis, MinIO,
+  Elasticsearch/doc engine, or AI Gateway.
 
 ### 2. Signatures
 
@@ -340,19 +341,21 @@ targeted smoke -> Gateway public API -> owner services -> File/Parser/Qdrant/AI 
 ### 3. Contracts
 
 - Gateway must proxy these routes to Knowledge and must not implement chunking,
-  File Service reads, Qdrant queries, embedding, rerank, or visibility rules.
+  runtime content reads, Qdrant/doc-engine queries, embedding, rerank, or
+  visibility rules.
 - Gateway must inject `X-Request-Id`, `X-User-Id`, `X-User-Roles`,
   `X-User-Permissions`, `X-Forwarded-For`, `X-Forwarded-Proto`, and
   `X-Service-Token` when configured.
-- Knowledge handlers must keep database, File, vector, embedding, and rerank
+- Knowledge handlers must keep database, vendor runtime, embedding, and rerank
   access behind service/repository/platform interfaces.
 - `documents/{documentId}/content` must first authorize the Knowledge-owned
-  document, then read raw bytes through the File Service boundary. Do not return
-  `file_ref`, object keys, File IDs, MinIO URLs, or internal storage paths in
-  JSON responses.
+  document, then stream raw bytes through the RAGFlow runtime/adapter boundary.
+  Do not return `file_ref`, object keys, File IDs, MinIO URLs, runtime URLs, or
+  internal storage paths in JSON responses.
 - `knowledge-queries` must model retrieval as a resource creation, not a
-  `/search` action path. Vector hits are candidates only; visible document and
-  chunk facts must be hydrated from PostgreSQL.
+  `/search` action path. Runtime hits are candidates only; visible document and
+  chunk facts must be hydrated through Knowledge-owned DTO mapping and
+  permission checks.
 
 ### 4. Validation & Error Matrix
 
@@ -361,20 +364,21 @@ targeted smoke -> Gateway public API -> owner services -> File/Parser/Qdrant/AI 
 | Missing trusted user context | `401 unauthorized` with `error.requestId`. |
 | Invalid pagination or query fields | `400 validation_error` with safe `fields`. |
 | Hidden, deleted, or missing document/knowledge base | `404 not_found`. |
-| File, Redis, Qdrant, Parser, embedding, or rerank failure | `502 dependency_error`; do not leak downstream details. |
+| Runtime, Redis, doc engine, embedding, or rerank failure | `502 dependency_error`; do not leak downstream details. |
 | Content success | Raw bytes with content headers and `X-Request-Id`; no JSON envelope. |
 | Chunk/query success | Standard data/page envelope with request id. |
 
 ### 5. Good/Base/Bad Cases
 
-- Good: service-local tests seed a repository and fake File/vector/AI adapters,
-  gateway tests assert proxy path/header propagation, and docs list real
-  dependency smoke as remaining risk when not run.
+- Good: service-local tests use fake runtime/AI adapters, gateway tests assert
+  proxy path/header propagation, and docs list real dependency smoke as
+  remaining risk when not run.
 - Base: fake-backed contract tests cover active operation envelopes while
-  Compose config documents how to enable real Qdrant or AI Gateway.
+  runbooks document how to enable real runtime/doc engine or AI Gateway.
 - Bad: gateway returns `501` for an active Knowledge operation after the
-  Knowledge service route exists, or gateway directly reads File Service,
-  Qdrant, prompt/model providers, SQL rows, or generated sqlc types.
+  Knowledge service route exists, or gateway directly reads RAGFlow runtime,
+  File Service, Qdrant/doc engine, prompt/model providers, SQL rows, or
+  generated sqlc types.
 
 ### 6. Tests Required
 
@@ -401,8 +405,8 @@ gateway /api/v1/knowledge/search -> Qdrant search response payload
 #### Correct
 
 ```text
-gateway /api/v1/documents/{documentId}/content -> knowledge -> File Service bytes
-gateway /api/v1/knowledge-queries -> knowledge -> vector candidates -> PostgreSQL hydrate
+gateway /api/v1/documents/{documentId}/content -> knowledge -> RAGFlow runtime/adapter bytes
+gateway /api/v1/knowledge-queries -> knowledge -> runtime/doc-engine candidates -> Knowledge DTO hydrate
 ```
 
 ## Scenario: QA Owner Authorization
@@ -678,9 +682,9 @@ payloads, SQL details, or internal URLs.
   tool calls itself, keeps conversation/message/tool-call/citation state in
   `qa`, and stores only sanitized summaries plus the normalized assistant
   response.
-- Base: `knowledge` calls `POST /internal/v1/embeddings` and writes the returned
-  vectors to its own Qdrant collections without exposing vector payloads to
-  gateway responses.
+- Base: Knowledge or its runtime uses AI Gateway embedding/rerank profiles when
+  configured, while chunk/index persistence stays inside the Knowledge runtime
+  or doc engine and vector payloads never reach gateway responses.
 - Bad: public `gateway` directly calls an OpenAI-compatible provider, stores an
   API key, or exposes `/internal/v1/chat/completions` to frontend clients.
 
@@ -810,7 +814,7 @@ provider_invocations.input_text = documents[].text
 knowledge -> ai-gateway /internal/v1/embeddings
 ai-gateway resolves an embedding profile and calls provider /embeddings
 provider_invocations stores counts, dimensions, usage, status, and normalized error only
-knowledge owns Qdrant persistence and chunk state
+Knowledge runtime/doc engine owns embedding/index persistence and chunk state
 ```
 
 #### Wrong
@@ -860,21 +864,18 @@ GET    /internal/v1/documents/{documentId}/chunks?page=&pageSize=
 GET    /internal/v1/documents/{documentId}/content
 ```
 
-File Service content read:
+Runtime content read:
 
 ```text
-GET /internal/v1/files/{fileId}/content
+Knowledge adapter -> RAGFlow runtime document/content route
 ```
 
 Database state involved:
 
-- `knowledge_documents.file_ref` remains internal and stores the File Service ID.
-- `knowledge_documents.deleted_at` hides soft-deleted documents.
-- `knowledge_documents.current_job_id` may point at a durable cleanup marker.
-- `processing_jobs.job_type = 'delete_cleanup'` records retryable deletion
-  cleanup work.
-- `document_chunks` is listed by `document_id`, ordered by `chunk_index` then
-  `id`.
+- Runtime document and task state is mapped to public Knowledge document status.
+- Runtime chunks are mapped to Knowledge `DocumentChunk` DTOs and query results.
+- Knowledge PostgreSQL may retain parser-config and migration-compatible fields,
+  but current document bytes/chunks/index facts come from RAGFlow runtime.
 
 ### 3. Contracts
 
@@ -888,16 +889,15 @@ Database state involved:
 - `PATCH /documents/{documentId}` first-slice support is tags only. Unknown
   fields or a body without `tags` must fail validation. Tags use the same
   trim/dedupe/max-count/max-length rules as document upload.
-- `DELETE /documents/{documentId}` soft-deletes the Knowledge document and writes
-  a durable `delete_cleanup` processing-job marker. It must not synchronously
-  delete File Service bytes, Qdrant points, or chunks until the cleanup worker
-  contract exists.
+- `DELETE /documents/{documentId}` applies the Knowledge document delete/hidden
+  semantics and delegates runtime document/chunk/index lifecycle to RAGFlow
+  runtime. It must not restore the old File/Qdrant cleanup worker path.
 - `GET /documents/{documentId}/chunks` must authorize the parent document. An
   existing document with no chunks, including pending processing states, returns
   an empty paginated list rather than `501` or a dependency error.
 - `GET /documents/{documentId}/content` must authorize through Knowledge first,
-  then call File Service using the internal `file_ref`. Public responses and
-  errors must not include `fileRef`, File Service IDs, buckets, object keys,
+  then stream bytes through the runtime adapter. Public responses and errors
+  must not include `fileRef`, File Service IDs, buckets, object keys, runtime
   storage paths, internal URLs, or raw downstream error bodies.
 
 ### 4. Validation & Error Matrix
@@ -911,33 +911,28 @@ Database state involved:
 | Invalid page/pageSize or tag constraints | `400 validation_error` |
 | Missing, deleted, or hidden document | `404 not_found` |
 | Existing pending/empty document chunks | `200` with `data: []` and `page.total: 0` |
-| File Service content is missing or fails | caller-owned sanitized error, usually `502 dependency_error` |
+| Runtime content is missing or fails | caller-owned sanitized error, usually `502 dependency_error` |
 | PostgreSQL or other infrastructure failure | `502 dependency_error` |
 
 ### 5. Good/Base/Bad Cases
 
 - Good: Gateway proxies `/api/v1/documents/doc_1/content` to Knowledge;
-  Knowledge authorizes `doc_1`, reads its internal `file_ref`, streams File
-  Service bytes, and never returns the file ID in JSON.
+  Knowledge authorizes `doc_1`, streams runtime/adapter bytes, and never returns
+  runtime object storage details in JSON.
 - Base: deleting a document sets `deleted_at`, hides it from future reads, and
-  creates a queued `delete_cleanup` job even though physical vector/file cleanup
-  is deferred.
+  delegates runtime internal object/chunk/index lifecycle to RAGFlow runtime.
 - Bad: Gateway returns `501` for active document lifecycle routes, Knowledge
-  exposes `fileRef` or object-storage details, or deletion performs slow File
+  exposes `fileRef` or object-storage details, or deletion restores slow File
   Service/Qdrant calls inside a PostgreSQL transaction.
 
 ### 6. Tests Required
 
 - Knowledge handler tests for PATCH, DELETE, chunks, content streaming, standard
   envelopes, missing user context, write permission, and no `fileRef` leakage.
-- Knowledge service tests for tag normalization/validation, soft delete hiding,
-  cleanup marker creation, content authorization before File Service reads, and
-  chunk empty-list behavior.
-- Repository tests for tag updates, soft-delete plus cleanup job transaction,
-  deleted-row filtering, chunk ordering, and parent authorization before empty
-  pages.
-- File client tests with fake HTTP servers for content path, context headers,
-  body streaming, and sanitized downstream errors.
+- Knowledge service tests for tag normalization/validation, delete hiding,
+  content authorization before runtime reads, and chunk empty-list behavior.
+- Runtime/vendor client tests with fake HTTP servers for content path, context
+  headers, body streaming, and sanitized downstream errors.
 - Gateway tests asserting the route matrix no longer marks implemented document
   lifecycle routes `NotImplemented` and binary content is proxied without a JSON
   envelope.
@@ -959,7 +954,7 @@ response headers/body expose file_123 or object key on errors
 ```text
 frontend -> gateway /api/v1/documents/doc_1/content
 gateway -> knowledge /internal/v1/documents/doc_1/content
-knowledge authorizes doc_1, reads internal file_ref, calls File Service
+knowledge authorizes doc_1, calls runtime adapter for content bytes
 success streams bytes; errors stay sanitized and document-owned
 ```
 

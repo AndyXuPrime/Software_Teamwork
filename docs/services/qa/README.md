@@ -126,7 +126,7 @@ services/qa/
 - conversation 类能力归并为 `qa-sessions`、session messages 和 session events。
 - chat stream 由 session message 创建触发，流式事件由 QA SSE 投影提供。
 - 正式知识检索归 `knowledge`，QA 通过 MCP 工具、内部 client 或检索体验测试间接调用。
-- citation lookup 归 `qa` 的回答引用快照；原文详情由 Knowledge/File-owned 资源补齐。
+- citation lookup 归 `qa` 的回答引用快照；知识库原文详情回到 Knowledge-owned 资源，file-backed 资源回到各自 owner 服务补齐。
 - QA config、LLM config、LLM connection test、retrieval test 和 QA metrics 均由 `qa` 拥有，但 provider profile 和 API key 仍由 `ai-gateway` 拥有。
 
 ## 通用响应结构
@@ -178,7 +178,7 @@ Gateway OpenAPI 定义 browser-facing schema；本文只记录字段来源和边
 | 模型调用摘要 | `agent_model_invocations` | 记录脱敏后的模型、finish reason、token usage 和延迟；不返回 provider 原始错误或密钥。 |
 | 工具调用摘要 | `agent_tool_calls` | 只保存工具名、参数摘要、结果摘要、状态和错误码；完整 MCP 参数/结果不进入前端契约。 |
 | SSE 事件 | `response_stream_events` | 短期保存用于回放和调试；最终可展示回答仍落入消息表。 |
-| 引用快照 | `citations` | 保存回答生成时的引用快照；原文内容读取仍走 Knowledge/File-owned 资源。 |
+| 引用快照 | `citations` | 保存回答生成时的引用快照；知识库原文读取走 Knowledge-owned 资源，file-backed 资源走各自 owner 服务。 |
 | QA 配置 | `qa_config_versions` | 版本化保存检索默认值、工具白名单、Agent 终止策略和全局系统提示词。 |
 | LLM 配置 | `llm_config_versions` | 只保存 AI Gateway profile 引用、模型名和生成参数，不保存 provider API key。 |
 | 检索测试 | `retrieval_test_runs`、`retrieval_test_results` | 记录管理员测试快照；正式知识检索仍由 `knowledge` 拥有。 |

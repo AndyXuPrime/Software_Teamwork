@@ -7,8 +7,9 @@
 ## Overview
 
 Each backend service owns its persistence concerns. A service may use
-PostgreSQL, Redis, Qdrant, or MinIO only through service-local repository or
-platform packages. Handlers must not talk directly to infrastructure clients.
+PostgreSQL, Redis, MinIO, or runtime-owned index stores only through
+service-local repository, platform packages, or documented owner-service
+adapters. Handlers must not talk directly to infrastructure clients.
 
 Confirmed Go infrastructure target stack:
 
@@ -16,7 +17,9 @@ Confirmed Go infrastructure target stack:
 - Migrations: `goose@v3.27.1`.
 - Redis cache/session access: `go-redis`.
 - Redis queues: `asynq v0.26.0`.
-- Qdrant: a short-term hand-written HTTP client until usage justifies an official or generated client.
+- Runtime-owned index stores: current Knowledge indexing and retrieval are
+  behind `services/knowledge-runtime`; do not add a Go Qdrant client for the
+  default Knowledge path.
 - Object storage: File Service owns an `ObjectStore` port. Production target is
   MinIO or an equivalent persistent object-store adapter; the MinIO adapter is
   implemented behind the same port.
@@ -31,19 +34,21 @@ Current repository facts from `docs/architecture/technology-decisions.md`:
   service query packages with
   `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate`; do not use an
   unpinned `sqlc generate` command in docs, CI, or handoff notes.
-- Gateway directly uses `go-redis/v9@v9.21.0`; Knowledge indirectly uses
-  `go-redis/v9@v9.14.1` through asynq. Aligning Redis client versions is a
-  follow-up decision, not an implementation-PR side effect.
-- Knowledge and Document have fixed `asynq v0.26.0`; new asynchronous jobs
-  should reuse that version unless a documented decision upgrades it.
+- Gateway directly uses `go-redis/v9@v9.21.0`; Knowledge Go adapter does not
+  directly use go-redis. Knowledge runtime uses its own Redis/worker internals
+  behind the RAGFlow runtime boundary.
+- Document has fixed `asynq v0.26.0`; new Go asynchronous jobs should reuse
+  that version unless a documented decision upgrades it. Knowledge ingestion
+  jobs must not restore the retired Go asynq worker path.
 - File Service runtime has memory/local/MinIO object-store adapters, a
   PostgreSQL metadata repository, migrations, and service-token validation.
   `FILE_DATABASE_URL` being empty is a local/test fallback, not the production
   persistence baseline.
-- Knowledge owns Qdrant vector persistence and retrieval hydration. Keep
-  Qdrant as a Knowledge boundary and treat missing real-dependency smoke as a
-  validation gap, not permission for QA, Gateway, or AI Gateway to mutate
-  Qdrant directly.
+- Knowledge owns retrieval-facing business contracts, but current vector/index
+  persistence is inside `services/knowledge-runtime` (RAGFlow runtime, currently
+  Elasticsearch/doc engine). The Go adapter must not restore a Go Qdrant client,
+  File Service upload handoff, or Go ingestion worker. QA, Gateway, Document,
+  and AI Gateway must not read or mutate runtime index/storage internals.
 
 Do not introduce an ORM by default. If a service needs one, document the reason
 in that service README, update `docs/architecture/technology-decisions.md`,
@@ -371,18 +376,24 @@ Rules:
 
 ---
 
-## Qdrant
+## Runtime-Owned Index Stores
 
-Use Qdrant for vector search only. The `knowledge` service owns collection
-creation, vector metadata shape, and retrieval conventions.
+Use index backends only behind their owner-service boundary. Current Knowledge
+document parsing, chunking, embedding/index persistence, and retrieval support
+belong behind `services/knowledge-runtime` and its doc engine. The Go adapter
+owns public/internal DTOs and authorization, not direct index mutation.
 
 Rules:
 
-- Store durable knowledge metadata in PostgreSQL; store vectors and search payloads in Qdrant.
-- Keep Qdrant payload fields minimal and retrieval-oriented.
-- Version embedding models and collection names or metadata when the embedding shape changes.
-- Do not let `qa` mutate Qdrant collections directly; it should retrieve through `knowledge` or a documented retrieval API.
-- Do not let `ai-gateway` write Qdrant collections; model generation and vector
+- Store durable owner metadata in PostgreSQL; keep vector/index payloads inside
+  the runtime/doc-engine boundary unless a documented DTO exposes a safe
+  summary.
+- Keep any returned index payload fields minimal and retrieval-oriented.
+- Version embedding models and runtime/doc-engine index metadata when the
+  embedding shape changes.
+- Do not let `qa` or `document` mutate Knowledge runtime indexes directly; they
+  should retrieve through `knowledge` or a documented MCP/retrieval API.
+- Do not let `ai-gateway` write vector/index stores; model generation and vector
   persistence remain separate service responsibilities.
 
 ---
@@ -520,50 +531,53 @@ custom RoundTripper adds context.WithTimeout -> defer cancel() before returning 
 custom RoundTripper adds context.WithTimeout -> wraps response body -> cancel happens when Body.Close() is called
 ```
 
-## Scenario: Knowledge Document Upload And Ingestion Job
+## Scenario: Knowledge Document Upload And Runtime Ingestion
 
 ### 1. Scope / Trigger
 
-- Trigger: adding or changing Knowledge document upload, File Service
-  integration, `knowledge_documents.file_ref`, processing job creation, or
-  Redis/asynq ingestion handoff.
-- Applies to `services/knowledge/internal/http`,
-  `services/knowledge/internal/service`, `services/knowledge/internal/repository`,
-  `services/knowledge/internal/platform/fileclient`,
-  `services/knowledge/internal/platform/queue`, `services/knowledge/api/openapi.yaml`,
-  and Knowledge runtime configuration.
+- Trigger: adding or changing Knowledge document upload, RAGFlow runtime
+  document handoff, parser-config mapping, runtime ingestion start, or runtime
+  document status/chunk/content mapping.
+- Applies to `services/knowledge/internal/adapter`,
+  `services/knowledge/internal/vendorclient`,
+  `services/knowledge/internal/service`, `services/knowledge/internal/repository`
+  parser-config code, `services/knowledge/api/openapi.yaml`,
+  `services/knowledge-runtime/**`, and Knowledge runtime configuration.
 
 ### 2. Signatures
 
 - Internal Knowledge route:
   - `POST /internal/v1/knowledge-bases/{knowledgeBaseId}/documents`
     with multipart field `file` and optional `tags`.
-- File Service call:
-  - `POST /internal/v1/files` with only base file-object multipart fields.
-  - Best-effort compensation uses `DELETE /internal/v1/files/{fileId}`.
-- Queue task:
-  - asynq task type `knowledge:document:ingest`.
-  - JSON payload fields: `requestId`, `jobId`, `documentId`,
-    `knowledgeBaseId`, `userId`.
+- RAGFlow runtime calls through the vendor client:
+  - upload document bytes under the runtime dataset/document API.
+  - optional parse start when `KNOWLEDGE_AUTO_START_INGESTION=true`.
+  - document status, chunks, content, and retrieval are read back through the
+    runtime API and mapped to Knowledge DTOs.
 - Required runtime environment keys for upload:
-  - `FILE_SERVICE_BASE_URL`.
-  - `KNOWLEDGE_REDIS_ADDR`.
-  - Optional: `KNOWLEDGE_SERVICE_TOKEN`, `KNOWLEDGE_MAX_UPLOAD_BYTES`.
+  - `VENDOR_RUNTIME_URL`.
+  - `VENDOR_RUNTIME_SERVICE_TOKEN`.
+  - `KNOWLEDGE_RUNTIME_SERVICE_TOKEN` on the runtime side.
+  - Optional: `KNOWLEDGE_AUTO_START_INGESTION`,
+    `KNOWLEDGE_MAX_UPLOAD_BYTES`.
 
 ### 3. Contracts
 
-- Knowledge owns document resources, document status, and `processing_jobs`.
-- File Service owns raw bytes and base file-object metadata. Knowledge persists
-  only the returned file ID as internal `knowledge_documents.file_ref`.
+- Knowledge owns document resources, public document status, permissions,
+  parser-config administration, response envelopes, and error mapping.
+- RAGFlow runtime owns raw bytes, parser task execution, chunks, embedding,
+  index writes, retrieval support, and runtime storage/search internals.
 - Public or service-local document responses may expose `jobId`, status, display
   filename, content type, size, and tags, but must not expose `fileRef`,
   File Service internal IDs, object keys, buckets, MinIO/internal URLs, raw text,
   vectors, prompts, or tokens.
-- PostgreSQL is the durable source for document and processing job state.
-  Redis/asynq is only a queue delivery mechanism.
-- External HTTP calls must not run inside a PostgreSQL transaction. Validate the
-  knowledge base first, call File Service, then create document and job state in
-  one short repository transaction, then enqueue the asynq task.
+- Runtime PostgreSQL/Redis/MinIO/Elasticsearch or other doc engine internals are
+  not public product facts. Knowledge PostgreSQL currently supports
+  parser-config admin and migration-compatible fields, not the document bytes or
+  chunk source of truth.
+- The Go adapter must not reintroduce `FILE_SERVICE_BASE_URL`,
+  `PARSER_SERVICE_BASE_URL`, a Go Qdrant client, or a Go asynq ingestion worker
+  for Knowledge document ingestion.
 
 ### 4. Validation & Error Matrix
 
@@ -575,50 +589,48 @@ custom RoundTripper adds context.WithTimeout -> wraps response body -> cancel ha
 | Malformed or oversized multipart body | `400 validation_error` |
 | Invalid `knowledgeBaseId` or hidden knowledge base | `404 not_found` |
 | Invalid `tags` shape or value | `400 validation_error` |
-| File Service validation failure | `400 validation_error` owned by Knowledge |
-| File Service dependency/internal failure | `502 dependency_error` |
-| Document/job repository failure after file creation | attempt `DELETE /internal/v1/files/{fileId}`, then return classified repository error |
-| Queue handoff failure after durable job creation | mark document/job failed in PostgreSQL, then return `502 dependency_error` |
+| Runtime validation failure | `400 validation_error` owned by Knowledge |
+| Runtime dependency/internal failure | `502 dependency_error` with sanitized runtime detail |
+| Runtime upload succeeds but parse start fails | attempt runtime document cleanup when possible, then return classified dependency error |
+| Runtime returns invalid status/chunk/content shape | `502 dependency_error`; do not leak raw vendor body |
 
 ### 5. Good/Base/Bad Cases
 
-- Good: handler parses multipart, service validates KB visibility before file
-  write, File Service receives only raw file data, repository creates document
-  and job atomically, queue payload contains only IDs, and response returns a
-  `DocumentSummary` with `jobId`.
-- Base: queue failure is reported as dependency failure only after PostgreSQL
-  document/job state is durably marked failed.
-- Bad: Knowledge stores raw file bytes directly, sends `knowledgeBaseId` or tags
-  to File Service, returns `fileRef`/`fileId` publicly, or treats Redis/asynq as
-  the authoritative job status store.
+- Good: handler parses multipart, validates Knowledge permissions, uploads bytes
+  through the vendor runtime client, optionally starts runtime parsing, maps the
+  runtime document response to a public `DocumentSummary`, and sanitizes runtime
+  failures.
+- Base: runtime E2E is environment-gated while adapter unit tests use fake
+  runtime clients to verify route paths, response mapping, and error envelopes.
+- Bad: Knowledge restores File Service upload handoff, stores raw file bytes in
+  Go service tables, returns `fileRef`/`fileId` publicly, or treats a Go
+  Redis/asynq queue as the current Knowledge ingestion source of truth.
 
 ### 6. Tests Required
 
-- HTTP handler tests for success, missing file, malformed multipart, JSON-array
-  tags, repeated tags, permission failure, and no public file ID leakage.
-- Service tests for success orchestration, File Service validation/dependency
-  error mapping, repository failure compensation delete, queue failure job mark,
-  and pre-file-write knowledge-base visibility validation.
-- Repository tests for document/job creation and failed-state marking.
-- File client tests with mocked HTTP server asserting multipart shape, context
-  headers, safe downstream error mapping, and delete idempotency for `404`.
-- Queue adapter tests or code review must confirm payload contains only
-  `requestId`, `jobId`, `documentId`, `knowledgeBaseId`, and `userId`.
+- Adapter tests for success, missing file, malformed multipart, tags,
+  permission failure, runtime upload/parse failures, response mapping, and no
+  public runtime/file internals leakage.
+- Vendor client tests with mocked HTTP server asserting runtime route paths,
+  context headers, service token, safe downstream error mapping, redirect
+  blocking, and cleanup behavior where implemented.
+- Parser-config repository tests when parser-config storage changes.
+- Runtime route/config tests when `services/knowledge-runtime/**` changes.
 - Service-local checks from `services/knowledge`: `go test ./...`,
-  `go build ./cmd/server`, and `git diff --check`.
+  `go build ./cmd/adapter`, and `git diff --check`.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```text
-Knowledge upload -> File Service stores business metadata -> Redis stores final ingestion status -> response exposes fileId
+Knowledge upload -> File Service stores business metadata -> Go asynq worker parses -> response exposes fileId
 ```
 
 #### Correct
 
 ```text
-Knowledge upload -> File Service stores raw bytes -> Knowledge transaction creates document + processing_job -> asynq task carries IDs only -> response exposes document summary + jobId
+Knowledge upload -> Knowledge adapter -> RAGFlow runtime stores bytes and parses/chunks/indexes -> response exposes Knowledge document summary
 ```
 
 ## Scenario: Document Service Report Baseline

@@ -53,7 +53,7 @@ AI Gateway 当前已经实现三类模型调用：
 | 响应校验 | `data` 数量必须等于输入数量；每项 `object=embedding`；`index` 必须等于输入位置，不允许重复、越界或乱序；`embedding` 必须存在，且在 `encoding_format=float` 时为 JSON number array，在 `encoding_format=base64` 时为 base64 string。 |
 | 持久化摘要 | 只记录 operation、profile、model、provider、input_count、embedding_dimensions、usage、duration、status 和归一化错误。 |
 
-Embedding payload 可能是 float array，也可能在 `encoding_format=base64` 时是 base64 string；两种形态都可能泄露原文语义，不能进入普通日志、数据库调用摘要、错误响应或指标 label。向量持久化只归 Knowledge/Qdrant。
+Embedding payload 可能是 float array，也可能在 `encoding_format=base64` 时是 base64 string；两种形态都可能泄露原文语义，不能进入普通日志、数据库调用摘要、错误响应或指标 label。向量持久化只归 Knowledge runtime/doc engine 边界。
 
 ## Reranking adapter
 

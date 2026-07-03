@@ -54,7 +54,7 @@ Gateway 后续实现必须遵循 [技术选型基线](../../architecture/technol
 | --- | --- | --- |
 | 用户、密码、会话、角色权限源数据 | `auth` | 不保存密码，不维护用户表，不实现 RBAC 持久化；只在 Redis 保存运行时会话缓存。 |
 | 文件对象、基础 file 元数据、对象存储协调 | `file` | 不直接操作 MinIO，不生成业务 object key。 |
-| 知识库、文档切片、向量索引、检索策略 | `knowledge` | 不执行切片、嵌入、Qdrant 查询或重排序。 |
+| 知识库、文档切片、向量索引、检索策略 | `knowledge` | 不执行切片、嵌入、runtime/doc-engine 查询或重排序。 |
 | 问答 Agent、MCP 工具编排、LLM 调用 | `qa` | 不拼 prompt，不执行 ReAct loop，不执行 MCP 工具，不保存对话业务状态。 |
 | 报告大纲、章节生成、DOCX 导出 | `document` | 不生成报告内容，不操作报告模板业务规则。 |
 | 模型 provider 配置、API key、chat/embedding/rerank 调用 | `ai-gateway` | 不保存 provider API key，不直连 OpenAI-compatible 或 SiliconFlow-compatible provider，不把内部模型调用接口暴露给前端；只通过 admin model-profile 资源转发配置管理请求。 |
@@ -171,9 +171,9 @@ Auth 是最终权限裁判：`admin` 只能管理 `standard`，`super_admin`
 
 ## Gateway Knowledge 行为
 
-Gateway 对前端暴露 knowledge 拥有的知识库、知识库文档、文档内容、文档切片和检索查询资源，精确接口清单以 [`api/public.openapi.yaml`](api/public.openapi.yaml) 与 [active API owner map](docs/active-api-owner-map.md) 为准。Gateway 只负责鉴权上下文传递、路由和响应归一化，不执行解析、切片、embedding、Qdrant 检索或重排序。
+Gateway 对前端暴露 knowledge 拥有的知识库、知识库文档、文档内容、文档切片和检索查询资源，精确接口清单以 [`api/public.openapi.yaml`](api/public.openapi.yaml) 与 [active API owner map](docs/active-api-owner-map.md) 为准。Gateway 只负责鉴权上下文传递、路由和响应归一化，不执行解析、切片、embedding、runtime/doc-engine 检索或重排序。
 
-检索被建模为 `knowledge-queries` 资源创建，不使用 `/search` 或 `/retrieval/search`。知识库文档公开资源统一由 `knowledge` 拥有：创建文档资源时保存底层 file reference，列表和详情返回处理状态，chunk 和 content 子资源返回切片或原文件流。Gateway 不直接解析文件、操作 MinIO 或操作 Qdrant。
+检索被建模为 `knowledge-queries` 资源创建，不使用 `/search` 或 `/retrieval/search`。知识库文档公开资源统一由 `knowledge` 拥有：创建文档资源时由 Knowledge adapter 交给 RAGFlow runtime 保存原始 bytes 并维护处理状态，列表和详情返回处理状态，chunk 和 content 子资源返回切片或原文件流。Gateway 不直接解析文件、操作 MinIO、操作 RAGFlow runtime、操作索引后端或操作 Qdrant。
 
 报告素材、模板和导出文件不得复用知识库文档上传路径建模。它们的公开资源由 `document` 拥有，`document` 在内部通过 file 服务保存、读取或删除底层文件对象；Gateway 只做入口、认证上下文传递和响应归一化。
 

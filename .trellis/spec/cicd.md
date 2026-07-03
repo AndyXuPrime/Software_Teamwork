@@ -883,11 +883,16 @@ Required local sequence:
 
 1. Copy local defaults with `cp deploy/.env.example deploy/.env`.
 2. Run `./scripts/local/dev-up.sh` to pull/start infra, wait for long-running
-   service health, run the one-shot `minio-init`, apply Qdrant collection
-   initialization, host migrations, and local seed.
-3. Run `./scripts/local/run-backend.sh` to start Auth, File, Knowledge,
+   service health, run the one-shot `minio-init`, apply any configured
+   legacy/test-only Qdrant collection initialization, host migrations, and
+   local seed. Current Knowledge indexing is prepared by the host-run Knowledge
+   runtime/doc engine, not by restoring Go-side Qdrant bootstrap as a required
+   default.
+3. Start or keep available the host-run Knowledge runtime API/worker when
+   running Knowledge ingestion/retrieval scenarios.
+4. Run `./scripts/local/run-backend.sh` to start Auth, File, Knowledge,
    AI Gateway, QA, Document, and Gateway as host processes.
-4. Run `cd apps/web && bun install && bun run dev` for the frontend.
+5. Run `cd apps/web && bun install && bun run dev` for the frontend.
 
 Runtime rules:
 

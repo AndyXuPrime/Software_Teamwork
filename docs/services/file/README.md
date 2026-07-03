@@ -54,8 +54,8 @@ gateway owner-service file-backed resources
    |
    v
 owner service
-   |-- knowledge owns knowledge documents and document content resources
    |-- document owns report templates, materials, and report files
+   |-- qa owns session attachments and temporary attachment chunks
    |
    v
 file service /internal/v1/files/**
@@ -66,7 +66,7 @@ file service /internal/v1/files/**
 
 前端侧只调用 gateway 公开接口。gateway 将认证后的请求转发给 owner service，并统一处理响应 envelope、request id 和错误归一化。
 
-知识库文件上传、文档详情、文档标签、删除和原始文件流公开资源由 `knowledge` 拥有。`knowledge` 在服务边界内保存内部 `file_ref`、知识库归属、处理状态和索引状态，并调用 `file` 读写底层原始文件对象。
+知识库文件上传、文档详情、文档标签、删除和原始文件流公开资源由 `knowledge` 拥有。当前 `develop` 的 Knowledge 主路径通过 `services/knowledge-runtime` 保存和读取原始 bytes，RAGFlow runtime 负责解析、切块、embedding、索引和检索支持；`file` 不参与 Knowledge 文档上传/content 主路径。早期 `file_ref` 字段只作为兼容和迁移排查背景，不是当前公开权限或内容读取依据。
 
 报告模板、素材和导出文件公开资源由 `document` 拥有。`document` 保存 `reportTemplateId`、`materialId`、`reportFileId`、业务状态和内部 `file_ref`，并通过内部 client 调用 `file` 完成对象写入、读取和删除。前端仍只看到 report 资源 ID 和 content 子资源，不接触 file 内部 ID、bucket、object key 或 MinIO URL。
 
@@ -74,8 +74,9 @@ file service /internal/v1/files/**
 
 `file` 服务不直接拥有前端公开 API。Gateway active path、owner service 和认证要求只在 [Gateway OpenAPI](../gateway/api/public.openapi.yaml) 与 [active API owner map](../gateway/docs/active-api-owner-map.md) 维护；本文只说明哪些业务资源会在内部复用 `file` 的基础能力。
 
-- `knowledge` 拥有知识库文档、文档详情、文档标签、文档切片和文档内容资源；上传、读取原始文件流和删除底层对象时，在服务边界内调用 `file`。
+- `knowledge` 拥有知识库文档、文档详情、文档标签、文档切片和文档内容资源；当前主路径通过 RAGFlow runtime 处理原始文件对象、解析、切块、embedding、索引和检索，不在服务边界内调用 `file`。
 - `document` 拥有报告模板、报告素材、报告导出文件和文件内容资源；模板文件、素材文件和生成文件的对象写入、读取和删除在内部复用 `file`。
+- `qa` 拥有会话附件元数据、解析状态和临时 chunk；附件原始 bytes 可在内部复用 `file`，但附件不得写入 Knowledge 的长期知识库或索引。
 
 前端仍只看到 owner service 的业务资源 ID 和 content 子资源，不接触 file 内部 ID、bucket、object key、签名 URL 或 MinIO 地址。
 

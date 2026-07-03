@@ -104,7 +104,7 @@
 | 任务 | 类型 | 优先级 | 依据 | 说明 |
 | --- | --- | --- | --- | --- |
 | 记录真实 provider smoke 结果 | 新任务 | P1 | 错误归一和脱敏要求 | 在有凭证环境时运行 env-gated smoke，补实际 provider chat/embedding/rerank 结果和 provider-specific 差异。 |
-| 接入 Knowledge embedding/rerank | 新任务 | P0 | Knowledge indexing/retrieval 依赖 | 使用 AI Gateway embedding/rerank endpoint，Knowledge 仍负责 chunk/vector/Qdrant。 |
+| 接入 Knowledge embedding/rerank | 新任务 | P0 | Knowledge indexing/retrieval 依赖 | 使用 AI Gateway embedding/rerank endpoint，Knowledge runtime/doc engine 仍负责 chunk/index 状态。 |
 | 接入 QA/Document 真实模型调用 smoke | 新任务 | P1 | 跨服务联调 | 验证 caller service、request id、profile id 和错误归一化。 |
 | 补 profile seed 和 token hash 运行手册 | 回写文档 | P1 | 部署可操作性 | 避免明文 token 配置误用，降低本地 smoke 成本。 |
 | 增加配额、指标和 tracing | 新任务 | P2 | observability | 基于 `provider_invocations` 和 `model_usage_aggregates` 扩展。 |

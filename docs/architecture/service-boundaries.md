@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | `gateway` | 面向前端、管理端、后端模块和工具调用方的公开 API；路由；基于 Redis 的会话缓存；认证上下文透传；响应/错误包裹结构；请求 ID；轻量聚合。 | `/api/v1/**`、`/healthz`、`/readyz`。 | 持久化用户/角色/权限、文档解析、向量检索、LLM 工作流、报告生成业务逻辑。 |
 | `auth` | 用户、凭证、角色、权限、会话或令牌、会话身份签发和撤销、用户资料字段、强制改密状态。 | 用户创建、会话创建/删除、当前用户、当前用户资料、强制改密、管理员用户管理、权限检查、供 gateway 缓存的会话身份。 | 文件元数据、知识索引、QA 消息、报告记录。 |
-| `file` | 基础文件上传/内容 API、原始对象、对象存储协调、最小 file 元数据生命周期、面向后端服务的 MinIO 中间层。 | 不直接拥有前端公开 API；通过内部 `/internal/v1/files/**` 为 `knowledge`、`document` 等 owner service 提供基础文件能力。 | 知识库归属、知识文档状态、知识分块、向量索引、RAG、报告生成、报告材料/模板/报告文件业务状态、QA 会话附件元数据/解析状态/临时 chunk 归属。QA 会话附件原始 bytes 通过内部 file API 保存。 |
+| `file` | 基础文件上传/内容 API、原始对象、对象存储协调、最小 file 元数据生命周期、面向后端服务的 MinIO 中间层。 | 不直接拥有前端公开 API；通过内部 `/internal/v1/files/**` 为 `document`、QA 会话附件等 file-backed owner resource 提供基础文件能力。当前 Knowledge 文档主路径由 `services/knowledge-runtime` 保存和读取原始 bytes，不经过 File Service。 | 知识库归属、知识文档状态、知识分块、向量索引、RAG、报告生成、报告材料/模板/报告文件业务状态、QA 会话附件元数据/解析状态/临时 chunk 归属。QA 会话附件原始 bytes 通过内部 file API 保存。 |
 | `knowledge` | 知识库、知识文档上传入口、文档摄取状态、原始文档内容资源、RAGFlow runtime 适配、分块、嵌入工作流、检索策略、检索查询、索引归属、文档解析器运行时配置。 | 通过 gateway 暴露知识库 CRUD、文档上传/详情/内容/分块列表、知识查询和管理员解析器配置资源；解析、切块、embedding、索引和检索由 Knowledge 通过 `services/knowledge-runtime` 的 RAGFlow API/worker profile 完成。 | 用户身份、底层对象存储实现、LLM 答案生成、DOCX 导出、provider API key 存储、QA Agent 编排。 |
 | `qa` | 聊天会话、消息、Agent Host / ReAct 循环、MCP 工具编排、响应运行记录、模型调用摘要、工具调用记录、引用、会话临时附件元数据/解析状态/临时 chunk/Agent 检索入口、QA 配置版本、检索测试运行和 QA 指标。 | 暴露 `/api/v1/qa-sessions/**`（含 `/api/v1/qa-sessions/{sessionId}/attachments/**`）、`/api/v1/response-runs/**`、`/api/v1/messages/{messageId}/citations`、`/api/v1/citations/**`、`/api/v1/qa-config-versions/**`、`/api/v1/llm-config-versions/**`、`/api/v1/llm-connection-tests`、`/api/v1/retrieval-test-runs/**`、`/api/v1/qa-metrics/**` 下的 QA 路由；内部调用 AI Gateway 获取 OpenAI 兼容的 chat completions 和 Function Calling 传输；调用 MCP Client 进行工具发现/执行；需要长期知识检索时调用 Knowledge 拥有的查询接口。 | 知识库 CRUD、文件上传、报告记录管理、provider API key 存储、具体 MCP server 实现、直接 provider 调用、会话附件原始 bytes 存储实现、文档解析运行时、把会话临时附件写入 knowledge 长期索引、在公开前端契约中暴露原始 MCP 工具 schema、原始工具结果、`file_ref` 或 object key。 |
 | `document` | 报告模板、材料、报告记录、大纲、章节内容、报告任务、生成文件元数据、统计数据和报告操作日志。 | 暴露 `/api/v1/report-*` 和 `/api/v1/reports/**` 下的报告生成路由；涉及文件或模型输出时，使用 file 服务处理文件对象存储/内容，使用 AI Gateway 进行模型调用。 | QA 聊天、知识索引、auth 持久化、provider API key 存储、直接暴露 MinIO object key 或存储 URL。 |
@@ -27,13 +27,13 @@
 | 当前用户必需改密 | 公开入口、认证上下文传递和响应归一化。 | `auth` | Auth 验证当前临时密码、更新密码哈希、清除 `must_change_password` 并记录安全事件。Gateway 不处理明文密码，也不自行清除改密状态。 |
 | 管理员用户管理 | 公开管理员入口、管理员授权、响应归一化、必要的会话缓存刷新/失效协作。 | `auth` | Auth 拥有用户列表过滤、创建、启用/禁用、密码重置、单角色替换、资料字段和 `must_change_password` 状态。管理员只能管理 `standard`；`super_admin` 可管理 `standard` 与 `admin`；`super_admin` 本身不通过公开 UI/API 管理。 |
 | 知识库 CRUD | 公开入口和响应归一化。 | `knowledge` | 已生效的 gateway 契约。Gateway 不得存储知识库业务状态。 |
-| 向知识库上传文档 | 公开文件上传入口。 | `knowledge` | Knowledge 负责创建知识库文档资源、保存内部 file reference 和摄取状态；底层原始文件对象通过内部 file API 保存。Gateway 不得实现解析、索引或直接操作 file。 |
+| 向知识库上传文档 | 公开文件上传入口。 | `knowledge` | Knowledge 负责创建知识库文档资源、维护摄取状态，并通过 RAGFlow runtime 保存原始文件、解析、切块、embedding 和索引。Gateway 不得实现解析、索引或直接调用 `services/knowledge-runtime`。 |
 | 文档处理状态和分块 | 公开读取入口和响应归一化。 | `knowledge` | 文档详情和分块的已生效 gateway 契约。Gateway 不得实现解析、分块、嵌入或索引访问。Knowledge 通过 RAGFlow runtime 完成解析、切块、embedding、索引和检索，但业务资源、状态、权限和公开响应仍归 knowledge。 |
-| 原始文档内容 | 路由并执行认证上下文约束。 | `knowledge` | Knowledge 拥有 `documents/{documentId}/content` 资源和业务可见性；底层 bytes 可通过内部 file API 读取。 |
+| 原始文档内容 | 路由并执行认证上下文约束。 | `knowledge` | Knowledge 拥有 `documents/{documentId}/content` 资源和业务可见性；当前底层 bytes 由 RAGFlow runtime/adapter 映射读取，不暴露 runtime object key、bucket 或内部 URL。 |
 | 前端知识查询 | 公开入口和响应归一化。 | `knowledge` | 已生效的 gateway 契约。查询执行建模为 `knowledge-queries`，不使用动作式 search 路径。检索和 rerank 业务规则留在 knowledge；模型 rerank 调用可经过 AI Gateway。 |
 | QA Agent 答案生成 | 公开入口、SSE 转发、认证上下文透传和响应归一化。 | `qa` | 已生效的 gateway 契约。QA 负责会话/消息/引用状态，运行 ReAct 循环，调用 AI Gateway 获取 OpenAI 兼容的 Function Calling 传输，并调用 MCP Client 使用已批准工具。公开工具调用字段仅为脱敏后的摘要。 |
 | QA 会话附件上传与解析 | 公开文件上传入口、owner 授权和响应归一化。 | `qa` | QA 拥有会话附件元数据、解析状态、临时 chunk 和 Agent 检索入口。会话临时附件不写入 knowledge 的长期知识库或索引；需要长期知识检索时调用 Knowledge 查询接口。访问控制与隐藏策略见 [QA 权限矩阵](../services/qa/docs/permission-matrix.md)。公开响应不暴露 `file_ref`、object key、bucket 或内部 URL。 |
-| 引用来源查询 | 公开入口和响应归一化。 | `qa` | 已保存引用快照的已生效 gateway 契约。来源知识分块和原始文档内容仍以 knowledge/file 为权威。 |
+| 引用来源查询 | 公开入口和响应归一化。 | `qa` | 已保存引用快照的已生效 gateway 契约。来源知识分块和知识文档内容以 Knowledge 公开资源为权威；报告文件、QA 附件等 file-backed 资源仍由各 owner service 通过 File Service 处理。 |
 | 报告模板管理 | 公开入口和认证上下文透传。 | `document` | Document 服务负责模板元数据、模板结构和模板文件引用。 |
 | 报告材料管理 | 公开入口和认证上下文透传。 | `document` | Document 服务负责报告任务使用的材料元数据和材料文件引用；原始文件对象存储应复用 file 服务，而不是把材料当作知识库文档处理。 |
 | 报告记录管理 | 公开入口和认证上下文透传。 | `document` | Document 服务负责报告草稿、生命周期状态、大纲、章节和软删除规则。 |

@@ -38,7 +38,7 @@
 /api/v1/knowledge-queries
 ```
 
-服务内部可映射到 `knowledge` 或 `file` 服务，但前端只感知网关路径。
+Knowledge 公开资源在服务内部映射到 `knowledge` adapter 和 RAGFlow runtime；File Service 只作为其他 file-backed owner resource 的基础能力，不参与当前 Knowledge 文档上传/content 主路径。前端只感知网关路径。
 
 ### 2.2 RESTful + OpenAPI + Swagger UI 规范
 
@@ -48,7 +48,7 @@ OpenAPI 约定：
 
 - `knowledge` 服务维护服务内契约：[`../api/internal.openapi.yaml`](../api/internal.openapi.yaml)。
 - 当前文档配套的服务级公开草案见 [`../api/public.openapi.yaml`](../api/public.openapi.yaml)；前端稳定公开契约仍以 gateway public OpenAPI 为准。
-- 涉及知识库文档上传和内容读取的公开接口由 `knowledge` 通过 gateway 维护；`file` 仅提供内部基础文件对象契约：[`../../file/api/internal.openapi.yaml`](../../file/api/internal.openapi.yaml)。公开 API 不要求前端先申请 file 上传 URL，也不暴露 file 内部 ID。
+- 涉及知识库文档上传和内容读取的公开接口由 `knowledge` 通过 gateway 维护；当前主路径由 Knowledge adapter 交给 RAGFlow runtime 保存和读取原始 bytes。`file` 仅提供其他 file-backed owner resource 的内部基础文件对象契约：[`../../file/api/internal.openapi.yaml`](../../file/api/internal.openapi.yaml)。公开 API 不要求前端先申请 file 上传 URL，也不暴露 file 内部 ID。
 - OpenAPI 必须声明 `securitySchemes`、通用错误响应、分页响应、资源 schema、状态枚举和 SSE/异步任务说明。
 - API 文档中的 request/response 示例应与本文 Markdown 契约保持一致。
 
@@ -796,7 +796,7 @@ POST /api/v1/knowledge-query-tests
 
 报告支撑材料指报告生成复用的专业业务文档，例如厂级专业报告、技术文档、检查报告。它不是 UI 素材，也不是普通附件。
 
-报告支撑材料首期作为候选扩展资源建模，尚未进入 gateway active public OpenAPI；如该资源仍由 `knowledge` 暴露，则由 `knowledge` 接收 multipart 上传并在内部复用 `file` 的基础文件能力。需要检索时复用 `knowledge` 的处理和查询能力，避免和普通知识库文档混淆。
+报告支撑材料首期作为候选扩展资源建模，尚未进入 gateway active public OpenAPI。当前 active 报告素材资源由 `document` 拥有，并在内部复用 File Service；如未来另设 Knowledge-owned 支撑材料，必须先明确它走 RAGFlow runtime 还是 File-backed 对象能力，不能复用旧 `file_ref` 假设或和普通知识库文档混淆。
 
 ### 8.1 创建报告支撑材料
 

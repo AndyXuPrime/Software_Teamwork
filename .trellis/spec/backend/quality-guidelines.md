@@ -305,9 +305,13 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   running host migrations or seed SQL. One-shot infrastructure jobs such as
   `minio-init` must run separately and use their own exit code so a normal
   `Exited (0)` does not skip migrations or seed.
-- `dev-up.sh` must create or verify the default Knowledge Qdrant collection when
+- `dev-up.sh` may create or verify a legacy/test-only Qdrant collection when
   `QDRANT_URL` is configured. The collection dimension must match
-  `EMBEDDING_DIMENSION`, and the default distance is `Cosine`.
+  `EMBEDDING_DIMENSION`, and the default distance is `Cosine`. Current
+  Knowledge ingestion uses RAGFlow runtime and its configured doc engine;
+  startup scripts must not make old Go Qdrant collection setup a required
+  Knowledge default. If legacy or test-only `QDRANT_URL` support remains, it
+  must be clearly documented as non-primary.
 - Compose must include practical health checks for infrastructure containers.
 - PostgreSQL health checks must probe TCP readiness, e.g.
   `pg_isready -h localhost -U postgres -d postgres`.
@@ -348,7 +352,8 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | Compose YAML or env interpolation is invalid | `docker compose ... config --quiet` must fail before merge. |
 | Default Compose service list includes business services or profile services | Remove the service or update policy only if the team explicitly changes the Docker boundary. |
 | Host migrations or seed run before PostgreSQL/init scripts are ready | Add or restore an infra health wait in `scripts/local/dev-up.sh`; do not rely on plain `docker compose up -d`. Run one-shot init jobs separately from `up --wait` and fail visibly if they exit non-zero. |
-| `QDRANT_URL` is set but the default collection is not created | Add or restore Qdrant collection initialization in `scripts/local/dev-up.sh`; do not make users create `knowledge_chunks` manually for the default path. |
+| `QDRANT_URL` is set for a legacy/test-only path but the requested collection is not created | Add or restore guarded Qdrant collection initialization in `scripts/local/dev-up.sh`; do not document it as the default Knowledge ingestion path. |
+| Knowledge runtime/doc-engine env is configured but required runtime provisioning is missing | Fix the runtime dependency guard, startup docs, or smoke setup; do not restore the old Go adapter Qdrant bootstrap as the default Knowledge path. |
 | Compose contains `build:` | Remove it; repository Docker must stay pull-only infra. |
 | Docker policy checker fails | Fix the Compose/docs/script regression or update `scripts/check_docker_policy.py` and the runbook in the same PR when the policy intentionally changes. |
 | Retired parser paths or env keys reappear in startup scripts | Remove the parser dependency and route document parsing through `services/knowledge-runtime`. |
@@ -564,7 +569,7 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
 - With the gate enabled, missing env must fail with key names only.
 - The smoke must precheck the owner route's required runtime dependencies before
   the Gateway assertion, such as owner service `/readyz`, PostgreSQL, Redis,
-  File, Parser, Qdrant, or AI Gateway depending on route scope.
+  File, Knowledge runtime/doc engine, or AI Gateway depending on route scope.
 - The smoke must first call the Gateway route with spoofed `X-User-*` headers
   and no Bearer token, then assert `401 unauthorized`.
 - The positive path must create a real Gateway session through

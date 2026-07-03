@@ -71,7 +71,7 @@ Can run as default automation:
 Needs separate report or explicit environment evidence:
 
 - Real Gateway/Auth/session login.
-- Real Knowledge, QA, File, Parser, Document, or AI Gateway integration.
+- Real Knowledge, Knowledge runtime, QA, File, Document, or AI Gateway integration.
 - Full E2E flows.
 - Permission or security regression.
 - File upload/download boundary checks.
