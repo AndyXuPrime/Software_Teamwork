@@ -68,7 +68,7 @@ export default function AttachmentUploadStatus({
  * React hook that manages the upload + polling lifecycle for a single file.
  *
  * Usage in ChatPage:
- *   const { uploadState, uploadFile, dismissUpload } = useAttachmentUpload(sessionId, onReady)
+ *   const { uploadState, uploadSessionId, uploadFile, dismissUpload } = useAttachmentUpload(sessionId, onReady)
  *   <ChatInput onFileSelect={uploadFile} ... />
  *   <AttachmentUploadStatus sessionId={sessionId} state={uploadState} onDismiss={dismissUpload} />
  */
@@ -239,5 +239,10 @@ export function useAttachmentUpload(
     }
   }, [clearPollTimer])
 
-  return { uploadState: state, uploadFile, dismissUpload }
+  return {
+    uploadState: state,
+    uploadSessionId: uploadSessionIdRef.current,
+    uploadFile,
+    dismissUpload,
+  }
 }

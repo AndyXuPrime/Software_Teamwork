@@ -64,6 +64,7 @@ function reusableParams(
     inputText: '',
     messagesBySession: {},
     sessions: [makeSession()],
+    uploadSessionId: null,
     uploadState: idleUploadState,
     ...overrides,
   }
@@ -124,11 +125,12 @@ describe('isReusableEmptyNewSession', () => {
     ).toBe(true)
   })
 
-  it('rejects draft text, upload progress, and active streaming messages', () => {
+  it('rejects draft text, current-session upload progress, and active streaming messages', () => {
     expect(isReusableEmptyNewSession(reusableParams({ inputText: '未发送草稿' }))).toBe(false)
     expect(
       isReusableEmptyNewSession(
         reusableParams({
+          uploadSessionId: 'session-1',
           uploadState: { phase: 'uploading', filename: 'guide.pdf' },
         }),
       ),
@@ -145,6 +147,42 @@ describe('isReusableEmptyNewSession', () => {
                 status: 'streaming',
               }),
             ],
+          },
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it('allows reuse while another session owns upload progress', () => {
+    expect(
+      isReusableEmptyNewSession(
+        reusableParams({
+          uploadSessionId: 'session-2',
+          uploadState: { phase: 'uploading', filename: 'guide.pdf' },
+        }),
+      ),
+    ).toBe(true)
+    expect(
+      isReusableEmptyNewSession(
+        reusableParams({
+          uploadState: {
+            attachment: makeAttachment({ sessionId: 'session-2', status: 'parsing' }),
+            attempts: 0,
+            phase: 'polling',
+          },
+        }),
+      ),
+    ).toBe(true)
+  })
+
+  it('rejects current-session polling progress', () => {
+    expect(
+      isReusableEmptyNewSession(
+        reusableParams({
+          uploadState: {
+            attachment: makeAttachment({ sessionId: 'session-1', status: 'parsing' }),
+            attempts: 0,
+            phase: 'polling',
           },
         }),
       ),

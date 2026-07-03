@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createJSONStorage } from 'zustand/middleware'
 
-import type { QAMessage, QASession } from '@/lib/types'
+import type { QAMessage, QASession, SessionAttachmentSummary } from '@/lib/types'
 import { useChatStore } from '@/stores/chat-store'
 import { renderWithProviders } from '@/test/render'
 
@@ -27,6 +27,11 @@ const qaHookState = vi.hoisted(() => ({
   refetchSessions: vi.fn(),
   renameSession: vi.fn(),
   sessionsData: { items: [] as QASession[] },
+  uploadSessionId: null as string | null,
+  uploadState: { phase: 'idle' } as
+    | { phase: 'idle' }
+    | { filename: string; phase: 'uploading' }
+    | { attachment: SessionAttachmentSummary; attempts: number; phase: 'polling' },
 }))
 
 vi.mock('@/api/chat', () => ({
@@ -62,7 +67,8 @@ vi.mock('@/components/chat', () => ({
   useAttachmentUpload: () => ({
     dismissUpload: () => undefined,
     uploadFile: () => undefined,
-    uploadState: { phase: 'idle' },
+    uploadSessionId: qaHookState.uploadSessionId,
+    uploadState: qaHookState.uploadState,
   }),
 }))
 
@@ -120,6 +126,21 @@ function makeMessage(overrides: Partial<QAMessage> = {}): QAMessage {
   }
 }
 
+function makeAttachment(
+  overrides: Partial<SessionAttachmentSummary> = {},
+): SessionAttachmentSummary {
+  return {
+    id: 'attachment-1',
+    sessionId: 'session-1',
+    filename: 'guide.pdf',
+    contentType: 'application/pdf',
+    sizeBytes: 128,
+    status: 'parsing',
+    createdAt: now,
+    ...overrides,
+  }
+}
+
 function setChatState(state: {
   activeId: string | null
   messagesBySession?: Record<string, QAMessage[]>
@@ -150,6 +171,8 @@ describe('ChatPage create conversation action', () => {
     qaHookState.refetchSessions.mockReset()
     qaHookState.renameSession.mockReset()
     qaHookState.sessionsData = { items: [] }
+    qaHookState.uploadSessionId = null
+    qaHookState.uploadState = { phase: 'idle' }
     setChatState({ activeId: null, sessions: [] })
   })
 
@@ -192,6 +215,58 @@ describe('ChatPage create conversation action', () => {
       },
       sessions: [emptySession, streamingSession],
       streaming: true,
+    })
+
+    renderWithProviders(<ChatPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: '新建对话' }))
+    fireEvent.click(screen.getByRole('button', { name: '新建对话' }))
+
+    expect(qaHookState.createSession).not.toHaveBeenCalled()
+    expect(screen.getByTestId('session-count')).toHaveTextContent('2')
+    expect(screen.getByTestId('active-session')).toHaveTextContent(emptySession.id)
+  })
+
+  it('reuses the selected empty conversation while another conversation is uploading', () => {
+    const emptySession = makeSession({ id: 'empty-session' })
+    const uploadingSession = makeSession({
+      id: 'uploading-session',
+      title: '附件会话',
+    })
+    qaHookState.sessionsData = { items: [emptySession, uploadingSession] }
+    qaHookState.uploadSessionId = uploadingSession.id
+    qaHookState.uploadState = { filename: 'guide.pdf', phase: 'uploading' }
+    setChatState({
+      activeId: emptySession.id,
+      sessions: [emptySession, uploadingSession],
+    })
+
+    renderWithProviders(<ChatPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: '新建对话' }))
+    fireEvent.click(screen.getByRole('button', { name: '新建对话' }))
+
+    expect(qaHookState.createSession).not.toHaveBeenCalled()
+    expect(screen.getByTestId('session-count')).toHaveTextContent('2')
+    expect(screen.getByTestId('active-session')).toHaveTextContent(emptySession.id)
+  })
+
+  it('reuses the selected empty conversation while another conversation is polling upload', () => {
+    const emptySession = makeSession({ id: 'empty-session' })
+    const pollingSession = makeSession({
+      id: 'polling-session',
+      title: '附件会话',
+    })
+    qaHookState.sessionsData = { items: [emptySession, pollingSession] }
+    qaHookState.uploadSessionId = pollingSession.id
+    qaHookState.uploadState = {
+      attachment: makeAttachment({ sessionId: pollingSession.id }),
+      attempts: 1,
+      phase: 'polling',
+    }
+    setChatState({
+      activeId: emptySession.id,
+      sessions: [emptySession, pollingSession],
     })
 
     renderWithProviders(<ChatPage />)

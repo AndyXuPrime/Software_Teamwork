@@ -67,7 +67,18 @@ type ReusableEmptyNewSessionParams = {
   inputText: string
   messagesBySession: Record<string, QAMessage[]>
   sessions: QASession[]
+  uploadSessionId: string | null
   uploadState: UploadStateData
+}
+
+function isUploadStateForSession(
+  uploadState: UploadStateData,
+  uploadSessionId: string | null,
+  sessionId: string,
+): boolean {
+  if (uploadState.phase === 'uploading') return uploadSessionId === sessionId
+  if (uploadState.phase === 'polling') return uploadState.attachment.sessionId === sessionId
+  return false
 }
 
 export function isReusableEmptyNewSession({
@@ -76,10 +87,11 @@ export function isReusableEmptyNewSession({
   inputText,
   messagesBySession,
   sessions,
+  uploadSessionId,
   uploadState,
 }: ReusableEmptyNewSessionParams): boolean {
   if (!activeId) return false
-  if (uploadState.phase === 'uploading' || uploadState.phase === 'polling') return false
+  if (isUploadStateForSession(uploadState, uploadSessionId, activeId)) return false
   if (inputText.trim().length > 0) return false
 
   const session = sessions.find((item) => item.id === activeId)
@@ -472,7 +484,7 @@ export function ChatPage() {
     [removeAttachment],
   )
 
-  const { uploadState, uploadFile, dismissUpload } = useAttachmentUpload(
+  const { uploadState, uploadSessionId, uploadFile, dismissUpload } = useAttachmentUpload(
     activeId,
     handleAttachmentReady,
     handleAttachCleanup,
@@ -750,6 +762,7 @@ export function ChatPage() {
         inputText,
         messagesBySession,
         sessions,
+        uploadSessionId,
         uploadState,
       })
     ) {
@@ -774,6 +787,7 @@ export function ChatPage() {
     sessions,
     setActiveId,
     setError,
+    uploadSessionId,
     uploadState,
   ])
 
