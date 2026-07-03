@@ -1008,8 +1008,8 @@ export function ChatPage() {
               abort()
               return
             }
-            // Real backend error: surface to user (only if store hasn't been reset)
-            if (useChatStore.getState().activeId) {
+            // Real backend error: surface to user (only if session unchanged)
+            if (useChatStore.getState().activeId === uid) {
               setError(formatError(sseErr))
               setLastFailedMsg(trimmed)
             }
@@ -1022,7 +1022,7 @@ export function ChatPage() {
             abort()
           } else {
             // Non-fatal error: surface a brief summary but keep streaming
-            if (useChatStore.getState().activeId) setError(formatError(sseErr))
+            if (useChatStore.getState().activeId === uid) setError(formatError(sseErr))
             console.warn(`[SSE] Non-fatal: ${sseErr.code}`)
             const runId = responseRunIdRef.current
             if (runId) {
