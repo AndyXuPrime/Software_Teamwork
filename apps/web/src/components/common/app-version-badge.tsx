@@ -32,7 +32,7 @@ type AppVersionBadgeProps = {
 
 const reasonLabels: Partial<Record<AppVersionFreshnessReason, string>> = {
   github_403: 'GitHub 返回 403，可能触发了匿名请求限流。',
-  github_404: 'GitHub 返回 404，暂时找不到 develop 提交。',
+  github_404: 'GitHub 返回 404，暂时找不到用于对比的提交。',
   github_429: 'GitHub 返回 429，请求过于频繁。',
   github_status: 'GitHub 返回非成功状态。',
   invalid_response: 'GitHub 响应格式不可用。',
@@ -97,7 +97,7 @@ export function AppVersionBadge({
             本地构建版本
           </PopoverTitle>
           <PopoverDescription>
-            通过 Gateway 检查当前构建是否跟上 upstream/develop。
+            通过 Gateway 检查当前构建是否包含 upstream/develop 最新提交。
           </PopoverDescription>
         </PopoverHeader>
 
@@ -182,9 +182,9 @@ function getFreshnessStatus(freshness: AppVersionFreshness | null | undefined, l
     return {
       Icon: CheckCircle2,
       className: 'border-emerald-500/30 bg-emerald-500/10',
-      description: '当前构建提交号和 upstream/develop 一致。',
+      description: '当前构建已包含 upstream/develop 最新提交。',
       iconClassName: 'text-emerald-600',
-      title: '已是 develop 最新构建',
+      title: '已包含 develop 最新提交',
     }
   }
 
@@ -192,9 +192,9 @@ function getFreshnessStatus(freshness: AppVersionFreshness | null | undefined, l
     return {
       Icon: AlertTriangle,
       className: 'border-amber-500/30 bg-amber-500/10',
-      description: '当前构建提交号不同于 upstream/develop，请按需同步后重新构建。',
+      description: '当前构建尚未包含 upstream/develop 最新提交，请按需同步后重新构建。',
       iconClassName: 'text-amber-600',
-      title: '当前构建可能落后 develop',
+      title: '当前构建落后 develop',
     }
   }
 

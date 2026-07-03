@@ -210,7 +210,7 @@ describe('AppLayout accessibility smoke', () => {
     await pointer.click(screen.getByRole('button', { name: /^前端版本/ }))
 
     expect(await screen.findByText('本地构建版本')).toBeVisible()
-    expect(await screen.findByText('已是 develop 最新构建')).toBeVisible()
+    expect(await screen.findByText('已包含 develop 最新提交')).toBeVisible()
     expect(screen.getByText('打开 GitHub 对比')).toBeVisible()
     expect(screen.getByText(APP_UPDATE_COMMAND)).toBeVisible()
     expect(fetcher).toHaveBeenCalledTimes(1)
@@ -226,7 +226,7 @@ describe('AppLayout accessibility smoke', () => {
 
     await pointer.click(screen.getByRole('button', { name: /^前端版本/ }))
     await pointer.click(screen.getByRole('button', { name: /^前端版本/ }))
-    await waitFor(() => expect(screen.getByText('已是 develop 最新构建')).toBeVisible())
+    await waitFor(() => expect(screen.getByText('已包含 develop 最新提交')).toBeVisible())
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
 

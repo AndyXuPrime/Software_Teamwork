@@ -48,8 +48,8 @@ export interface paths {
         /**
          * Get frontend app version freshness
          * @description Gateway-owned metadata endpoint that compares the current frontend build
-         *     commit with upstream `develop`. Gateway calls the GitHub commits API
-         *     server-side with a short-lived cache and an optional backend-only
+         *     commit with upstream `develop`. Gateway calls the GitHub compare API
+         *     server-side with short-lived cache and an optional backend-only
          *     `GATEWAY_GITHUB_TOKEN`; browser clients never call GitHub API directly
          *     and never receive the token. If GitHub returns 403, 404, 429, a network
          *     error, or an invalid response, the endpoint still returns 200 with
@@ -1567,7 +1567,7 @@ export interface components {
             requestId: string;
         };
         /**
-         * @description Freshness comparison between the current frontend build and upstream develop.
+         * @description Freshness comparison between the current frontend build and upstream develop. `current` means the build contains the latest upstream develop commit, even when the build also has additional feature-branch commits.
          * @enum {string}
          */
         AppVersionFreshnessStatus: "current" | "different" | "unknown";

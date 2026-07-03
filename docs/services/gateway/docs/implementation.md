@@ -27,7 +27,7 @@
 | --- | --- | --- |
 | 文档状态 | active | README、OpenAPI、active owner map 和数据模型文档存在。 |
 | 代码状态 | partial | Go gateway、auth public routes、Redis session cache、proxy route matrix、中间件、错误归一化、Auth profile/password-change/admin-users routes 和 Prometheus HTTP metrics baseline 已实现。 |
-| 契约对齐 | guarded / partial | Gateway OpenAPI 现有 112 个 active operations；当前 route matrix 覆盖全部 112 个 active operations。app-version freshness 由 Gateway 轻量聚合 GitHub develop 提交状态并做缓存/fallback；admin parser-configs、Knowledge document lifecycle、chunks、content、knowledge-queries、QA session attachments 和 Auth profile/password-change/admin-users 已转为 owner proxy；admin overview/metrics 是 active contract，但实现仍返回稳定 `not_implemented`。 |
+| 契约对齐 | guarded / partial | Gateway OpenAPI 现有 112 个 active operations；当前 route matrix 覆盖全部 112 个 active operations。app-version freshness 由 Gateway 代理 GitHub compare 语义判断当前构建是否包含 develop 最新提交，并做缓存/fallback；admin parser-configs、Knowledge document lifecycle、chunks、content、knowledge-queries、QA session attachments 和 Auth profile/password-change/admin-users 已转为 owner proxy；admin overview/metrics 是 active contract，但实现仍返回稳定 `not_implemented`。 |
 | 数据持久化 | redis / none | Gateway 不持久化业务数据库；使用 Redis 保存 session cache。 |
 | 测试状态 | partial | 单元测试覆盖 route matrix、QA active OpenAPI schema contract、auth proxy、headers、binary/SSE proxy、中间件和 metrics middleware；缺真实 Redis/downstream 集成测试。 |
 | 建议动作 | 联调 / 复核 | Auth/Gateway/Redis full smoke 已脚本化；继续补真实 owner services 端到端联调验证。 |

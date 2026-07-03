@@ -1,31 +1,34 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
-func TestAppVersionFreshnessReturnsCurrentThroughGateway(t *testing.T) {
+func TestAppVersionFreshnessReturnsCurrentWhenBuildIncludesDevelop(t *testing.T) {
 	const latestSHA = "abcdef1234567890"
+	const currentSHA = "fedcba0987654321"
 	var capturedAuthorization string
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedAuthorization = r.Header.Get("Authorization")
-		if r.URL.Path != "/" {
+		if r.URL.Path != "/compare/develop..."+currentSHA {
 			t.Fatalf("github path = %q", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"sha":"` + latestSHA + `","html_url":"https://github.test/commit/` + latestSHA + `"}`))
+		writeAppVersionCompareResponse(t, w, latestSHA, 1, 0)
 	}))
 	defer github.Close()
 
 	server := newAppVersionTestServer(t, github.URL, "backend-github-token")
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/app-version/freshness?currentSha="+latestSHA, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/app-version/freshness?currentSha="+currentSHA, nil)
 	req.Header.Set("X-Request-Id", "req_app_version")
 	res := httptest.NewRecorder()
 
@@ -46,9 +49,38 @@ func TestAppVersionFreshnessReturnsCurrentThroughGateway(t *testing.T) {
 		t.Fatalf("requestId = %q", body.RequestID)
 	}
 	if body.Data.Status != appFreshnessCurrent ||
-		body.Data.CurrentSHA != latestSHA ||
+		body.Data.CurrentSHA != currentSHA ||
 		body.Data.LatestSHA != latestSHA ||
 		body.Data.LatestURL == "" {
+		t.Fatalf("freshness = %+v", body.Data)
+	}
+}
+
+func TestAppVersionFreshnessReturnsDifferentWhenBuildIsBehindDevelop(t *testing.T) {
+	const latestSHA = "abcdef1234567890"
+	const currentSHA = "1111111111111111"
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/compare/develop..."+currentSHA {
+			t.Fatalf("github path = %q", r.URL.Path)
+		}
+		writeAppVersionCompareResponse(t, w, latestSHA, 0, 2)
+	}))
+	defer github.Close()
+
+	server := newAppVersionTestServer(t, github.URL, "")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/app-version/freshness?currentSha="+currentSHA, nil)
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	var body appVersionEnvelope
+	decodeAppVersionJSON(t, res.Body, &body)
+	if body.Data.Status != appFreshnessDifferent ||
+		body.Data.CurrentSHA != currentSHA ||
+		body.Data.LatestSHA != latestSHA {
 		t.Fatalf("freshness = %+v", body.Data)
 	}
 }
@@ -80,18 +112,18 @@ func TestAppVersionFreshnessFallsBackToUnknownOnGitHubForbidden(t *testing.T) {
 	}
 }
 
-func TestAppVersionFreshnessCachesLatestCommit(t *testing.T) {
+func TestAppVersionFreshnessCachesFreshnessByCurrentSHA(t *testing.T) {
 	const latestSHA = "abcdef1234567890"
+	const currentSHA = "1111111111111111"
 	calls := 0
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"sha":"` + latestSHA + `","html_url":"https://github.test/commit/` + latestSHA + `"}`))
+		writeAppVersionCompareResponse(t, w, latestSHA, 0, 1)
 	}))
 	defer github.Close()
 
 	server := newAppVersionTestServer(t, github.URL, "")
-	for _, currentSHA := range []string{latestSHA, "1111111111111111"} {
+	for range 2 {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/app-version/freshness?currentSha="+currentSHA, nil)
 		res := httptest.NewRecorder()
 		server.ServeHTTP(res, req)
@@ -99,6 +131,50 @@ func TestAppVersionFreshnessCachesLatestCommit(t *testing.T) {
 			t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
 		}
 	}
+	if calls != 1 {
+		t.Fatalf("GitHub calls = %d, want 1", calls)
+	}
+}
+
+func TestAppVersionFreshnessCoalescesConcurrentGitHubRequests(t *testing.T) {
+	const latestSHA = "abcdef1234567890"
+	const currentSHA = "1111111111111111"
+	var calls int64
+	started := make(chan struct{})
+	release := make(chan struct{})
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/compare/develop..."+currentSHA {
+			t.Fatalf("github path = %q", r.URL.Path)
+		}
+		if atomic.AddInt64(&calls, 1) == 1 {
+			close(started)
+		}
+		<-release
+		writeAppVersionCompareResponse(t, w, latestSHA, 0, 1)
+	}))
+	defer github.Close()
+
+	checker := newAppVersionTestChecker(t, github.URL, "")
+	var wg sync.WaitGroup
+	begin := make(chan struct{})
+	for range 12 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-begin
+			freshness := checker.CheckFreshness(context.Background(), currentSHA)
+			if freshness.Status != appFreshnessDifferent {
+				t.Errorf("status = %q, want %q", freshness.Status, appFreshnessDifferent)
+			}
+		}()
+	}
+
+	close(begin)
+	<-started
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wg.Wait()
+
 	if calls != 1 {
 		t.Fatalf("GitHub calls = %d, want 1", calls)
 	}
@@ -129,11 +205,7 @@ func TestAppVersionFreshnessRejectsLongCurrentSHA(t *testing.T) {
 
 func newAppVersionTestServer(t *testing.T, githubURL string, githubToken string) http.Handler {
 	t.Helper()
-	checker := newGitHubAppVersionChecker(http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)), githubToken)
-	checker.apiURL = githubURL
-	checker.now = func() time.Time {
-		return time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC)
-	}
+	checker := newAppVersionTestChecker(t, githubURL, githubToken)
 	return NewServer(Config{
 		Logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
 		ServiceVersion:     "test",
@@ -145,6 +217,16 @@ func newAppVersionTestServer(t *testing.T, githubURL string, githubToken string)
 	})
 }
 
+func newAppVersionTestChecker(t *testing.T, githubURL string, githubToken string) *gitHubAppVersionChecker {
+	t.Helper()
+	checker := newGitHubAppVersionChecker(http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)), githubToken)
+	checker.apiURL = strings.TrimRight(githubURL, "/") + "/compare/develop..."
+	checker.now = func() time.Time {
+		return time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC)
+	}
+	return checker
+}
+
 type appVersionEnvelope struct {
 	Data      AppVersionFreshness `json:"data"`
 	RequestID string              `json:"requestId"`
@@ -154,5 +236,21 @@ func decodeAppVersionJSON(t *testing.T, r io.Reader, target any) {
 	t.Helper()
 	if err := json.NewDecoder(r).Decode(target); err != nil {
 		t.Fatalf("Decode() error = %v", err)
+	}
+}
+
+func writeAppVersionCompareResponse(t *testing.T, w http.ResponseWriter, latestSHA string, aheadBy int, behindBy int) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	body := map[string]any{
+		"ahead_by":  aheadBy,
+		"behind_by": behindBy,
+		"base_commit": map[string]string{
+			"sha":      latestSHA,
+			"html_url": "https://github.test/commit/" + latestSHA,
+		},
+	}
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		t.Fatalf("Encode() error = %v", err)
 	}
 }

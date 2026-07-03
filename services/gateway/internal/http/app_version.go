@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -15,8 +16,8 @@ import (
 )
 
 const (
-	githubDevelopCommitAPI = "https://api.github.com/repos/Sakayori-Iroha-168/Software_Teamwork/commits/develop"
-	appVersionCacheTTL     = 5 * time.Minute
+	githubDevelopCompareAPI = "https://api.github.com/repos/Sakayori-Iroha-168/Software_Teamwork/compare/develop..."
+	appVersionCacheTTL      = 5 * time.Minute
 
 	appFreshnessCurrent   = "current"
 	appFreshnessDifferent = "different"
@@ -52,24 +53,29 @@ type gitHubAppVersionChecker struct {
 	cacheTTL  time.Duration
 	now       func() time.Time
 	cacheLock sync.Mutex
-	cache     gitHubLatestCommitCache
+	cache     map[string]gitHubFreshnessCacheEntry
+	inFlight  map[string]*gitHubFreshnessCall
 }
 
-type gitHubLatestCommitCache struct {
-	latest    gitHubLatestCommit
+type gitHubFreshnessCacheEntry struct {
+	freshness AppVersionFreshness
 	expiresAt time.Time
 }
 
-type gitHubLatestCommit struct {
-	sha       string
-	url       string
-	checkedAt time.Time
-	reason    string
+type gitHubFreshnessCall struct {
+	done      chan struct{}
+	freshness AppVersionFreshness
 }
 
 type gitHubCommitResponse struct {
 	SHA     string `json:"sha"`
 	HTMLURL string `json:"html_url"`
+}
+
+type gitHubCompareResponse struct {
+	AheadBy    int                  `json:"ahead_by"`
+	BehindBy   int                  `json:"behind_by"`
+	BaseCommit gitHubCommitResponse `json:"base_commit"`
 }
 
 func newGitHubAppVersionChecker(client *http.Client, logger *slog.Logger, token string) *gitHubAppVersionChecker {
@@ -80,12 +86,14 @@ func newGitHubAppVersionChecker(client *http.Client, logger *slog.Logger, token 
 		logger = slog.Default()
 	}
 	return &gitHubAppVersionChecker{
-		apiURL:   githubDevelopCommitAPI,
+		apiURL:   githubDevelopCompareAPI,
 		token:    strings.TrimSpace(token),
 		client:   client,
 		logger:   logger,
 		cacheTTL: appVersionCacheTTL,
 		now:      time.Now,
+		cache:    make(map[string]gitHubFreshnessCacheEntry),
+		inFlight: make(map[string]*gitHubFreshnessCall),
 	}
 }
 
@@ -115,50 +123,55 @@ func (c *gitHubAppVersionChecker) CheckFreshness(ctx context.Context, currentSHA
 		return unknownAppVersionFreshness(currentSHA, checkedAt, appFreshnessReasonMissingCurrentSHA)
 	}
 
-	latest := c.latestDevelopCommit(ctx)
-	if latest.sha == "" {
-		return unknownAppVersionFreshness(currentSHA, latest.checkedAt, latest.reason)
-	}
-
-	status := appFreshnessDifferent
-	if currentSHA == latest.sha {
-		status = appFreshnessCurrent
-	}
-	return AppVersionFreshness{
-		Status:     status,
-		CurrentSHA: currentSHA,
-		LatestSHA:  latest.sha,
-		LatestURL:  latest.url,
-		CheckedAt:  latest.checkedAt,
-	}
+	return c.cachedFreshness(ctx, currentSHA, checkedAt)
 }
 
-func (c *gitHubAppVersionChecker) latestDevelopCommit(ctx context.Context) gitHubLatestCommit {
-	now := c.now().UTC()
-
+func (c *gitHubAppVersionChecker) cachedFreshness(ctx context.Context, currentSHA string, checkedAt time.Time) AppVersionFreshness {
 	c.cacheLock.Lock()
-	if !c.cache.expiresAt.IsZero() && now.Before(c.cache.expiresAt) {
-		latest := c.cache.latest
+	if entry, ok := c.cache[currentSHA]; ok && checkedAt.Before(entry.expiresAt) {
+		freshness := entry.freshness
 		c.cacheLock.Unlock()
-		return latest
+		return freshness
 	}
+	if call := c.inFlight[currentSHA]; call != nil {
+		c.cacheLock.Unlock()
+		select {
+		case <-call.done:
+			return call.freshness
+		case <-ctx.Done():
+			return unknownAppVersionFreshness(currentSHA, checkedAt, appFreshnessReasonNetworkError)
+		}
+	}
+	call := &gitHubFreshnessCall{done: make(chan struct{})}
+	if c.inFlight == nil {
+		c.inFlight = make(map[string]*gitHubFreshnessCall)
+	}
+	c.inFlight[currentSHA] = call
 	c.cacheLock.Unlock()
 
-	latest := c.fetchLatestDevelopCommit(ctx, now)
+	freshness := c.fetchCompareFreshness(ctx, currentSHA, checkedAt)
 
 	c.cacheLock.Lock()
-	c.cache.latest = latest
-	c.cache.expiresAt = now.Add(c.cacheTTL)
+	if c.cache == nil {
+		c.cache = make(map[string]gitHubFreshnessCacheEntry)
+	}
+	c.cache[currentSHA] = gitHubFreshnessCacheEntry{
+		freshness: freshness,
+		expiresAt: checkedAt.Add(c.cacheTTL),
+	}
+	call.freshness = freshness
+	close(call.done)
+	delete(c.inFlight, currentSHA)
 	c.cacheLock.Unlock()
 
-	return latest
+	return freshness
 }
 
-func (c *gitHubAppVersionChecker) fetchLatestDevelopCommit(ctx context.Context, checkedAt time.Time) gitHubLatestCommit {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiURL, nil)
+func (c *gitHubAppVersionChecker) fetchCompareFreshness(ctx context.Context, currentSHA string, checkedAt time.Time) AppVersionFreshness {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.compareURL(currentSHA), nil)
 	if err != nil {
 		c.warnGitHubFallback(ctx, checkedAt, appFreshnessReasonInvalidResponse, 0)
-		return gitHubLatestCommit{checkedAt: checkedAt, reason: appFreshnessReasonInvalidResponse}
+		return unknownAppVersionFreshness(currentSHA, checkedAt, appFreshnessReasonInvalidResponse)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "Software-Teamwork-Gateway")
@@ -170,7 +183,7 @@ func (c *gitHubAppVersionChecker) fetchLatestDevelopCommit(ctx context.Context, 
 	res, err := c.client.Do(req)
 	if err != nil {
 		c.warnGitHubFallback(ctx, checkedAt, appFreshnessReasonNetworkError, 0)
-		return gitHubLatestCommit{checkedAt: checkedAt, reason: appFreshnessReasonNetworkError}
+		return unknownAppVersionFreshness(currentSHA, checkedAt, appFreshnessReasonNetworkError)
 	}
 	defer res.Body.Close()
 
@@ -178,25 +191,36 @@ func (c *gitHubAppVersionChecker) fetchLatestDevelopCommit(ctx context.Context, 
 		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<20))
 		reason := gitHubStatusReason(res.StatusCode)
 		c.warnGitHubFallback(ctx, checkedAt, reason, res.StatusCode)
-		return gitHubLatestCommit{checkedAt: checkedAt, reason: reason}
+		return unknownAppVersionFreshness(currentSHA, checkedAt, reason)
 	}
 
-	var body gitHubCommitResponse
+	var body gitHubCompareResponse
 	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&body); err != nil {
 		c.warnGitHubFallback(ctx, checkedAt, appFreshnessReasonInvalidResponse, 0)
-		return gitHubLatestCommit{checkedAt: checkedAt, reason: appFreshnessReasonInvalidResponse}
+		return unknownAppVersionFreshness(currentSHA, checkedAt, appFreshnessReasonInvalidResponse)
 	}
 
-	latestSHA := normalizeCommitSHA(body.SHA)
+	latestSHA := normalizeCommitSHA(body.BaseCommit.SHA)
 	if latestSHA == "" {
 		c.warnGitHubFallback(ctx, checkedAt, appFreshnessReasonInvalidResponse, 0)
-		return gitHubLatestCommit{checkedAt: checkedAt, reason: appFreshnessReasonInvalidResponse}
+		return unknownAppVersionFreshness(currentSHA, checkedAt, appFreshnessReasonInvalidResponse)
 	}
-	return gitHubLatestCommit{
-		sha:       latestSHA,
-		url:       strings.TrimSpace(body.HTMLURL),
-		checkedAt: checkedAt,
+
+	status := appFreshnessCurrent
+	if body.BehindBy > 0 {
+		status = appFreshnessDifferent
 	}
+	return AppVersionFreshness{
+		Status:     status,
+		CurrentSHA: currentSHA,
+		LatestSHA:  latestSHA,
+		LatestURL:  strings.TrimSpace(body.BaseCommit.HTMLURL),
+		CheckedAt:  checkedAt,
+	}
+}
+
+func (c *gitHubAppVersionChecker) compareURL(currentSHA string) string {
+	return strings.TrimRight(c.apiURL, "/") + url.PathEscape(currentSHA)
 }
 
 func (c *gitHubAppVersionChecker) warnGitHubFallback(ctx context.Context, checkedAt time.Time, reason string, statusCode int) {
