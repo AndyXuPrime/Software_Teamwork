@@ -293,7 +293,7 @@ func TestSearchKnowledgeReturnsAdapterResults(t *testing.T) {
 	defer cancel()
 
 	result, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
-		Name: "search_knowledge",
+		Name: "search",
 		Arguments: map[string]any{
 			"query":            "maintenance checklist",
 			"knowledgeBaseIds": []any{"kb_test"},
@@ -366,7 +366,7 @@ func TestSearchKnowledgeRequiresKnowledgeBaseIDs(t *testing.T) {
 	defer cancel()
 
 	result, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
-		Name: "search_knowledge",
+		Name: "search",
 		Arguments: map[string]any{
 			"query": "missing kb ids",
 		},
@@ -399,7 +399,7 @@ func TestSearchKnowledgeWithDocumentIDs(t *testing.T) {
 	defer cancel()
 
 	result, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
-		Name: "search_knowledge",
+		Name: "search",
 		Arguments: map[string]any{
 			"query":            "maintenance checklist",
 			"knowledgeBaseIds": []any{"kb_test"},
@@ -415,6 +415,7 @@ func TestSearchKnowledgeWithDocumentIDs(t *testing.T) {
 }
 
 func TestCreateKnowledgeBaseRequiresWritePermission(t *testing.T) {
+	t.Skip("create_knowledge_base is not published in the v1 MCP read-only contract")
 	state := newFakeVendorState()
 	vendor := startFakeVendor(t, state)
 	defer vendor.Close()
@@ -447,6 +448,7 @@ func TestCreateKnowledgeBaseRequiresWritePermission(t *testing.T) {
 }
 
 func TestCreateAndListKnowledgeBases(t *testing.T) {
+	t.Skip("knowledge base CRUD is not published in the v1 MCP read-only contract")
 	state := newFakeVendorState()
 	vendor := startFakeVendor(t, state)
 	defer vendor.Close()
@@ -512,6 +514,7 @@ func TestCreateAndListKnowledgeBases(t *testing.T) {
 }
 
 func TestCreateDocumentUpload(t *testing.T) {
+	t.Skip("create_document is not published in the v1 MCP read-only contract")
 	state := newFakeVendorState()
 	vendor := startFakeVendor(t, state)
 	defer vendor.Close()
@@ -580,6 +583,7 @@ func TestCreateDocumentUpload(t *testing.T) {
 }
 
 func TestAnswerFromKnowledgeReturnsAnswerAndCitations(t *testing.T) {
+	t.Skip("answer_from_knowledge is not published in the v1 MCP read-only contract")
 	state := newFakeVendorState()
 	state.chunks = []map[string]any{
 		{
@@ -677,6 +681,7 @@ func TestAnswerFromKnowledgeReturnsAnswerAndCitations(t *testing.T) {
 }
 
 func TestAnswerFromKnowledgeRequiresGatewayClient(t *testing.T) {
+	t.Skip("answer_from_knowledge is not published in the v1 MCP read-only contract")
 	state := newFakeVendorState()
 	vendor := startFakeVendor(t, state)
 	defer vendor.Close()
@@ -760,7 +765,7 @@ func TestStreamableHTTPHandlerUsesTrustedCallerContext(t *testing.T) {
 	defer session.Close()
 
 	result, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
-		Name: "search_knowledge",
+		Name: "search",
 		Arguments: map[string]any{
 			"query":            "bridge",
 			"knowledgeBaseIds": []any{"kb_http"},
@@ -775,6 +780,7 @@ func TestStreamableHTTPHandlerUsesTrustedCallerContext(t *testing.T) {
 }
 
 func TestStreamableHTTPHandlerDoesNotTrustForgedWritePermission(t *testing.T) {
+	t.Skip("write tools are not published in the v1 MCP read-only contract — forged write permission test is no longer applicable")
 	state := newFakeVendorState()
 	vendor := startFakeVendor(t, state)
 	defer vendor.Close()

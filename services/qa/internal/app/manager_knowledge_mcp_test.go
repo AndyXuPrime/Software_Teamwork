@@ -15,10 +15,10 @@ import (
 
 func TestHasRequiredKnowledgeMCPTools(t *testing.T) {
 	definitions := []agent.ToolDefinition{
-		{Function: agent.FunctionTool{Name: "knowledge__search_knowledge"}},
+		{Function: agent.FunctionTool{Name: "knowledge__search"}},
 		{Function: agent.FunctionTool{Name: "knowledge__list_documents"}},
 		{Function: agent.FunctionTool{Name: "knowledge__get_document"}},
-		{Function: agent.FunctionTool{Name: "knowledge__list_document_chunks"}},
+		{Function: agent.FunctionTool{Name: "knowledge__get_chunk"}},
 	}
 	if !hasRequiredKnowledgeMCPTools(definitions, "knowledge") {
 		t.Fatal("expected the complete Knowledge MCP tool set to be accepted")
@@ -78,7 +78,7 @@ func TestBuildKnowledgeProviderFallsBackWhenDiscoveryIsIncomplete(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !hasTool(definitions, toolspkg.ToolSearchKnowledge) || hasTool(definitions, "knowledge__search_knowledge") {
+	if !hasTool(definitions, toolspkg.ToolSearchKnowledge) || hasTool(definitions, "knowledge__search") {
 		t.Fatalf("fallback definitions = %#v", definitions)
 	}
 }

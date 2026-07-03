@@ -53,7 +53,9 @@ func isCitationToolName(name string) bool {
 	case "search_knowledge", "get_citation_source", "knowledge_query", "search_session_attachments":
 		return true
 	}
-	return strings.HasSuffix(name, "__search_knowledge") ||
+	return strings.HasSuffix(name, "__search") ||
+		strings.HasSuffix(name, ".search") ||
+		strings.HasSuffix(name, "__search_knowledge") ||
 		strings.HasSuffix(name, ".search_knowledge") ||
 		strings.HasSuffix(name, "__get_citation_source") ||
 		strings.HasSuffix(name, ".get_citation_source") ||

@@ -20,8 +20,8 @@ func TestDefaultAgentConfigEnablesAttachmentSearch(t *testing.T) {
 func TestDefaultAgentConfigEnablesKnowledgeMCPTools(t *testing.T) {
 	config := DefaultAgentConfig()
 	for _, name := range []string{
-		"knowledge__search_knowledge", "knowledge__list_documents",
-		"knowledge__get_document", "knowledge__list_document_chunks",
+		"knowledge__search", "knowledge__list_documents",
+		"knowledge__get_document", "knowledge__get_chunk",
 	} {
 		if !containsString(config.EnabledToolNames, name) {
 			t.Fatalf("enabledToolNames=%v, want %s", config.EnabledToolNames, name)

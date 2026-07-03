@@ -1,17 +1,17 @@
 package tools
 
 const (
-	KnowledgeMCPToolSearch        = "search_knowledge"
+	KnowledgeMCPToolSearch        = "search"
 	KnowledgeMCPToolListDocuments = "list_documents"
 	KnowledgeMCPToolGetDocument   = "get_document"
-	KnowledgeMCPToolListChunks    = "list_document_chunks"
+	KnowledgeMCPToolGetChunk      = "get_chunk"
 )
 
 var DefaultKnowledgeMCPToolNames = []string{
 	KnowledgeMCPToolSearch,
 	KnowledgeMCPToolListDocuments,
 	KnowledgeMCPToolGetDocument,
-	KnowledgeMCPToolListChunks,
+	KnowledgeMCPToolGetChunk,
 }
 
 func ModelFacingKnowledgeMCPToolNames(alias string) []string {

@@ -210,7 +210,7 @@ const citationToolResultContent = `{"data":{"results":[{"documentId":"doc-1","do
 
 func TestCitationsRecognizePrefixedKnowledgeMCPSearch(t *testing.T) {
 	citations := citationsFromAgentMessages("message-1", "run-1", []agent.Message{{
-		Role: agent.RoleTool, Name: "knowledge__search_knowledge", Content: citationToolResultContent,
+		Role: agent.RoleTool, Name: "knowledge__search", Content: citationToolResultContent,
 	}})
 	if len(citations) != 1 || citations[0].DocumentID != "doc-1" || citations[0].ChunkID != "chunk-7" {
 		t.Fatalf("citations = %#v", citations)

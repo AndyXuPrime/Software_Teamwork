@@ -154,9 +154,9 @@ admin-configured MCP list. Set `KNOWLEDGE_MCP_URL` (normally
 `http://localhost:8093/mcp`), `KNOWLEDGE_MCP_TOKEN`,
 `KNOWLEDGE_MCP_TOKEN_HEADER`, `KNOWLEDGE_MCP_ALIAS`, and
 `KNOWLEDGE_MCP_TIMEOUT`. At runtime QA discovers all four Knowledge tools and
-exposes the required read tools as `knowledge__search_knowledge`,
+exposes the required read tools as `knowledge__search`,
 `knowledge__list_documents`, `knowledge__get_document`, and
-`knowledge__list_document_chunks`. If connection or tool
+`knowledge__get_chunk`. If connection or tool
 discovery fails, QA keeps the legacy `search_knowledge` HTTP adapter available;
 the MCP token falls back to `INTERNAL_SERVICE_TOKEN` when omitted.
 
