@@ -902,7 +902,7 @@ export function ReportGeneratePage() {
                   variant="empty"
                 />
               ) : (
-                <div className="space-y-2">
+                <div className="max-h-80 space-y-2 overflow-y-auto">
                   {flattenOutline(outline).map((node) => (
                     <div
                       key={node.id ?? node.clientSectionId ?? node.title}
@@ -956,7 +956,7 @@ export function ReportGeneratePage() {
                 <>
                   <div>
                     <h2 className="mb-3 text-base font-semibold">章节列表</h2>
-                    <div className="space-y-2">
+                    <div className="max-h-64 space-y-2 overflow-y-auto">
                       {sections.map((section) => (
                         <button
                           key={section.id}
