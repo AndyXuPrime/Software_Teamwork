@@ -131,6 +131,23 @@ func (s *attachmentRepoStub) SearchSessionAttachmentChunks(_ context.Context, _,
 	return out, nil
 }
 
+func (s *attachmentRepoStub) ListSessionAttachmentChunks(_ context.Context, _, sessionID string, attachmentIDs []string, limit int) ([]SessionAttachmentChunk, error) {
+	out := make([]SessionAttachmentChunk, 0, limit)
+	for _, chunk := range s.chunks {
+		if chunk.SessionID != sessionID {
+			continue
+		}
+		if len(attachmentIDs) > 0 && !containsString(attachmentIDs, chunk.AttachmentID) {
+			continue
+		}
+		out = append(out, chunk)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 func (s *attachmentRepoStub) ListExpiredAttachments(_ context.Context, now time.Time, limit int) ([]SessionAttachment, error) {
 	out := make([]SessionAttachment, 0, limit)
 	for _, item := range s.attachments {
@@ -438,6 +455,34 @@ func TestAttachmentServiceSearchSessionAttachments(t *testing.T) {
 	}
 	if len(results) != 1 || results[0].ID != "chunk-1" {
 		t.Fatalf("results = %+v", results)
+	}
+}
+
+func TestAttachmentServiceListSessionAttachmentReportSource(t *testing.T) {
+	chunks := make([]SessionAttachmentChunk, 0, 6)
+	for i := 1; i <= 6; i++ {
+		chunks = append(chunks, SessionAttachmentChunk{
+			ID:           "chunk-" + string(rune('0'+i)),
+			AttachmentID: "att-1",
+			SessionID:    "sess-1",
+			ChunkIndex:   i,
+			Content:      "report source chunk " + string(rune('0'+i)),
+		})
+	}
+	repo := &attachmentRepoStub{
+		conversation: Conversation{ID: "sess-1"},
+		chunks:       chunks,
+	}
+	svc, err := NewAttachmentService(repo, &testFileClient{data: map[string][]byte{}}, testParserClient{}, AttachmentServiceConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := svc.ListSessionAttachmentReportSource(context.Background(), "user-1", "sess-1", []string{"att-1"}, 200)
+	if err != nil {
+		t.Fatalf("ListSessionAttachmentReportSource() error = %v", err)
+	}
+	if len(results) != 6 || results[5].ID != "chunk-6" {
+		t.Fatalf("results = %+v, want all report source chunks", results)
 	}
 }
 

@@ -56,6 +56,7 @@ func TestDocumentMCPReportToolsSmoke(t *testing.T) {
 	}
 	assertToolNames(t, tools, []string{
 		"generate_report_outline",
+		"generate_report_from_content",
 		"generate_report_text",
 		"get_generation_status",
 		"export_report_docx",

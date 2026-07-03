@@ -49,6 +49,18 @@ func TestGenerateResultSummaryBuildsPendingReportArtifact(t *testing.T) {
 	}
 }
 
+func TestGenerateResultSummaryBuildsContentReportArtifactWithoutLeakingContent(t *testing.T) {
+	summary := GenerateResultSummary("document__generate_report_from_content", `{"status":"accepted","report":{"id":"rpt-1","name":"Attachment","reportType":"summer_peak_inspection","status":"draft"},"job":{"id":"job-1","reportId":"rpt-1","jobType":"outline_generation","status":"accepted"},"warnings":["content_truncated"],"content":"raw token secret http://internal/document"}`)
+
+	artifact := summary["reportArtifact"].(map[string]any)
+	if artifact["reportId"] != "rpt-1" || artifact["jobId"] != "job-1" || artifact["jobStatus"] != "accepted" {
+		t.Fatalf("artifact=%#v", artifact)
+	}
+	if strings.Contains(strings.ToLower(fmtSprint(summary)), "raw token") || strings.Contains(strings.ToLower(fmtSprint(summary)), "http://internal") || strings.Contains(strings.ToLower(fmtSprint(summary)), "content_truncated") {
+		t.Fatalf("summary leaked raw content or internal warning: %#v", summary)
+	}
+}
+
 func TestGenerateResultSummaryBuildsSucceededExportArtifact(t *testing.T) {
 	summary := GenerateResultSummary("document__export_report_docx", `{"status":"accepted","reportFile":{"id":"rf-1","reportId":"rpt-1","jobId":"job-2","filename":"report.docx","format":"docx","fileSize":4096,"status":"succeeded"}}`)
 
@@ -79,6 +91,7 @@ func TestGenerateResultSummaryBuildsSanitizedDocumentFailure(t *testing.T) {
 func TestDefaultDocumentReportToolsArePolicyVisibleSubset(t *testing.T) {
 	allDocumentTools := []string{
 		ToolGenerateReportOutline,
+		ToolGenerateReportFromContent,
 		ToolRegenerateReportOutline,
 		ToolGenerateReportText,
 		ToolRegenerateReportText,
