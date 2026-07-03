@@ -8,6 +8,7 @@ import {
   Plus,
   RefreshCw,
   Rocket,
+  RotateCcw,
   Save,
   Settings2,
   XCircle,
@@ -791,6 +792,31 @@ export function ReportGeneratePage() {
     )
   }
 
+  const handleRestartDraft = () => {
+    writeReportGenerateSession(null)
+    setStep('draft')
+    setForm(createInitialReportForm())
+    setSelectedMaterialIds([])
+    setCurrentReport(null)
+    setActiveJobId(null)
+    setLastJob(null)
+    setLatestFile(null)
+    setActiveSectionId('')
+    setSectionDraft('')
+    setShowVersions(false)
+    setNotice(null)
+    setFormError(null)
+    setOutlineEditor({ future: [], nodes: [], past: [], sourceKey: '' })
+    createReportMutation.reset()
+    createJobMutation.reset()
+    saveOutlineMutation.reset()
+    saveSectionMutation.reset()
+    createFileMutation.reset()
+    retryJobMutation.reset()
+    cancelJobMutation.reset()
+    downloadMutation.reset()
+  }
+
   const handleCreateReport = async (event: FormEvent) => {
     event.preventDefault()
     setFormError(null)
@@ -1284,7 +1310,18 @@ export function ReportGeneratePage() {
                 )}
               </div>
 
-              <div className="mt-5 flex justify-end">
+              <div className="mt-5 flex justify-end gap-2">
+                {hasDraftPendingOutlineJob && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={createReportMutation.isPending || createJobMutation.isPending}
+                    onClick={handleRestartDraft}
+                  >
+                    <RotateCcw className="size-4" />
+                    重新开始
+                  </Button>
+                )}
                 <Button
                   type="submit"
                   disabled={
@@ -1348,7 +1385,7 @@ export function ReportGeneratePage() {
                   variant="empty"
                 />
               ) : (
-                <div className="max-h-80 space-y-2 overflow-y-auto">
+                <div aria-label="大纲章节列表" className="space-y-2">
                   {flattenedOutline.map(({ node, path }) => (
                     <div
                       key={node.id ?? node.clientSectionId ?? node.title}
@@ -1421,12 +1458,9 @@ export function ReportGeneratePage() {
                 />
               ) : (
                 <>
-                  <div
-                    aria-label="章节列表"
-                    className="min-h-0 lg:max-h-[620px] lg:overflow-y-auto lg:pr-1"
-                  >
+                  <div aria-label="章节列表" className="min-h-0">
                     <h2 className="mb-3 text-base font-semibold">章节列表</h2>
-                    <div className="max-h-64 space-y-2 overflow-y-auto">
+                    <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
                       {sections.map((section) => (
                         <button
                           key={section.id}

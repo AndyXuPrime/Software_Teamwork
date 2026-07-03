@@ -758,6 +758,14 @@ describe('ReportGeneratePage', () => {
 
     expect(await screen.findByText(/restore progress 1 \/ 2/)).toBeVisible()
     expect((await screen.findAllByText('restore-section-1')).length).toBeGreaterThan(0)
+    const sectionList = screen.getByLabelText('章节列表')
+    expect(sectionList).not.toHaveClass('lg:max-h-[620px]')
+    expect(sectionList).not.toHaveClass('lg:overflow-y-auto')
+    const sectionScroller = sectionList.querySelector('.space-y-2')
+    expect(sectionScroller).toBeInstanceOf(HTMLElement)
+    expect(sectionScroller).toHaveClass('max-h-[28rem]')
+    expect(sectionScroller).toHaveClass('overflow-y-auto')
+    expect(sectionScroller).not.toHaveClass('max-h-64')
 
     firstRender.unmount()
     renderWithProviders(<ReportGeneratePage />)
@@ -1036,6 +1044,11 @@ describe('ReportGeneratePage', () => {
     fireEvent.click(screen.getByRole('button', { name: /创建草稿/ }))
 
     const firstTitle = await screen.findByDisplayValue('总览')
+    const outlineList = firstTitle.closest('.space-y-2')
+    expect(outlineList).toBeInstanceOf(HTMLElement)
+    expect(outlineList).toHaveAttribute('aria-label', '大纲章节列表')
+    expect(outlineList).not.toHaveClass('max-h-80')
+    expect(outlineList).not.toHaveClass('overflow-y-auto')
     fireEvent.change(firstTitle, { target: { value: '总览修订' } })
     fireEvent.click(screen.getAllByRole('button', { name: /在此章节后新增同级章节/ })[0]!)
     expect(screen.getByDisplayValue('新章节')).toBeVisible()
@@ -1182,5 +1195,113 @@ describe('ReportGeneratePage', () => {
 
     await waitFor(() => expect(jobCreatePaths).toHaveLength(2))
     expect(reportCreatePaths).toHaveLength(1)
+  })
+
+  it('restarts from a kept draft and clears stale progress and outline state', async () => {
+    const reportCreatePaths: string[] = []
+    const jobCreatePaths: string[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (url.pathname.endsWith('/report-types')) {
+        return jsonResponse({ data: [reportType], requestId: 'req-types' })
+      }
+      if (url.pathname.endsWith('/report-templates')) {
+        return pageResponse([reportTemplate])
+      }
+      if (url.pathname.endsWith('/report-materials')) {
+        return pageResponse([reportMaterial])
+      }
+      if (request.method === 'POST' && url.pathname.endsWith('/reports')) {
+        reportCreatePaths.push(url.pathname)
+        const index = reportCreatePaths.length
+        return jsonResponse({
+          data: {
+            id: `rpt-restart-${index}`,
+            name: `迎峰度夏报告 ${index}`,
+            reportType: 'summer_peak_inspection',
+            status: 'draft',
+            templateId: 'tpl-real',
+          },
+          requestId: `req-create-report-${index}`,
+        })
+      }
+      if (
+        request.method === 'POST' &&
+        /^\/api\/v1\/reports\/rpt-restart-\d+\/jobs$/.test(url.pathname)
+      ) {
+        jobCreatePaths.push(url.pathname)
+        return gatewayError('dependency_error', 'Outline job dependency down', 'req-job')
+      }
+      if (url.pathname.endsWith('/reports/rpt-restart-1/outlines')) {
+        return jsonResponse({
+          data: [
+            {
+              createdAt: '2026-07-03T00:00:00Z',
+              id: 'outline-stale',
+              isCurrent: true,
+              reportId: 'rpt-restart-1',
+              sections: [{ id: 'node-stale', level: 1, numbering: '1', title: '旧大纲' }],
+              source: 'ai',
+              version: 1,
+            },
+          ],
+          requestId: 'req-outlines-stale',
+        })
+      }
+      if (
+        url.pathname.endsWith('/reports/rpt-restart-1/sections') ||
+        url.pathname.endsWith('/reports/rpt-restart-1/events') ||
+        url.pathname.endsWith('/reports/rpt-restart-2/outlines') ||
+        url.pathname.endsWith('/reports/rpt-restart-2/sections') ||
+        url.pathname.endsWith('/reports/rpt-restart-2/events')
+      ) {
+        return jsonResponse({ data: [], requestId: 'req-empty' })
+      }
+
+      return jsonResponse({ data: [], requestId: 'req-default' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithProviders(<ReportGeneratePage />)
+    const user = userEvent.setup()
+
+    const reportTrigger = screen.getAllByText('请选择报告类型')[0]!.closest('button')!
+    await user.click(reportTrigger)
+    const reportOption = await screen.findByRole('option', { name: '真实巡检报告' })
+    await user.click(reportOption)
+    await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
+
+    await user.click(screen.getByRole('button', { name: /创建草稿/ }))
+
+    expect(await screen.findByText(/已保留报告草稿/)).toBeVisible()
+    expect(screen.getByText('当前文档进度')).toBeVisible()
+    await waitFor(() => expect(window.sessionStorage.length).toBeGreaterThan(0))
+
+    await user.click(screen.getByRole('button', { name: /编辑大纲/ }))
+    expect(await screen.findByDisplayValue('旧大纲')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: /草稿与大纲/ }))
+    expect(screen.getByRole('button', { name: /复用草稿生成大纲/ })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: /重新开始/ }))
+
+    await waitFor(() => expect(screen.queryByText('当前文档进度')).not.toBeInTheDocument())
+    expect(screen.queryByText(/已保留报告草稿/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /复用草稿生成大纲/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled()
+    expect(window.sessionStorage.length).toBe(0)
+
+    await user.click(screen.getByRole('button', { name: /编辑大纲/ }))
+    expect(screen.queryByDisplayValue('旧大纲')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /草稿与大纲/ }))
+    await user.click(screen.getByRole('button', { name: /创建草稿/ }))
+
+    await waitFor(() => expect(reportCreatePaths).toHaveLength(2))
+    expect(jobCreatePaths).toEqual([
+      '/api/v1/reports/rpt-restart-1/jobs',
+      '/api/v1/reports/rpt-restart-2/jobs',
+    ])
   })
 })
