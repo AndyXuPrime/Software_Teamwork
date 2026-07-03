@@ -43,9 +43,9 @@ const retrievalTestPayloadSchema = z.object({
   retrieval: z
     .object({
       topK: z.number().int().min(1).max(100).optional(),
-      scoreThreshold: z.number().min(0).optional(),
+      scoreThreshold: z.number().min(0).max(1).optional(),
       enableRerank: z.boolean().optional(),
-      rerankThreshold: z.number().min(0).optional(),
+      rerankThreshold: z.number().min(0).max(1).optional(),
       rerankTopN: z.number().int().min(1).optional(),
     })
     .optional(),

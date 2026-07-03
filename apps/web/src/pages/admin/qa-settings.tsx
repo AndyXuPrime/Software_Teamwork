@@ -72,9 +72,9 @@ const qaPayloadSchema = z.object({
   knowledgeBases: z.array(knowledgeBaseSchema).optional(),
   retrieval: z.object({
     topK: z.number().int().min(1).optional(),
-    scoreThreshold: z.number().min(0).optional(),
+    scoreThreshold: z.number().min(0).max(1).optional(),
     enableRerank: z.boolean(),
-    rerankThreshold: z.number().min(0).optional(),
+    rerankThreshold: z.number().min(0).max(1).optional(),
     rerankTopN: z.number().int().min(1).optional(),
   }),
   maxIterations: z.number().int().min(1).optional(),
@@ -99,7 +99,7 @@ const llmPayloadSchema = z.object({
   profileId: z.string().min(1, 'profileId 不能为空'),
   modelName: z.string().min(1, 'modelName 不能为空'),
   timeoutSeconds: z.number().int().min(1).optional(),
-  temperature: z.number().optional(),
+  temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().int().min(1).optional(),
   activate: z.boolean(),
 }) satisfies z.ZodType<CreateQALLMConfigVersionRequest>

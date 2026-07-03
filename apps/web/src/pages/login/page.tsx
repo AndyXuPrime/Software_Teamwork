@@ -225,7 +225,7 @@ export function LoginPage() {
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 disabled={isSubmitting}
                 id="password"
-                minLength={8}
+                {...(mode !== 'login' ? { minLength: 8 } : {})}
                 placeholder=" "
                 type="password"
                 value={password}
