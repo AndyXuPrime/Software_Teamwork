@@ -169,8 +169,6 @@ function SelectTrigger({ className, children, id, ...props }: SelectTriggerProps
   } = useSelectContext()
   const highlightedValue =
     open && highlightedIndex >= 0 ? itemsRef.current[highlightedIndex] : undefined
-  const activeDescendant =
-    highlightedValue !== undefined ? `select-option-${highlightedValue}` : undefined
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // When already open, let the Content keydown handler manage navigation
@@ -199,7 +197,7 @@ function SelectTrigger({ className, children, id, ...props }: SelectTriggerProps
       aria-haspopup="listbox"
       aria-controls={open ? listboxId : undefined}
       aria-activedescendant={
-        activeDescendant !== undefined ? `${optionPrefix}${activeDescendant}` : undefined
+        highlightedValue !== undefined ? `${optionPrefix}${highlightedValue}` : undefined
       }
       onClick={() => {
         setOpen(!open)
