@@ -986,7 +986,8 @@ export function ChatPage() {
             // HTTP errors (401/403/404/502) mean the backend is alive — surface them.
             const isOffline =
               !firstToken && steps.length === 0 && !content && sseErr.code === 'network_error'
-            if (isOffline) {
+            // Only write mock if store still belongs to this session
+            if (isOffline && useChatStore.getState().activeId === uid) {
               useChatStore.setState((prev) => {
                 const msgs = [...(prev.messagesBySession[uid] ?? [])]
                 const lastIdx = msgs.length - 1
