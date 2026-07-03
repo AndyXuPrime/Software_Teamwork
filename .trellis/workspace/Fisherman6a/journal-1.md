@@ -147,3 +147,71 @@ Added env-gated Knowledge ingestion real dependency smoke and Gateway owner rout
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: F-038 QA empty session reuse
+
+**Date**: 2026-07-03
+**Task**: F-038 QA empty session reuse
+**Branch**: `Frontend/fix/qa-reuse-empty-chat-session`
+
+### Summary
+
+Implemented QA chat empty-session reuse, added regression coverage for repeated new-conversation clicks including cross-session streaming, and fixed frontend test storage setup so full unit tests pass.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f4f8c4d5` | (see git log) |
+| `fc6226db` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 6: F-038 review follow-up
+
+**Date**: 2026-07-03
+**Task**: F-038 review follow-up
+**Branch**: `Frontend/fix/qa-reuse-empty-chat-session`
+
+### Summary
+
+Addressed PR review feedback by scoping QA attachment upload state to the owning session, adding cross-session upload regression tests, and cleaning archived F-038 placeholder context rows.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `72e72fda` | (see git log) |
+| `c00fc391` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

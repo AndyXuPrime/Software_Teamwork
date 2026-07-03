@@ -8,8 +8,15 @@ import {
   getSessionAttachment,
   listSessionAttachments,
 } from '@/api/conversations'
-import { AttachmentList, AttachmentUploadStatus } from '@/components/chat'
-import { ChatInput, ChatMessages, ChatSidebar, useAttachmentUpload } from '@/components/chat'
+import {
+  AttachmentList,
+  AttachmentUploadStatus,
+  ChatInput,
+  ChatMessages,
+  ChatSidebar,
+  type UploadStateData,
+  useAttachmentUpload,
+} from '@/components/chat'
 import { ConfirmDialog } from '@/components/common'
 import {
   useCreateSession,
@@ -40,6 +47,8 @@ import { useChatStore } from '@/stores/chat-store'
 // Helpers
 // ══════════════════════════════════════════════════════════════════════════════
 
+const NEW_QA_SESSION_TITLE = '新对话'
+
 function nextId(): string {
   const cryptoSource = globalThis.crypto
   if (typeof cryptoSource?.randomUUID === 'function') {
@@ -50,6 +59,56 @@ function nextId(): string {
   }
   const bytes = cryptoSource.getRandomValues(new Uint8Array(16))
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+type ReusableEmptyNewSessionParams = {
+  activeId: string | null
+  attachmentsBySession: Record<string, SessionAttachmentSummary[]>
+  inputText: string
+  messagesBySession: Record<string, QAMessage[]>
+  sessions: QASession[]
+  uploadSessionId: string | null
+  uploadState: UploadStateData
+}
+
+function isUploadStateForSession(
+  uploadState: UploadStateData,
+  uploadSessionId: string | null,
+  sessionId: string,
+): boolean {
+  if (uploadState.phase === 'uploading') return uploadSessionId === sessionId
+  if (uploadState.phase === 'polling') return uploadState.attachment.sessionId === sessionId
+  return false
+}
+
+export function isReusableEmptyNewSession({
+  activeId,
+  attachmentsBySession,
+  inputText,
+  messagesBySession,
+  sessions,
+  uploadSessionId,
+  uploadState,
+}: ReusableEmptyNewSessionParams): boolean {
+  if (!activeId) return false
+  if (isUploadStateForSession(uploadState, uploadSessionId, activeId)) return false
+  if (inputText.trim().length > 0) return false
+
+  const session = sessions.find((item) => item.id === activeId)
+  if (!session || session.status !== 'active') return false
+
+  const title = session.title?.trim() ?? ''
+  if (title.length > 0 && title !== NEW_QA_SESSION_TITLE) return false
+  if ((session.messageCount ?? 0) > 0) return false
+  if ((session.lastMessagePreview ?? '').trim().length > 0) return false
+
+  const localMessages = messagesBySession[activeId] ?? []
+  if (localMessages.length > 0) return false
+
+  const visibleAttachments = (attachmentsBySession[activeId] ?? []).filter(
+    (attachment) => attachment.status !== 'failed' && attachment.status !== 'purged',
+  )
+  return visibleAttachments.length === 0
 }
 
 function toSessionListItem(s: QASession, messages: QAMessage[]): QASessionListItem {
@@ -425,7 +484,7 @@ export function ChatPage() {
     [removeAttachment],
   )
 
-  const { uploadState, uploadFile, dismissUpload } = useAttachmentUpload(
+  const { uploadState, uploadSessionId, uploadFile, dismissUpload } = useAttachmentUpload(
     activeId,
     handleAttachmentReady,
     handleAttachCleanup,
@@ -694,14 +753,43 @@ export function ChatPage() {
   // ══════════════════════════════════════════════════════════════════════════
 
   const handleCreate = useCallback(async () => {
+    if (createSessionMut.isPending) return
+
+    if (
+      isReusableEmptyNewSession({
+        activeId,
+        attachmentsBySession,
+        inputText,
+        messagesBySession,
+        sessions,
+        uploadSessionId,
+        uploadState,
+      })
+    ) {
+      setActiveId(activeId)
+      return
+    }
+
     try {
-      const newSession = await createSessionMut.mutateAsync('新对话')
+      const newSession = await createSessionMut.mutateAsync(NEW_QA_SESSION_TITLE)
       addSession(newSession)
       setActiveId(newSession.id)
     } catch {
       setError('创建会话失败，请检查网络连接')
     }
-  }, [createSessionMut, addSession, setActiveId, setError])
+  }, [
+    activeId,
+    addSession,
+    attachmentsBySession,
+    createSessionMut,
+    inputText,
+    messagesBySession,
+    sessions,
+    setActiveId,
+    setError,
+    uploadSessionId,
+    uploadState,
+  ])
 
   // ══════════════════════════════════════════════════════════════════════════
   // Delete session (only remove from UI on API success)
