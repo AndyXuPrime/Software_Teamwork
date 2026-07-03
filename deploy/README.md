@@ -109,8 +109,13 @@ goose migration 以及 `run-backend.sh` 中的 Go 服务 `go run`。如果
 `./scripts/local/dev-up.sh`：
 
 - 校验 `deploy/docker-compose.yml`。
-- 拉取并启动 `postgres`、`redis`、`qdrant`、`minio`、`minio-init`，并等待
+- 先检查同一宿主机环境中的 Docker、Go、`psql` 和必要的 `curl`，缺失时直接
+  在命令行报错，避免跑到 migration/seed 中途才失败。
+- 拉取 infra 镜像，启动并等待 `postgres`、`redis`、`qdrant`、`minio`
   Compose health checks 通过。
+- 单独运行一次性 `minio-init` 创建/校验 `software-teamwork-local` 和
+  `software-teamwork-knowledge` bucket；`minio-init` 正常退出不会阻断后续
+  migration/seed，非零失败时会提示查看 `docker compose logs minio-init`。
 - 如果 `QDRANT_URL` 已设置，则创建或校验 `QDRANT_COLLECTION`。
 - 在宿主机执行各服务 goose migration。
 - migration 前检查有效 Go module 配置；旧 `deploy/.env` 缺少 `GOPROXY` / `GOSUMDB`

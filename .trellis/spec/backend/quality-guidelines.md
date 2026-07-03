@@ -301,8 +301,10 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   the corresponding service log tail. This prevents `backend started` from
   hiding immediate `go run`, dependency download, port binding, or config
   failures.
-- `dev-up.sh` must wait for Compose infrastructure health before running host
-  migrations or seed SQL, for example with `docker compose up --wait`.
+- `dev-up.sh` must wait for long-running Compose infrastructure health before
+  running host migrations or seed SQL. One-shot infrastructure jobs such as
+  `minio-init` must run separately and use their own exit code so a normal
+  `Exited (0)` does not skip migrations or seed.
 - `dev-up.sh` must create or verify the default Knowledge Qdrant collection when
   `QDRANT_URL` is configured. The collection dimension must match
   `EMBEDDING_DIMENSION`, and the default distance is `Cosine`.
@@ -345,7 +347,7 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | --- | --- |
 | Compose YAML or env interpolation is invalid | `docker compose ... config --quiet` must fail before merge. |
 | Default Compose service list includes business services or profile services | Remove the service or update policy only if the team explicitly changes the Docker boundary. |
-| Host migrations or seed run before PostgreSQL/init scripts are ready | Add or restore an infra health wait in `scripts/local/dev-up.sh`; do not rely on plain `docker compose up -d`. |
+| Host migrations or seed run before PostgreSQL/init scripts are ready | Add or restore an infra health wait in `scripts/local/dev-up.sh`; do not rely on plain `docker compose up -d`. Run one-shot init jobs separately from `up --wait` and fail visibly if they exit non-zero. |
 | `QDRANT_URL` is set but the default collection is not created | Add or restore Qdrant collection initialization in `scripts/local/dev-up.sh`; do not make users create `knowledge_chunks` manually for the default path. |
 | Compose contains `build:` | Remove it; repository Docker must stay pull-only infra. |
 | Docker policy checker fails | Fix the Compose/docs/script regression or update `scripts/check_docker_policy.py` and the runbook in the same PR when the policy intentionally changes. |

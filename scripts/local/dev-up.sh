@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="$ROOT_DIR/deploy/.env"
 COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose.yml"
 CURRENT_STEP="initializing"
+INFRA_SERVICES=(postgres redis qdrant minio)
 
 on_exit() {
   status=$?
@@ -12,8 +13,19 @@ on_exit() {
     echo "local dev-up: completed successfully"
   else
     echo "local dev-up: failed during ${CURRENT_STEP} (exit ${status})" >&2
-    echo "Check Docker with: docker compose -f deploy/docker-compose.yml --env-file deploy/.env ps" >&2
-    echo "If Go module download failed, confirm deploy/.env contains GOPROXY and GOSUMDB." >&2
+    case "$CURRENT_STEP" in
+      "checking local tool dependencies")
+        echo "Install the missing host tool(s), then rerun ./scripts/local/dev-up.sh." >&2
+        ;;
+      "initializing MinIO buckets")
+        echo "Check MinIO initialization logs with: docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs minio-init" >&2
+        echo "Check Docker with: docker compose -f deploy/docker-compose.yml --env-file deploy/.env ps" >&2
+        ;;
+      *)
+        echo "Check Docker with: docker compose -f deploy/docker-compose.yml --env-file deploy/.env ps" >&2
+        echo "If Go module download failed, confirm deploy/.env contains GOPROXY and GOSUMDB." >&2
+        ;;
+    esac
   fi
 }
 trap on_exit EXIT
@@ -23,6 +35,34 @@ run_step() {
   shift
   echo "local dev-up: ${CURRENT_STEP}"
   "$@"
+  echo "local dev-up: ${CURRENT_STEP} succeeded"
+}
+
+check_required_commands() {
+  local missing=()
+  for command in docker go psql; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+      missing+=("$command")
+    fi
+  done
+  if [[ -n "${QDRANT_URL:-}" ]] && ! command -v curl >/dev/null 2>&1; then
+    missing+=(curl)
+  fi
+
+  if (( ${#missing[@]} > 0 )); then
+    echo "missing required local command(s): ${missing[*]}" >&2
+    echo "Install Docker, Go, psql, and curl in the same host environment that runs ./scripts/local/dev-up.sh." >&2
+    return 1
+  fi
+}
+
+run_minio_init() {
+  CURRENT_STEP="initializing MinIO buckets"
+  echo "local dev-up: ${CURRENT_STEP}"
+  if ! "${compose[@]}" up --no-deps --exit-code-from minio-init minio-init; then
+    echo "minio-init failed; inspect logs with: docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs minio-init" >&2
+    return 1
+  fi
   echo "local dev-up: ${CURRENT_STEP} succeeded"
 }
 
@@ -137,9 +177,11 @@ initialize_qdrant_collection() {
   esac
 }
 
+run_step "checking local tool dependencies" check_required_commands
 run_step "validating Docker Compose config" "${compose[@]}" config --quiet
 run_step "pulling infrastructure images" "${compose[@]}" pull
-run_step "starting infrastructure and waiting for health" "${compose[@]}" up -d --wait --wait-timeout "${LOCAL_INFRA_WAIT_TIMEOUT_SECONDS:-180}"
+run_step "starting infrastructure and waiting for health" "${compose[@]}" up -d --wait --wait-timeout "${LOCAL_INFRA_WAIT_TIMEOUT_SECONDS:-180}" "${INFRA_SERVICES[@]}"
+run_minio_init
 
 initialize_qdrant_collection
 run_step "checking Go module settings" ensure_go_module_settings

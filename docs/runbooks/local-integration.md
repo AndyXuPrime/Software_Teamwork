@@ -125,8 +125,11 @@ client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue
 
 ## 谁负责什么
 
-- `dev-up.sh`：infra pull/up、等待 Compose health checks、Qdrant collection
-  初始化、Go module 配置检查、migration、demo seed。
+- `dev-up.sh`：检查同一宿主机环境中的 Docker、Go、`psql` 和必要的 `curl`，
+  infra pull/up、等待 `postgres` / `redis` / `qdrant` / `minio` Compose
+  health checks、单独运行一次性 `minio-init`、Qdrant collection 初始化、
+  Go module 配置检查、migration、demo seed。`minio-init` 正常 `Exited (0)`
+  不应阻断后续步骤；非零失败时看 `docker compose logs minio-init`。
 - `run-backend.sh`：后端进程启动、日志和进程组 PID。Knowledge 使用 `cmd/adapter`
   调用宿主机 RAGFlow runtime API/worker。启动前会用当前 `deploy/.env` 对每个 Go
   服务执行 `go mod download` 预检；服务 fork 后默认观察 8 秒，若进程组很快退出，
