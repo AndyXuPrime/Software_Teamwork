@@ -1243,7 +1243,7 @@ export function ReportGeneratePage() {
                   <Input
                     type="number"
                     min={2000}
-                    max={2099}
+                    max={2100}
                     value={form.year}
                     onChange={(event) => updateForm('year', Number(event.target.value))}
                   />
