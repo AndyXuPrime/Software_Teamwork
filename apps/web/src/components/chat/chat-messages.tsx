@@ -176,10 +176,9 @@ function CitationTooltip({
             {effectiveCitations.map((citation) => {
               const documentId = citationDocumentId(citation)
               const source = (citation as QACitationDetail).source
-              const sourceAvailable =
-                source?.available === true || citation.isSourceAvailable === true
-              const sourceUnavailable =
-                source?.available === false || citation.isSourceAvailable === false
+              const sourceAvailability = source?.available ?? citation.isSourceAvailable
+              const sourceAvailable = sourceAvailability === true
+              const sourceUnavailable = sourceAvailability === false
               const score = formatPercent(citation.score)
               const rerankScore = formatPercent(citation.rerankScore)
               const content = citationContent(citation)

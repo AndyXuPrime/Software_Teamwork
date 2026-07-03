@@ -426,4 +426,19 @@ describe('ChatMessages citations', () => {
     expect(screen.queryByRole('button', { name: '下载原文' })).not.toBeInTheDocument()
   })
 
+  it('lets citation details override stale source availability summaries', async () => {
+    lookupCitations.mockResolvedValueOnce([
+      {
+        ...citation({ isSourceAvailable: true }),
+        content: '瀹屾暣鍘熸枃鍐呭',
+        source: { available: false, reason: 'source_revoked' },
+      },
+    ])
+
+    renderChat('鏉冮檺宸插彉鏇?[1]', [citation({ isSourceAvailable: true, text: undefined })])
+    fireEvent.click(screen.getAllByLabelText('查看引用 [1]')[0]!)
+
+    expect(await screen.findByText(/source_revoked/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '下载原文' })).not.toBeInTheDocument()
+  })
 })
