@@ -102,6 +102,7 @@ describe('AppLayout accessibility smoke', () => {
     const nav = screen.getByRole('navigation')
     const navLinks = within(nav).getAllByRole('link')
     const versionButton = screen.getByRole('button', { name: /^前端版本 v\d+\.\d+\.\d+/ })
+    const helpButton = screen.getByRole('button', { name: '打开帮助' })
     const logoutButton = screen.getByRole('button', { name: '退出登录' })
 
     expect(navLinks).toHaveLength(3)
@@ -121,6 +122,8 @@ describe('AppLayout accessibility smoke', () => {
     expect(navLinks[2]).toHaveFocus()
     await keyboard.tab()
     expect(versionButton).toHaveFocus()
+    await keyboard.tab()
+    expect(helpButton).toHaveFocus()
     await keyboard.tab()
     expect(screen.getByRole('link', { name: '打开个人资料' })).toHaveFocus()
     await keyboard.tab()
