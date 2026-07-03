@@ -55,6 +55,11 @@ Gateway readiness endpoints, and it does not prove upload, retrieval, QA
 answers, report generation, model profiles, or real provider calls are working.
 Use the local integration runbook smoke checks for those workflows.
 
+All non-empty service base URL variables must be absolute `http` or `https`
+URLs with a host and without credentials, query, or fragment. Blank owner
+service URLs remain allowed at config load time and make `/readyz` report the
+owner as not configured.
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -81,10 +86,10 @@ Use the local integration runbook smoke checks for those workflows.
 | `GATEWAY_INTERNAL_SERVICE_TOKEN` | unset | Internal service credential forwarded as `X-Service-Token` when configured. |
 | `GATEWAY_AUTH_ADMIN_SERVICE_TOKEN` | required | Gateway-only credential forwarded as `X-Service-Token` for Auth admin user-management routes and current-user profile/password write routes; must be non-empty and differ from `GATEWAY_INTERNAL_SERVICE_TOKEN`. |
 | `GATEWAY_AUTH_BASE_URL` | `http://localhost:8001` | Auth service base URL for user/session public routes. Must be an absolute `http` or `https` URL without credentials, query, or fragment. |
-| `GATEWAY_KNOWLEDGE_BASE_URL` | unset | Knowledge service base URL for knowledge-owned active routes. |
-| `GATEWAY_QA_BASE_URL` | unset | QA service base URL for QA-owned active routes. |
-| `GATEWAY_DOCUMENT_BASE_URL` | unset | Document service base URL for document-owned active routes. |
-| `GATEWAY_AI_GATEWAY_BASE_URL` | unset | AI Gateway base URL for admin model-profile routes. |
+| `GATEWAY_KNOWLEDGE_BASE_URL` | unset | Knowledge service base URL for knowledge-owned active routes. Must follow the service base URL rule above when non-empty. |
+| `GATEWAY_QA_BASE_URL` | unset | QA service base URL for QA-owned active routes. Must follow the service base URL rule above when non-empty. |
+| `GATEWAY_DOCUMENT_BASE_URL` | unset | Document service base URL for document-owned active routes. Must follow the service base URL rule above when non-empty. |
+| `GATEWAY_AI_GATEWAY_BASE_URL` | unset | AI Gateway base URL for admin model-profile routes. Must follow the service base URL rule above when non-empty. |
 
 ## Metrics
 

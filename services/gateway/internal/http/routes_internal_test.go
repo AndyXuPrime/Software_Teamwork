@@ -74,6 +74,45 @@ func TestActiveRouteMatrixCoversGatewayOwnerMap(t *testing.T) {
 	}
 }
 
+func TestValidateOwnerBaseURLsAcceptsSafeURLsAndEmptyValues(t *testing.T) {
+	values := map[string]string{
+		"knowledge":  "http://knowledge:8082",
+		"qa":         "https://qa.internal/base",
+		"document":   "",
+		"ai-gateway": "   ",
+	}
+
+	if err := ValidateOwnerBaseURLs(values); err != nil {
+		t.Fatalf("ValidateOwnerBaseURLs() error = %v", err)
+	}
+}
+
+func TestValidateOwnerBaseURLsRejectsUnsafeURLsWithoutEchoingRawURL(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "missing host", raw: "knowledge:8082"},
+		{name: "unsupported scheme", raw: "ftp://knowledge:8082"},
+		{name: "credentials", raw: "http://user:pass@knowledge:8082"},
+		{name: "query", raw: "http://knowledge:8082?token=secret"},
+		{name: "fragment", raw: "http://knowledge:8082#readyz"},
+		{name: "parse error", raw: "http://knowledge/%zz"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateOwnerBaseURLs(map[string]string{"knowledge": tt.raw})
+			if err == nil {
+				t.Fatal("ValidateOwnerBaseURLs() error = nil")
+			}
+			if strings.Contains(err.Error(), tt.raw) {
+				t.Fatalf("error leaked raw URL: %v", err)
+			}
+		})
+	}
+}
+
 func TestNotImplementedRoutesReturnStableGatewayError(t *testing.T) {
 	hasher, err := service.NewTokenHasher("test-secret", "v1")
 	if err != nil {

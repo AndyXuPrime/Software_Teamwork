@@ -61,6 +61,10 @@ func main() {
 		"document":   cfg.DocumentBaseURL,
 		"ai-gateway": cfg.AIGatewayBaseURL,
 	}
+	if err := gatewayhttp.ValidateOwnerBaseURLs(ownerBaseURLs); err != nil {
+		logger.Error("owner service base URL configuration failed", "service", "gateway", "error", err)
+		os.Exit(1)
+	}
 
 	handler := gatewayhttp.NewServer(gatewayhttp.Config{
 		Logger:                 logger,

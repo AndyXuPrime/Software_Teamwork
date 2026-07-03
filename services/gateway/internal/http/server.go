@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -188,6 +189,18 @@ func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func ValidateOwnerBaseURLs(values map[string]string) error {
+	for owner, raw := range values {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		if _, err := parseOwnerBaseURL(raw); err != nil {
+			return fmt.Errorf("%s owner base URL is invalid: %w", owner, err)
+		}
+	}
+	return nil
+}
+
 type healthResponse struct {
 	Status      string `json:"status"`
 	Service     string `json:"service"`
@@ -198,17 +211,40 @@ type healthResponse struct {
 func parseOwnerBaseURLs(values map[string]string) map[string]*url.URL {
 	parsed := make(map[string]*url.URL, len(values))
 	for owner, raw := range values {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			continue
-		}
-		u, err := url.Parse(raw)
-		if err != nil || u.Scheme == "" || u.Host == "" {
+		u, err := parseOwnerBaseURL(raw)
+		if err != nil || u == nil {
 			continue
 		}
 		parsed[owner] = u
 	}
 	return parsed
+}
+
+func parseOwnerBaseURL(raw string) (*url.URL, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("must be a valid absolute URL")
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return nil, fmt.Errorf("must include scheme and host")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("must use http or https scheme")
+	}
+	if u.User != nil {
+		return nil, fmt.Errorf("must not include credentials")
+	}
+	if u.RawQuery != "" {
+		return nil, fmt.Errorf("must not include query parameters")
+	}
+	if u.Fragment != "" {
+		return nil, fmt.Errorf("must not include fragment")
+	}
+	return u, nil
 }
 
 func cloneHTTPClientWithoutTimeout(client *http.Client) *http.Client {

@@ -103,6 +103,45 @@ func TestProtectedRouteSessionStoreFailureReturnsDependencyError(t *testing.T) {
 	}
 }
 
+func TestProxyTreatsUnsafeOwnerBaseURLAsNotConfigured(t *testing.T) {
+	hasher := testHasher(t)
+	store := newMemorySessionStore()
+	accessToken := "valid-token"
+	store.putToken(t, hasher, accessToken, service.SessionCacheEntry{
+		SessionID:   "sess_1",
+		UserID:      "usr_1",
+		Username:    "alice",
+		Roles:       []string{"admin"},
+		Permissions: []string{"knowledge:read"},
+		TokenType:   "Bearer",
+		ExpiresAt:   time.Now().Add(time.Hour).UTC(),
+	})
+
+	server := newGatewayTestServer(t, gatewayDeps{
+		store:         store,
+		hasher:        hasher,
+		ownerBaseURLs: map[string]string{"knowledge": "ftp://knowledge.internal"},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge-bases", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("X-Request-Id", "req_unsafe_owner_url")
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, req)
+
+	if res.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	var body errorBody
+	decodeJSON(t, res.Body, &body)
+	if body.Error.Code != "dependency_error" || body.Error.RequestID != "req_unsafe_owner_url" {
+		t.Fatalf("error = %+v", body.Error)
+	}
+	if strings.Contains(res.Body.String(), "ftp://") || strings.Contains(res.Body.String(), "knowledge.internal") {
+		t.Fatalf("response leaked unsafe owner URL: %s", res.Body.String())
+	}
+}
+
 func TestProxyInjectsAuthenticatedContextHeaders(t *testing.T) {
 	hasher := testHasher(t)
 	store := newMemorySessionStore()

@@ -214,7 +214,7 @@ smoke 和 #352 Auth/Gateway/Redis smoke 承担。
 | Endpoint | 说明 |
 | --- | --- |
 | `GET /healthz` | 进程存活检查，只表示 gateway 进程可响应。 |
-| `GET /readyz` | 轻量就绪检查，当前检查 Redis session cache、Auth `/readyz`，并确认 `knowledge`、`qa`、`document`、`ai-gateway` owner base URL 已配置。它不请求这些 owner services 的 `/readyz`，也不证明上传、检索、QA、报告生成、模型 profile 或真实 provider 调用已可用。 |
+| `GET /readyz` | 轻量就绪检查，当前检查 Redis session cache、Auth `/readyz`，并确认 `knowledge`、`qa`、`document`、`ai-gateway` owner base URL 已配置且非空配置通过安全格式校验。非空 owner base URL 必须是 absolute `http`/`https` URL，且不得包含 credentials、query 或 fragment。它不请求这些 owner services 的 `/readyz`，也不证明上传、检索、QA、报告生成、模型 profile 或真实 provider 调用已可用。 |
 
 ## 后续扩展
 

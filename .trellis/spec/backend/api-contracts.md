@@ -344,7 +344,8 @@ The current Gateway runtime readiness check covers:
 ```text
 Redis session cache readiness
 Auth /readyz
-Configured owner service base URLs for knowledge, qa, document, and ai-gateway
+Configured and syntax-validated owner service base URLs for knowledge, qa,
+document, and ai-gateway
 ```
 
 ### 3. Contracts
@@ -354,6 +355,10 @@ Configured owner service base URLs for knowledge, qa, document, and ai-gateway
   traffic. It must not become the full cross-service business smoke.
 - Gateway `/readyz` may check Gateway-owned runtime dependencies, Auth
   readiness, and owner base URL configuration needed for route dispatch.
+- Non-empty owner base URLs must be absolute `http` or `https` URLs with a
+  host and no credentials, query, or fragment. Invalid configured owner URLs
+  fail startup/config validation; direct server construction must still treat
+  invalid owner URLs as not configured without exposing the raw URL.
 - Gateway `/readyz` must not synchronously call every owner service readiness
   endpoint or run business workflows such as upload, retrieval, QA answer,
   report generation, AI Gateway provider smoke, or model-profile bootstrap.
@@ -371,7 +376,7 @@ Configured owner service base URLs for knowledge, qa, document, and ai-gateway
 | Redis session cache is unavailable | `/readyz` returns `503 dependency_error`; logs include request id and sanitized dependency name. |
 | Auth `/readyz` is unavailable | `/readyz` returns `503 dependency_error`; logs include request id and sanitized dependency name. |
 | Required owner base URL is missing or blank | `/readyz` returns `503 dependency_error` before claiming Gateway can route public traffic. |
-| Required owner base URL is non-empty but malformed | Current `/readyz` does not guarantee URL syntax validation; proxy routes fail with their normal sanitized dependency error if the URL cannot be parsed for routing. Add a code test before strengthening this contract. |
+| Required owner base URL is non-empty but malformed | Gateway startup/config validation rejects it with a sanitized owner/reason; if a server is constructed directly with an invalid owner URL, proxy routes treat that owner as not configured and return the normal sanitized dependency error. |
 | Owner service business workflow is unavailable after `/readyz` passed | The affected public API returns its normal sanitized dependency error; investigate with targeted smoke and request id, not by expanding `/readyz` into a full workflow probe. |
 | AI Gateway profile/provider credential is missing or placeholder | AI-dependent smoke or owner routes report the failure; Gateway `/readyz` is not the proof point. |
 
@@ -391,9 +396,10 @@ Configured owner service base URLs for knowledge, qa, document, and ai-gateway
 - Gateway handler tests must cover successful `/healthz`, successful `/readyz`,
   and failed `/readyz` returning `503 dependency_error` with request id.
 - When `gatewayReadyCheck` behavior changes, add or update unit tests for Redis,
-  Auth, and owner base URL failure classification. If readiness starts
-  rejecting malformed non-empty owner URLs, add a regression test for that
-  exact case in the same change.
+  Auth, and owner base URL failure classification. Owner base URL validation
+  tests must cover allowed `http`/`https` URLs, blank values, unsupported
+  schemes, credentials, query strings, fragments, missing hosts, and no raw URL
+  leakage in errors or public responses.
 - Documentation-only readiness changes must parse the changed Gateway OpenAPI
   files, run `python3 scripts/verify_gateway_active_api.py`, and run
   `git diff --check`.
