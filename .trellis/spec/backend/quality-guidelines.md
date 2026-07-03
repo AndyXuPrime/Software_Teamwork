@@ -280,9 +280,27 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   `deploy/.env.example` for mainland China developer networks. This covers
   `dev-up.sh` goose migrations and `run-backend.sh` Go service startups; it is
   separate from Docker registry rewrite and Knowledge runtime `UV_DEFAULT_INDEX`.
+- `dev-up.sh` should check effective Go module settings before host-run goose
+  migrations, and `run-backend.sh` should preflight Go module downloads with
+  `go mod download` for each host-run Go service before forking background
+  processes. If an old `deploy/.env` lacks Go mirror settings, the scripts may
+  use the repository default `GOPROXY` / `GOSUMDB` values for the current
+  process and tell the user to persist them locally. If module download still
+  fails, the script must fail in the terminal with the current effective values
+  and remediation hints instead of only writing `go run` errors to
+  `.local/logs/*.log`.
 - Host-run backend processes should be started in managed process groups and
   stopped by process group so `go run` or `uv run` wrapper processes do not
   leave child service binaries listening on local ports.
+- Local entrypoint scripts under `scripts/local/` must print clear command-line
+  status: starting, per-stage success where useful, final success, and final
+  failure with the current stage and next diagnostic location. Do not rely on
+  `set -e` alone or force users to infer failure from missing output.
+- After forking host-run backend services, `run-backend.sh` should watch a short
+  configurable startup window and report any process group that exits early with
+  the corresponding service log tail. This prevents `backend started` from
+  hiding immediate `go run`, dependency download, port binding, or config
+  failures.
 - `dev-up.sh` must wait for Compose infrastructure health before running host
   migrations or seed SQL, for example with `docker compose up --wait`.
 - `dev-up.sh` must create or verify the default Knowledge Qdrant collection when
@@ -332,7 +350,8 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | Compose contains `build:` | Remove it; repository Docker must stay pull-only infra. |
 | Docker policy checker fails | Fix the Compose/docs/script regression or update `scripts/check_docker_policy.py` and the runbook in the same PR when the policy intentionally changes. |
 | Retired parser paths or env keys reappear in startup scripts | Remove the parser dependency and route document parsing through `services/knowledge-runtime`. |
-| Go service startup logs show `Get "https://proxy.golang.org/...": i/o timeout` | Confirm the copied `deploy/.env` contains the repository `GOPROXY` / `GOSUMDB` defaults; if the mirror is unavailable, override only local `deploy/.env` or enterprise shell config. Do not hard-code script-level fallbacks. |
+| Local startup script exits without a success or failure summary | Add or restore explicit command-line status output in the script and local seed contract checker. |
+| Go module preflight, migration, or service startup shows `Get "https://proxy.golang.org/...": i/o timeout` | Confirm the copied `deploy/.env` contains the repository `GOPROXY` / `GOSUMDB` defaults; if missing, local scripts should use the repository default for the current process and print that decision. If the mirror is unavailable, override only local `deploy/.env` or enterprise shell config. The startup script should surface failures in the terminal and exit non-zero. |
 | `stop-backend.sh` only kills the wrapper PID | Start host services in a managed process group and stop the whole group; verify the script does not leave `go run` or `uv run` child services bound to ports. |
 | Seeded local AI Gateway profile uses `host.docker.internal` | Replace it with `http://localhost:11434/v1` for the host-run default path. |
 | Required Docker image is unavailable locally | Document `docker compose pull <service>` commands and report Docker runtime validation as skipped. |

@@ -192,7 +192,16 @@ migration 和 Go 后端启动走 Go 模块镜像，避免 `proxy.golang.org` / `
 `minio-init`，等待基础设施健康后创建/校验 Knowledge 的 Qdrant collection，
 再执行本机 migration 和 demo seed。
 `./scripts/local/run-backend.sh` 会启动 `auth`、`file`、`knowledge`、
-`ai-gateway`、`qa`、`document` 和 `gateway`，日志在 `.local/logs/`。
+`ai-gateway`、`qa`、`document` 和 `gateway`，日志在 `.local/logs/`。启动前会先
+对每个 Go 服务执行 `go mod download`；如果旧 `deploy/.env` 没写 Go 镜像，脚本会在
+本次进程使用仓库默认 `GOPROXY=https://goproxy.cn,direct` 和
+`GOSUMDB=sum.golang.google.cn`。如果 Go 镜像源或 checksum DB 仍不可达，脚本会在终端
+直接失败并打印当前有效 `GOPROXY` / `GOSUMDB`。服务 fork 后还会默认观察 8 秒，若某个
+进程组很快退出，会把对应 `.local/logs/<service>.log` 尾部直接汇总到终端；可用
+`LOCAL_BACKEND_STARTUP_CHECK_SECONDS` 调整观察窗口。
+`dev-up.sh`、`run-backend.sh` 和 `stop-backend.sh` 都会在命令行输出开始、成功和失败
+摘要；如果脚本失败，先看终端中的失败阶段，再看提示的 Docker 状态或 `.local/logs/`
+服务日志。
 
 `ai-gateway /readyz` 在 placeholder credential 下返回 `503 degraded` 是预期行为，
 不代表服务没起。默认本地模型 profile 指向宿主机 `http://localhost:11434/v1`。

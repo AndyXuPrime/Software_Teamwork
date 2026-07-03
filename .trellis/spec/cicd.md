@@ -906,9 +906,24 @@ Runtime rules:
   Go module proxy/checksum settings for mainland China developer networks. They
   affect `dev-up.sh` goose migrations and `run-backend.sh` Go service startup,
   not Docker image pulls or Knowledge runtime uv downloads.
+- `dev-up.sh` must check effective Go module settings before host-run goose
+  migrations, and `run-backend.sh` must preflight each host-run Go service with
+  `go mod download` before forking service processes. If an old `deploy/.env`
+  lacks Go mirror settings, local scripts may use the repository default
+  `GOPROXY` / `GOSUMDB` values for the current process and tell the user to
+  persist them locally. If module download fails, it should fail visibly in the
+  terminal with the current effective values and remediation guidance.
 - Host-run process management is part of the local startup contract:
   `run-backend.sh` should start service commands in managed process groups and
   `stop-backend.sh` should stop those process groups, not just wrapper PIDs.
+- Local entrypoint scripts under `scripts/local/` must print command-line status
+  for start, success, and failure. Failure output should include the current
+  stage and next diagnostic location so contributors are not misled by missing
+  or log-only errors.
+- After forking services, `run-backend.sh` should observe a short configurable
+  startup window and report early process exits with the relevant
+  `.local/logs/<service>.log` tail instead of unconditionally printing
+  `backend started`.
 - Seeded local AI Gateway profiles should use `http://localhost:11434/v1` for
   the host-run default path; container-only hostnames such as
   `host.docker.internal` must fail the local seed/startup contract.
