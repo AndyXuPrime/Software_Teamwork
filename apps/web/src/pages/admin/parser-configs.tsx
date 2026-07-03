@@ -113,8 +113,8 @@ function parserParameterString(
 
 function buildDefaultParameters(form: FormData, includePaddleOCRToken: boolean) {
   const defaultParameters: Record<string, unknown> = {
-    chunk_size: form.chunkSize,
-    chunk_overlap: form.chunkOverlap,
+    chunk_size: Math.min(Math.max(1, form.chunkSize), 100000),
+    chunk_overlap: Math.min(Math.max(0, form.chunkOverlap), 100000),
     separators: form.separators.trim()
       ? form.separators
           .split(',')
@@ -149,7 +149,7 @@ function formToCreateRequest(form: FormData): CreateParserConfigRequest {
   const params: CreateParserConfigRequest = {
     name: form.name,
     backend: form.backend,
-    concurrency: form.concurrency,
+    concurrency: Math.min(Math.max(1, form.concurrency), 128),
     enabled: form.enabled,
     isDefault: form.isDefault,
     defaultParameters: buildDefaultParameters(form, true),
@@ -174,7 +174,7 @@ function formToUpdateRequest(form: FormData): UpdateParserConfigRequest {
     backend: form.backend,
     enabled: form.enabled,
     isDefault: form.isDefault,
-    concurrency: form.concurrency,
+    concurrency: Math.min(Math.max(1, form.concurrency), 128),
     endpointUrl: form.backend === 'remote_compatible' ? form.endpointUrl.trim() || null : null,
     supportedContentTypes: form.fileTypes.trim()
       ? form.fileTypes
