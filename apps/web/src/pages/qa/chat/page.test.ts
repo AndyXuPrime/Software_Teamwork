@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   finalizeThinkingStepsOnAnswerCompleted,
+  sanitizeCitation,
   sanitizeThinkingStep,
   type ToolThinkingStep,
   upsertReasoningStep,
@@ -84,5 +85,42 @@ describe('ChatPage stream thinking helpers', () => {
 
     expect(finalized[0]).toMatchObject({ status: 'done', type: 'agent_iteration' })
     expect(finalized[1]).toMatchObject({ status: 'running', type: 'tool_call' })
+  })
+})
+
+describe('QA chat citation sanitizing', () => {
+  it('normalizes legacy citation document aliases', () => {
+    const citation = sanitizeCitation({
+      citationNo: 1,
+      docId: 'doc-legacy',
+      docName: 'Legacy Manual.pdf',
+      id: 'cite-1',
+      isSourceAvailable: true,
+      messageId: 'msg-1',
+      score: 0.91,
+      text: 'quoted text',
+    })
+
+    expect(citation.documentId).toBe('doc-legacy')
+    expect(citation.documentName).toBe('Legacy Manual.pdf')
+    expect(citation.docId).toBe('doc-legacy')
+    expect(citation.docName).toBe('Legacy Manual.pdf')
+    expect(citation.isSourceAvailable).toBe(true)
+  })
+
+  it('keeps canonical citation document fields preferred over aliases', () => {
+    const citation = sanitizeCitation({
+      docId: 'doc-legacy',
+      docName: 'Legacy Manual.pdf',
+      documentId: 'doc-canonical',
+      documentName: 'Canonical Manual.pdf',
+      id: 'cite-1',
+      messageId: 'msg-1',
+    })
+
+    expect(citation.documentId).toBe('doc-canonical')
+    expect(citation.documentName).toBe('Canonical Manual.pdf')
+    expect(citation.docId).toBe('doc-legacy')
+    expect(citation.docName).toBe('Legacy Manual.pdf')
   })
 })
