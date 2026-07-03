@@ -141,6 +141,9 @@ func (c *gitHubAppVersionChecker) CheckFreshness(ctx context.Context, currentSHA
 }
 
 func (c *gitHubAppVersionChecker) isAllowedCurrentSHA(currentSHA string) bool {
+	if len(c.allowedSHAs) == 0 {
+		return true
+	}
 	_, ok := c.allowedSHAs[currentSHA]
 	return ok
 }

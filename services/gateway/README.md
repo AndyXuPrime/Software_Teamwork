@@ -88,7 +88,7 @@ development loopback host such as `localhost`, `127.0.0.1`, or `[::1]`.
 | `GATEWAY_INTERNAL_SERVICE_TOKEN` | unset | Internal service credential forwarded as `X-Service-Token` when configured. |
 | `GATEWAY_AUTH_ADMIN_SERVICE_TOKEN` | required | Gateway-only credential forwarded as `X-Service-Token` for Auth admin user-management routes and current-user profile/password write routes; must be non-empty and differ from `GATEWAY_INTERNAL_SERVICE_TOKEN`. |
 | `GATEWAY_GITHUB_TOKEN` | unset | Optional backend-only GitHub token for app-version freshness checks. Never expose this value to the frontend. |
-| `GATEWAY_APP_VERSION_ALLOWED_SHAS` | unset | Comma-separated full 40-character frontend build SHAs that may trigger the GitHub compare check. Empty is the secure default and returns `unknown` without calling GitHub. |
+| `GATEWAY_APP_VERSION_ALLOWED_SHAS` | unset | Optional comma-separated full 40-character frontend build SHAs that may trigger the GitHub compare check. When unset, any valid full SHA can use the bounded freshness cache and compare check. When set, SHAs outside the list return `unknown` without calling GitHub. |
 | `GATEWAY_AUTH_BASE_URL` | `http://localhost:8001` | Auth service base URL for user/session public routes. Must be an absolute `http` or `https` URL without credentials, query, or fragment. |
 | `GATEWAY_KNOWLEDGE_BASE_URL` | unset | Knowledge service base URL for knowledge-owned active routes. Must follow the service base URL rule above when non-empty. |
 | `GATEWAY_QA_BASE_URL` | unset | QA service base URL for QA-owned active routes. Must follow the service base URL rule above when non-empty. |
