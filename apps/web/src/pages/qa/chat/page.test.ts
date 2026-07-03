@@ -1,12 +1,156 @@
 import { describe, expect, it } from 'vitest'
 
+import type { UploadStateData } from '@/components/chat'
+import type { QAMessage, QASession, SessionAttachmentSummary } from '@/lib/types'
+
 import {
   finalizeThinkingStepsOnAnswerCompleted,
+  isReusableEmptyNewSession,
   sanitizeCitation,
   sanitizeThinkingStep,
   type ToolThinkingStep,
   upsertReasoningStep,
 } from './page'
+
+const now = '2026-07-03T00:00:00.000Z'
+const idleUploadState: UploadStateData = { phase: 'idle' }
+
+function makeSession(overrides: Partial<QASession> = {}): QASession {
+  return {
+    id: 'session-1',
+    title: '新对话',
+    status: 'active',
+    messageCount: 0,
+    lastMessagePreview: '',
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  }
+}
+
+function makeMessage(overrides: Partial<QAMessage> = {}): QAMessage {
+  return {
+    id: 'message-1',
+    sessionId: 'session-1',
+    role: 'user',
+    status: 'completed',
+    content: '已有问题',
+    createdAt: now,
+    ...overrides,
+  }
+}
+
+function makeAttachment(
+  overrides: Partial<SessionAttachmentSummary> = {},
+): SessionAttachmentSummary {
+  return {
+    id: 'attachment-1',
+    sessionId: 'session-1',
+    filename: 'guide.pdf',
+    contentType: 'application/pdf',
+    sizeBytes: 128,
+    status: 'ready',
+    createdAt: now,
+    ...overrides,
+  }
+}
+
+function reusableParams(
+  overrides: Partial<Parameters<typeof isReusableEmptyNewSession>[0]> = {},
+): Parameters<typeof isReusableEmptyNewSession>[0] {
+  return {
+    activeId: 'session-1',
+    attachmentsBySession: {},
+    inputText: '',
+    messagesBySession: {},
+    sessions: [makeSession()],
+    uploadState: idleUploadState,
+    ...overrides,
+  }
+}
+
+describe('isReusableEmptyNewSession', () => {
+  it('allows reusing the active empty default conversation', () => {
+    expect(isReusableEmptyNewSession(reusableParams())).toBe(true)
+  })
+
+  it('rejects missing or renamed active conversations', () => {
+    expect(isReusableEmptyNewSession(reusableParams({ activeId: null }))).toBe(false)
+    expect(
+      isReusableEmptyNewSession(
+        reusableParams({
+          sessions: [makeSession({ title: '变压器巡检' })],
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it('rejects conversations with server or local messages', () => {
+    expect(
+      isReusableEmptyNewSession(
+        reusableParams({
+          sessions: [makeSession({ messageCount: 1 })],
+        }),
+      ),
+    ).toBe(false)
+    expect(
+      isReusableEmptyNewSession(
+        reusableParams({
+          messagesBySession: { 'session-1': [makeMessage()] },
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it('rejects visible attachments but ignores failed or purged attachments', () => {
+    expect(
+      isReusableEmptyNewSession(
+        reusableParams({
+          attachmentsBySession: { 'session-1': [makeAttachment()] },
+        }),
+      ),
+    ).toBe(false)
+    expect(
+      isReusableEmptyNewSession(
+        reusableParams({
+          attachmentsBySession: {
+            'session-1': [
+              makeAttachment({ id: 'failed-1', status: 'failed' }),
+              makeAttachment({ id: 'purged-1', status: 'purged' }),
+            ],
+          },
+        }),
+      ),
+    ).toBe(true)
+  })
+
+  it('rejects draft text, upload progress, and active streaming messages', () => {
+    expect(isReusableEmptyNewSession(reusableParams({ inputText: '未发送草稿' }))).toBe(false)
+    expect(
+      isReusableEmptyNewSession(
+        reusableParams({
+          uploadState: { phase: 'uploading', filename: 'guide.pdf' },
+        }),
+      ),
+    ).toBe(false)
+    expect(
+      isReusableEmptyNewSession(
+        reusableParams({
+          messagesBySession: {
+            'session-1': [
+              makeMessage({
+                content: '',
+                id: 'streaming-assistant',
+                role: 'assistant',
+                status: 'streaming',
+              }),
+            ],
+          },
+        }),
+      ),
+    ).toBe(false)
+  })
+})
 
 describe('ChatPage stream thinking helpers', () => {
   it('keeps same-type reasoning steps separated across iterations', () => {
