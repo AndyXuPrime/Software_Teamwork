@@ -217,3 +217,36 @@ Updated File service x/net dependency, removed CodeQL allocation and insecure ra
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Issue 550 local startup diagnostics acceptance
+
+**Date**: 2026-07-03
+**Task**: Issue 550 local startup diagnostics acceptance
+**Branch**: `Test/test/local-startup-diagnostics`
+
+### Summary
+
+Cleaned local Docker orphan containers, validated issue #550 local startup diagnostics paths, added the 2026-07-03 test report, opened PR #580, and commented the issue with verification evidence.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bfa30a72` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
