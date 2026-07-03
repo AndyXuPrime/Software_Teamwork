@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	githubDevelopCompareAPI = "https://api.github.com/repos/Sakayori-Iroha-168/Software_Teamwork/compare/"
-	appVersionCacheTTL      = 5 * time.Minute
+	githubDevelopCompareAPI   = "https://api.github.com/repos/Sakayori-Iroha-168/Software_Teamwork/compare/"
+	appVersionCacheTTL        = 5 * time.Minute
+	appVersionCacheMaxEntries = 128
 
 	appFreshnessCurrent   = "current"
 	appFreshnessDifferent = "different"
@@ -46,15 +47,16 @@ type AppVersionFreshness struct {
 }
 
 type gitHubAppVersionChecker struct {
-	apiURL    string
-	token     string
-	client    *http.Client
-	logger    *slog.Logger
-	cacheTTL  time.Duration
-	now       func() time.Time
-	cacheLock sync.Mutex
-	cache     map[string]gitHubFreshnessCacheEntry
-	inFlight  map[string]*gitHubFreshnessCall
+	apiURL          string
+	token           string
+	client          *http.Client
+	logger          *slog.Logger
+	cacheTTL        time.Duration
+	cacheMaxEntries int
+	now             func() time.Time
+	cacheLock       sync.Mutex
+	cache           map[string]gitHubFreshnessCacheEntry
+	inFlight        map[string]*gitHubFreshnessCall
 }
 
 type gitHubFreshnessCacheEntry struct {
@@ -88,24 +90,28 @@ func newGitHubAppVersionChecker(client *http.Client, logger *slog.Logger, token 
 		logger = slog.Default()
 	}
 	return &gitHubAppVersionChecker{
-		apiURL:   githubDevelopCompareAPI,
-		token:    strings.TrimSpace(token),
-		client:   client,
-		logger:   logger,
-		cacheTTL: appVersionCacheTTL,
-		now:      time.Now,
-		cache:    make(map[string]gitHubFreshnessCacheEntry),
-		inFlight: make(map[string]*gitHubFreshnessCall),
+		apiURL:          githubDevelopCompareAPI,
+		token:           strings.TrimSpace(token),
+		client:          client,
+		logger:          logger,
+		cacheTTL:        appVersionCacheTTL,
+		cacheMaxEntries: appVersionCacheMaxEntries,
+		now:             time.Now,
+		cache:           make(map[string]gitHubFreshnessCacheEntry),
+		inFlight:        make(map[string]*gitHubFreshnessCall),
 	}
 }
 
 func (s *Server) handleAppVersionFreshness(w http.ResponseWriter, r *http.Request) {
-	currentSHA := strings.TrimSpace(r.URL.Query().Get("currentSha"))
-	if len(currentSHA) > 128 {
+	currentSHA := normalizeCommitSHA(r.URL.Query().Get("currentSha"))
+	if currentSHA != "" && !isFullCommitSHA(currentSHA) {
 		response.WriteError(w, http.StatusBadRequest, response.ErrorDetail{
 			Code:      response.CodeValidation,
-			Message:   "currentSha is too long",
+			Message:   "currentSha must be a 40 character hexadecimal Git SHA",
 			RequestID: middleware.RequestIDFromContext(r.Context()),
+			Fields: map[string]string{
+				"currentSha": "must be a 40 character hexadecimal Git SHA",
+			},
 		})
 		return
 	}
@@ -130,10 +136,13 @@ func (c *gitHubAppVersionChecker) CheckFreshness(ctx context.Context, currentSHA
 
 func (c *gitHubAppVersionChecker) cachedFreshness(ctx context.Context, currentSHA string, checkedAt time.Time) AppVersionFreshness {
 	c.cacheLock.Lock()
-	if entry, ok := c.cache[currentSHA]; ok && checkedAt.Before(entry.expiresAt) {
-		freshness := entry.freshness
-		c.cacheLock.Unlock()
-		return freshness
+	if entry, ok := c.cache[currentSHA]; ok {
+		if checkedAt.Before(entry.expiresAt) {
+			freshness := entry.freshness
+			c.cacheLock.Unlock()
+			return freshness
+		}
+		delete(c.cache, currentSHA)
 	}
 	if call := c.inFlight[currentSHA]; call != nil {
 		c.cacheLock.Unlock()
@@ -154,6 +163,16 @@ func (c *gitHubAppVersionChecker) cachedFreshness(ctx context.Context, currentSH
 	freshness := c.fetchCompareFreshness(ctx, currentSHA, checkedAt)
 
 	c.cacheLock.Lock()
+	c.storeFreshnessLocked(currentSHA, freshness, checkedAt)
+	call.freshness = freshness
+	close(call.done)
+	delete(c.inFlight, currentSHA)
+	c.cacheLock.Unlock()
+
+	return freshness
+}
+
+func (c *gitHubAppVersionChecker) storeFreshnessLocked(currentSHA string, freshness AppVersionFreshness, checkedAt time.Time) {
 	if c.cache == nil {
 		c.cache = make(map[string]gitHubFreshnessCacheEntry)
 	}
@@ -161,12 +180,34 @@ func (c *gitHubAppVersionChecker) cachedFreshness(ctx context.Context, currentSH
 		freshness: freshness,
 		expiresAt: checkedAt.Add(c.cacheTTL),
 	}
-	call.freshness = freshness
-	close(call.done)
-	delete(c.inFlight, currentSHA)
-	c.cacheLock.Unlock()
+	c.pruneFreshnessCacheLocked(checkedAt)
+}
 
-	return freshness
+func (c *gitHubAppVersionChecker) pruneFreshnessCacheLocked(now time.Time) {
+	for key, entry := range c.cache {
+		if !now.Before(entry.expiresAt) {
+			delete(c.cache, key)
+		}
+	}
+
+	maxEntries := c.cacheMaxEntries
+	if maxEntries <= 0 {
+		maxEntries = appVersionCacheMaxEntries
+	}
+	for len(c.cache) > maxEntries {
+		var oldestKey string
+		var oldestExpiresAt time.Time
+		first := true
+		for key, entry := range c.cache {
+			if first || entry.expiresAt.Before(oldestExpiresAt) ||
+				(entry.expiresAt.Equal(oldestExpiresAt) && key < oldestKey) {
+				oldestKey = key
+				oldestExpiresAt = entry.expiresAt
+				first = false
+			}
+		}
+		delete(c.cache, oldestKey)
+	}
 }
 
 func (c *gitHubAppVersionChecker) fetchCompareFreshness(ctx context.Context, currentSHA string, checkedAt time.Time) AppVersionFreshness {
@@ -262,6 +303,19 @@ func unknownAppVersionFreshness(currentSHA string, checkedAt time.Time, reason s
 
 func normalizeCommitSHA(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func isFullCommitSHA(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, r := range value {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func gitHubStatusReason(statusCode int) string {

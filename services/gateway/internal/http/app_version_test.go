@@ -15,8 +15,8 @@ import (
 )
 
 func TestAppVersionFreshnessReturnsCurrentWhenBuildIncludesDevelop(t *testing.T) {
-	const latestSHA = "abcdef1234567890"
-	const currentSHA = "fedcba0987654321"
+	latestSHA := strings.Repeat("a", 40)
+	currentSHA := strings.Repeat("b", 40)
 	var capturedAuthorization string
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedAuthorization = r.Header.Get("Authorization")
@@ -57,13 +57,14 @@ func TestAppVersionFreshnessReturnsCurrentWhenBuildIncludesDevelop(t *testing.T)
 }
 
 func TestAppVersionFreshnessReturnsDifferentWhenCurrentSHAIsDevelopAncestor(t *testing.T) {
-	const latestSHA = "abcdef1234567890"
-	const currentSHA = "1111111111111111"
+	latestSHA := strings.Repeat("a", 40)
+	currentSHA := strings.Repeat("1", 40)
+	intermediateSHA := strings.Repeat("2", 40)
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/compare/"+currentSHA+"...develop" {
 			t.Fatalf("github path = %q", r.URL.Path)
 		}
-		writeAppVersionCompareResponse(t, w, currentSHA, currentSHA, []string{"2222222222222222", latestSHA}, 2, 0)
+		writeAppVersionCompareResponse(t, w, currentSHA, currentSHA, []string{intermediateSHA, latestSHA}, 2, 0)
 	}))
 	defer github.Close()
 
@@ -86,6 +87,7 @@ func TestAppVersionFreshnessReturnsDifferentWhenCurrentSHAIsDevelopAncestor(t *t
 }
 
 func TestAppVersionFreshnessFallsBackToUnknownOnGitHubForbidden(t *testing.T) {
+	currentSHA := strings.Repeat("a", 40)
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
@@ -93,7 +95,7 @@ func TestAppVersionFreshnessFallsBackToUnknownOnGitHubForbidden(t *testing.T) {
 	defer github.Close()
 
 	server := newAppVersionTestServer(t, github.URL, "")
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/app-version/freshness?currentSha=abcdef", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/app-version/freshness?currentSha="+currentSHA, nil)
 	req.Header.Set("X-Request-Id", "req_app_version_403")
 	res := httptest.NewRecorder()
 
@@ -106,15 +108,15 @@ func TestAppVersionFreshnessFallsBackToUnknownOnGitHubForbidden(t *testing.T) {
 	decodeAppVersionJSON(t, res.Body, &body)
 	if body.Data.Status != appFreshnessUnknown ||
 		body.Data.Reason != appFreshnessReasonGitHub403 ||
-		body.Data.CurrentSHA != "abcdef" ||
+		body.Data.CurrentSHA != currentSHA ||
 		body.Data.LatestSHA != "" {
 		t.Fatalf("freshness = %+v", body.Data)
 	}
 }
 
 func TestAppVersionFreshnessCachesFreshnessByCurrentSHA(t *testing.T) {
-	const latestSHA = "abcdef1234567890"
-	const currentSHA = "1111111111111111"
+	latestSHA := strings.Repeat("a", 40)
+	currentSHA := strings.Repeat("1", 40)
 	calls := 0
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -137,8 +139,8 @@ func TestAppVersionFreshnessCachesFreshnessByCurrentSHA(t *testing.T) {
 }
 
 func TestAppVersionFreshnessCoalescesConcurrentGitHubRequests(t *testing.T) {
-	const latestSHA = "abcdef1234567890"
-	const currentSHA = "1111111111111111"
+	latestSHA := strings.Repeat("a", 40)
+	currentSHA := strings.Repeat("1", 40)
 	var calls int64
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -180,26 +182,135 @@ func TestAppVersionFreshnessCoalescesConcurrentGitHubRequests(t *testing.T) {
 	}
 }
 
-func TestAppVersionFreshnessRejectsLongCurrentSHA(t *testing.T) {
-	server := newAppVersionTestServer(t, "https://github.test/not-called", "")
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/app-version/freshness?currentSha="+strings.Repeat("a", 129), nil)
-	req.Header.Set("X-Request-Id", "req_app_version_validation")
-	res := httptest.NewRecorder()
+func TestAppVersionFreshnessRejectsInvalidCurrentSHAWithoutGitHubCall(t *testing.T) {
+	githubCalls := 0
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		githubCalls++
+		t.Fatalf("GitHub should not be called for invalid currentSha")
+	}))
+	defer github.Close()
 
-	server.ServeHTTP(res, req)
+	server := newAppVersionTestServer(t, github.URL, "")
+	tests := []struct {
+		name       string
+		currentSHA string
+	}{
+		{name: "short", currentSHA: strings.Repeat("a", 39)},
+		{name: "long", currentSHA: strings.Repeat("a", 41)},
+		{name: "non hex", currentSHA: strings.Repeat("a", 39) + "g"},
+		{name: "punctuation", currentSHA: strings.Repeat("a", 39) + "!"},
+	}
 
-	if res.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/app-version/freshness?currentSha="+tt.currentSHA, nil)
+			req.Header.Set("X-Request-Id", "req_app_version_validation")
+			res := httptest.NewRecorder()
+
+			server.ServeHTTP(res, req)
+
+			if res.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+			}
+			var body struct {
+				Error struct {
+					Code      string            `json:"code"`
+					RequestID string            `json:"requestId"`
+					Fields    map[string]string `json:"fields"`
+				} `json:"error"`
+			}
+			decodeAppVersionJSON(t, res.Body, &body)
+			if body.Error.Code != "validation_error" ||
+				body.Error.RequestID != "req_app_version_validation" ||
+				body.Error.Fields["currentSha"] == "" {
+				t.Fatalf("error = %+v", body.Error)
+			}
+		})
 	}
-	var body struct {
-		Error struct {
-			Code      string `json:"code"`
-			RequestID string `json:"requestId"`
-		} `json:"error"`
+
+	if githubCalls != 0 {
+		t.Fatalf("GitHub calls = %d, want 0", githubCalls)
 	}
-	decodeAppVersionJSON(t, res.Body, &body)
-	if body.Error.Code != "validation_error" || body.Error.RequestID != "req_app_version_validation" {
-		t.Fatalf("error = %+v", body.Error)
+}
+
+func TestAppVersionFreshnessEvictsOldestCacheEntryWhenCapacityExceeded(t *testing.T) {
+	now := time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC)
+	calls := 0
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		currentSHA := strings.TrimPrefix(r.URL.Path, "/compare/")
+		currentSHA = strings.TrimSuffix(currentSHA, "...develop")
+		writeAppVersionCompareResponse(t, w, currentSHA, currentSHA, nil, 0, 0)
+	}))
+	defer github.Close()
+
+	checker := newAppVersionTestChecker(t, github.URL, "")
+	checker.cacheMaxEntries = 2
+	checker.now = func() time.Time {
+		return now
+	}
+	shas := []string{
+		strings.Repeat("1", 40),
+		strings.Repeat("2", 40),
+		strings.Repeat("3", 40),
+	}
+
+	for _, sha := range shas {
+		now = now.Add(time.Second)
+		freshness := checker.CheckFreshness(context.Background(), sha)
+		if freshness.Status != appFreshnessCurrent {
+			t.Fatalf("freshness = %+v", freshness)
+		}
+	}
+
+	checker.cacheLock.Lock()
+	cacheLen := len(checker.cache)
+	_, firstCached := checker.cache[shas[0]]
+	checker.cacheLock.Unlock()
+	if cacheLen != 2 {
+		t.Fatalf("cache entries = %d, want 2", cacheLen)
+	}
+	if firstCached {
+		t.Fatalf("oldest cache entry was not evicted")
+	}
+
+	now = now.Add(time.Second)
+	_ = checker.CheckFreshness(context.Background(), shas[0])
+	if calls != 4 {
+		t.Fatalf("GitHub calls = %d, want 4", calls)
+	}
+}
+
+func TestAppVersionFreshnessPrunesExpiredCacheEntries(t *testing.T) {
+	now := time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC)
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		currentSHA := strings.TrimPrefix(r.URL.Path, "/compare/")
+		currentSHA = strings.TrimSuffix(currentSHA, "...develop")
+		writeAppVersionCompareResponse(t, w, currentSHA, currentSHA, nil, 0, 0)
+	}))
+	defer github.Close()
+
+	checker := newAppVersionTestChecker(t, github.URL, "")
+	checker.cacheTTL = time.Minute
+	checker.cacheMaxEntries = 10
+	checker.now = func() time.Time {
+		return now
+	}
+	expiredSHA := strings.Repeat("4", 40)
+	currentSHA := strings.Repeat("5", 40)
+
+	_ = checker.CheckFreshness(context.Background(), expiredSHA)
+	now = now.Add(2 * time.Minute)
+	_ = checker.CheckFreshness(context.Background(), currentSHA)
+
+	checker.cacheLock.Lock()
+	_, expiredCached := checker.cache[expiredSHA]
+	_, currentCached := checker.cache[currentSHA]
+	cacheLen := len(checker.cache)
+	checker.cacheLock.Unlock()
+
+	if expiredCached || !currentCached || cacheLen != 1 {
+		t.Fatalf("cache expired=%t current=%t entries=%d", expiredCached, currentCached, cacheLen)
 	}
 }
 

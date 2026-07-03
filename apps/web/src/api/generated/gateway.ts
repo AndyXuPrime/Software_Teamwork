@@ -57,6 +57,9 @@ export interface paths {
          *     GitHub API directly and never receive the token. If GitHub returns 403,
          *     404, 429, a network error, or an invalid response, the endpoint still
          *     returns 200 with `data.status=unknown` and a short safe `reason`.
+         *     Missing or blank `currentSha` is treated as an unknown build. Non-empty
+         *     values must be complete 40-character hexadecimal Git SHAs and are
+         *     rejected before any GitHub request or cache write when invalid.
          */
         get: operations["getAppVersionFreshness"];
         put?: never;
@@ -3379,7 +3382,7 @@ export interface operations {
     getAppVersionFreshness: {
         parameters: {
             query?: {
-                /** @description Current frontend build commit SHA injected at build time. */
+                /** @description Current frontend build commit SHA injected at build time. Omit or send blank when unavailable; otherwise send the full 40-character hexadecimal SHA. */
                 currentSha?: string;
             };
             header?: never;
