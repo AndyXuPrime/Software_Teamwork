@@ -56,7 +56,7 @@ export function ReportRecordsPage() {
           </p>
         </div>
         {canWriteReports && (
-          <Button render={<Link to="/reports/generate" />}>
+          <Button nativeButton={false} render={<Link to="/reports/generate" />}>
             <FilePlus2 className="size-4" />
             新建报告
           </Button>
