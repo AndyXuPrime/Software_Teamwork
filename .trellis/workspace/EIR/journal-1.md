@@ -176,3 +176,44 @@ Handled review follow-ups for the infra-only local startup PR: Qdrant collection
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Resolve security alerts 17 18 39
+
+**Date**: 2026-07-02
+**Task**: Resolve security alerts 17 18 39
+**Branch**: `fix/security-alerts-17-18-39`
+
+### Summary
+
+Updated File service x/net dependency, removed CodeQL allocation and insecure randomness patterns, added host Go module proxy defaults, refreshed docs/specs, and archived the Trellis task.
+
+### Main Changes
+
+- Upgraded `services/file` to `golang.org/x/net v0.55.0`.
+- Reworked QA citation metadata marshaling to avoid CodeQL allocation-size arithmetic and added focused repository tests.
+- Replaced QA chat `Math.random()` IDs with Web Crypto.
+- Added `GOPROXY` / `GOSUMDB` defaults to `deploy/.env.example`, docs, contract checks, and Trellis specs.
+- Archived `.trellis/tasks/07-02-security-alerts-17-18-39`.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `af69a36` | (see git log) |
+
+### Testing
+
+- [OK] `services/file`: `go test ./...`, `go build ./cmd/server`.
+- [OK] `services/qa`: `go test ./...`, `go build ./cmd/server`, `go build ./cmd/agent`.
+- [OK] Frontend: `bun run --cwd apps/web check`, `build`, `test:unit`.
+- [OK] Deploy contracts: local seed checker/tests, Docker policy/tests, Compose config, `git diff --check`.
+- [WARN] Frontend E2E browser binary was installed through npmmirror cache, but local Chromium system dependencies such as `libatk-1.0.so.0` are missing and `sudo` is unavailable for `playwright install-deps chromium`.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

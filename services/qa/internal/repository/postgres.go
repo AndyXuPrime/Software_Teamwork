@@ -606,7 +606,7 @@ func nullableInt(value *int) any {
 }
 
 func marshalCitationMetadata(item service.Citation) ([]byte, error) {
-	metadata := make(map[string]any, len(item.Metadata)+1)
+	metadata := map[string]any{}
 	for key, value := range item.Metadata {
 		metadata[key] = value
 	}
