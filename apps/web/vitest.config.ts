@@ -3,7 +3,17 @@ import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
+import { readAppPackageVersion, readGitCommitSha } from './app-version.config.ts'
+
+const appVersion = readAppPackageVersion()
+const appCommitSha = readGitCommitSha()
+
 export default defineConfig({
+  define: {
+    __APP_COMMIT_SHA__: JSON.stringify(appCommitSha),
+    __APP_COMMIT_SHORT_SHA__: JSON.stringify(appCommitSha.slice(0, 8)),
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   plugins: [react()],
   resolve: {
     alias: {

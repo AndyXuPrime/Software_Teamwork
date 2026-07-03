@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event'
 import type { AnchorHTMLAttributes, ReactNode, Ref } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AppVersionBadge } from '@/components/common/app-version-badge'
+import { APP_UPDATE_COMMAND, type AppFreshnessResult } from '@/lib/app-version'
 import type { UserSummary } from '@/lib/types'
 import { useAuthStore } from '@/stores/auth-store'
 import { renderWithProviders } from '@/test/render'
@@ -99,12 +101,14 @@ describe('AppLayout accessibility smoke', () => {
 
     const nav = screen.getByRole('navigation')
     const navLinks = within(nav).getAllByRole('link')
-    const logoutButton = screen.getByRole('button')
+    const versionButton = screen.getByRole('button', { name: /^前端版本 v\d+\.\d+\.\d+/ })
+    const logoutButton = screen.getByRole('button', { name: '退出登录' })
 
     expect(navLinks).toHaveLength(3)
     navLinks.forEach((link) => {
       expect(link).toHaveAccessibleName(/.+/)
     })
+    expect(versionButton).toHaveTextContent(/^v\d+\.\d+\.\d+$/)
     expect(logoutButton).toHaveAccessibleName(/.+/)
 
     await keyboard.tab()
@@ -115,6 +119,8 @@ describe('AppLayout accessibility smoke', () => {
     expect(routerMocks.navigate).toHaveBeenCalledWith({ to: '/reports' })
     await keyboard.tab()
     expect(navLinks[2]).toHaveFocus()
+    await keyboard.tab()
+    expect(versionButton).toHaveFocus()
     await keyboard.tab()
     expect(screen.getByRole('link', { name: '打开个人资料' })).toHaveFocus()
     await keyboard.tab()
@@ -158,5 +164,33 @@ describe('AppLayout accessibility smoke', () => {
 
     const nav = screen.getByRole('navigation')
     expect(within(nav).getByRole('link', { name: '管理' })).toBeVisible()
+  })
+
+  it('uses a stable fallback label when the version source is empty', () => {
+    renderWithProviders(<AppVersionBadge version="" />)
+
+    expect(screen.getByRole('button', { name: /^前端版本 v0\.0\.0/ })).toHaveTextContent('v0.0.0')
+  })
+
+  it('checks upstream develop and shows the update command when commits differ', async () => {
+    const checkLatest = vi.fn<() => Promise<AppFreshnessResult>>().mockResolvedValue({
+      checkedAt: new Date('2026-07-03T00:00:00.000Z'),
+      commitsAhead: 0,
+      commitsBehind: 2,
+      currentSha: '1111111111111111111111111111111111111111',
+      latestSha: '2222222222222222222222222222222222222222',
+      latestUrl: 'https://github.com/Sakayori-Iroha-168/Software_Teamwork/commit/2222222',
+      status: 'different',
+    })
+    const pointer = userEvent.setup()
+
+    renderWithProviders(<AppVersionBadge checkLatest={checkLatest} />)
+
+    await pointer.click(screen.getByRole('button', { name: /^前端版本/ }))
+
+    expect(await screen.findByText('当前构建落后 develop 2 个提交')).toBeVisible()
+    expect(screen.getByText('2 个')).toBeVisible()
+    expect(screen.getByText(APP_UPDATE_COMMAND)).toBeVisible()
+    expect(checkLatest).toHaveBeenCalledOnce()
   })
 })

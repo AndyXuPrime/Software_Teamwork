@@ -5,7 +5,7 @@
     "": {},
     "apps/web": {
       "name": "web",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@base-ui/react": "^1.6.0",
         "@radix-ui/react-collapsible": "^1.1.14",

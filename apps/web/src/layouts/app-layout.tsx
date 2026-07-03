@@ -3,6 +3,7 @@ import { Loader2, LogOut, RefreshCw, ShieldAlert, UserRound } from 'lucide-react
 import { type PropsWithChildren, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { apiClient } from '@/api/client'
+import { AppVersionBadge } from '@/components/common/app-version-badge'
 import { Button } from '@/components/ui/button'
 import { adminShellAccess } from '@/lib/access'
 import type { PermissionRequirement } from '@/lib/permissions'
@@ -155,31 +156,34 @@ export function AppLayout({ children }: PropsWithChildren) {
           <span className="truncate text-sm font-semibold">{currentLabel}</span>
         </div>
 
-        <nav
-          aria-label="主导航"
-          className="relative flex items-center gap-1 rounded-lg bg-muted/50 p-1 text-sm"
-        >
-          {/* Sliding pill */}
-          <div
-            aria-hidden
-            className="absolute top-1 h-[calc(100%-8px)] rounded-md bg-background shadow-sm transition-all duration-300 ease-out"
-            style={{ left: sliderStyle.left, width: sliderStyle.width }}
-          />
-          {visibleNavItems.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              ref={(el) => {
-                navRefs.current[item.to] = el as HTMLAnchorElement | null
-              }}
-              className="relative z-10 rounded-md px-3 py-1.5 transition-colors hover:text-foreground"
-              activeProps={{ className: 'text-foreground font-medium' }}
-              inactiveProps={{ className: 'text-muted-foreground' }}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <div className="flex shrink-0 items-center gap-2">
+          <nav
+            aria-label="主导航"
+            className="relative flex items-center gap-1 rounded-lg bg-muted/50 p-1 text-sm"
+          >
+            {/* Sliding pill */}
+            <div
+              aria-hidden
+              className="absolute top-1 h-[calc(100%-8px)] rounded-md bg-background shadow-sm transition-all duration-300 ease-out"
+              style={{ left: sliderStyle.left, width: sliderStyle.width }}
+            />
+            {visibleNavItems.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                ref={(el) => {
+                  navRefs.current[item.to] = el as HTMLAnchorElement | null
+                }}
+                className="relative z-10 rounded-md px-3 py-1.5 transition-colors hover:text-foreground"
+                activeProps={{ className: 'text-foreground font-medium' }}
+                inactiveProps={{ className: 'text-muted-foreground' }}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+          <AppVersionBadge className="hidden lg:inline-flex" />
+        </div>
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Link

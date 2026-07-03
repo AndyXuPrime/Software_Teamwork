@@ -214,7 +214,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a document to a knowledge base
-         * @description Gateway exposes the knowledge-base document upload workflow. Knowledge service owns the document resource, knowledge-base association, metadata, ingestion state, chunks, embeddings, and retrieval lifecycle, and may call file service internally for the raw file object. Report templates, report materials, and generated report files are separate document-owned resources and must not be modeled through this path.
+         * @description Gateway exposes the knowledge-base document upload workflow. Knowledge service owns the document resource, knowledge-base association, metadata, ingestion state, chunks, embeddings, and retrieval lifecycle through its runtime adapter. Report templates, report materials, and generated report files are separate document-owned resources and must not be modeled through this path.
          */
         post: operations["uploadKnowledgeBaseDocument"];
         delete?: never;
@@ -278,7 +278,7 @@ export interface paths {
         };
         /**
          * Get original document content
-         * @description Return the original knowledge document content through gateway. Knowledge service owns the document content resource and may read the underlying bytes from file service internally.
+         * @description Return the original knowledge document content through gateway. Knowledge service owns the document content resource and serves it through the Knowledge runtime boundary.
          */
         get: operations["getDocumentContent"];
         put?: never;
