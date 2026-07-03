@@ -8,6 +8,60 @@ import (
 	"time"
 )
 
+func TestNewAcceptsConfiguredAuthBaseURLs(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		wantNil bool
+	}{
+		{name: "empty", baseURL: "", wantNil: true},
+		{name: "http service name", baseURL: "http://auth:8001"},
+		{name: "http localhost", baseURL: "http://localhost:8001"},
+		{name: "https internal dns", baseURL: "https://auth.example.internal"},
+		{name: "trimmed", baseURL: "  http://auth:8001  "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := New(tt.baseURL, "svc-token", "gateway-token", time.Second)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			if tt.wantNil {
+				if client != nil {
+					t.Fatal("New() client is non-nil")
+				}
+				return
+			}
+			if client == nil {
+				t.Fatal("New() client is nil")
+			}
+		})
+	}
+}
+
+func TestNewRejectsUnsafeAuthBaseURLs(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+	}{
+		{name: "missing scheme", baseURL: "auth:8001"},
+		{name: "relative path", baseURL: "/internal"},
+		{name: "unsupported scheme", baseURL: "ftp://auth:8001"},
+		{name: "credentials", baseURL: "http://user:pass@auth:8001"},
+		{name: "query", baseURL: "http://auth:8001?token=secret"},
+		{name: "fragment", baseURL: "http://auth:8001#readyz"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if client, err := New(tt.baseURL, "svc-token", "gateway-token", time.Second); err == nil {
+				t.Fatalf("New() error = nil, client = %#v", client)
+			}
+		})
+	}
+}
+
 func TestCreateSessionSendsGatewayForwardingContext(t *testing.T) {
 	var forwardedFor string
 	var forwardedProto string
