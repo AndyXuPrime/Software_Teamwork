@@ -544,7 +544,7 @@ describe('ReportGeneratePage', () => {
     const user = userEvent.setup()
 
     // Open the report-type Select and pick the first option
-    const reportTrigger = screen.getByText('请选择报告类型').closest('button')!
+    const reportTrigger = screen.getAllByText('请选择报告类型')[0]!.closest('button')!
     await user.click(reportTrigger)
     const option = await screen.findByRole('option', { name: '真实巡检报告' })
     await user.click(option)
@@ -606,7 +606,7 @@ describe('ReportGeneratePage', () => {
     const user = userEvent.setup()
 
     // Open the report-type Select and pick the first option
-    const reportTrigger = screen.getByText('请选择报告类型').closest('button')!
+    const reportTrigger = screen.getAllByText('请选择报告类型')[0]!.closest('button')!
     await user.click(reportTrigger)
     const reportOption = await screen.findByRole('option', { name: '真实巡检报告' })
     await user.click(reportOption)
