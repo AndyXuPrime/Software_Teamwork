@@ -108,7 +108,12 @@ function zodErrorMessage(error: z.ZodError): string {
   return error.issues.map((issue) => issue.message).join('；')
 }
 
-function optionalNumber(value: string, label: string, min?: number): number | undefined {
+function optionalNumber(
+  value: string,
+  label: string,
+  min?: number,
+  max?: number,
+): number | undefined {
   const normalized = value.trim()
   if (normalized === '') return undefined
 
@@ -120,12 +125,20 @@ function optionalNumber(value: string, label: string, min?: number): number | un
   if (min !== undefined && parsed < min) {
     throw new Error(`${label} 不能小于 ${min}`)
   }
+  if (max !== undefined && parsed > max) {
+    throw new Error(`${label} 不能大于 ${max}`)
+  }
 
   return parsed
 }
 
-function optionalInteger(value: string, label: string, min?: number): number | undefined {
-  const parsed = optionalNumber(value, label, min)
+function optionalInteger(
+  value: string,
+  label: string,
+  min?: number,
+  max?: number,
+): number | undefined {
+  const parsed = optionalNumber(value, label, min, max)
   if (parsed !== undefined && !Number.isInteger(parsed)) {
     throw new Error(`${label} 必须是整数`)
   }
@@ -213,10 +226,10 @@ function buildQAPayload(form: QAFormState): CreateQAConfigVersionRequest {
   const knowledgeBases = parseKnowledgeBases(form.knowledgeBases)
   const enabledToolNames = splitLines(form.enabledToolNames)
   const defaultKnowledgeBaseIds = splitLines(form.defaultKnowledgeBaseIds)
-  const maxIterations = optionalInteger(form.maxIterations, '最大迭代次数', 1)
-  const toolTimeoutSeconds = optionalInteger(form.toolTimeoutSeconds, '工具超时', 1)
-  const modelTimeoutSeconds = optionalInteger(form.modelTimeoutSeconds, '模型超时', 1)
-  const overallTimeoutSeconds = optionalInteger(form.overallTimeoutSeconds, '总超时', 1)
+  const maxIterations = optionalInteger(form.maxIterations, '最大迭代次数', 1, 10)
+  const toolTimeoutSeconds = optionalInteger(form.toolTimeoutSeconds, '工具超时', 1, 600)
+  const modelTimeoutSeconds = optionalInteger(form.modelTimeoutSeconds, '模型超时', 1, 600)
+  const overallTimeoutSeconds = optionalInteger(form.overallTimeoutSeconds, '总超时', 1, 600)
 
   const agent =
     maxIterations !== undefined &&
@@ -236,11 +249,11 @@ function buildQAPayload(form: QAFormState): CreateQAConfigVersionRequest {
     defaultKnowledgeBaseIds,
     knowledgeBases,
     retrieval: {
-      topK: optionalInteger(form.topK, 'Top K', 1),
-      scoreThreshold: optionalNumber(form.scoreThreshold, '相似度阈值', 0),
+      topK: optionalInteger(form.topK, 'Top K', 1, 100),
+      scoreThreshold: optionalNumber(form.scoreThreshold, '相似度阈值', 0, 1),
       enableRerank: form.enableRerank,
-      rerankThreshold: optionalNumber(form.rerankThreshold, 'Rerank 阈值', 0),
-      rerankTopN: optionalInteger(form.rerankTopN, 'Rerank Top N', 1),
+      rerankThreshold: optionalNumber(form.rerankThreshold, 'Rerank 阈值', 0, 1),
+      rerankTopN: optionalInteger(form.rerankTopN, 'Rerank Top N', 1, 100),
     },
     maxIterations,
     toolTimeoutSeconds,
@@ -266,9 +279,9 @@ function buildLLMPayload(form: LLMFormState): CreateQALLMConfigVersionRequest {
     provider: 'ai-gateway',
     profileId,
     modelName,
-    timeoutSeconds: optionalInteger(form.timeoutSeconds, 'LLM 超时', 1),
-    temperature: optionalNumber(form.temperature, '温度'),
-    maxTokens: optionalInteger(form.maxTokens, '最大 Token 数', 1),
+    timeoutSeconds: optionalInteger(form.timeoutSeconds, 'LLM 超时', 1, 600),
+    temperature: optionalNumber(form.temperature, '温度', 0, 2),
+    maxTokens: optionalInteger(form.maxTokens, '最大 Token 数', 1, 128000),
     activate: form.activate,
   })
 
@@ -540,7 +553,7 @@ export function QASettings() {
                 <Input
                   type="number"
                   min={1}
-                  max={50}
+                  max={10}
                   value={qaForm.maxIterations}
                   onChange={(event) => setQAForm({ ...qaForm, maxIterations: event.target.value })}
                 />

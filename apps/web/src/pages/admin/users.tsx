@@ -650,6 +650,7 @@ export function AdminUsersPage() {
               <span className="text-muted-foreground">电话</span>
               <Input
                 type="tel"
+                pattern="[0-9+\- ]*"
                 value={createForm.phone}
                 disabled={isMutating}
                 placeholder="可不填写"
