@@ -189,6 +189,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
 apiClient.setAccessTokenProvider(() => useAuthStore.getState().accessToken ?? apiClient.getToken())
 apiClient.setUnauthorizedHandler(() => {
+  useChatStore.getState().reset()
   useAuthStore.setState({
     accessToken: null,
     error: null,
