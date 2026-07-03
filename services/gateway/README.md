@@ -78,7 +78,7 @@ Use the local integration runbook smoke checks for those workflows.
 | `GATEWAY_TOKEN_HASH_KEY_VERSION` | `v1` | Version segment in `hmac-sha256:<version>:<hex>`. |
 | `GATEWAY_INTERNAL_SERVICE_TOKEN` | unset | Internal service credential forwarded as `X-Service-Token` when configured. |
 | `GATEWAY_AUTH_ADMIN_SERVICE_TOKEN` | required | Gateway-only credential forwarded as `X-Service-Token` for Auth admin user-management routes and current-user profile/password write routes; must be non-empty and differ from `GATEWAY_INTERNAL_SERVICE_TOKEN`. |
-| `GATEWAY_AUTH_BASE_URL` | `http://localhost:8001` | Auth service base URL for user/session public routes. |
+| `GATEWAY_AUTH_BASE_URL` | `http://localhost:8001` | Auth service base URL for user/session public routes. Must be an absolute `http` or `https` URL without credentials, query, or fragment. |
 | `GATEWAY_KNOWLEDGE_BASE_URL` | unset | Knowledge service base URL for knowledge-owned active routes. |
 | `GATEWAY_QA_BASE_URL` | unset | QA service base URL for QA-owned active routes. |
 | `GATEWAY_DOCUMENT_BASE_URL` | unset | Document service base URL for document-owned active routes. |

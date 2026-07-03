@@ -63,6 +63,18 @@ func New(baseURL string, serviceToken string, gatewayAdminServiceToken string, t
 	if parsed.Scheme == "" || parsed.Host == "" {
 		return nil, fmt.Errorf("auth base URL must include scheme and host")
 	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("auth base URL must use http or https scheme")
+	}
+	if parsed.User != nil {
+		return nil, fmt.Errorf("auth base URL must not include credentials")
+	}
+	if parsed.RawQuery != "" {
+		return nil, fmt.Errorf("auth base URL must not include query parameters")
+	}
+	if parsed.Fragment != "" {
+		return nil, fmt.Errorf("auth base URL must not include fragment")
+	}
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
