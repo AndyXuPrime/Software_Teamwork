@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -152,9 +152,10 @@ describe('ReportGeneratePage', () => {
     expect(await screen.findByDisplayValue('2026年煤库存审计报告')).toBeVisible()
     expect(screen.getByDisplayValue('煤场库存账实与保供风险审计')).toBeVisible()
 
-    fireEvent.change(screen.getByLabelText('报告类型'), {
-      target: { value: 'summer_peak_inspection' },
-    })
+    // Open report type Select and pick another type
+    fireEvent.click(screen.getAllByRole('combobox')[0]!)
+    const summerOption = await screen.findByRole('option', { name: /迎峰度夏检查报告/ })
+    fireEvent.click(summerOption)
 
     expect(await screen.findByDisplayValue('2026年迎峰度夏检查报告')).toBeVisible()
     expect(screen.getByDisplayValue('迎峰度夏设备安全检查')).toBeVisible()
@@ -162,9 +163,10 @@ describe('ReportGeneratePage', () => {
     fireEvent.change(screen.getByLabelText('报告名称'), {
       target: { value: '自定义审计标题' },
     })
-    fireEvent.change(screen.getByLabelText('报告类型'), {
-      target: { value: 'coal_inventory_audit' },
-    })
+    // Switch back report type
+    fireEvent.click(screen.getByRole('combobox'))
+    const coalOption = await screen.findByRole('option', { name: /煤库存审计报告/ })
+    fireEvent.click(coalOption)
 
     expect(screen.getByDisplayValue('自定义审计标题')).toBeVisible()
     expect(await screen.findByDisplayValue('煤场库存账实与保供风险审计')).toBeVisible()
@@ -327,7 +329,12 @@ describe('ReportGeneratePage', () => {
 
     renderWithProviders(<ReportGeneratePage />)
 
+    // Wait for bootstrap data to load, then open Select and pick the report type
+    const trigger = screen.getAllByRole('combobox')[0]!
+    await waitFor(() => expect(trigger).not.toBeDisabled())
+    fireEvent.click(trigger)
     await screen.findByRole('option', { name: '真实巡检报告' })
+    fireEvent.click(screen.getByRole('option', { name: '真实巡检报告' }))
     expect(await screen.findByText('当前 LLM 配置')).toBeVisible()
     expect(screen.getByText('mp-user-chat')).toBeVisible()
     expect(screen.getByText('gpt-user')).toBeVisible()
