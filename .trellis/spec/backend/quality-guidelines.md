@@ -276,11 +276,35 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   from Docker registry rewrite and should not be handled in Docker policy.
 - Runtime Python dependency changes belong under `services/knowledge-runtime`;
   the default local backend startup path must not depend on `services/parser`.
+- Host-run Go module downloads should use `GOPROXY` and `GOSUMDB` from
+  `deploy/.env.example` for mainland China developer networks. This covers
+  `dev-up.sh` goose migrations and `run-backend.sh` Go service startups; it is
+  separate from Docker registry rewrite and Knowledge runtime `UV_DEFAULT_INDEX`.
+- `dev-up.sh` should check effective Go module settings before host-run goose
+  migrations, and `run-backend.sh` should preflight Go module downloads with
+  `go mod download` for each host-run Go service before forking background
+  processes. If an old `deploy/.env` lacks Go mirror settings, the scripts may
+  use the repository default `GOPROXY` / `GOSUMDB` values for the current
+  process and tell the user to persist them locally. If module download still
+  fails, the script must fail in the terminal with the current effective values
+  and remediation hints instead of only writing `go run` errors to
+  `.local/logs/*.log`.
 - Host-run backend processes should be started in managed process groups and
   stopped by process group so `go run` or `uv run` wrapper processes do not
   leave child service binaries listening on local ports.
-- `dev-up.sh` must wait for Compose infrastructure health before running host
-  migrations or seed SQL, for example with `docker compose up --wait`.
+- Local entrypoint scripts under `scripts/local/` must print clear command-line
+  status: starting, per-stage success where useful, final success, and final
+  failure with the current stage and next diagnostic location. Do not rely on
+  `set -e` alone or force users to infer failure from missing output.
+- After forking host-run backend services, `run-backend.sh` should watch a short
+  configurable startup window and report any process group that exits early with
+  the corresponding service log tail. This prevents `backend started` from
+  hiding immediate `go run`, dependency download, port binding, or config
+  failures.
+- `dev-up.sh` must wait for long-running Compose infrastructure health before
+  running host migrations or seed SQL. One-shot infrastructure jobs such as
+  `minio-init` must run separately and use their own exit code so a normal
+  `Exited (0)` does not skip migrations or seed.
 - `dev-up.sh` must create or verify the default Knowledge Qdrant collection when
   `QDRANT_URL` is configured. The collection dimension must match
   `EMBEDDING_DIMENSION`, and the default distance is `Cosine`.
@@ -323,11 +347,13 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | --- | --- |
 | Compose YAML or env interpolation is invalid | `docker compose ... config --quiet` must fail before merge. |
 | Default Compose service list includes business services or profile services | Remove the service or update policy only if the team explicitly changes the Docker boundary. |
-| Host migrations or seed run before PostgreSQL/init scripts are ready | Add or restore an infra health wait in `scripts/local/dev-up.sh`; do not rely on plain `docker compose up -d`. |
+| Host migrations or seed run before PostgreSQL/init scripts are ready | Add or restore an infra health wait in `scripts/local/dev-up.sh`; do not rely on plain `docker compose up -d`. Run one-shot init jobs separately from `up --wait` and fail visibly if they exit non-zero. |
 | `QDRANT_URL` is set but the default collection is not created | Add or restore Qdrant collection initialization in `scripts/local/dev-up.sh`; do not make users create `knowledge_chunks` manually for the default path. |
 | Compose contains `build:` | Remove it; repository Docker must stay pull-only infra. |
 | Docker policy checker fails | Fix the Compose/docs/script regression or update `scripts/check_docker_policy.py` and the runbook in the same PR when the policy intentionally changes. |
 | Retired parser paths or env keys reappear in startup scripts | Remove the parser dependency and route document parsing through `services/knowledge-runtime`. |
+| Local startup script exits without a success or failure summary | Add or restore explicit command-line status output in the script and local seed contract checker. |
+| Go module preflight, migration, or service startup shows `Get "https://proxy.golang.org/...": i/o timeout` | Confirm the copied `deploy/.env` contains the repository `GOPROXY` / `GOSUMDB` defaults; if missing, local scripts should use the repository default for the current process and print that decision. If the mirror is unavailable, override only local `deploy/.env` or enterprise shell config. The startup script should surface failures in the terminal and exit non-zero. |
 | `stop-backend.sh` only kills the wrapper PID | Start host services in a managed process group and stop the whole group; verify the script does not leave `go run` or `uv run` child services bound to ports. |
 | Seeded local AI Gateway profile uses `host.docker.internal` | Replace it with `http://localhost:11434/v1` for the host-run default path. |
 | Required Docker image is unavailable locally | Document `docker compose pull <service>` commands and report Docker runtime validation as skipped. |
@@ -360,7 +386,8 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - Run `python3 scripts/check_docker_policy.py` and the policy/environment unit
   tests when Compose, Docker docs, image tags, or Docker scripts change.
 - Run the local seed contract checker and its unit tests when seed SQL, seed
-  docs, startup scripts, or Knowledge runtime startup defaults change.
+  docs, startup scripts, Knowledge runtime startup defaults, or host-run Go
+  module proxy defaults change.
 - Search Docker and docs for duplicate image tags such as `redis:7` vs
   `redis:7-alpine`, and MinIO server/client tags before declaring version
   cleanup complete.

@@ -15,7 +15,9 @@ Host:   auth + file + knowledge + ai-gateway + qa + document + gateway + fronten
 Go 必须安装在实际运行这些脚本的宿主机环境中；如果使用 WSL 启动脚本，Windows
 里的 Go 不等于 WSL 里的 Go。
 
-如果本机网络访问 `proxy.golang.org` 不稳定，先在同一个 shell 中配置 Go 模块代理：
+脚本会优先读取 `deploy/.env` 中的 `GOPROXY` / `GOSUMDB`。如果本机网络访问
+`proxy.golang.org` 不稳定，默认复制 `deploy/.env.example` 即可；如果还想把同样配置
+持久写入当前宿主机环境的 Go 全局配置，可以在同一个 shell 中执行：
 
 ```bash
 go version
@@ -64,12 +66,17 @@ cp deploy/.env.example deploy/.env
 ```
 
 脚本不会生成、改写或维护另一套默认变量。它们只读取 `deploy/.env`，让宿主机
-Go 进程拿到同一份本地配置。
+Go 进程拿到同一份本地配置。Go modules 下载默认读取 `deploy/.env` 里的
+`GOPROXY` / `GOSUMDB`；`dev-up.sh` 执行 goose migration、`run-backend.sh`
+启动 Go 后端时都会把这两个变量传给 host-run Go 命令。旧 `deploy/.env` 缺少这两项时，
+脚本会在本次进程使用仓库默认 Go 镜像并输出提示；如果日志里出现 `proxy.golang.org`
+超时，说明后端可能没有真正启动，先修正 `deploy/.env` 后重新运行
+`./scripts/local/run-backend.sh`。
 
-Go modules 下载不读取 `deploy/.env`。`dev-up.sh` 执行 goose migration、
-`run-backend.sh` 启动 Go 后端时都会使用当前 shell 的 Go 配置；如果日志里出现
-`proxy.golang.org` 超时，说明后端可能没有真正启动，按上面的 `GOPROXY` 检查后
-重新运行 `./scripts/local/run-backend.sh`。
+如需使用 Go 官方默认值，不要只删除 `deploy/.env` 中的 `GOPROXY` / `GOSUMDB`；
+当前脚本在缺失且全局 Go 配置仍是官方默认时会回退到仓库默认镜像。请在本机
+`deploy/.env` 显式设置 `GOPROXY=https://proxy.golang.org,direct` 和
+`GOSUMDB=sum.golang.org`，或设置企业内部 Go proxy / checksum DB。
 
 默认 demo 账号：
 
@@ -82,25 +89,64 @@ superadmin / LocalDemoAdmin#12345
 从 `deploy/.env` 删除 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`QDRANT_IMAGE`、
 `MINIO_IMAGE` 和 `MINIO_MC_IMAGE` 这几行即可回到 Compose 里的 Docker Hub pinned tags。
 
+`UV_DEFAULT_INDEX` 控制宿主机 uv 在解析或重锁依赖时使用的 Python 包索引，默认使用
+清华 PyPI 镜像以加速 Knowledge runtime 依赖准备。`services/parser` 已退役，默认路径
+不再准备 standalone Parser；解析、切块、embedding、索引和检索通过
+`services/knowledge-runtime` 完成。无法访问清华源的环境应先按网络/代理路径解决；如必须
+使用 PyPI 或自建源，需要确保 Knowledge runtime lock/config 与本地启动契约同步。
+
+`GOPROXY` 和 `GOSUMDB` 控制宿主机 Go 工具链下载模块和校验数据库的路径，默认使用
+`https://goproxy.cn,direct` 和 `sum.golang.google.cn`，用于 `dev-up.sh` 中的
+goose migration 以及 `run-backend.sh` 中的 Go 服务 `go run`。如果
+`.local/logs/auth.log`、`.local/logs/gateway.log` 等日志出现
+`Get "https://proxy.golang.org/...": i/o timeout`，确认当前 `deploy/.env` 是否包含这
+两行；旧环境需要从 `deploy/.env.example` 手动补入。无法访问该 Go 镜像的环境可以在
+本机 `deploy/.env` 中改为企业代理；如需直连 Go 官方默认值，请显式设置
+`GOPROXY=https://proxy.golang.org,direct` 和 `GOSUMDB=sum.golang.org`。
+
 ## 脚本职责
 
 `./scripts/local/dev-up.sh`：
 
 - 校验 `deploy/docker-compose.yml`。
-- 拉取并启动 `postgres`、`redis`、`qdrant`、`minio`、`minio-init`，并等待
+- 先检查同一宿主机环境中的 Docker、Go、`psql` 和必要的 `curl`，缺失时直接
+  在命令行报错，避免跑到 migration/seed 中途才失败。
+- 拉取 infra 镜像，启动并等待 `postgres`、`redis`、`qdrant`、`minio`
   Compose health checks 通过。
+- 单独运行一次性 `minio-init` 创建/校验 `software-teamwork-local` 和
+  `software-teamwork-knowledge` bucket；`minio-init` 正常退出不会阻断后续
+  migration/seed，非零失败时会提示查看 `docker compose logs minio-init`。
 - 如果 `QDRANT_URL` 已设置，则创建或校验 `QDRANT_COLLECTION`。
 - 在宿主机执行各服务 goose migration。
+- migration 前检查有效 Go module 配置；旧 `deploy/.env` 缺少 `GOPROXY` / `GOSUMDB`
+  时，本次进程会使用仓库默认 Go 镜像并提示补齐本地配置。
 - 用 `psql` 依次应用本地 demo 数据、AI Gateway profile 和 QA Document MCP
   注册 seed。Document MCP seed 只保存 endpoint/alias 等非敏感元数据；token 来自
   `deploy/.env` 的 `MCP_SERVER_TOKEN`。
+- 命令行会输出每个阶段的开始、成功和失败摘要；失败摘要包含当前阶段和后续排查入口。
 
 `./scripts/local/run-backend.sh`：
 
+- 启动任何服务前，先在每个 Go 服务目录执行 `go mod download` 预检模块下载。优先用
+  当前 `deploy/.env` 的 `GOPROXY` / `GOSUMDB`；旧 `deploy/.env` 缺少这两项时，本次
+  进程会使用仓库默认 Go 镜像并提示补齐本地配置。下载失败或超时时直接在终端打印错误
+  和修复提示，不再继续伪装成后端已启动。
 - 按顺序启动 `auth`、`file`、`knowledge`、`ai-gateway`、`qa`、`document`、`gateway`。
 - Knowledge 运行 `cmd/adapter`，并通过 `VENDOR_RUNTIME_URL` 调用 RAGFlow runtime。
+- Go 服务启动使用宿主机 `go run`；Go 模块下载走 `deploy/.env` 里的
+  `GOPROXY` / `GOSUMDB`，不是 Docker registry，也不是 `UV_DEFAULT_INDEX`。
+- 服务 fork 后默认观察 8 秒；若某个进程组很快退出，脚本会汇总对应
+  `.local/logs/<service>.log` 尾部并以非零状态退出。可用
+  `LOCAL_BACKEND_STARTUP_CHECK_SECONDS` 调整观察窗口。
 - 日志写入 `.local/logs/`，进程组 leader PID 写入 `.local/run/`，供
   `stop-backend.sh` 停掉 `go run` 及其子进程。
+- 命令行会输出开始、成功和失败摘要；失败时优先按终端提示处理，再查看服务日志。
+
+`./scripts/local/stop-backend.sh`：
+
+- 按 `.local/run/*.pid` 停止 host-run 后端进程组并清理 pid 文件。
+- 即使没有 `.local/run/` 或没有 pid 文件，也会明确输出“nothing to stop”并成功退出。
+- 命令行会输出开始、成功和失败摘要；失败时检查 `.local/run/*.pid` 和残留进程。
 
 ## Knowledge / RAGFlow
 
