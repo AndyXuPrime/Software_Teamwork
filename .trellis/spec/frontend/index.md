@@ -109,8 +109,8 @@ Frontend and backend should converge early on:
 - Uploads: `multipart/form-data`; backend returns document/template IDs and processing status.
 - Long tasks: document parsing, vectorization, and report generation expose task status consistently.
 - QA SSE events: handle `message.created`, `agent.iteration.started`,
-  `reasoning.step`, `tool.started`, `tool.completed`, `tool.failed`,
-  `answer.delta`, `citation.delta`, `answer.completed`, `error`, and optional
-  `heartbeat`.
+  `reasoning.step`, `reasoning.delta`, `tool.started`, `tool.completed`,
+  `tool.failed`, `answer.delta`, `citation.delta`, `answer.completed`, `error`,
+  and optional `heartbeat`.
 - Permissions: frontend hides unauthorized UI, backend enforces authorization.
 - Downloads: original documents and generated DOCX files are downloaded through backend endpoints.

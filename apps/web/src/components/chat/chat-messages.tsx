@@ -865,9 +865,6 @@ function StatusLabel({ status }: { status: QAMessage['status'] }) {
   return null
 }
 
-/* ── Throttled Markdown content ── */
-const THROTTLE_CHAR_THRESHOLD = 2000
-
 function StreamingContent({
   content,
   streaming,
@@ -878,50 +875,20 @@ function StreamingContent({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   components: Record<string, any>
 }) {
-  const [displayContent, setDisplayContent] = useState(content)
-  const rafRef = useRef<number | null>(null)
-  const lastContentRef = useRef(content)
-
-  useEffect(() => {
-    if (content === lastContentRef.current) return
-    lastContentRef.current = content
-
-    if (content.length > THROTTLE_CHAR_THRESHOLD) {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
-      rafRef.current = requestAnimationFrame(() => {
-        setDisplayContent(content)
-        rafRef.current = null
-      })
-    } else {
-      setDisplayContent(content)
-    }
-
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
-    }
-  }, [content])
-
-  useEffect(() => {
-    if (!streaming) {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
-      setDisplayContent(content)
-    }
-  }, [streaming, content])
-
   const markdownElement = useMemo(
     () => (
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       <ReactMarkdown components={components as any} remarkPlugins={[remarkGfm]}>
-        {displayContent}
+        {content}
       </ReactMarkdown>
     ),
-    [displayContent, components],
+    [content, components],
   )
 
   return (
-    <div className={streaming && displayContent.trim() ? 'streaming-cursor' : undefined}>
+    <div className={streaming && content.trim() ? 'streaming-cursor' : undefined}>
       {markdownElement}
-      {streaming && !displayContent.trim() && (
+      {streaming && !content.trim() && (
         <span
           className="ml-0.5 inline-block h-[1em] w-[0.1em] animate-pulse bg-primary align-middle select-none"
           aria-label="助手正在回复中"
@@ -1084,10 +1051,14 @@ export default function ChatMessages({
 }: ChatMessagesProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll to bottom when messages or streaming updates
+  // Coalesce continuous streaming updates into at most one scroll per frame.
   useEffect(() => {
-    const element = scrollRef.current
-    if (element) element.scrollTop = element.scrollHeight
+    const frameId = requestAnimationFrame(() => {
+      const element = scrollRef.current
+      if (element) element.scrollTop = element.scrollHeight
+    })
+
+    return () => cancelAnimationFrame(frameId)
   }, [messages, streaming])
 
   return (

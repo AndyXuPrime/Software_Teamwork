@@ -567,3 +567,39 @@ describe('ChatMessages citations', () => {
     expect(screen.queryByRole('button', { name: '下载原文' })).not.toBeInTheDocument()
   })
 })
+
+describe('ChatMessages auto-scroll', () => {
+  it('keeps at most one pending scroll frame and cancels it on unmount', () => {
+    let nextFrameId = 1
+    const frames = new Map<number, FrameRequestCallback>()
+    const requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+      const frameId = nextFrameId++
+      frames.set(frameId, callback)
+      return frameId
+    })
+    const cancelAnimationFrame = vi.fn((frameId: number) => {
+      frames.delete(frameId)
+    })
+    vi.stubGlobal('requestAnimationFrame', requestAnimationFrame)
+    vi.stubGlobal('cancelAnimationFrame', cancelAnimationFrame)
+
+    const view = renderChat('第一段', [])
+    expect(frames.size).toBe(1)
+
+    view.rerender(
+      <ChatMessages
+        error={null}
+        messages={[assistantMessage('第一段和第二段', [])]}
+        streaming={false}
+      />,
+    )
+
+    expect(requestAnimationFrame).toHaveBeenCalledTimes(2)
+    expect(cancelAnimationFrame).toHaveBeenCalledTimes(1)
+    expect(frames.size).toBe(1)
+
+    view.unmount()
+    expect(cancelAnimationFrame).toHaveBeenCalledTimes(2)
+    expect(frames.size).toBe(0)
+  })
+})

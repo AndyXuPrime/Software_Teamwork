@@ -33,6 +33,7 @@ import {
 } from '@/features/qa/capability'
 import { downloadFromUrl } from '@/lib/download'
 import { isModelConfigurationError, MODEL_CONFIGURATION_HINT } from '@/lib/model-config-errors'
+import { AnimationFrameBatcher, StreamingTextController } from '@/lib/streaming-text'
 import type {
   QACitation,
   QAMessage,
@@ -51,6 +52,7 @@ import { useChatStore } from '@/stores/chat-store'
 // ══════════════════════════════════════════════════════════════════════════════
 
 const NEW_QA_SESSION_TITLE = '新对话'
+const THINK_PANEL_ANSWER_DELAY_MS = 1000
 
 function nextId(): string {
   const cryptoSource = globalThis.crypto
@@ -183,6 +185,13 @@ export function sanitizeReasoningDelta(raw: Record<string, unknown>, existingCon
   return trimmed
 }
 
+function sanitizeDetail(raw: string | undefined): string | undefined {
+  if (typeof raw !== 'string' || raw.length === 0) return undefined
+  const trimmed = raw.slice(0, 4000)
+  if (SENSITIVE_PATTERN.test(trimmed)) return undefined
+  return trimmed
+}
+
 const VALID_STEP_TYPES = new Set([
   'agent_iteration',
   'tool_call',
@@ -205,6 +214,16 @@ export type ToolThinkingStep = QAThinkingStep & {
   toolName?: string
 }
 
+type AssistantMessagePatch = {
+  artifacts?: QAReportArtifact[]
+  citations?: QACitation[]
+  content?: string
+  id?: string
+  reasoningContent?: string
+  status?: QAMessage['status']
+  thinking?: QAThinkingStep[]
+}
+
 export function sanitizeThinkingStep(raw: Record<string, unknown>): ToolThinkingStep {
   const rawType = String(raw.type ?? '')
   // Only allow known step types; discard unknown / internal-only types
@@ -215,7 +234,7 @@ export function sanitizeThinkingStep(raw: Record<string, unknown>): ToolThinking
       ? String(raw.status)
       : 'running'
   ) as QAThinkingStep['status']
-  const detail = sanitizeLabel(typeof raw.detail === 'string' ? raw.detail : undefined)
+  const detail = sanitizeDetail(typeof raw.detail === 'string' ? raw.detail : undefined)
   const iterationNo = getIterationNo(raw)
   const rawReasoningStepId =
     typeof raw.reasoningStepId === 'string'
@@ -356,7 +375,7 @@ export function finalizeThinkingStepsOnAnswerCompleted(
   steps: ToolThinkingStep[],
 ): ToolThinkingStep[] {
   return steps.map((step) =>
-    step.type === 'agent_iteration' && step.status === 'running'
+    (step.type === 'agent_iteration' || step.type === 'generation') && step.status === 'running'
       ? { ...step, status: 'done' as const }
       : step,
   )
@@ -544,6 +563,17 @@ export function ChatPage() {
 
   // ── SSE cleanup ref ──
   const abortRef = useRef<(() => void) | null>(null)
+  const streamUiCleanupRef = useRef<(() => void) | null>(null)
+
+  useEffect(
+    () => () => {
+      streamUiCleanupRef.current?.()
+      streamUiCleanupRef.current = null
+      abortRef.current?.()
+      abortRef.current = null
+    },
+    [],
+  )
 
   // ── Event replay: track current responseRunId for reconnect recovery ──
   const responseRunIdRef = useRef<string | null>(null)
@@ -989,11 +1019,14 @@ export function ChatPage() {
       }
 
       setStreaming(true)
+      streamUiCleanupRef.current?.()
 
       // Accumulators for SSE events
       let content = ''
       let reasoningContent = ''
       let steps: ToolThinkingStep[] = []
+      let artifacts: QAReportArtifact[] | undefined
+      const reasoningByIteration: Record<number, string> = {}
       const toolStepIndex: Record<string, number> = {}
       const cites: QACitation[] = []
 
@@ -1001,15 +1034,7 @@ export function ChatPage() {
        * Patch the last assistant message in the active session.
        * Uses Zustand setState with functional updater for latest state.
        */
-      const patchAssistant = (patch: {
-        id?: string
-        content?: string
-        thinking?: QAThinkingStep[]
-        citations?: QACitation[]
-        reasoningContent?: string
-        status?: QAMessage['status']
-        artifacts?: QAReportArtifact[]
-      }) => {
+      const patchAssistant = (patch: AssistantMessagePatch) => {
         useChatStore.setState((state) => {
           const msgs = [...(state.messagesBySession[uid] ?? [])]
           const lastIdx = msgs.length - 1
@@ -1023,6 +1048,63 @@ export function ChatPage() {
             },
           }
         })
+      }
+
+      const frameBatcher = new AnimationFrameBatcher<AssistantMessagePatch>({
+        merge: (current, next) => ({ ...current, ...next }),
+        onFlush: patchAssistant,
+      })
+      let answerCompleted = false
+      let answerStartDelayApplied = false
+      let completedMessageId: string | undefined
+
+      const finalizeVisibleAnswer = () => {
+        if (!answerCompleted) return
+        frameBatcher.cancel()
+        patchAssistant({
+          ...(completedMessageId ? { id: completedMessageId } : {}),
+          status: 'completed',
+        })
+        if (streamUiCleanupRef.current === cancelUiSchedulers) {
+          streamUiCleanupRef.current = null
+        }
+        // Keep the existing same-chunk fatal-error override window.
+        queueMicrotask(() => {
+          setStreaming(false)
+          abortRef.current = null
+        })
+      }
+
+      const textController = new StreamingTextController({
+        maxCharsPerFrame: 100,
+        minCharsPerFrame: 2,
+        onDone: finalizeVisibleAnswer,
+        onUpdate: (visibleContent) => patchAssistant({ content: visibleContent }),
+      })
+
+      const delayAnswerStartForThinking = () => {
+        if (answerStartDelayApplied) return
+        answerStartDelayApplied = true
+        textController.delayStart(THINK_PANEL_ANSWER_DELAY_MS)
+      }
+
+      function cancelUiSchedulers() {
+        textController.cancel()
+        frameBatcher.cancel()
+        if (streamUiCleanupRef.current === cancelUiSchedulers) {
+          streamUiCleanupRef.current = null
+        }
+      }
+
+      streamUiCleanupRef.current = cancelUiSchedulers
+
+      const queueAssistantPatch = (patch: AssistantMessagePatch) => {
+        frameBatcher.push(patch)
+      }
+
+      const mergeArtifact = (artifact: QAReportArtifact | undefined) => {
+        const message = artifacts ? ({ artifacts } as QAMessageWithArtifacts) : undefined
+        artifacts = mergeMessageReportArtifact(message, artifact)
       }
 
       // Seq verification helper
@@ -1069,25 +1151,44 @@ export function ChatPage() {
               iterationNo,
             })
           }
-          patchAssistant({ thinking: [...steps] })
+          delayAnswerStartForThinking()
+          queueAssistantPatch({ thinking: [...steps] })
         },
         onReasoningStep(data) {
           if (!verifySeq(data.seq)) return
-          const raw = (data as Record<string, unknown>).step as Record<string, unknown> | undefined
+          const raw =
+            ((data as Record<string, unknown>).step as Record<string, unknown> | undefined) ?? data
           if (!raw) return
           const safe = sanitizeThinkingStep({
             ...raw,
             iterationNo: raw.iterationNo ?? data.iterationNo,
           })
           steps = upsertReasoningStep(steps, safe)
-          patchAssistant({ thinking: [...steps] })
+          delayAnswerStartForThinking()
+          queueAssistantPatch({ thinking: [...steps] })
         },
         onReasoningDelta(data) {
           if (!verifySeq(data.seq)) return
           const delta = sanitizeReasoningDelta(data, reasoningContent)
           if (!delta) return
           reasoningContent += delta
-          patchAssistant({ reasoningContent, status: 'streaming' })
+          const iterationNo = getIterationNo(data) ?? 1
+          reasoningByIteration[iterationNo] = `${reasoningByIteration[iterationNo] ?? ''}${delta}`
+          const safe = sanitizeThinkingStep({
+            type: 'generation',
+            label: '模型思考',
+            status: 'running',
+            detail: reasoningByIteration[iterationNo],
+            iterationNo,
+            reasoningStepId: `model-reasoning-${iterationNo}`,
+          })
+          steps = upsertReasoningStep(steps, safe)
+          delayAnswerStartForThinking()
+          queueAssistantPatch({
+            reasoningContent,
+            thinking: [...steps],
+            status: 'streaming',
+          })
         },
         onToolStarted(data) {
           if (!verifySeq(data.seq)) return
@@ -1106,7 +1207,8 @@ export function ChatPage() {
               toolName,
             }) - 1
           if (toolCallId) toolStepIndex[toolCallId] = idx
-          patchAssistant({ thinking: [...steps] })
+          delayAnswerStartForThinking()
+          queueAssistantPatch({ thinking: [...steps] })
         },
         onToolCompleted(data) {
           if (!verifySeq(data.seq)) return
@@ -1132,12 +1234,10 @@ export function ChatPage() {
               toolName,
             }
           }
-          patchAssistant({
-            artifacts: mergeMessageReportArtifact(
-              useChatStore.getState().messagesBySession[uid]?.at(-1) as
-                QAMessageWithArtifacts | undefined,
-              artifact,
-            ),
+          mergeArtifact(artifact)
+          delayAnswerStartForThinking()
+          queueAssistantPatch({
+            artifacts,
             thinking: [...steps],
           })
         },
@@ -1165,12 +1265,10 @@ export function ChatPage() {
               toolName,
             }
           }
-          patchAssistant({
-            artifacts: mergeMessageReportArtifact(
-              useChatStore.getState().messagesBySession[uid]?.at(-1) as
-                QAMessageWithArtifacts | undefined,
-              failedArtifact,
-            ),
+          mergeArtifact(failedArtifact)
+          delayAnswerStartForThinking()
+          queueAssistantPatch({
+            artifacts,
             thinking: [...steps],
           })
         },
@@ -1180,8 +1278,9 @@ export function ChatPage() {
             firstToken = true
             patchAssistant({ status: 'streaming' })
           }
-          content += (data.content as string) ?? ''
-          patchAssistant({ content })
+          const delta = (data.content as string) ?? ''
+          content += delta
+          textController.feed(delta)
         },
         onCitationDelta(data) {
           if (!verifySeq(data.seq)) return
@@ -1190,7 +1289,7 @@ export function ChatPage() {
           if (raw) {
             const safe = sanitizeCitation(raw)
             cites.push(safe)
-            patchAssistant({ citations: [...cites] })
+            queueAssistantPatch({ citations: [...cites] })
           }
         },
         onAnswerCompleted(data) {
@@ -1200,32 +1299,22 @@ export function ChatPage() {
           const serverMsgId =
             (data.assistantMessageId as string | undefined) ??
             (data.messageId as string | undefined)
-          const patch: {
-            content: string
-            thinking: QAThinkingStep[]
-            citations: QACitation[]
-            reasoningContent: string
-            status: 'completed'
-            id?: string
-          } = {
-            content,
+          completedMessageId = typeof serverMsgId === 'string' ? serverMsgId : completedMessageId
+          answerCompleted = true
+          frameBatcher.cancel()
+          patchAssistant({
+            artifacts,
             thinking: [...steps],
             citations: [...cites],
             reasoningContent,
-            status: 'completed',
-          }
-          if (typeof serverMsgId === 'string') patch.id = serverMsgId
-          patchAssistant(patch)
-          // Defer streaming=false via microtask so any final error/abort
-          // events queued in the same SSE chunk can arrive first.
-          queueMicrotask(() => {
-            setStreaming(false)
-            abortRef.current = null
+            ...(completedMessageId ? { id: completedMessageId } : {}),
           })
+          textController.finish()
         },
         onError(sseErr) {
           if (!verifySeq(sseErr.seq)) return
           if (sseErr.fatal) {
+            cancelUiSchedulers()
             abortRef.current = null
             // Only insert mock for genuine network failures (backend unreachable).
             // HTTP errors (401/403/404/502) mean the backend is alive — surface them.
@@ -1260,6 +1349,7 @@ export function ChatPage() {
               setLastFailedMsg(trimmed)
             }
             patchAssistant({
+              artifacts,
               content,
               thinking: [...steps],
               citations: [...cites],
@@ -1285,6 +1375,7 @@ export function ChatPage() {
           }
         },
         onAbort() {
+          cancelUiSchedulers()
           // Only apply partial content if the stream was in-flight.
           // When called after mock/fatal-error, the assistant already has a
           // final status — don't overwrite it with empty accumulators.
@@ -1304,6 +1395,7 @@ export function ChatPage() {
             }
             msgs[lastIdx] = {
               ...last,
+              artifacts,
               content,
               thinking: [...steps],
               citations: [...cites],

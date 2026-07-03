@@ -41,8 +41,9 @@ features/knowledge/
   with `Accept: text/event-stream`.
 - Handle the current QA event names:
   `message.created`, `agent.iteration.started`, `reasoning.step`,
-  `tool.started`, `tool.completed`, `tool.failed`, `answer.delta`,
-  `citation.delta`, `answer.completed`, `error`, and optional `heartbeat`.
+  `reasoning.delta`, `tool.started`, `tool.completed`, `tool.failed`,
+  `answer.delta`, `citation.delta`, `answer.completed`, `error`, and optional
+  `heartbeat`.
 - Use `GET /api/v1/qa-sessions/{sessionId}/events?responseRunId=...` for
   short-term event replay and disconnect recovery.
 - Streaming hooks must support cancellation through `AbortController`.
@@ -55,6 +56,41 @@ features/knowledge/
   recovery available.
 - Never expose or cache private chain-of-thought, full prompts, raw MCP tool
   parameters/results, provider raw errors, internal URLs, or storage object keys.
+
+### Pattern: Separate transport progress from visual streaming pace
+
+Keep the SSE parser lossless and immediate, but do not couple every
+`answer.delta` to a Markdown render. The page-level stream owner must append
+each delta to an in-memory complete-answer accumulator and feed a cancellable
+RAF-driven display queue. The display queue may publish adaptive text batches
+to UI state at roughly 20-30 FPS and accelerate when backlog grows.
+
+```ts
+fullContent += delta
+streamingText.feed(delta)
+
+// Normal terminal event: drain visible text before final UI status.
+streamingText.finish()
+
+// Stop or fatal error: cancel animation and preserve all received text.
+streamingText.cancel()
+patchAssistant({ content: fullContent, status: 'stopped' })
+```
+
+- `answer.completed` starts queue drain; it must not discard queued text or
+  force a one-shot Markdown jump.
+- User cancellation and fatal errors cancel pending RAF callbacks and commit
+  the complete partial answer immediately. A delayed completion callback must
+  never overwrite `stopped` or `failed`.
+- Reasoning/tool/citation events remain semantically immediate. If they arrive
+  in bursts, merge cumulative UI snapshots once per animation frame instead of
+  applying typewriter pacing to structured events.
+- Respect `prefers-reduced-motion` by consuming the current backlog in one
+  frame while retaining frame-level batching.
+- Keep this visual pacing outside `api/client.ts`, `api/chat.ts`, and the SSE
+  parser so replay, ordering, persistence, and error semantics remain lossless.
+- Unit tests must cover incremental consumption, finishing drain, cancellation,
+  reduced motion, Unicode safety, and frame-batch flush/cancel behavior.
 
 ## Form Hooks
 
