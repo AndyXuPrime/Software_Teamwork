@@ -401,6 +401,14 @@ describe('ChatMessages citations', () => {
       expect(getDocumentContent).toHaveBeenCalledWith('doc-1')
       expect(downloadFromUrl).toHaveBeenCalledWith('blob:source', 'Transformer Manual.pdf')
     })
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled()
+
+    await waitFor(
+      () => {
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:source')
+      },
+      { timeout: 1500 },
+    )
   })
 
   it('hides the download button and shows the reason when the source is unavailable', async () => {

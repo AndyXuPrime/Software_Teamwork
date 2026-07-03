@@ -135,11 +135,8 @@ function CitationTooltip({
     try {
       const blob = await getDocumentContent(documentId)
       const url = URL.createObjectURL(blob)
-      try {
-        downloadFromUrl(url, downloadFilename(citation))
-      } finally {
-        URL.revokeObjectURL(url)
-      }
+      downloadFromUrl(url, downloadFilename(citation))
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch {
       setDownloadError('下载失败，请稍后重试')
     } finally {
