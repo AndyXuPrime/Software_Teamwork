@@ -384,6 +384,96 @@ func TestCreateOutlineRenumbersAndVersions(t *testing.T) {
 	}
 }
 
+func TestUpdateOutlineSyncsCurrentOutlineSectionSkeletons(t *testing.T) {
+	svc, repo := newTestService()
+	report := mustCreateReport(t, svc, "owner-1")
+	actor := RequestContext{UserID: "owner-1"}
+
+	outline, err := svc.CreateOutline(context.Background(), actor, report.ID, CreateOutlineInput{
+		Source: OutlineSourceAI,
+		Sections: []ReportOutlineNode{
+			{ID: "node-overview", Title: "Overview"},
+			{ID: "node-removed", Title: "Removed"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateOutline() error = %v", err)
+	}
+	repo.sections["section-overview"] = ReportSection{
+		ID:               "section-overview",
+		ReportID:         report.ID,
+		OutlineID:        outline.ID,
+		OutlineNodeID:    "node-overview",
+		Title:            "Overview",
+		Level:            1,
+		SortOrder:        0,
+		Numbering:        "1",
+		Content:          "keep generated body",
+		GenerationStatus: JobStatusSucceeded,
+		ContentSource:    ContentSourceAI,
+		Version:          3,
+	}
+	repo.sections["section-removed"] = ReportSection{
+		ID:               "section-removed",
+		ReportID:         report.ID,
+		OutlineID:        outline.ID,
+		OutlineNodeID:    "node-removed",
+		Title:            "Removed",
+		Level:            1,
+		SortOrder:        1,
+		Numbering:        "2",
+		GenerationStatus: JobStatusPending,
+		ContentSource:    ContentSourceAI,
+		Version:          1,
+	}
+
+	updated, err := svc.UpdateOutline(context.Background(), actor, report.ID, outline.ID, UpdateOutlineInput{
+		Sections: []ReportOutlineNode{
+			{
+				ID:    "node-overview",
+				Title: "Renamed overview",
+				Children: []ReportOutlineNode{
+					{ID: "node-added", Title: "Added child"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateOutline() error = %v", err)
+	}
+	if len(updated.Sections) != 1 || updated.Sections[0].Numbering != "1" || updated.Sections[0].Children[0].Numbering != "1.1" {
+		t.Fatalf("updated outline was not renumbered: %+v", updated.Sections)
+	}
+
+	overview := repo.sections["section-overview"]
+	if overview.Title != "Renamed overview" || overview.Level != 1 || overview.SortOrder != 0 || overview.Numbering != "1" {
+		t.Fatalf("existing section metadata was not synced: %+v", overview)
+	}
+	if overview.Content != "keep generated body" || overview.Version != 3 || overview.GenerationStatus != JobStatusSucceeded {
+		t.Fatalf("existing section content/version/status should be preserved: %+v", overview)
+	}
+
+	var added ReportSection
+	for _, section := range repo.sections {
+		if section.OutlineNodeID == "node-added" {
+			added = section
+			break
+		}
+	}
+	if added.ID == "" {
+		t.Fatalf("missing section skeleton for added outline node; sections = %+v", repo.sections)
+	}
+	if added.OutlineID != outline.ID || added.ParentID != "section-overview" || added.Title != "Added child" || added.Level != 2 || added.Numbering != "1.1" || added.SortOrder != 1 {
+		t.Fatalf("added section skeleton metadata = %+v", added)
+	}
+	if added.GenerationStatus != JobStatusPending || added.ContentSource != ContentSourceAI || added.Version != 1 {
+		t.Fatalf("added section skeleton generation defaults = %+v", added)
+	}
+	if _, ok := repo.sections["section-removed"]; !ok {
+		t.Fatalf("removed outline section row should remain for history and filtering")
+	}
+}
+
 func TestDeleteOutlineSectionRenumbersRemaining(t *testing.T) {
 	svc, _ := newTestService()
 	report := mustCreateReport(t, svc, "owner-1")

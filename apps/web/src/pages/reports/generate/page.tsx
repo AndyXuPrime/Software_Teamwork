@@ -1,6 +1,7 @@
 import {
   Download,
   FileText,
+  GripVertical,
   Loader2,
   Minus,
   PencilLine,
@@ -13,7 +14,7 @@ import {
   Settings2,
   XCircle,
 } from 'lucide-react'
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { type DragEvent, type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 
 import { InlineNotice, ProgressSummary, StateBlock } from '@/components/common'
 import { Button } from '@/components/ui/button'
@@ -34,7 +35,9 @@ import type {
   ReportFile,
   ReportJob,
   ReportJobStatus,
+  ReportOutline,
   ReportOutlineNode,
+  ReportSection,
   ReportSectionVersion,
 } from '@/features/reports'
 import {
@@ -66,11 +69,25 @@ type FlattenedOutlineNode = {
   path: number[]
 }
 
+type OutlineSectionMetadata = {
+  node: ReportOutlineNode
+  parentNodeId: string
+  sortOrder: number
+}
+
 type OutlineEditorState = {
   future: ReportOutlineNode[][]
   nodes: ReportOutlineNode[]
   past: ReportOutlineNode[][]
   sourceKey: string
+}
+
+type SectionGenerationReset = {
+  attemptCreatedAtMs: number
+  jobId: string
+  requireFreshSectionTimestamp?: boolean
+  reportId: string
+  status: Extract<ReportJobStatus, 'pending' | 'running'>
 }
 
 const maxOutlineUndoSteps = 15
@@ -89,6 +106,86 @@ function flattenOutline(
   return nodes.flatMap((node, index) => {
     const path = [...parentPath, index]
     return [{ node, path }, ...flattenOutline(node.children ?? [], path)]
+  })
+}
+
+function collectOutlineNodeIds(
+  nodes: ReportOutlineNode[],
+  result = new Set<string>(),
+): Set<string> {
+  nodes.forEach((node) => {
+    if (node.id) result.add(node.id)
+    if (node.children) collectOutlineNodeIds(node.children, result)
+  })
+  return result
+}
+
+function flattenOutlineSectionMetadata(
+  nodes: ReportOutlineNode[],
+  parentNodeId = '',
+  result: OutlineSectionMetadata[] = [],
+): OutlineSectionMetadata[] {
+  nodes.forEach((node) => {
+    result.push({ node, parentNodeId, sortOrder: result.length })
+    if (node.children) flattenOutlineSectionMetadata(node.children, node.id ?? '', result)
+  })
+  return result
+}
+
+function mergeSectionsWithOutline(
+  sections: ReportSection[],
+  outline?: ReportOutline | null,
+): ReportSection[] {
+  if (!outline) return []
+
+  const outlineNodeIds = collectOutlineNodeIds(outline.sections)
+  if (outlineNodeIds.size === 0) return sections
+
+  const sectionsByNodeId = new Map<string, ReportSection>()
+  sections.forEach((section) => {
+    const outlineNodeId = section.outlineNodeId?.trim()
+    if (outlineNodeId && outlineNodeIds.has(outlineNodeId)) {
+      sectionsByNodeId.set(outlineNodeId, section)
+    }
+  })
+
+  const sectionIdByNodeId = new Map<string, string>()
+  return flattenOutlineSectionMetadata(outline.sections).flatMap(
+    ({ node, parentNodeId, sortOrder }) => {
+      const nodeId = node.id?.trim()
+      if (!nodeId) return []
+      const section = sectionsByNodeId.get(nodeId)
+      if (!section) return []
+
+      const parentId = parentNodeId ? sectionIdByNodeId.get(parentNodeId) : undefined
+      sectionIdByNodeId.set(nodeId, section.id)
+      return [
+        {
+          ...section,
+          level: node.level,
+          numbering: node.numbering,
+          parentId: parentId ?? section.parentId,
+          sortOrder,
+          title: node.title,
+        },
+      ]
+    },
+  )
+}
+
+function renumberOutline(
+  nodes: ReportOutlineNode[],
+  parentNumbering = '',
+  depth = 1,
+): ReportOutlineNode[] {
+  return nodes.map((node, index) => {
+    const numbering = parentNumbering ? `${parentNumbering}.${index + 1}` : String(index + 1)
+    return {
+      ...node,
+      children: node.children ? renumberOutline(node.children, numbering, depth + 1) : undefined,
+      level: depth,
+      numbering,
+    }
   })
 }
 
@@ -153,6 +250,64 @@ function deleteOutlineNode(nodes: ReportOutlineNode[], path: number[]): ReportOu
   )
 }
 
+function pathsEqual(left: number[] | null, right: number[] | null): boolean {
+  if (!left || !right || left.length !== right.length) return false
+  return left.every((value, index) => value === right[index])
+}
+
+function canMoveOutlineNode(fromPath: number[] | null, toPath: number[]): fromPath is number[] {
+  if (!fromPath || fromPath.length !== toPath.length || pathsEqual(fromPath, toPath)) return false
+  return fromPath.slice(0, -1).every((value, index) => value === toPath[index])
+}
+
+function updateOutlineSiblings(
+  nodes: ReportOutlineNode[],
+  parentPath: number[],
+  updater: (siblings: ReportOutlineNode[]) => ReportOutlineNode[],
+): ReportOutlineNode[] {
+  if (parentPath.length === 0) return updater(nodes)
+
+  const index = parentPath[0]
+  if (index === undefined) return nodes
+  const rest = parentPath.slice(1)
+
+  return nodes.map((node, nodeIndex) =>
+    nodeIndex === index
+      ? { ...node, children: updateOutlineSiblings(node.children ?? [], rest, updater) }
+      : node,
+  )
+}
+
+function moveOutlineNode(
+  nodes: ReportOutlineNode[],
+  fromPath: number[],
+  toPath: number[],
+): ReportOutlineNode[] {
+  if (!canMoveOutlineNode(fromPath, toPath)) return nodes
+
+  const parentPath = fromPath.slice(0, -1)
+  const fromIndex = fromPath[fromPath.length - 1]
+  const toIndex = toPath[toPath.length - 1]
+  if (fromIndex === undefined || toIndex === undefined) return nodes
+
+  return updateOutlineSiblings(nodes, parentPath, (siblings) => {
+    if (
+      fromIndex < 0 ||
+      fromIndex >= siblings.length ||
+      toIndex < 0 ||
+      toIndex >= siblings.length
+    ) {
+      return siblings
+    }
+
+    const next = [...siblings]
+    const [moved] = next.splice(fromIndex, 1)
+    if (!moved) return siblings
+    next.splice(Math.min(toIndex, next.length), 0, moved)
+    return next
+  })
+}
+
 const steps = [
   { key: 'draft', label: '1. 草稿与大纲' },
   { key: 'outline', label: '2. 编辑大纲' },
@@ -169,6 +324,38 @@ const statusText: Record<ReportJobStatus, string> = {
   partial_succeeded: '部分成功',
   failed: '失败',
   canceled: '已取消',
+}
+
+const terminalReportJobStatuses = new Set<ReportJobStatus>([
+  'succeeded',
+  'partial_succeeded',
+  'failed',
+  'canceled',
+])
+
+function isTerminalReportJobStatus(status: ReportJobStatus): boolean {
+  return terminalReportJobStatuses.has(status)
+}
+
+function parseTimestampMs(value?: string): number | null {
+  if (!value) return null
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? timestamp : null
+}
+
+function sectionUpdatedAfterResetAttempt(
+  section: ReportSection,
+  reset: SectionGenerationReset,
+): boolean {
+  const sectionTimestampMs =
+    parseTimestampMs(section.generatedAt) ?? parseTimestampMs(section.updatedAt)
+  return sectionTimestampMs !== null && sectionTimestampMs >= reset.attemptCreatedAtMs
+}
+
+function toActiveGenerationStatus(
+  status: ReportJobStatus,
+): Extract<ReportJobStatus, 'pending' | 'running'> {
+  return status === 'running' ? 'running' : 'pending'
 }
 
 type ReportGenerateSession = {
@@ -297,6 +484,9 @@ function writeReportGenerateSession(session: ReportGenerateSession | null) {
 
 const outlineProgressMax = 20
 const outlineRunningProgressCap = outlineProgressMax - 2
+const outlineRunningProgressMin = 5
+const outlineRunningSmoothDurationMs = 90 * 1000
+const activeProgressTickMs = 800
 
 function clampProgress(value: number): number {
   if (!Number.isFinite(value)) return 0
@@ -326,11 +516,29 @@ function getProgressRatio(job?: ReportJob | null): number | null {
   return Math.max(0, Math.min(1, completed / total))
 }
 
-function getOutlineRunningProgress(job: ReportJob): number {
+function hashProgressSeed(value: string): number {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) % 1009
+  }
+  return hash
+}
+
+function getOutlineProgressJitter(jobId: string, elapsedMs: number): number {
+  const bucket = Math.floor(elapsedMs / 7000)
+  const seed = hashProgressSeed(`${jobId}:${bucket}`)
+  return (seed / 1009 - 0.5) * 1.2
+}
+
+function getOutlineRunningProgress(job: ReportJob, now = Date.now()): number {
   const startedAt = Date.parse(job.startedAt ?? job.createdAt)
-  if (!Number.isFinite(startedAt)) return 4
-  const elapsedSeconds = Math.max(0, (Date.now() - startedAt) / 1000)
-  return Math.min(outlineRunningProgressCap, 4 + (elapsedSeconds / 60) * outlineRunningProgressCap)
+  if (!Number.isFinite(startedAt)) return outlineRunningProgressMin
+  const elapsedMs = Math.max(0, now - startedAt)
+  const ratio = Math.min(1, elapsedMs / outlineRunningSmoothDurationMs)
+  const base =
+    outlineRunningProgressMin + ratio * (outlineRunningProgressCap - outlineRunningProgressMin)
+  const jitter = ratio < 0.08 ? 0 : getOutlineProgressJitter(job.id, elapsedMs)
+  return Math.min(outlineRunningProgressCap, Math.max(outlineRunningProgressMin, base + jitter))
 }
 
 function isContentJob(job?: ReportJob | null): boolean {
@@ -345,7 +553,67 @@ function isOutlineJob(job?: ReportJob | null): boolean {
   return job?.jobType === 'outline_generation' || job?.jobType === 'outline_regeneration'
 }
 
-function getProgressPercent(job?: ReportJob | null): number {
+function isResetAttemptFinished(job: ReportJob, reset: SectionGenerationReset): boolean {
+  if (job.id !== reset.jobId) return false
+  if (!isTerminalReportJobStatus(job.status)) return false
+  const finishedAtMs = parseTimestampMs(job.finishedAt)
+  return finishedAtMs !== null && finishedAtMs >= reset.attemptCreatedAtMs
+}
+
+function shouldApplySectionGenerationReset(
+  reset: SectionGenerationReset | null,
+  job?: ReportJob | null,
+): reset is SectionGenerationReset {
+  if (!reset || !job || job.id !== reset.jobId || job.reportId !== reset.reportId) return false
+  return !isResetAttemptFinished(job, reset)
+}
+
+function getRetryAwareJob(
+  job: ReportJob | null | undefined,
+  reset: SectionGenerationReset | null,
+): ReportJob | null | undefined {
+  if (!reset || !job || !shouldApplySectionGenerationReset(reset, job)) return job
+  if (job.status === 'pending' || job.status === 'running') return job
+
+  return {
+    ...job,
+    error: undefined,
+    finishedAt: undefined,
+    progress: {},
+    resultSummary: undefined,
+    startedAt: undefined,
+    status: reset.status,
+  }
+}
+
+function getRetryAwareSections(
+  sections: ReportSection[],
+  reset: SectionGenerationReset | null,
+  job?: ReportJob | null,
+): ReportSection[] {
+  if (!shouldApplySectionGenerationReset(reset, job) || !isContentJob(job)) return sections
+
+  return sections.map((section) => {
+    if (section.lastJobId === reset.jobId) {
+      if (!reset.requireFreshSectionTimestamp || sectionUpdatedAfterResetAttempt(section, reset)) {
+        return section
+      }
+    }
+
+    if (section.generationStatus === 'pending') {
+      return section
+    }
+
+    return {
+      ...section,
+      generatedAt: undefined,
+      generationStatus: reset.status,
+      lastJobId: undefined,
+    }
+  })
+}
+
+function getProgressPercent(job?: ReportJob | null, now = Date.now()): number {
   if (!job) return 0
 
   const ratio = getProgressRatio(job)
@@ -353,12 +621,15 @@ function getProgressPercent(job?: ReportJob | null): number {
   const fallbackPercent = explicitPercent === null ? null : clampProgress(explicitPercent)
 
   if (isOutlineJob(job)) {
-    if (ratio === null && fallbackPercent !== null) return fallbackPercent
     if (job.status === 'succeeded' || job.status === 'partial_succeeded') return outlineProgressMax
     const ratioProgress = ratio === null ? 0 : ratio * outlineProgressMax
     if (job.status === 'pending' || job.status === 'running') {
-      return clampProgress(Math.max(ratioProgress, getOutlineRunningProgress(job)))
+      const smoothProgress = getOutlineRunningProgress(job, now)
+      return clampProgress(
+        Math.min(outlineRunningProgressCap, Math.max(ratioProgress, smoothProgress)),
+      )
     }
+    if (ratio === null && fallbackPercent !== null) return fallbackPercent
     return clampProgress(ratioProgress)
   }
 
@@ -469,6 +740,11 @@ export function ReportGeneratePage() {
     past: [],
     sourceKey: '',
   })
+  const [draggedOutlinePath, setDraggedOutlinePath] = useState<number[] | null>(null)
+  const [dragOverOutlinePath, setDragOverOutlinePath] = useState<number[] | null>(null)
+  const [progressNow, setProgressNow] = useState(() => Date.now())
+  const [sectionGenerationReset, setSectionGenerationReset] =
+    useState<SectionGenerationReset | null>(null)
 
   const user = useAuthStore((state) => state.user)
   const canManageDocumentModelSettings =
@@ -513,10 +789,21 @@ export function ReportGeneratePage() {
     ? `${currentOutline.id}:${currentOutline.version}:${currentOutline.sections.length}`
     : ''
   const outline = outlineEditor.nodes
-  const flattenedOutline = useMemo(() => flattenOutline(outline), [outline])
-  const sections = useMemo(() => sectionsQuery.data ?? [], [sectionsQuery.data])
+  const numberedOutline = useMemo(() => renumberOutline(outline), [outline])
+  const flattenedOutline = useMemo(() => flattenOutline(numberedOutline), [numberedOutline])
+  const effectiveJob = useMemo(
+    () => getRetryAwareJob(activeJobForPolling, sectionGenerationReset),
+    [activeJobForPolling, sectionGenerationReset],
+  )
+  const currentOutlineSections = useMemo(
+    () => mergeSectionsWithOutline(sectionsQuery.data ?? [], currentOutline),
+    [currentOutline, sectionsQuery.data],
+  )
+  const sections = useMemo(
+    () => getRetryAwareSections(currentOutlineSections, sectionGenerationReset, effectiveJob),
+    [currentOutlineSections, effectiveJob, sectionGenerationReset],
+  )
   const activeSection = sections.find((item) => item.id === activeSectionId) ?? sections[0]
-  const effectiveJob = activeJobForPolling
   const selectedTemplate = templates.find((template) => template.id === form.templateId)
   const selectedReportType = reportTypes.find(
     (type) => type.code === (currentReport?.reportType ?? form.reportType),
@@ -634,6 +921,24 @@ export function ReportGeneratePage() {
   }, [jobQuery.data])
 
   useEffect(() => {
+    if (!sectionGenerationReset || !activeJobForPolling) return
+    if (isResetAttemptFinished(activeJobForPolling, sectionGenerationReset)) {
+      setSectionGenerationReset(null)
+    }
+  }, [activeJobForPolling, sectionGenerationReset])
+
+  useEffect(() => {
+    if (effectiveJob?.status !== 'pending' && effectiveJob?.status !== 'running') return
+
+    setProgressNow(Date.now())
+    const intervalId = window.setInterval(() => {
+      setProgressNow(Date.now())
+    }, activeProgressTickMs)
+
+    return () => window.clearInterval(intervalId)
+  }, [effectiveJob?.id, effectiveJob?.status])
+
+  useEffect(() => {
     const hasGenerationSession = Boolean(currentReport || activeJobId || lastJob || latestFile)
     if (!hasGenerationSession) {
       writeReportGenerateSession(null)
@@ -700,6 +1005,32 @@ export function ReportGeneratePage() {
 
   const handleDeleteOutlineNode = (path: number[]) => {
     commitOutlineChange((nodes) => deleteOutlineNode(nodes, path))
+  }
+
+  const handleOutlineDragStart = (event: DragEvent<HTMLElement>, path: number[]) => {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', path.join('.'))
+    setDraggedOutlinePath(path)
+  }
+
+  const handleOutlineDragOver = (event: DragEvent<HTMLElement>, path: number[]) => {
+    if (!canMoveOutlineNode(draggedOutlinePath, path)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setDragOverOutlinePath(path)
+  }
+
+  const handleOutlineDrop = (event: DragEvent<HTMLElement>, path: number[]) => {
+    if (!canMoveOutlineNode(draggedOutlinePath, path)) return
+    event.preventDefault()
+    commitOutlineChange((nodes) => moveOutlineNode(nodes, draggedOutlinePath, path))
+    setDraggedOutlinePath(null)
+    setDragOverOutlinePath(null)
+  }
+
+  const handleOutlineDragEnd = () => {
+    setDraggedOutlinePath(null)
+    setDragOverOutlinePath(null)
   }
 
   const undoOutline = useCallback(() => {
@@ -807,6 +1138,7 @@ export function ReportGeneratePage() {
     setNotice(null)
     setFormError(null)
     setOutlineEditor({ future: [], nodes: [], past: [], sourceKey: '' })
+    setSectionGenerationReset(null)
     createReportMutation.reset()
     createJobMutation.reset()
     saveOutlineMutation.reset()
@@ -851,6 +1183,15 @@ export function ReportGeneratePage() {
       }
     }
 
+    setActiveJobId(null)
+    setLastJob(null)
+    setActiveSectionId('')
+    setSectionDraft('')
+    setShowVersions(false)
+    setLatestFile(null)
+    setOutlineEditor({ future: [], nodes: [], past: [], sourceKey: '' })
+    setSectionGenerationReset(null)
+
     try {
       const job = await createJobMutation.mutateAsync({
         reportId: report.id,
@@ -885,9 +1226,9 @@ export function ReportGeneratePage() {
     try {
       await saveOutlineMutation.mutateAsync({
         outlineId: outlinesQuery.data[0].id,
-        sections: outline,
+        sections: numberedOutline,
       })
-      setNotice('大纲已保存，后端将负责重新编号和结构合法性校验。')
+      setNotice('大纲已保存，章节编号已按当前顺序重新生成。')
     } catch (error) {
       setNotice(formatReportGatewayError(error, '大纲保存失败'))
     }
@@ -915,6 +1256,16 @@ export function ReportGeneratePage() {
       })
       setLastJob(job)
       setActiveJobId(job.id)
+      if (job.status === 'pending' || job.status === 'running') {
+        setSectionGenerationReset({
+          attemptCreatedAtMs: parseTimestampMs(job.createdAt) ?? Date.now(),
+          jobId: job.id,
+          reportId: job.reportId,
+          status: toActiveGenerationStatus(job.status),
+        })
+      } else {
+        setSectionGenerationReset(null)
+      }
       setStep('content')
       setNotice('已开始生成正文。每完成一个章节，进度会继续更新。')
     } catch (error) {
@@ -948,6 +1299,24 @@ export function ReportGeneratePage() {
           jobId: retryJob.id,
           reportId: retryJob.reportId,
         })
+        const retryStatus = toActiveGenerationStatus(attempt.status)
+        setSectionGenerationReset({
+          attemptCreatedAtMs: parseTimestampMs(attempt.createdAt) ?? Date.now(),
+          jobId: retryJob.id,
+          requireFreshSectionTimestamp: true,
+          reportId: retryJob.reportId,
+          status: retryStatus,
+        })
+        setLastJob({
+          ...retryJob,
+          error: undefined,
+          finishedAt: undefined,
+          progress: {},
+          resultSummary: undefined,
+          startedAt: undefined,
+          status: retryStatus,
+        })
+        setActiveJobId(retryJob.id)
         setNotice(`已重新提交任务，当前状态：${statusText[attempt.status]}`)
       } catch (error) {
         setNotice(formatReportGatewayError(error, '创建重试尝试失败'))
@@ -1012,7 +1381,7 @@ export function ReportGeneratePage() {
     }
   }
 
-  const progressPercent = getProgressPercent(effectiveJob)
+  const progressPercent = getProgressPercent(effectiveJob, progressNow)
   const jobStatusLabel = getJobProgressLabel(effectiveJob)
   const jobProgressTone =
     effectiveJob?.status === 'failed'
@@ -1392,47 +1761,77 @@ export function ReportGeneratePage() {
                   variant="empty"
                 />
               ) : (
-                <div aria-label="大纲章节列表" className="space-y-2">
-                  {flattenedOutline.map(({ node, path }) => (
-                    <div
-                      key={node.id ?? node.clientSectionId ?? node.title}
-                      style={
-                        node.level > 1 ? { marginLeft: `${(node.level - 1) * 2}rem` } : undefined
-                      }
-                      className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-lg border border-border bg-background px-3 py-2"
-                    >
-                      <Button
-                        aria-label={`在此章节后新增同级章节：${node.title}`}
-                        size="icon-sm"
-                        type="button"
-                        variant="ghost"
-                        onClick={() => handleAddOutlineSibling(path)}
+                <div
+                  aria-label="大纲章节列表"
+                  className="space-y-2 transition-opacity duration-150"
+                >
+                  {flattenedOutline.map(({ node, path }) => {
+                    const isDragging = pathsEqual(draggedOutlinePath, path)
+                    const isDropTarget = pathsEqual(dragOverOutlinePath, path)
+                    return (
+                      <div
+                        key={node.id ?? node.clientSectionId ?? node.title}
+                        aria-label={`大纲章节：${node.title}`}
+                        style={
+                          node.level > 1 ? { marginLeft: `${(node.level - 1) * 2}rem` } : undefined
+                        }
+                        className={cn(
+                          'grid grid-cols-[auto_auto_auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 transition-[background-color,border-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-muted/40 focus-within:border-ring/70 focus-within:bg-muted/30',
+                          isDragging && 'opacity-60',
+                          isDropTarget && 'border-primary/60 bg-primary/5 shadow-sm',
+                        )}
+                        onDragLeave={() => {
+                          if (pathsEqual(dragOverOutlinePath, path)) setDragOverOutlinePath(null)
+                        }}
+                        onDragOver={(event) => handleOutlineDragOver(event, path)}
+                        onDrop={(event) => handleOutlineDrop(event, path)}
                       >
-                        <Plus className="size-3.5" />
-                      </Button>
-                      <span className="w-10 text-xs text-muted-foreground">
-                        {node.numbering ?? '-'}
-                      </span>
-                      <Input
-                        aria-label={`章节标题：${node.title}`}
-                        className="h-8 min-w-0 text-sm font-medium"
-                        value={node.title}
-                        onChange={(event) => handleOutlineTitleChange(path, event.target.value)}
-                      />
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                        level {node.level}
-                      </span>
-                      <Button
-                        aria-label={`删除章节：${node.title}`}
-                        size="icon-sm"
-                        type="button"
-                        variant="ghost"
-                        onClick={() => handleDeleteOutlineNode(path)}
-                      >
-                        <Minus className="size-3.5" />
-                      </Button>
-                    </div>
-                  ))}
+                        <Button
+                          aria-label={`拖动章节调整顺序：${node.title}`}
+                          className="cursor-grab text-muted-foreground active:cursor-grabbing"
+                          draggable
+                          size="icon-sm"
+                          title="拖动调整同级章节顺序"
+                          type="button"
+                          variant="ghost"
+                          onDragEnd={handleOutlineDragEnd}
+                          onDragStart={(event) => handleOutlineDragStart(event, path)}
+                        >
+                          <GripVertical className="size-3.5" />
+                        </Button>
+                        <Button
+                          aria-label={`在此章节后新增同级章节：${node.title}`}
+                          size="icon-sm"
+                          type="button"
+                          variant="ghost"
+                          onClick={() => handleAddOutlineSibling(path)}
+                        >
+                          <Plus className="size-3.5" />
+                        </Button>
+                        <span className="w-10 text-xs text-muted-foreground">
+                          {node.numbering ?? '-'}
+                        </span>
+                        <Input
+                          aria-label={`章节标题：${node.title}`}
+                          className="h-8 min-w-0 text-sm font-medium transition-colors duration-150"
+                          value={node.title}
+                          onChange={(event) => handleOutlineTitleChange(path, event.target.value)}
+                        />
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground transition-colors duration-150">
+                          level {node.level}
+                        </span>
+                        <Button
+                          aria-label={`删除章节：${node.title}`}
+                          size="icon-sm"
+                          type="button"
+                          variant="ghost"
+                          onClick={() => handleDeleteOutlineNode(path)}
+                        >
+                          <Minus className="size-3.5" />
+                        </Button>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </section>

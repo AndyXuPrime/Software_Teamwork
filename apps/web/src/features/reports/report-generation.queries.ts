@@ -38,6 +38,7 @@ import type {
   ReportJob,
   ReportJobStatus,
   ReportOutline,
+  ReportSection,
   ReportTemplateStructure,
   UpdateReportSettingsRequest,
 } from './report-generation.types'
@@ -65,6 +66,27 @@ function isTerminalReportJobStatus(status: ReportJobStatus): boolean {
   return terminalReportJobStatuses.has(status)
 }
 
+function isReportContentJob(job?: Pick<ReportJob, 'jobType'> | null): boolean {
+  return (
+    job?.jobType === 'content_generation' ||
+    job?.jobType === 'content_regeneration' ||
+    job?.jobType === 'section_regeneration'
+  )
+}
+
+function isReportOutlineJob(job?: Pick<ReportJob, 'jobType'> | null): boolean {
+  return job?.jobType === 'outline_generation' || job?.jobType === 'outline_regeneration'
+}
+
+function resetSectionsForGeneration(sections?: ReportSection[]): ReportSection[] | undefined {
+  return sections?.map((section) => ({
+    ...section,
+    generatedAt: undefined,
+    generationStatus: 'pending',
+    lastJobId: undefined,
+  }))
+}
+
 function isWithinFailedReportRetryGrace(referenceTime?: string): boolean {
   if (!referenceTime) return false
   const timestamp = Date.parse(referenceTime)
@@ -85,7 +107,9 @@ export function getReportSectionsRefetchInterval(
   job?: ReportJob | null,
 ): number | false {
   if (!reportId || !job || job.reportId !== reportId) return false
-  if (job.status === 'pending' || job.status === 'running') return activeReportPollIntervalMs
+  if (isReportContentJob(job) && (job.status === 'pending' || job.status === 'running')) {
+    return activeReportPollIntervalMs
+  }
   return false
 }
 
@@ -193,7 +217,9 @@ export function useReportJobQuery(jobId: string | null) {
       if (refreshedActiveJobsRef.current.has(refreshKey)) return
       refreshedActiveJobsRef.current.add(refreshKey)
 
-      void queryClient.invalidateQueries({ queryKey: reportKeys.sections(job.reportId) })
+      if (isReportContentJob(job)) {
+        void queryClient.invalidateQueries({ queryKey: reportKeys.sections(job.reportId) })
+      }
       void queryClient.invalidateQueries({ queryKey: reportKeys.events(job.reportId) })
       return
     }
@@ -231,13 +257,37 @@ export function useCreateReportJobMutation() {
   return useMutation({
     mutationFn: ({ reportId, payload }: { reportId: string; payload: CreateReportJobPayload }) =>
       createReportJob(reportId, payload),
+    onMutate: ({ payload, reportId }) => {
+      if (isReportOutlineJob(payload)) {
+        queryClient.setQueryData<ReportOutline[]>(reportKeys.outlines(reportId), [])
+        queryClient.setQueryData<ReportSection[]>(reportKeys.sections(reportId), [])
+        return
+      }
+
+      if (isReportContentJob(payload)) {
+        queryClient.setQueryData<ReportSection[]>(reportKeys.sections(reportId), (sections) =>
+          resetSectionsForGeneration(sections),
+        )
+      }
+    },
     onSuccess: (job) => {
-      void queryClient.invalidateQueries({
-        queryKey: reportKeys.outlines(job.reportId),
-      })
-      void queryClient.invalidateQueries({
-        queryKey: reportKeys.sections(job.reportId),
-      })
+      if (isReportOutlineJob(job)) {
+        if (isTerminalReportJobStatus(job.status)) {
+          void queryClient.invalidateQueries({
+            queryKey: reportKeys.outlines(job.reportId),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: reportKeys.sections(job.reportId),
+          })
+        }
+      } else {
+        void queryClient.invalidateQueries({
+          queryKey: reportKeys.outlines(job.reportId),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: reportKeys.sections(job.reportId),
+        })
+      }
       void queryClient.invalidateQueries({ queryKey: reportKeys.records() })
     },
   })
@@ -254,9 +304,17 @@ export function useUpdateReportOutlineMutation(reportId: string) {
       outlineId: string
       sections: ReportOutline['sections']
     }) => updateReportOutline(reportId, outlineId, sections),
-    onSuccess: () => {
+    onSuccess: (outline) => {
+      queryClient.setQueryData<ReportOutline[]>(reportKeys.outlines(reportId), (outlines) => {
+        const existing = outlines ?? []
+        const next = existing.filter((item) => item.id !== outline.id)
+        return [outline, ...next]
+      })
       void queryClient.invalidateQueries({
         queryKey: reportKeys.outlines(reportId),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: reportKeys.sections(reportId),
       })
     },
   })
@@ -310,6 +368,10 @@ export function useRetryReportJobMutation() {
       )
       void queryClient.invalidateQueries({ queryKey: reportKeys.job(attempt.jobId) })
       if (variables.reportId) {
+        queryClient.setQueryData<ReportSection[]>(
+          reportKeys.sections(variables.reportId),
+          (sections) => resetSectionsForGeneration(sections),
+        )
         void queryClient.invalidateQueries({
           queryKey: reportKeys.events(variables.reportId),
         })

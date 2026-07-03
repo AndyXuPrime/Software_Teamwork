@@ -321,6 +321,7 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 				return dependencyError("list report section versions", err)
 			}
 			nextVersion := nextReportSectionVersion(currentSection, existingVersions)
+			currentSection = copySectionOutlineMetadata(currentSection, section)
 			currentSection.Content = generated.Content
 			currentSection.Tables = generated.Tables
 			currentSection.GenerationStatus = JobStatusSucceeded
@@ -398,7 +399,7 @@ func (s *ReportGenerationService) markSectionGenerationRunning(ctx context.Conte
 	if err != nil {
 		return section, dependencyError("mark report section generation running", err)
 	}
-	return updated, nil
+	return copySectionOutlineMetadata(updated, section), nil
 }
 
 func (s *ReportGenerationService) markSectionGenerationFailed(ctx context.Context, sectionID, jobID string) {
@@ -748,14 +749,14 @@ func (s *ReportGenerationService) currentOutlineSections(ctx context.Context, re
 	if err != nil {
 		return nil, dependencyError("list report outlines", err)
 	}
-	currentOutlineID := currentReportOutlineID(outlines)
-	if currentOutlineID == "" {
+	currentOutline, ok := currentReportOutline(outlines)
+	if !ok {
 		return sections, nil
 	}
-	return sectionsForOutline(sections, currentOutlineID), nil
+	return sectionsForOutline(sections, currentOutline), nil
 }
 
-func currentReportOutlineID(outlines []ReportOutline) string {
+func currentReportOutline(outlines []ReportOutline) (ReportOutline, bool) {
 	var current ReportOutline
 	for _, outline := range outlines {
 		if !outline.IsCurrent || strings.TrimSpace(outline.ID) == "" {
@@ -765,21 +766,65 @@ func currentReportOutlineID(outlines []ReportOutline) string {
 			current = outline
 		}
 	}
-	return current.ID
+	return current, current.ID != ""
 }
 
-func sectionsForOutline(sections []ReportSection, outlineID string) []ReportSection {
-	outlineID = strings.TrimSpace(outlineID)
+func sectionsForOutline(sections []ReportSection, outline ReportOutline) []ReportSection {
+	outlineID := strings.TrimSpace(outline.ID)
 	if outlineID == "" {
 		return sections
 	}
-	filtered := make([]ReportSection, 0, len(sections))
+	items := flattenOutlineSectionSkeletons(outline.Sections)
+	sectionsByNodeID := make(map[string]ReportSection, len(sections))
+	for _, section := range sections {
+		if strings.TrimSpace(section.OutlineID) != outlineID {
+			continue
+		}
+		nodeID := strings.TrimSpace(section.OutlineNodeID)
+		if nodeID == "" {
+			continue
+		}
+		sectionsByNodeID[nodeID] = section
+	}
+	filtered := make([]ReportSection, 0, len(sectionsByNodeID))
+	sectionIDByNodeID := make(map[string]string, len(items))
+	for _, item := range items {
+		nodeID := strings.TrimSpace(item.node.ID)
+		if nodeID == "" {
+			continue
+		}
+		section, ok := sectionsByNodeID[nodeID]
+		if !ok {
+			continue
+		}
+		parentSectionID := ""
+		if item.parentNodeID != "" {
+			parentSectionID = sectionIDByNodeID[item.parentNodeID]
+		}
+		section = applyOutlineSectionMetadata(section, item, parentSectionID)
+		filtered = append(filtered, section)
+		sectionIDByNodeID[nodeID] = section.ID
+	}
+	if len(items) > 0 || len(filtered) > 0 {
+		return filtered
+	}
 	for _, section := range sections {
 		if strings.TrimSpace(section.OutlineID) == outlineID {
 			filtered = append(filtered, section)
 		}
 	}
 	return filtered
+}
+
+func copySectionOutlineMetadata(section ReportSection, source ReportSection) ReportSection {
+	section.OutlineID = source.OutlineID
+	section.ParentID = source.ParentID
+	section.OutlineNodeID = source.OutlineNodeID
+	section.Title = source.Title
+	section.Level = source.Level
+	section.SortOrder = source.SortOrder
+	section.Numbering = source.Numbering
+	return section
 }
 
 func targetGenerationSections(sections []ReportSection, job ReportJob) []ReportSection {

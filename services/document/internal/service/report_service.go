@@ -424,9 +424,23 @@ func (s *ReportService) UpdateOutline(ctx context.Context, reqCtx RequestContext
 		outline.ManualEdited = true
 	}
 	outline.UpdatedAt = s.now()
-	updated, err := s.repo.UpdateReportOutline(ctx, outline)
+	var updated ReportOutline
+	err = s.repo.WithinTx(ctx, func(txRepo ReportRepository) error {
+		if err := requireWritableReportForUpdate(ctx, txRepo, reportID); err != nil {
+			return err
+		}
+		var err error
+		updated, err = txRepo.UpdateReportOutline(ctx, outline)
+		if err != nil {
+			return mapRepositoryReadError(err, "report outline not found")
+		}
+		if err := syncOutlineSectionSkeletons(ctx, txRepo, reportID, updated, outline.UpdatedAt); err != nil {
+			return err
+		}
+		return nil
+	})
 	if err != nil {
-		return ReportOutline{}, mapRepositoryReadError(err, "report outline not found")
+		return ReportOutline{}, err
 	}
 	recordOperationIfSupported(ctx, s.repo, OperationLog{
 		OperatorID:      reqCtx.UserID,
@@ -501,6 +515,102 @@ func assignOutlineNodeIDs(nodes []ReportOutlineNode) []ReportOutlineNode {
 		result[i] = node
 	}
 	return result
+}
+
+type outlineSectionSkeleton struct {
+	node         ReportOutlineNode
+	parentNodeID string
+	sortOrder    int
+}
+
+func flattenOutlineSectionSkeletons(nodes []ReportOutlineNode) []outlineSectionSkeleton {
+	result := make([]outlineSectionSkeleton, 0)
+	var walk func(items []ReportOutlineNode, parentNodeID string)
+	walk = func(items []ReportOutlineNode, parentNodeID string) {
+		for _, node := range items {
+			result = append(result, outlineSectionSkeleton{
+				node:         node,
+				parentNodeID: parentNodeID,
+				sortOrder:    len(result),
+			})
+			walk(node.Children, node.ID)
+		}
+	}
+	walk(nodes, "")
+	return result
+}
+
+func applyOutlineSectionMetadata(section ReportSection, item outlineSectionSkeleton, parentSectionID string) ReportSection {
+	section.ParentID = parentSectionID
+	section.OutlineNodeID = item.node.ID
+	section.Title = item.node.Title
+	section.Level = item.node.Level
+	section.SortOrder = item.sortOrder
+	section.Numbering = item.node.Numbering
+	return section
+}
+
+func syncOutlineSectionSkeletons(ctx context.Context, repo ReportRepository, reportID string, outline ReportOutline, updatedAt time.Time) error {
+	items := flattenOutlineSectionSkeletons(outline.Sections)
+	if len(items) == 0 {
+		return nil
+	}
+	existing, err := repo.ListReportSections(ctx, reportID)
+	if err != nil {
+		return dependencyError("list report sections", err)
+	}
+
+	sectionsByNodeID := make(map[string]ReportSection, len(existing))
+	for _, section := range existing {
+		if section.ReportID == reportID && section.OutlineID == outline.ID && strings.TrimSpace(section.OutlineNodeID) != "" {
+			sectionsByNodeID[section.OutlineNodeID] = section
+		}
+	}
+
+	sectionIDByNodeID := make(map[string]string, len(items))
+	for _, item := range items {
+		parentSectionID := ""
+		if item.parentNodeID != "" {
+			parentSectionID = sectionIDByNodeID[item.parentNodeID]
+		}
+
+		if section, ok := sectionsByNodeID[item.node.ID]; ok {
+			section = applyOutlineSectionMetadata(section, item, parentSectionID)
+			section.UpdatedAt = updatedAt
+			updated, err := repo.UpdateReportSection(ctx, section)
+			if err != nil {
+				return mapRepositoryReadError(err, "update report section failed")
+			}
+			sectionIDByNodeID[item.node.ID] = updated.ID
+			continue
+		}
+
+		id := newID()
+		created, err := repo.CreateReportSection(ctx, ReportSection{
+			ID:               id,
+			ReportID:         reportID,
+			OutlineID:        outline.ID,
+			ParentID:         parentSectionID,
+			OutlineNodeID:    item.node.ID,
+			SectionPath:      id,
+			Title:            item.node.Title,
+			Level:            item.node.Level,
+			SortOrder:        item.sortOrder,
+			Numbering:        item.node.Numbering,
+			SectionType:      SectionTypeText,
+			GenerationStatus: JobStatusPending,
+			ContentSource:    ContentSourceAI,
+			ManualEdited:     false,
+			Version:          1,
+			CreatedAt:        updatedAt,
+			UpdatedAt:        updatedAt,
+		})
+		if err != nil {
+			return mapRepositoryReadError(err, "create report section failed")
+		}
+		sectionIDByNodeID[item.node.ID] = created.ID
+	}
+	return nil
 }
 
 // --- Sections ---

@@ -12,9 +12,10 @@ import {
   useReportJobQuery,
   useReportSettingsQuery,
   useRetryReportJobMutation,
+  useUpdateReportOutlineMutation,
   useUpdateReportSettingsMutation,
 } from './report-generation.queries'
-import type { ReportEvent, ReportJob } from './report-generation.types'
+import type { ReportEvent, ReportJob, ReportOutline } from './report-generation.types'
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
@@ -171,25 +172,31 @@ describe('report generation query hooks', () => {
     expect(
       getReportSectionsRefetchInterval(
         'rpt-live',
-        reportJob({ reportId: 'rpt-live', status: 'running' }),
+        reportJob({ jobType: 'content_generation', reportId: 'rpt-live', status: 'running' }),
       ),
     ).toBe(3000)
     expect(
       getReportSectionsRefetchInterval(
         'rpt-live',
-        reportJob({ reportId: 'rpt-live', status: 'pending' }),
+        reportJob({ jobType: 'content_generation', reportId: 'rpt-live', status: 'pending' }),
       ),
     ).toBe(3000)
     expect(
       getReportSectionsRefetchInterval(
         'rpt-live',
-        reportJob({ reportId: 'rpt-live', status: 'succeeded' }),
+        reportJob({ jobType: 'outline_generation', reportId: 'rpt-live', status: 'running' }),
       ),
     ).toBe(false)
     expect(
       getReportSectionsRefetchInterval(
         'rpt-live',
-        reportJob({ reportId: 'other-report', status: 'running' }),
+        reportJob({ jobType: 'content_generation', reportId: 'rpt-live', status: 'succeeded' }),
+      ),
+    ).toBe(false)
+    expect(
+      getReportSectionsRefetchInterval(
+        'rpt-live',
+        reportJob({ jobType: 'content_generation', reportId: 'other-report', status: 'running' }),
       ),
     ).toBe(false)
   })
@@ -356,5 +363,80 @@ describe('report generation query hooks', () => {
     })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: reportKeys.job('job-cancel') })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: reportKeys.events('rpt-cancel') })
+  })
+
+  it('updates outline cache and refreshes sections after saving an edited outline', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init)
+        const url = new URL(request.url)
+
+        if (
+          request.method === 'PATCH' &&
+          url.pathname.endsWith('/reports/rpt-outline-save/outlines/outline-save')
+        ) {
+          return jsonResponse({
+            data: {
+              createdAt: '2026-07-03T00:00:00Z',
+              id: 'outline-save',
+              isCurrent: true,
+              manualEdited: true,
+              reportId: 'rpt-outline-save',
+              sections: [
+                { id: 'node-edited', level: 1, numbering: '1', title: 'Edited section' },
+                { id: 'node-added', level: 1, numbering: '2', title: 'Added section' },
+              ],
+              updatedAt: '2026-07-03T00:01:00Z',
+              version: 2,
+            },
+            requestId: 'req-save-outline',
+          })
+        }
+
+        return jsonResponse({ data: [], requestId: 'req-default' })
+      }),
+    )
+
+    const queryClient = createQueryClient()
+    const oldOutline: ReportOutline = {
+      createdAt: '2026-07-03T00:00:00Z',
+      id: 'outline-save',
+      manualEdited: false,
+      reportId: 'rpt-outline-save',
+      sections: [{ id: 'node-original', level: 1, numbering: '1', title: 'Original section' }],
+      updatedAt: '2026-07-03T00:00:00Z',
+      version: 1,
+    }
+    queryClient.setQueryData<ReportOutline[]>(reportKeys.outlines('rpt-outline-save'), [oldOutline])
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    const { result } = renderHook(() => useUpdateReportOutlineMutation('rpt-outline-save'), {
+      wrapper,
+    })
+
+    result.current.mutate({
+      outlineId: 'outline-save',
+      sections: [{ id: 'node-edited', level: 1, numbering: '1', title: 'Edited section' }],
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(
+      queryClient.getQueryData<ReportOutline[]>(reportKeys.outlines('rpt-outline-save')),
+    ).toEqual([
+      expect.objectContaining({
+        sections: [
+          expect.objectContaining({ id: 'node-edited', title: 'Edited section' }),
+          expect.objectContaining({ id: 'node-added', title: 'Added section' }),
+        ],
+        version: 2,
+      }),
+    ])
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: reportKeys.sections('rpt-outline-save'),
+    })
   })
 })

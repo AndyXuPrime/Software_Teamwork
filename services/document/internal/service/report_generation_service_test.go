@@ -561,6 +561,10 @@ func TestReportGenerationServiceContentGenerationUsesCurrentOutlineSections(t *t
 		ReportID:  "report-1",
 		Version:   2,
 		IsCurrent: true,
+		Sections: []ReportOutlineNode{
+			{ID: "node-current-1", Title: "Edited overview", Level: 1, Numbering: "1"},
+			{ID: "node-current-2", Title: "Edited risk", Level: 1, Numbering: "2"},
+		},
 	}
 	repo.sections["section-old"] = ReportSection{
 		ID:               "section-old",
@@ -575,7 +579,8 @@ func TestReportGenerationServiceContentGenerationUsesCurrentOutlineSections(t *t
 		ID:               "section-current-1",
 		ReportID:         "report-1",
 		OutlineID:        "outline-current",
-		Title:            "Current overview",
+		OutlineNodeID:    "node-current-1",
+		Title:            "Original overview",
 		SortOrder:        1,
 		Version:          1,
 		GenerationStatus: JobStatusPending,
@@ -584,8 +589,19 @@ func TestReportGenerationServiceContentGenerationUsesCurrentOutlineSections(t *t
 		ID:               "section-current-2",
 		ReportID:         "report-1",
 		OutlineID:        "outline-current",
-		Title:            "Current risk",
+		OutlineNodeID:    "node-current-2",
+		Title:            "Original risk",
 		SortOrder:        2,
+		Version:          1,
+		GenerationStatus: JobStatusPending,
+	}
+	repo.sections["section-removed-current-outline"] = ReportSection{
+		ID:               "section-removed-current-outline",
+		ReportID:         "report-1",
+		OutlineID:        "outline-current",
+		OutlineNodeID:    "node-removed",
+		Title:            "Removed stale node",
+		SortOrder:        3,
 		Version:          1,
 		GenerationStatus: JobStatusPending,
 	}
@@ -593,7 +609,7 @@ func TestReportGenerationServiceContentGenerationUsesCurrentOutlineSections(t *t
 		responses: []ChatCompletionResponse{
 			{Content: `{"content":"current overview body","tables":[]}`},
 			{Content: `{"content":"current risk body","tables":[]}`},
-			{Content: `{"content":"legacy body","tables":[]}`},
+			{Content: `{"content":"stale body","tables":[]}`},
 		},
 	}
 	svc := NewReportGenerationService(repo, chat)
@@ -614,8 +630,19 @@ func TestReportGenerationServiceContentGenerationUsesCurrentOutlineSections(t *t
 	if len(chat.requests) != 2 {
 		t.Fatalf("chat request count = %d, want 2 current outline sections", len(chat.requests))
 	}
+	firstPrompt := chat.requests[0].Messages[1].Content
+	if !strings.Contains(firstPrompt, "Edited overview") || strings.Contains(firstPrompt, "Original overview") {
+		t.Fatalf("first section prompt did not use current outline title: %s", firstPrompt)
+	}
+	secondPrompt := chat.requests[1].Messages[1].Content
+	if !strings.Contains(secondPrompt, "Edited risk") || strings.Contains(secondPrompt, "Original risk") {
+		t.Fatalf("second section prompt did not use current outline title: %s", secondPrompt)
+	}
 	if got := repo.sections["section-old"]; got.Content != "" || got.GenerationStatus != JobStatusPending {
 		t.Fatalf("old outline section was generated: %+v", got)
+	}
+	if got := repo.sections["section-removed-current-outline"]; got.Content != "" || got.GenerationStatus != JobStatusPending {
+		t.Fatalf("removed current-outline node was generated: %+v", got)
 	}
 	if got := repo.sections["section-current-1"]; got.Content != "current overview body" || got.Version != 2 {
 		t.Fatalf("current section 1 = %+v", got)

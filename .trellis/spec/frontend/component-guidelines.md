@@ -82,6 +82,30 @@ type DocumentStatusBadgeProps = {
 - Use tree/list components plus `dnd-kit` for outline ordering.
 - Use TipTap for report section editing and template visual editing.
 - Keep DOCX generation in the backend or a document service. The frontend sends structured report data and handles download.
+- Starting a new outline generation from an existing draft must immediately
+  clear downstream outline, section, content-progress, active-section, and
+  export state. Do not keep old section data visible while the replacement
+  outline job is pending.
+- Retrying or starting content generation must reset visible section statuses
+  for the new attempt even when a stale terminal job or section query response
+  returns first. Prefer a short-lived attempt-scoped UI overlay until server
+  data is clearly from the new attempt.
+
+#### Report Outline Editing
+
+- Before saving a manually edited outline, derive the submitted tree from the
+  current editor state and recalculate every node's `numbering` and `level`
+  from its position. Do not rely on stale numbering from the generated outline.
+- Simple drag reordering should preserve the current hierarchy unless the UI
+  explicitly offers a level/parent change affordance. Constrain those drops to
+  same-parent nodes so accidental dragging cannot silently promote or demote
+  sections.
+- Outline editor rows should keep stable dimensions and use icon controls for
+  drag, add, and delete actions. Lightweight hover, focus, and drag transitions
+  are preferred over layout-shifting animations.
+- Regression tests for outline editing should assert the save payload after
+  edit/add/delete/reorder operations, including child numbering after a parent
+  moves.
 
 ## Styling
 
