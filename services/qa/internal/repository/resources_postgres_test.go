@@ -136,6 +136,92 @@ func TestToolCallEventPayloadCarriesModelInvocationID(t *testing.T) {
 	}
 }
 
+func TestReportArtifactFromJSONKeepsSafeArtifact(t *testing.T) {
+	raw := []byte(`{"artifactType":"report_generation","reportId":"rpt-1","jobId":"job-1","jobType":"content_generation","jobStatus":"running","fileStatus":"succeeded","fileSize":2048,"downloadPath":"/api/v1/report-files/file-1/content","detailPath":"/api/v1/reports/rpt-1","ignored":"extra","preview":{"title":"Report generation is running","statusText":"running","ignored":"extra"}}`)
+
+	artifact, ok := reportArtifactFromJSON(raw)
+
+	if !ok {
+		t.Fatal("expected safe artifact to be accepted")
+	}
+	if artifact["reportId"] != "rpt-1" || artifact["jobId"] != "job-1" {
+		t.Fatalf("artifact=%+v", artifact)
+	}
+	if artifact["fileStatus"] != "succeeded" || artifact["downloadPath"] != "/api/v1/report-files/file-1/content" {
+		t.Fatalf("artifact paths/status=%+v", artifact)
+	}
+	if artifact["jobType"] != "content_generation" || artifact["fileSize"] != int64(2048) {
+		t.Fatalf("artifact job type/file size=%+v", artifact)
+	}
+	if _, ok := artifact["ignored"]; ok {
+		t.Fatalf("unexpected extra artifact field: %+v", artifact)
+	}
+	preview, _ := artifact["preview"].(map[string]any)
+	if _, ok := preview["ignored"]; ok {
+		t.Fatalf("unexpected extra preview field: %+v", preview)
+	}
+}
+
+func TestReportArtifactFromJSONRejectsUnsafeArtifact(t *testing.T) {
+	raw := []byte(`{"artifactType":"report_generation","reportId":"rpt-1","preview":{"summary":"internal URL http://localhost:9000/private"}}`)
+
+	if artifact, ok := reportArtifactFromJSON(raw); ok {
+		t.Fatalf("unsafe artifact accepted: %+v", artifact)
+	}
+}
+
+func TestReportArtifactFromJSONDropsInvalidPublicContractValues(t *testing.T) {
+	raw := []byte(`{"artifactType":"report_generation","reportId":"rpt-1","jobType":"unknown_job","jobStatus":"weird","fileStatus":"completed","format":"pdf","fileSize":12.5,"downloadPath":"/api/v1/files/file-1","detailPath":"/api/v1/reports/rpt-1/extra"}`)
+
+	artifact, ok := reportArtifactFromJSON(raw)
+
+	if !ok {
+		t.Fatal("expected artifact with valid identity to be accepted")
+	}
+	for _, key := range []string{"jobType", "jobStatus", "fileStatus", "format", "fileSize", "downloadPath", "detailPath"} {
+		if _, ok := artifact[key]; ok {
+			t.Fatalf("invalid contract field %q was kept: %+v", key, artifact)
+		}
+	}
+}
+
+func TestReportArtifactFromJSONDropsNegativeFileSize(t *testing.T) {
+	raw := []byte(`{"artifactType":"report_generation","reportId":"rpt-1","fileSize":-1}`)
+
+	artifact, ok := reportArtifactFromJSON(raw)
+
+	if !ok {
+		t.Fatal("expected artifact with valid identity to be accepted")
+	}
+	if _, ok := artifact["fileSize"]; ok {
+		t.Fatalf("negative fileSize was kept: %+v", artifact)
+	}
+}
+
+func TestMergeReportArtifactUpdatesStableArtifact(t *testing.T) {
+	existing := []service.ReportArtifact{{
+		"artifactType": "report_generation",
+		"reportId":     "rpt-1",
+		"jobId":        "job-1",
+		"jobStatus":    "running",
+	}}
+	updated := service.ReportArtifact{
+		"artifactType": "report_generation",
+		"reportId":     "rpt-1",
+		"jobId":        "job-1",
+		"jobStatus":    "succeeded",
+		"reportFileId": "file-1",
+		"downloadPath": "/api/v1/report-files/file-1/content",
+		"preview":      map[string]any{"title": "DOCX report export ready"},
+	}
+
+	merged := mergeReportArtifact(existing, updated)
+
+	if len(merged) != 1 || merged[0]["jobStatus"] != "succeeded" || merged[0]["reportFileId"] != "file-1" {
+		t.Fatalf("merged=%+v", merged)
+	}
+}
+
 func TestMarshalCitationMetadataNormalizesAttachmentID(t *testing.T) {
 	raw, err := marshalCitationMetadata(service.Citation{
 		AttachmentID: " attachment-canonical ",

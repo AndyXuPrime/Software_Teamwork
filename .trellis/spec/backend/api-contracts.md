@@ -2328,3 +2328,100 @@ GET /internal/v1/sessions/{id} -> returns session identity without raw token/has
 OpenAPI serviceTokenAuth -> apiKey header X-Service-Token, matching handler auth
 POST /internal/v1/users commits user -> post-commit event fails -> warn log + 201 response
 ```
+
+## Scenario: QA Message History Recovery Fields
+
+### 1. Scope / Trigger
+
+- Trigger: adding or changing fields returned by `QAMessage` for
+  `GET /api/v1/qa-sessions/{sessionId}/messages`.
+- Applies to the Gateway OpenAPI `QAMessage` schema, `services/qa` message DTOs,
+  QA repository enrichment, generated frontend API types, and chat-history
+  recovery code.
+
+### 2. Signatures
+
+Gateway `QAMessage` may include these optional assistant-message recovery
+fields:
+
+```yaml
+responseRunId: string
+reasoningContent: string
+artifacts: QAReportArtifact[]
+```
+
+QA service source records:
+
+```text
+response_runs.assistant_message_id -> responseRunId
+response_stream_events(event_type='reasoning.delta').payload.text -> reasoningContent
+agent_tool_calls.result_summary.reportArtifact -> artifacts[]
+```
+
+### 3. Contracts
+
+- These fields are optional for user messages, legacy assistant messages, and
+  assistant messages without a persisted `response_run`.
+- `reasoningContent` is reconstructed only from persisted public
+  `reasoning.delta` events for the same assistant message id.
+- `artifacts` is reconstructed only from sanitized
+  `agent_tool_calls.result_summary.reportArtifact` values for the same response
+  run.
+- `artifacts` must be projected to the `QAReportArtifact` OpenAPI schema. Extra
+  JSONB fields must not leak into the public message response.
+- `includeThinking=false` may omit `thinking`, but must not suppress
+  `responseRunId`, `reasoningContent`, or `artifacts`.
+- Frontend types must be regenerated from
+  `docs/services/gateway/api/public.openapi.yaml`; browser code should not keep
+  hand-written out-of-contract message extensions once the contract exists.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| No response run for a message | Omit `responseRunId`, `reasoningContent`, and `artifacts`; do not fail the page. |
+| Persisted reasoning delta contains unsafe text | Drop the unsafe text or whole reconstructed reasoning block. |
+| Artifact JSON lacks `artifactType=report_generation` | Drop the artifact. |
+| Artifact contains internal URL, object key, prompt, token, API key, raw provider/tool data, or unknown OpenAPI fields | Drop unsafe values; do not expose them in `QAMessage`. |
+| Artifact download/detail paths do not match public Gateway path patterns | Omit those path fields. |
+| Message list caller is not the conversation owner | Return the existing `403`/`404` owner-filter behavior. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: message list loads base messages, joins response runs through
+  conversation ownership, concatenates safe reasoning deltas in event order,
+  projects report artifacts to the public schema, and returns one complete
+  `QAMessage` page for refresh recovery.
+- Base: old messages without response runs still return normal content,
+  citations, thinking, attachment ids, and timestamps.
+- Bad: frontend refresh recovery performs N+1 calls to
+  `/response-runs/{id}/tool-calls` for every message, or QA duplicates artifact
+  JSON into a new message column while normalized run/tool records already hold
+  the authoritative facts.
+
+### 6. Tests Required
+
+- OpenAPI/generated-type drift check after schema changes.
+- QA HTTP test proving message list serializes `responseRunId`,
+  `reasoningContent`, and `artifacts`.
+- QA repository unit or integration coverage proving artifacts are projected to
+  the public schema and unsafe values are not exposed.
+- Frontend typecheck/build after regenerating `apps/web/src/api/generated/`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+GET messages -> QAMessage omits responseRunId
+frontend -> for each assistant message, maybe call /response-runs/{id}/tool-calls
+artifact response -> raw resultSummary copied into UI state
+```
+
+#### Correct
+
+```text
+GET messages -> QA joins response_runs + public stream events + sanitized tool summaries
+QAMessage -> { responseRunId, reasoningContent, artifacts }
+frontend refresh -> stores serverMessages.items directly
+```

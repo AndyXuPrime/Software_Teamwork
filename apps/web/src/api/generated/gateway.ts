@@ -2709,8 +2709,14 @@ export interface components {
             status: components["schemas"]["QAMessageStatus"];
             intent?: components["schemas"]["QAIntent"];
             content: string;
+            /** @description Response run id for assistant messages when a persisted run exists. User messages and legacy assistant messages may omit this field. */
+            responseRunId?: string;
+            /** @description Safe provider-supplied reasoning text reconstructed from persisted `reasoning.delta` events. Must not contain private chain-of-thought, prompts, raw tool arguments/results, internal URLs, storage object keys, API keys, tokens, or provider raw errors. */
+            reasoningContent?: string;
             /** @description User-visible process summaries only. Must not contain private chain-of-thought, full prompts, full tool arguments, raw tool results, internal URLs, or storage object keys. */
             thinking?: components["schemas"]["QAThinkingStep"][];
+            /** @description Sanitized report-generation artifacts recovered from QA tool-call summaries for this message's response run. Items use the `QAReportArtifact` schema and must not expose raw MCP output, prompts, internal URLs, object keys, tokens, or provider raw errors. */
+            artifacts?: components["schemas"]["QAReportArtifact"][];
             citations?: components["schemas"]["QACitation"][];
             /**
              * @description IDs of session attachments linked to this message at creation time.

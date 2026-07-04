@@ -45,8 +45,10 @@ func TestDocumentedResourceRoundTrip(t *testing.T) {
 	}
 	events := []service.StreamEvent{
 		{EventSeq: 1, EventType: "agent.iteration.started", Payload: map[string]any{"iterationNo": 1}, CreatedAt: now},
-		{EventSeq: 2, EventType: "tool.started", Payload: map[string]any{"iterationNo": 1, "modelInvocationId": invocationID, "toolCallId": "call-1", "tool": "search_knowledge"}, CreatedAt: now},
-		{EventSeq: 3, EventType: "tool.failed", Payload: map[string]any{"iterationNo": 1, "modelInvocationId": invocationID, "toolCallId": "call-1", "tool": "search_knowledge", "result": map[string]any{"error": "retrieval_failed", "message": "knowledge retrieval service failed", "sanitized": true}}, CreatedAt: now.Add(time.Millisecond)},
+		{EventSeq: 2, EventType: "reasoning.delta", Payload: map[string]any{"messageId": assistantMessageID, "text": "checked public report status", "index": 0}, CreatedAt: now.Add(time.Millisecond)},
+		{EventSeq: 3, EventType: "tool.started", Payload: map[string]any{"iterationNo": 1, "modelInvocationId": invocationID, "toolCallId": "call-1", "tool": "search_knowledge"}, CreatedAt: now.Add(2 * time.Millisecond)},
+		{EventSeq: 4, EventType: "tool.failed", Payload: map[string]any{"iterationNo": 1, "modelInvocationId": invocationID, "toolCallId": "call-1", "tool": "search_knowledge", "result": map[string]any{"error": "retrieval_failed", "message": "knowledge retrieval service failed", "sanitized": true}}, CreatedAt: now.Add(3 * time.Millisecond)},
+		{EventSeq: 5, EventType: "tool.completed", Payload: map[string]any{"iterationNo": 1, "modelInvocationId": invocationID, "toolCallId": "call-2", "tool": "document__get_report_result", "result": map[string]any{"sanitized": true, "reportArtifact": map[string]any{"artifactType": "report_generation", "reportId": "rpt-1", "jobStatus": "succeeded", "detailPath": "/api/v1/reports/rpt-1", "preview": map[string]any{"title": "Report generation completed"}}}}, CreatedAt: now.Add(4 * time.Millisecond)},
 	}
 	if err = repo.SaveStreamEvents(ctx, "integration-user", run.ID, events); err != nil {
 		t.Fatal(err)
@@ -56,19 +58,41 @@ func TestDocumentedResourceRoundTrip(t *testing.T) {
 		t.Fatalf("invocations=%+v err=%v", rows, err)
 	}
 	replayed, err := repo.ListStreamEvents(ctx, "integration-user", conversationID, run.ID, 0)
-	if err != nil || len(replayed) != 3 {
+	if err != nil || len(replayed) != len(events) {
 		t.Fatalf("events=%d err=%v", len(replayed), err)
 	}
 	replayedAfterFirst, err := repo.ListStreamEvents(ctx, "integration-user", conversationID, run.ID, 1)
-	if err != nil || len(replayedAfterFirst) != 2 || replayedAfterFirst[0].EventSeq != 2 {
+	if err != nil || len(replayedAfterFirst) != len(events)-1 || replayedAfterFirst[0].EventSeq != 2 {
 		t.Fatalf("events after seq=%+v err=%v", replayedAfterFirst, err)
 	}
 	calls, err := repo.ListToolCalls(ctx, "integration-user", run.ID)
-	if err != nil || len(calls) != 1 || calls[0].Status != "failed" {
+	if err != nil || len(calls) != 2 {
 		t.Fatalf("calls=%+v err=%v", calls, err)
 	}
-	if calls[0].ModelInvocationID != invocationID || calls[0].MCPServerName != "qa_builtin" || calls[0].ErrorCode != "retrieval_failed" || calls[0].ErrorMessage != "knowledge retrieval service failed" {
-		t.Fatalf("tool call audit fields=%+v", calls[0])
+	var sawFailedSearch, sawReportArtifact bool
+	for _, call := range calls {
+		if call.ToolName == "search_knowledge" && call.ModelInvocationID == invocationID && call.MCPServerName == "qa_builtin" && call.ErrorCode == "retrieval_failed" && call.ErrorMessage == "knowledge retrieval service failed" {
+			sawFailedSearch = true
+		}
+		if call.ToolName == "document__get_report_result" && call.Status == "completed" {
+			if artifact, _ := call.ResultSummary["reportArtifact"].(map[string]any); artifact["reportId"] == "rpt-1" {
+				sawReportArtifact = true
+			}
+		}
+	}
+	if !sawFailedSearch || !sawReportArtifact {
+		t.Fatalf("tool call audit fields=%+v", calls)
+	}
+	messagesWithRecoverables, err := repo.ListMessages(ctx, "integration-user", conversationID, service.MessageListOptions{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messagesWithRecoverables.Items) != 2 {
+		t.Fatalf("messages=%+v", messagesWithRecoverables.Items)
+	}
+	assistant := messagesWithRecoverables.Items[1]
+	if assistant.ResponseRunID != run.ID || assistant.ReasoningContent != "checked public report status" || len(assistant.Artifacts) != 1 || assistant.Artifacts[0]["reportId"] != "rpt-1" {
+		t.Fatalf("assistant recoverables=%+v", assistant)
 	}
 	cancelled, err := repo.CancelResponseRun(ctx, "integration-user", run.ID)
 	if err != nil || cancelled.Status != "cancelled" {

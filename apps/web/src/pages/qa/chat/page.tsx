@@ -673,9 +673,6 @@ export function ChatPage() {
       if (!current || current.length === 0) {
         if (serverMessages.items.length > 0) {
           updateSessionMessages(activeId, serverMessages.items)
-          // TODO: recover report artifacts from GET /api/v1/response-runs/
-          //       {responseRunId}/tool-calls resultSummary.reportArtifact
-          //       once responseRunId is persisted on QAMessage.
         }
       }
     }

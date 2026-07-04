@@ -595,6 +595,52 @@ func TestListMessagesDefaultsIncludeParametersToTrue(t *testing.T) {
 	}
 }
 
+func TestListMessagesSerializesRunRecoverableFields(t *testing.T) {
+	server := newTestServer(t, fakeQAService{listMessages: func(_ context.Context, _, sessionID string, options service.MessageListOptions) (service.Page[service.Message], error) {
+		return service.Page[service.Message]{
+			Items: []service.Message{{
+				ID:               "assistant-message",
+				ConversationID:   sessionID,
+				Role:             "assistant",
+				Status:           "completed",
+				Content:          "answer",
+				ResponseRunID:    "run-1",
+				ReasoningContent: "checked safe public facts",
+				Artifacts: []service.ReportArtifact{{
+					"artifactType": "report_generation",
+					"reportId":     "rpt-1",
+					"jobStatus":    "succeeded",
+					"detailPath":   "/api/v1/reports/rpt-1",
+					"preview":      map[string]any{"title": "Report generation completed"},
+				}},
+				CreatedAt: time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC),
+			}},
+			Page: options.Page, PageSize: options.PageSize, Total: 1,
+		}, nil
+	}})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/qa-sessions/session-1/messages", nil)
+	request.Header.Set("X-User-Id", "user-1")
+	request.Header.Set("X-Service-Token", "test-service-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	for _, expected := range []string{
+		`"responseRunId":"run-1"`,
+		`"reasoningContent":"checked safe public facts"`,
+		`"artifacts":[{"artifactType":"report_generation"`,
+		`"detailPath":"/api/v1/reports/rpt-1"`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("response missing %s: %s", expected, body)
+		}
+	}
+}
+
 func TestListMessagesRejectsInvalidIncludeParameter(t *testing.T) {
 	server := newTestServer(t, fakeQAService{listMessages: func(context.Context, string, string, service.MessageListOptions) (service.Page[service.Message], error) {
 		t.Fatal("service should not be called")

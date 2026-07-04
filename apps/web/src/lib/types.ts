@@ -83,15 +83,11 @@ export type QASessionAttachment = SessionAttachmentSummary
 export type QAReportArtifact = components['schemas']['QAReportArtifact']
 export type QAReportArtifactPreview = components['schemas']['QAReportArtifactPreview']
 
-/** QAMessage extended with optional report artifacts (not in the OpenAPI schema yet). */
-export type QAMessageWithArtifacts = QAMessage & {
-  artifacts?: QAReportArtifact[]
-}
+/** Compatibility alias for callers that explicitly work with message-level report artifacts. */
+export type QAMessageWithArtifacts = QAMessage
 
-/** QAMessage extended with streamed reasoning text (frontend-only until backend persists it). */
-export type QAMessageWithReasoning = QAMessage & {
-  reasoningContent?: string
-}
+/** Compatibility alias for callers that explicitly work with message-level reasoning text. */
+export type QAMessageWithReasoning = QAMessage
 
 // ── Knowledge Bases ──
 export type ChunkStrategy = components['schemas']['ChunkStrategy']

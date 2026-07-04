@@ -85,20 +85,25 @@ type ConversationListOptions struct {
 }
 
 type Message struct {
-	ID             string          `json:"id"`
-	ConversationID string          `json:"sessionId"`
-	SequenceNo     int             `json:"sequenceNo"`
-	Role           string          `json:"role"`
-	Content        string          `json:"content"`
-	Intent         string          `json:"intent,omitempty"`
-	Status         string          `json:"status"`
-	Thinking       []ReasoningStep `json:"thinking,omitempty"`
-	Citations      []Citation      `json:"citations,omitempty"`
-	CitationCount  int             `json:"-"`
-	AttachmentIDs  []string        `json:"attachmentIds,omitempty"`
-	CreatedAt      time.Time       `json:"createdAt"`
-	CompletedAt    *time.Time      `json:"completedAt,omitempty"`
+	ID               string           `json:"id"`
+	ConversationID   string           `json:"sessionId"`
+	SequenceNo       int              `json:"sequenceNo"`
+	Role             string           `json:"role"`
+	Content          string           `json:"content"`
+	Intent           string           `json:"intent,omitempty"`
+	Status           string           `json:"status"`
+	ResponseRunID    string           `json:"responseRunId,omitempty"`
+	ReasoningContent string           `json:"reasoningContent,omitempty"`
+	Thinking         []ReasoningStep  `json:"thinking,omitempty"`
+	Citations        []Citation       `json:"citations,omitempty"`
+	Artifacts        []ReportArtifact `json:"artifacts,omitempty"`
+	CitationCount    int              `json:"-"`
+	AttachmentIDs    []string         `json:"attachmentIds,omitempty"`
+	CreatedAt        time.Time        `json:"createdAt"`
+	CompletedAt      *time.Time       `json:"completedAt,omitempty"`
 }
+
+type ReportArtifact map[string]any
 
 type MessageListOptions struct {
 	Page             int
@@ -868,11 +873,19 @@ func publicStepStatus(value string) string {
 	return value
 }
 
-func sanitizeReasoningContent(value string) string {
+func SanitizeReasoningContent(value string) string {
 	if value == "" || containsUnsafeReasoningContent(value) {
 		return ""
 	}
 	return truncateUTF8String(value, 4000)
+}
+
+func sanitizeReasoningContent(value string) string {
+	return SanitizeReasoningContent(value)
+}
+
+func ContainsUnsafeReasoningContent(value string) bool {
+	return containsUnsafeReasoningContent(value)
 }
 
 type reasoningDeltaBuffer struct {

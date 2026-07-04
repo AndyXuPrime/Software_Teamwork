@@ -16,7 +16,6 @@ import type {
   QACitation,
   QACitationDetail,
   QAMessage,
-  QAMessageWithReasoning,
   QAReportArtifact,
   QAThinkingStep,
 } from '@/lib/types'
@@ -907,7 +906,7 @@ function MessageBubble({
 }) {
   const isUser = msg.role === 'user'
   const hasThinking = msg.thinking && msg.thinking.length > 0
-  const reasoningContent = (msg as QAMessageWithReasoning).reasoningContent
+  const reasoningContent = msg.reasoningContent
   const hasReasoningContent = Boolean(reasoningContent?.trim())
   const hasCitations = msg.citations && msg.citations.length > 0
   const markdownComponents = useMemo(
@@ -915,8 +914,7 @@ function MessageBubble({
     [msg.citations],
   )
 
-  // Report artifacts stored as a dynamic property (not in the QAMessage schema yet)
-  const artifacts = (msg as Record<string, unknown>).artifacts as QAReportArtifact[] | undefined
+  const artifacts = msg.artifacts
   const hasArtifacts = artifacts && artifacts.length > 0
 
   // Determine effective streaming state
