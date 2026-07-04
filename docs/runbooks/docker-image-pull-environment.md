@@ -92,6 +92,17 @@ Docker Hub 默认路径：
 python3 scripts/check_docker_environment.py --profile default --clean-env
 ```
 
+Docker Hub 通过当前代理环境访问：
+
+```bash
+export HTTP_PROXY=http://127.0.0.1:<proxy-port>
+export HTTPS_PROXY=http://127.0.0.1:<proxy-port>
+export NO_PROXY=localhost,127.0.0.1,::1
+python3 scripts/check_docker_environment.py --profile default
+```
+
+`--clean-env` 会故意清掉出站代理变量，适合验证直连/daemon mirror；验证官方源经代理可达时不要加它。
+
 完整诊断：
 
 ```bash

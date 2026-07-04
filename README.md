@@ -186,6 +186,9 @@ cd apps/web && bun run dev
 Go 服务通过宿主机 `go run` 启动，首次运行会下载 Go modules。若 `.local/logs/auth.log`
 或 `.local/logs/gateway.log` 出现 `proxy.golang.org` 超时，在中国大陆网络中重新执行
 `./scripts/local/run-backend.sh --china`；其他网络优先检查企业代理或本机 Go 配置。
+如果要验证官方 Docker Hub 路径经本机代理可达，先设置宿主机/Docker 代理环境，再运行
+`python3 scripts/check_docker_environment.py --profile default`；不要带 `--clean-env`，
+因为它会故意清掉 shell 出站代理变量。
 `UV_DEFAULT_INDEX` 在 `config/base.yaml` 中默认指向官方 PyPI；它影响 uv，不影响 Docker。第一次
 启动 Knowledge runtime 相关 Python 依赖时仍可能下载较多包，之后会走 uv 缓存。已有旧
 `.env.local` 的本地环境如果仍保留 TUNA、DaoCloud、`goproxy.cn` 或

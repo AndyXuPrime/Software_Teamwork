@@ -309,6 +309,16 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - `run-knowledge-parse-stack.sh` must not run direct `docker build` or
   `docker run` for Elasticsearch. Local Elasticsearch lifecycle belongs to the
   default root Compose infrastructure started by `dev-up.sh`.
+- Shared local shell helpers under `scripts/local/lib/` are part of the startup
+  contract. Entry scripts may move common behavior there, but
+  `scripts/verify_local_seed_contract.py` must read the helper files together
+  with the entrypoints so process-group, runtime config, mirror, and proxy
+  contracts stay covered.
+- Local startup helpers may auto-append `NO_PROXY` only for loopback runtime
+  URLs such as `localhost`, `127.0.0.1`, and `::1`. External runtime URLs and
+  official download hosts such as PyPI, Docker Hub, `proxy.golang.org`, and
+  `sum.golang.org` must keep using the user's shell or daemon proxy
+  environment.
 - `HF_ENDPOINT=https://hf-mirror.com` must not be active in committed defaults
   or forced by runtime scripts in official-default mode. Mainland China runtime
   model download mirrors are explicit through
@@ -364,6 +374,11 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   committed config. Existing daemon mirrors or proxies are acceptable only
   after `python3 scripts/check_docker_environment.py --profile all --clean-env`
   proves their manifest path is healthy.
+- The current mainland China Elasticsearch registry rewrite is
+  `docker.m.daocloud.io/elasticsearch:8.15.3`. Do not restore
+  `docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3`
+  unless manifest probes prove that nested path is usable again and docs/tests
+  are updated in the same change.
 - Local Docker image tags must stay pinned and version-aligned across Compose,
   README/runbooks, and `docs/architecture/technology-decisions.md`.
 - PostgreSQL seed scripts may create local/demo data only after service-owned
@@ -406,6 +421,7 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | Retired parser paths or env keys reappear in startup scripts | Remove the parser dependency and route document parsing through `services/knowledge-runtime`. |
 | Local startup script exits without a success or failure summary | Add or restore explicit command-line status output in the script and local seed contract checker. |
 | Go module preflight, migration, or service startup shows `Get "https://proxy.golang.org/...": i/o timeout` | Confirm `config/base.yaml` contains the repository `GOPROXY` / `GOSUMDB` defaults and `.env.local` has not overridden them unexpectedly. If the mirror is unavailable, override only local `.env.local` or enterprise shell config. The startup script should surface failures in the terminal and exit non-zero. |
+| Local helper adds PyPI, Docker Hub, `proxy.golang.org`, or an external runtime host to `NO_PROXY` | Restrict automatic `NO_PROXY` additions to loopback hosts and add/restore a helper unit test. Official/external paths must be able to use the user's proxy. |
 | `ENABLE_TIMEOUT_ASSERTION` is missing or disabled in the default local profile | Restore `ENABLE_TIMEOUT_ASSERTION=1` in `config/base.yaml` or document the replacement timeout mechanism and accepted risk in the Knowledge runtime runbook. |
 | `stop-backend.sh` only kills the wrapper PID | Start host services in a managed process group and stop the whole group; verify the script does not leave `go run` or `uv run` child services bound to ports. |
 | Seeded local AI Gateway profile uses `host.docker.internal` | Replace it with `http://localhost:11434/v1` for the host-run default path. |
@@ -414,6 +430,7 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | Required Docker image is unavailable locally | Document `docker compose pull <service>` commands and report Docker runtime validation as skipped. |
 | Same component appears with multiple Docker tags | Use the documented baseline or record the reason in the implementation document. |
 | Compose infrastructure image pull is slow or blocked | Prefer `./scripts/local/dev-up.sh --china`, which applies pinned DaoCloud `*_IMAGE` values for that run, or local untracked `.env.local` overrides; if using daemon mirror, prove it with `scripts/check_docker_environment.py`; use Docker daemon proxy only when registry rewrite and mirror paths are unavailable. |
+| `dev-up.sh --china` selects `docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3` | Replace it with `docker.m.daocloud.io/elasticsearch:8.15.3` or fail preflight with a targeted Elasticsearch image diagnostic. |
 | File calls return `401 unauthorized` while `file /readyz` is healthy | Verify `FILE_INTERNAL_SERVICE_TOKEN` on file and matching `KNOWLEDGE_SERVICE_TOKEN`, `DOCUMENT_FILE_SERVICE_TOKEN`, or propagated `X-Service-Token` on callers. |
 | Gateway readiness fails | Check Redis and Auth first, then search logs by `X-Request-Id`. |
 | Auth/document/ai-gateway readiness fails | Inspect PostgreSQL, host-run migration status, and service logs. |
@@ -444,6 +461,8 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - Run the local seed contract checker and its unit tests when seed SQL, seed
   docs, startup scripts, Knowledge runtime startup defaults, or host-run Go
   module proxy defaults change.
+- Run `python3 -m unittest scripts.tests.test_local_common_helpers` when
+  `scripts/local/lib/*.sh` changes proxy, URL, or process helper behavior.
 - For AI Gateway local provider overlay changes, test disabled overlay output,
   enabled overlay SQL redaction/no raw key leakage, missing env validation, and
   `dev-up.sh` piping the generated SQL into `psql`.

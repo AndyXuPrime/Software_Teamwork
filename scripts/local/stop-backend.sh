@@ -3,8 +3,12 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RUN_DIR="$ROOT_DIR/.local/run"
+LOCAL_LIB_DIR="$ROOT_DIR/scripts/local/lib"
 CURRENT_STEP="initializing"
 STOPPED_COUNT=0
+
+# shellcheck source=scripts/local/lib/process.sh
+. "$LOCAL_LIB_DIR/process.sh"
 
 COLOR_RESET=""
 COLOR_BLUE=""
@@ -80,15 +84,8 @@ for pid_file in "${pid_files[@]}"; do
   fi
 
   log_info "stopping $name"
-  if kill -0 -- "-$pid" 2>/dev/null; then
-    kill -TERM -- "-$pid" 2>/dev/null || true
-    for _ in {1..25}; do
-      kill -0 -- "-$pid" 2>/dev/null || break
-      sleep 0.2
-    done
-    kill -0 -- "-$pid" 2>/dev/null && kill -KILL -- "-$pid" 2>/dev/null || true
-  elif kill -0 "$pid" 2>/dev/null; then
-    kill -TERM "$pid" 2>/dev/null || true
+  if kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
+    stop_process_group_from_file "$pid_file"
   else
     log_info "$name was not running"
   fi

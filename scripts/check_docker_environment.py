@@ -38,7 +38,7 @@ CHINA_IMAGES = {
     "redis": "docker.m.daocloud.io/library/redis:7-alpine",
     "minio server": "docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z",
     "minio mc": "docker.m.daocloud.io/minio/mc:RELEASE.2025-08-13T08-35-41Z",
-    "elasticsearch": "docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3",
+    "elasticsearch": "docker.m.daocloud.io/elasticsearch:8.15.3",
     "ragflow deps": "docker.m.daocloud.io/infiniflow/ragflow_deps:51ce6aab",
 }
 

@@ -221,7 +221,7 @@ class DockerPolicyTests(unittest.TestCase):
             + "\n  HF_ENDPOINT:\n"
             + "    value: https://hf-mirror.com\n"
         )
-        env = VALID_ENV + "\nKNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE=docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3\n"
+        env = VALID_ENV + "\nKNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE=docker.m.daocloud.io/elasticsearch:8.15.3\n"
 
         issues = self.verify(
             files={

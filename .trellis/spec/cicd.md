@@ -868,13 +868,20 @@ Rules:
   selected by `dev-up.sh --china` or local untracked `.env.local` overrides,
   daemon mirrors are local machine state, and proxies are last-resort
   environment state. Keep these paths documented and diagnosable.
+- The explicit mainland China Elasticsearch rewrite is
+  `docker.m.daocloud.io/elasticsearch:8.15.3`. The nested DaoCloud path
+  `docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3`
+  is not an accepted normal path unless manifest probes and docs are updated in
+  the same change.
 - Docker/Compose PR checks must run `python3 scripts/check_docker_policy.py`
   before Compose config validation. Keep this checker aligned with Docker policy
   changes so CI blocks obvious regressions without depending on a working Docker
   daemon mirror.
 - Docker environment diagnostics belong in `scripts/check_docker_environment.py`.
   CI may run it with `--skip-network`; local investigations may run manifest
-  probes with `--profile all --clean-env`.
+  probes with `--profile all --clean-env`. Use `--clean-env` for direct
+  registry rewrite/daemon-mirror checks; omit it when verifying that official
+  Docker Hub paths work through the current shell or Docker proxy environment.
 - Docker policy docs/spec changes, including `deploy/README.md`, should trigger
   the lightweight policy checker even when Compose itself did not change.
 - Local startup scripts, local seed SQL, and local seed contract files must
@@ -938,6 +945,12 @@ Runtime rules:
   `KNOWLEDGE_RUNTIME_ES_URL` and starts host-run runtime processes; local
   Elasticsearch lifecycle belongs to the default root Compose infra started by
   `dev-up.sh`.
+- Shared local shell helpers live under `scripts/local/lib/`; local seed
+  contract verification must read those helper files together with the public
+  entrypoints. Helper code may automatically add loopback runtime URLs to
+  `NO_PROXY` and use `curl --noproxy '*'` for loopback health checks, but it
+  must not force external runtime URLs or official download hosts to bypass the
+  user's configured proxy.
 - `HF_ENDPOINT=https://hf-mirror.com` must not be active in committed defaults
   or forced by runtime scripts in official-default mode. Mainland China runtime
   model download mirrors are explicit through

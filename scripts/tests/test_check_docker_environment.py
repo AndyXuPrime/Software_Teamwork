@@ -31,7 +31,7 @@ class DockerEnvironmentTests(unittest.TestCase):
         self.assertNotIn("parser python", images)
         self.assertEqual("docker.m.daocloud.io/library/postgres:16-alpine", images["postgres"])
         self.assertEqual(
-            "docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3",
+            "docker.m.daocloud.io/elasticsearch:8.15.3",
             images["elasticsearch"],
         )
         self.assertEqual(

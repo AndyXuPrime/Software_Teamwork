@@ -6,25 +6,14 @@ CONFIG_LOADER="$ROOT_DIR/scripts/config/load-profile.sh"
 RUN_DIR="$ROOT_DIR/.local/run"
 LOG_DIR="$ROOT_DIR/.local/logs"
 RUNTIME_DIR="$ROOT_DIR/services/knowledge-runtime"
+LOCAL_LIB_DIR="$ROOT_DIR/scripts/local/lib"
 WORKER_PID_FILE="$RUN_DIR/knowledge-runtime-worker.pid"
 WATCHER_PID_FILE="$RUN_DIR/knowledge-runtime-worker-idle-watcher.pid"
 
-normalize_http_url() {
-  local value="$1"
-  if [[ "$value" != http://* && "$value" != https://* ]]; then
-    value="http://$value"
-  fi
-  printf '%s\n' "${value%/}"
-}
-
-service_group_alive() {
-  local pid_file="$1"
-  [[ -f "$pid_file" ]] || return 1
-  local pid
-  pid="$(cat "$pid_file")"
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  kill -0 -- "-$pid" 2>/dev/null
-}
+# shellcheck source=scripts/local/lib/common.sh
+. "$LOCAL_LIB_DIR/common.sh"
+# shellcheck source=scripts/local/lib/process.sh
+. "$LOCAL_LIB_DIR/process.sh"
 
 runtime_api_url() {
   normalize_http_url "${VENDOR_RUNTIME_URL:-http://127.0.0.1:9380}"
@@ -34,8 +23,11 @@ worker_queue_idle() {
   local base_url
   base_url="$(runtime_api_url)"
   local status_json
-  status_json="$(curl --noproxy '*' -sS --max-time 5 \
-    -H "X-Service-Token: ${VENDOR_RUNTIME_SERVICE_TOKEN:-}" \
+  local curl_args=(-sS --max-time 5 -H "X-Service-Token: ${VENDOR_RUNTIME_SERVICE_TOKEN:-}")
+  if should_bypass_proxy_for_url "$base_url"; then
+    curl_args=(--noproxy '*' "${curl_args[@]}")
+  fi
+  status_json="$(curl "${curl_args[@]}" \
     "$base_url/api/v1/system/status" 2>/dev/null || true)"
   STATUS_JSON="$status_json" HEARTBEAT_MAX_AGE_SECONDS="${KNOWLEDGE_RUNTIME_WORKER_HEARTBEAT_MAX_AGE_SECONDS:-120}" python3 -c '
 import json
@@ -187,19 +179,7 @@ PY
 
 stop_worker_group() {
   [[ -f "$WORKER_PID_FILE" ]] || return 0
-  local pid
-  pid="$(cat "$WORKER_PID_FILE")"
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 0
-  if kill -0 -- "-$pid" 2>/dev/null; then
-    kill -TERM -- "-$pid" 2>/dev/null || true
-    for _ in {1..25}; do
-      kill -0 -- "-$pid" 2>/dev/null || break
-      sleep 0.2
-    done
-    kill -0 -- "-$pid" 2>/dev/null && kill -KILL -- "-$pid" 2>/dev/null || true
-  elif kill -0 "$pid" 2>/dev/null; then
-    kill -TERM "$pid" 2>/dev/null || true
-  fi
+  stop_process_group_from_file "$WORKER_PID_FILE"
   rm -f "$WORKER_PID_FILE"
   cleanup_worker_heartbeat
 }

@@ -83,9 +83,10 @@ class LocalDevUpScriptTests(unittest.TestCase):
             docker_env = (root / "docker-env.log").read_text(encoding="utf-8")
             self.assertIn("POSTGRES_IMAGE=docker.m.daocloud.io/library/postgres:16-alpine", docker_env)
             self.assertIn(
-                "KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE=docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3",
+                "KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE=docker.m.daocloud.io/elasticsearch:8.15.3",
                 docker_env,
             )
+            self.assertNotIn("docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3", docker_env)
             self.assertIn("GOPROXY=https://goproxy.cn,direct", docker_env)
             uv_calls = (root / "uv-calls.log").read_text(encoding="utf-8")
             self.assertIn("run --no-project", uv_calls)
@@ -107,6 +108,29 @@ class LocalDevUpScriptTests(unittest.TestCase):
             self.assertIn("--with huggingface-hub>=1.3.1", uv_calls)
             self.assertIn("ragflow_deps/download_deps.py", uv_calls)
             self.assertNotIn("ragflow_deps/download_deps.py --china", uv_calls)
+
+    def test_default_mode_preserves_proxy_env_for_official_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+
+            result = self.run_dev_up(
+                root,
+                {
+                    "HTTP_PROXY": "http://127.0.0.1:7890",
+                    "HTTPS_PROXY": "http://127.0.0.1:7890",
+                    "NO_PROXY": "localhost,127.0.0.1,::1",
+                },
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            docker_env = (root / "docker-env.log").read_text(encoding="utf-8")
+            self.assertIn("POSTGRES_IMAGE=", docker_env)
+            self.assertIn("KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE=", docker_env)
+            self.assertIn("GOPROXY=https://proxy.golang.org,direct", docker_env)
+            self.assertIn("HTTP_PROXY=http://127.0.0.1:7890", docker_env)
+            self.assertIn("HTTPS_PROXY=http://127.0.0.1:7890", docker_env)
+            self.assertIn("NO_PROXY=localhost,127.0.0.1,::1", docker_env)
+            self.assertNotIn("docker.m.daocloud.io/library/postgres", docker_env)
 
     def test_skip_knowledge_runtime_deps_does_not_require_or_call_uv(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -293,6 +317,9 @@ class LocalDevUpScriptTests(unittest.TestCase):
               echo "UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX:-}"
               echo "GOPROXY=${GOPROXY:-}"
               echo "GOSUMDB=${GOSUMDB:-}"
+              echo "HTTP_PROXY=${HTTP_PROXY:-}"
+              echo "HTTPS_PROXY=${HTTPS_PROXY:-}"
+              echo "NO_PROXY=${NO_PROXY:-}"
             } >> "$FAKE_DOCKER_ENV"
             case " $* " in
               *" up -d --wait "*)

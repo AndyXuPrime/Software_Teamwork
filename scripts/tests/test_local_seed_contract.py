@@ -120,6 +120,26 @@ class LocalSeedContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (root / "scripts" / "local").mkdir(parents=True)
+            (root / "scripts" / "local" / "lib").mkdir(parents=True)
+            (root / "scripts" / "local" / "lib" / "common.sh").write_text(
+                "to_lower\n"
+                "normalize_http_url\n"
+                "append_no_proxy\n"
+                "HF_ENDPOINT=https://hf-mirror.com\n",
+                encoding="utf-8",
+            )
+            (root / "scripts" / "local" / "lib" / "process.sh").write_text(
+                "setsid\n"
+                "os.setsid()\n"
+                'kill -0 -- "-$pid"\n'
+                'kill -TERM -- "-$pid"\n'
+                'kill -KILL -- "-$pid"\n',
+                encoding="utf-8",
+            )
+            (root / "scripts" / "local" / "lib" / "knowledge-runtime.sh").write_text(
+                ".local/knowledge-runtime/service_conf.yaml\n",
+                encoding="utf-8",
+            )
             (root / "scripts" / "local" / "dev-up.sh").write_text(
                 "[dev-up]\n"
                 "[ok]\n"

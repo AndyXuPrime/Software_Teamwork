@@ -21,7 +21,7 @@ CHINA_POSTGRES_IMAGE="docker.m.daocloud.io/library/postgres:16-alpine"
 CHINA_REDIS_IMAGE="docker.m.daocloud.io/library/redis:7-alpine"
 CHINA_MINIO_IMAGE="docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
 CHINA_MINIO_MC_IMAGE="docker.m.daocloud.io/minio/mc:RELEASE.2025-08-13T08-35-41Z"
-CHINA_ELASTICSEARCH_IMAGE="docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3"
+CHINA_ELASTICSEARCH_IMAGE="docker.m.daocloud.io/elasticsearch:8.15.3"
 
 COLOR_RESET=""
 COLOR_BLUE=""
