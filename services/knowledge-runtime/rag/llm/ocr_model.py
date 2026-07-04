@@ -132,7 +132,7 @@ class PaddleOCROcrModel(Base):
             return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
 
         self.paddleocr_base_url = _resolve_config("paddleocr_base_url", "PADDLEOCR_BASE_URL", "") or _resolve_config("paddleocr_api_url", "PADDLEOCR_API_URL", "")
-        self.paddleocr_algorithm = _resolve_config("paddleocr_algorithm", "PADDLEOCR_ALGORITHM", "PaddleOCR-VL")
+        self.paddleocr_algorithm = _resolve_config("paddleocr_algorithm", "PADDLEOCR_ALGORITHM", "PP-StructureV3")
         self.paddleocr_access_token = _resolve_config("paddleocr_access_token", "PADDLEOCR_ACCESS_TOKEN", None)
         self.paddleocr_auth_scheme = str(_resolve_config("paddleocr_auth_scheme", "PADDLEOCR_AUTH_SCHEME", "token") or "token").strip().lower()
         try:
@@ -168,6 +168,16 @@ class PaddleOCROcrModel(Base):
 
         sections, tables = self._parser.parse_pdf(filepath=filepath, binary=binary, callback=callback, parse_method=parse_method, **kwargs)
         return sections, tables
+
+    @property
+    def outlines(self):
+        return getattr(self._parser, "outlines", [])
+
+    def crop(self, text: str, *args, **kwargs):
+        return self._parser.crop(text, *args, **kwargs)
+
+    def remove_tag(self, text: str):
+        return self._parser.remove_tag(text)
 
     def parse_image(self, filepath: str, binary=None, callback=None, **kwargs) -> str:
         ok, reason = self.check_available()

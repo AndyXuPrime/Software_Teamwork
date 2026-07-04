@@ -13,7 +13,7 @@ const (
 	paddleOCRBaseURLKey     = "paddleocr_base_url"
 	paddleOCRAccessTokenKey = "paddleocr_access_token"
 	paddleOCRAlgorithmKey   = "paddleocr_algorithm"
-	paddleOCRDefaultModel   = "PaddleOCR-VL"
+	paddleOCRDefaultModel   = "PP-StructureV3"
 )
 
 const (
@@ -164,6 +164,26 @@ func (s *Service) ResolveParserConfig(ctx context.Context, contentType string) (
 	}
 	if fields := validateParserConfig(config); len(fields) > 0 {
 		return ParserConfigSnapshot{}, ConflictError("effective parser config is invalid", nil)
+	}
+	return ParserConfigSnapshot{ParserConfigID: config.ID, Backend: config.Backend, Concurrency: config.Concurrency,
+		SupportedContentTypes: append([]string(nil), config.SupportedContentTypes...), EndpointURL: cloneString(config.EndpointURL),
+		DefaultParameters: cloneRaw(config.DefaultParameters)}, nil
+}
+
+func (s *Service) ResolveParserConfigByID(ctx context.Context, id string) (ParserConfigSnapshot, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ParserConfigSnapshot{}, ValidationError("request validation failed", map[string]string{"parserConfigId": "is required"})
+	}
+	config, err := s.repo.GetParserConfig(ctx, id)
+	if err != nil {
+		return ParserConfigSnapshot{}, repositoryError(err)
+	}
+	if !config.Enabled {
+		return ParserConfigSnapshot{}, ConflictError("parser config is disabled", nil)
+	}
+	if fields := validateParserConfig(config); len(fields) > 0 {
+		return ParserConfigSnapshot{}, ConflictError("parser config is invalid", nil)
 	}
 	return ParserConfigSnapshot{ParserConfigID: config.ID, Backend: config.Backend, Concurrency: config.Concurrency,
 		SupportedContentTypes: append([]string(nil), config.SupportedContentTypes...), EndpointURL: cloneString(config.EndpointURL),

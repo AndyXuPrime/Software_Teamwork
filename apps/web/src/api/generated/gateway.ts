@@ -1847,6 +1847,8 @@ export interface components {
             docType?: string;
             chunkStrategy?: components["schemas"]["ChunkStrategy"];
             retrievalStrategy?: components["schemas"]["RetrievalStrategy"];
+            /** @description Parser configuration to apply to future document uploads in this knowledge base. */
+            parserConfigId?: string;
         };
         KnowledgeBaseSummary: {
             id: string;
@@ -2106,7 +2108,7 @@ export interface components {
             supportedContentTypes?: string[];
             /** Format: uri */
             endpointUrl?: string | null;
-            /** @description Parser backend parameters. For paddleocr_cloud, paddleocr_base_url and paddleocr_access_token are required; paddleocr_algorithm defaults to PaddleOCR-VL. */
+            /** @description Parser backend parameters. For paddleocr_cloud, paddleocr_base_url and paddleocr_access_token are required; paddleocr_algorithm defaults to PP-StructureV3. */
             defaultParameters?: {
                 [key: string]: unknown;
             };

@@ -28,6 +28,7 @@ Stable pure helpers (_build_toc) are tested directly.
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
+from common.exceptions import ModelException
 from rag.svr.task_executor_refactor.task_handler import TaskHandler
 
 # Reuse shared helpers from conftest
@@ -192,6 +193,55 @@ class TestTaskHandlerHandle:
             handler = TaskHandler(ctx=ctx)
             with pytest.raises(RuntimeError, match="embedding service unavailable"):
                 await handler.handle()
+
+    @pytest.mark.asyncio
+    async def test_bind_embedding_model_retries_retryable_model_exception(self, monkeypatch):
+        """Transient provider failures should not fail parsing immediately."""
+        monkeypatch.setenv("KNOWLEDGE_RUNTIME_EMBEDDING_BIND_RETRY_ATTEMPTS", "3")
+        monkeypatch.setenv("KNOWLEDGE_RUNTIME_EMBEDDING_BIND_RETRY_DELAY_SECONDS", "0")
+        ctx = make_task_context()
+        embedding_model = MagicMock()
+        embedding_model.encode.side_effect = [
+            ModelException("status: 502", retryable=True),
+            ([[0.1, 0.2, 0.3]], 1),
+        ]
+
+        with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_cfg, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_runtime_default_model_by_type") as mock_default, \
+             patch("rag.svr.task_executor_refactor.task_handler.LLMBundle", return_value=embedding_model) as mock_bundle:
+
+            mock_cfg.return_value = MagicMock()
+            mock_default.return_value = MagicMock()
+
+            bound_model, vector_size = await TaskHandler(ctx=ctx)._bind_embedding_model()
+
+        assert bound_model is embedding_model
+        assert vector_size == 3
+        assert mock_bundle.call_count == 2
+        assert embedding_model.encode.call_count == 2
+        ctx.progress_cb.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_bind_embedding_model_does_not_retry_non_retryable_model_exception(self, monkeypatch):
+        """Permanent provider/config errors should surface without retry delay."""
+        monkeypatch.setenv("KNOWLEDGE_RUNTIME_EMBEDDING_BIND_RETRY_ATTEMPTS", "3")
+        ctx = make_task_context()
+        embedding_model = MagicMock()
+        embedding_model.encode.side_effect = ModelException("status: 401", retryable=False)
+
+        with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_cfg, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_runtime_default_model_by_type") as mock_default, \
+             patch("rag.svr.task_executor_refactor.task_handler.LLMBundle", return_value=embedding_model) as mock_bundle:
+
+            mock_cfg.return_value = MagicMock()
+            mock_default.return_value = MagicMock()
+
+            with pytest.raises(ModelException, match="status: 401"):
+                await TaskHandler(ctx=ctx)._bind_embedding_model()
+
+        assert mock_bundle.call_count == 1
+        assert embedding_model.encode.call_count == 1
+        ctx.progress_cb.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handle_storage_binary_none_raises_file_not_found(self):

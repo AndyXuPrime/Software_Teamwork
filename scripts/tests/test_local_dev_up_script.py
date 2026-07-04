@@ -150,6 +150,41 @@ class LocalDevUpScriptTests(unittest.TestCase):
             go_calls = (root / "go-calls.log").read_text(encoding="utf-8")
             self.assertNotIn("render_ai_gateway_local_seed.go", go_calls)
 
+    def test_paddleocr_cloud_parser_overlay_runs_when_token_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+            with (root / ".env.local").open("a", encoding="utf-8") as env_file:
+                env_file.write(
+                    textwrap.dedent(
+                        """\
+                        PADDLEOCR_BASE_URL=https://paddleocr.aistudio-app.com
+                        PADDLEOCR_ACCESS_TOKEN=local-paddleocr-token-for-tests
+                        PADDLEOCR_ALGORITHM=PP-StructureV3
+                        """
+                    )
+                )
+
+            result = self.run_dev_up(root)
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("[dev-up] applying PaddleOCR cloud parser overlay", result.stdout)
+            self.assertIn("[ok] applying PaddleOCR cloud parser overlay succeeded", result.stdout)
+            psql_stdin = (root / "psql-stdin.sql").read_text(encoding="utf-8")
+            self.assertIn("parser_config_paddleocr_cloud_default", psql_stdin)
+            self.assertIn("'paddleocr_cloud'", psql_stdin)
+            self.assertIn("'paddleocr_algorithm', 'PP-StructureV3'", psql_stdin)
+
+    def test_paddleocr_cloud_parser_overlay_skips_without_token(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+
+            result = self.run_dev_up(root)
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("PADDLEOCR_ACCESS_TOKEN is not set; keeping the existing default parser config", result.stdout)
+            psql_stdin = (root / "psql-stdin.sql").read_text(encoding="utf-8")
+            self.assertNotIn("parser_config_paddleocr_cloud_default", psql_stdin)
+
     def prepare_runtime(self, root: Path) -> Path:
         script_source = Path.cwd() / "scripts" / "local" / "dev-up.sh"
         script_target = root / "scripts" / "local" / "dev-up.sh"

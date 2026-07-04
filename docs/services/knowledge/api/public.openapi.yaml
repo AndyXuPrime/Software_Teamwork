@@ -623,6 +623,9 @@ components:
         visibility: { type: string, enum: [private, team, public] }
         chunkStrategy: { $ref: '#/components/schemas/ChunkStrategy' }
         retrievalStrategy: { $ref: '#/components/schemas/RetrievalConfig' }
+        parserConfigId:
+          type: string
+          description: Parser configuration to apply to future document uploads in this knowledge base.
     KnowledgeBaseWritable:
       type: object
       required: [name, docType]

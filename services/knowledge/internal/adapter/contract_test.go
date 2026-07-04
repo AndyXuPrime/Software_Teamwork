@@ -42,6 +42,8 @@ type fakeVendorState struct {
 	createUserIDs      []string
 	createBody         []byte
 	createPath         string
+	updateBody         []byte
+	updatePath         string
 }
 
 type deleteCall struct {
@@ -134,6 +136,33 @@ func startFakeVendor(t *testing.T, state *fakeVendorState) *httptest.Server {
 				item["parser_config"] = cfg
 			}
 			state.datasets[id] = item
+			writeVendorJSON(w, http.StatusOK, map[string]any{"code": 0, "data": item})
+			return
+		case r.Method == http.MethodPut && (strings.HasPrefix(r.URL.Path, "/api/v1/datasets/") || strings.HasPrefix(r.URL.Path, "/api/v1/internal/datasets/")) && !strings.Contains(r.URL.Path, "/documents"):
+			raw, _ := io.ReadAll(r.Body)
+			state.updatePath = r.URL.Path
+			state.updateBody = append([]byte(nil), raw...)
+			prefix := "/api/v1/datasets/"
+			if strings.HasPrefix(r.URL.Path, "/api/v1/internal/datasets/") {
+				prefix = "/api/v1/internal/datasets/"
+			}
+			kbID := strings.TrimPrefix(r.URL.Path, prefix)
+			item, ok := state.datasets[kbID]
+			if !ok {
+				writeVendorJSON(w, http.StatusNotFound, map[string]any{"code": 102, "message": "dataset not found"})
+				return
+			}
+			var body map[string]any
+			_ = json.Unmarshal(raw, &body)
+			if name, ok := body["name"]; ok {
+				item["name"] = name
+			}
+			if description, ok := body["description"]; ok {
+				item["description"] = description
+			}
+			if parserConfig, ok := body["parser_config"]; ok {
+				item["parser_config"] = parserConfig
+			}
 			writeVendorJSON(w, http.StatusOK, map[string]any{"code": 0, "data": item})
 			return
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/documents/parse"):
@@ -432,6 +461,89 @@ func TestAdapterCreateKnowledgeBaseUsesInternalDatasetPathForPaddleOCRCredential
 	}
 	if _, ok := createBody["parser_config_credentials"].(map[string]any); !ok {
 		t.Fatalf("parser_config_credentials missing")
+	}
+}
+
+func TestAdapterUpdateKnowledgeBaseSwitchesParserConfigForFutureDocuments(t *testing.T) {
+	state := newFakeVendorState()
+	state.datasets["kb_fake_1"] = map[string]any{
+		"id":             "kb_fake_1",
+		"name":           "Manuals",
+		"chunk_method":   "naive",
+		"document_count": float64(1),
+		"chunk_count":    float64(5),
+		"parser_config":  map[string]any{"layout_recognize": ragflowLayoutDeepDOC},
+	}
+	state.documents["doc_existing"] = map[string]any{
+		"id":            "doc_existing",
+		"kb_id":         "kb_fake_1",
+		"dataset_id":    "kb_fake_1",
+		"name":          "old.pdf",
+		"parser_config": map[string]any{"layout_recognize": ragflowLayoutDeepDOC},
+	}
+	vendor := startFakeVendor(t, state)
+	defer vendor.Close()
+
+	repo := repository.NewMemoryRepository()
+	now := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)
+	repo.SeedParserConfig(service.ParserConfig{
+		ID:                    "parser_paddleocr",
+		Name:                  "PaddleOCR Cloud",
+		Backend:               service.ParserBackendPaddleOCRCloud,
+		Enabled:               true,
+		Concurrency:           2,
+		SupportedContentTypes: []string{"application/pdf"},
+		DefaultParameters:     json.RawMessage(`{"paddleocr_base_url":"https://paddleocr.example.com/api","paddleocr_access_token":"sk-secret","paddleocr_algorithm":"PP-StructureV3"}`),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	})
+	server := NewServer(adapterconfig.Config{
+		ServiceVersion:   "test",
+		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
+	}, nil, WithParserConfigService(service.New(repo)))
+
+	req := httptest.NewRequest(http.MethodPatch, "/internal/v1/knowledge-bases/kb_fake_1", strings.NewReader(`{"parserConfigId":"parser_paddleocr"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-Service-Token", testServiceToken)
+	req.Header.Set("X-User-Permissions", "knowledge:write")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.updatePath != "/api/v1/internal/datasets/kb_fake_1" {
+		t.Fatalf("update path=%s", state.updatePath)
+	}
+	updateBody := decodeMap(t, state.updateBody)
+	cfg, ok := updateBody["parser_config"].(map[string]any)
+	if !ok {
+		t.Fatalf("parser_config=%v", updateBody["parser_config"])
+	}
+	if cfg["layout_recognize"] != ragflowLayoutPaddleOCR {
+		t.Fatalf("layout_recognize=%v", cfg["layout_recognize"])
+	}
+	if _, ok := cfg["paddleocr_access_token"]; ok {
+		t.Fatalf("parser_config leaked PaddleOCR access token")
+	}
+	credentials, ok := updateBody["parser_config_credentials"].(map[string]any)
+	if !ok {
+		t.Fatalf("parser_config_credentials missing")
+	}
+	paddleOCR, ok := credentials["paddleocr_cloud"].(map[string]any)
+	if !ok {
+		t.Fatalf("paddleocr_cloud credentials missing")
+	}
+	if paddleOCR["paddleocr_access_token"] != "sk-secret" {
+		t.Fatalf("paddleocr_access_token was not preserved in protected credentials")
+	}
+	docCfg := state.documents["doc_existing"]["parser_config"].(map[string]any)
+	if docCfg["layout_recognize"] != ragflowLayoutDeepDOC {
+		t.Fatalf("existing document parser_config changed: %v", docCfg)
 	}
 }
 

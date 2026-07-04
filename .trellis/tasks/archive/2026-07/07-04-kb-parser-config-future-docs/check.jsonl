@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/api-contracts.md", "reason": "Verify API shape, error envelope, and stable resource semantics."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify validation and dependency error mapping."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Verify no token or document content leakage in logs."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify expected Go and runtime test coverage."}

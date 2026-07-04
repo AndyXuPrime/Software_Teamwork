@@ -3596,6 +3596,9 @@ components:
           $ref: '#/components/schemas/ChunkStrategy'
         retrievalStrategy:
           $ref: '#/components/schemas/RetrievalStrategy'
+        parserConfigId:
+          type: string
+          description: Parser configuration to apply to future document uploads in this knowledge base.
     KnowledgeBaseSummary:
       type: object
       required:
@@ -4231,7 +4234,7 @@ components:
         defaultParameters:
           type: object
           additionalProperties: true
-          description: Parser backend parameters. For paddleocr_cloud, paddleocr_base_url and paddleocr_access_token are required; paddleocr_algorithm defaults to PaddleOCR-VL.
+          description: Parser backend parameters. For paddleocr_cloud, paddleocr_base_url and paddleocr_access_token are required; paddleocr_algorithm defaults to PP-StructureV3.
     UpdateParserConfigRequest:
       type: object
       properties:

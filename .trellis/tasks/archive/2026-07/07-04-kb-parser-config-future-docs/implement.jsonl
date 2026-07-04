@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend service boundary and required spec index for Knowledge adapter/runtime changes."}
+{"file": ".trellis/spec/backend/api-contracts.md", "reason": "PATCH contract and gateway-facing DTO rules."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Required Knowledge adapter and runtime validation commands."}
+{"file": "docs/architecture/service-boundaries.md", "reason": "Knowledge owns parser runtime configuration while runtime remains implementation detail."}

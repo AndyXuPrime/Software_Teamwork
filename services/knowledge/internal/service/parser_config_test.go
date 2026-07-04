@@ -85,6 +85,45 @@ func TestResolveParserConfigFallsBackToBuiltinWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestResolveParserConfigByIDReturnsEnabledSnapshotAndRejectsDisabled(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	now := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)
+	repo.SeedParserConfig(service.ParserConfig{
+		ID:                    "parser_enabled",
+		Name:                  "Enabled builtin",
+		Backend:               service.ParserBackendBuiltin,
+		Enabled:               true,
+		Concurrency:           4,
+		SupportedContentTypes: []string{"application/pdf"},
+		DefaultParameters:     json.RawMessage(`{"chunk_token_num":512}`),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	})
+	repo.SeedParserConfig(service.ParserConfig{
+		ID:                    "parser_disabled",
+		Name:                  "Disabled builtin",
+		Backend:               service.ParserBackendBuiltin,
+		Enabled:               false,
+		Concurrency:           4,
+		SupportedContentTypes: []string{"application/pdf"},
+		DefaultParameters:     json.RawMessage(`{"chunk_token_num":512}`),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	})
+	svc := service.New(repo)
+
+	snapshot, err := svc.ResolveParserConfigByID(context.Background(), " parser_enabled ")
+	if err != nil {
+		t.Fatalf("ResolveParserConfigByID() error = %v", err)
+	}
+	if snapshot.ParserConfigID != "parser_enabled" || snapshot.Backend != service.ParserBackendBuiltin {
+		t.Fatalf("snapshot = %+v", snapshot)
+	}
+	if _, err := svc.ResolveParserConfigByID(context.Background(), "parser_disabled"); !hasAppCode(err, service.CodeConflict) {
+		t.Fatalf("disabled error=%v", err)
+	}
+}
+
 func TestResolveParserConfigPrefersMatchingNonDefaultOverDefaultFallback(t *testing.T) {
 	repo := repository.NewMemoryRepository()
 	now := time.Date(2026, 6, 29, 0, 0, 0, 0, time.UTC)
@@ -161,7 +200,7 @@ func TestPaddleOCRCloudParserConfigValidationAndTokenPreservation(t *testing.T) 
 	if params["paddleocr_access_token"] != "sk-secret" {
 		t.Fatalf("access token was not normalized/preserved: %v", params["paddleocr_access_token"])
 	}
-	if params["paddleocr_algorithm"] != "PaddleOCR-VL" {
+	if params["paddleocr_algorithm"] != "PP-StructureV3" {
 		t.Fatalf("algorithm default=%v", params["paddleocr_algorithm"])
 	}
 	if params["chunk_size"].(float64) != 768 {

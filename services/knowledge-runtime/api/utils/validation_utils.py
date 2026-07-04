@@ -797,6 +797,12 @@ class UpdateDatasetReq(CreateDatasetReq):
         return validate_uuid1_hex(v)
 
 
+class InternalUpdateDatasetReq(UpdateDatasetReq):
+    """Trusted internal dataset update request."""
+
+    parser_config_credentials: Annotated[dict[str, Any] | None, Field(default=None)]
+
+
 class DeleteReq(Base):
     """Base request model for batch delete APIs."""
 

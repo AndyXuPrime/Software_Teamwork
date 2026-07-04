@@ -89,6 +89,20 @@ func (s *Server) resolveCreateParserConfig(ctx context.Context, body createKnowl
 	return ragflowParserConfigFromSnapshot(snapshot), nil
 }
 
+func (s *Server) resolveUpdateParserConfig(ctx context.Context, body updateKnowledgeBaseRequest) (map[string]any, error) {
+	if body.ParserConfigID == nil {
+		return nil, nil
+	}
+	if s.parserConfigs == nil {
+		return nil, service.DependencyError("parser config storage is not configured; set DATABASE_URL or KNOWLEDGE_DATABASE_URL", nil)
+	}
+	snapshot, err := s.parserConfigs.ResolveParserConfigByID(ctx, *body.ParserConfigID)
+	if err != nil {
+		return nil, err
+	}
+	return ragflowParserConfigFromSnapshot(snapshot), nil
+}
+
 func (s *Server) handleGetKnowledgeBase(w http.ResponseWriter, r *http.Request) {
 	reqCtx, ok := s.gatewayContext(w, r)
 	if !ok {
@@ -124,7 +138,12 @@ func (s *Server) handleUpdateKnowledgeBase(w http.ResponseWriter, r *http.Reques
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
-	payload, err := buildUpdateDatasetBody(body)
+	parserConfig, err := s.resolveUpdateParserConfig(r.Context(), body)
+	if err != nil {
+		writeAppError(w, r, err)
+		return
+	}
+	payload, err := buildUpdateDatasetBody(body, parserConfig)
 	if err != nil {
 		writeAppError(w, r, err)
 		return

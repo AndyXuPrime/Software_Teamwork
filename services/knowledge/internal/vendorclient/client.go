@@ -117,19 +117,26 @@ func (c *Client) CreateDataset(ctx context.Context, runtimeScopeID string, body 
 }
 
 func createDatasetPath(body []byte) string {
+	if hasParserConfigCredentials(body) {
+		return "/api/v1/internal/datasets"
+	}
+	return "/api/v1/datasets"
+}
+
+func hasParserConfigCredentials(body []byte) bool {
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return "/api/v1/datasets"
+		return false
 	}
 	raw, ok := payload["parser_config_credentials"]
 	if !ok {
-		return "/api/v1/datasets"
+		return false
 	}
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
-		return "/api/v1/datasets"
+		return false
 	}
-	return "/api/v1/internal/datasets"
+	return true
 }
 
 func (c *Client) GetDataset(ctx context.Context, runtimeScopeID, datasetID string) (map[string]interface{}, error) {
@@ -143,11 +150,19 @@ func (c *Client) GetDataset(ctx context.Context, runtimeScopeID, datasetID strin
 
 func (c *Client) UpdateDataset(ctx context.Context, runtimeScopeID, datasetID string, body []byte) (map[string]interface{}, error) {
 	var payload envelope
-	path := "/api/v1/datasets/" + url.PathEscape(datasetID)
+	path := updateDatasetPath(datasetID, body)
 	if err := c.doJSON(ctx, runtimeScopeID, http.MethodPut, path, body, &payload); err != nil {
 		return nil, err
 	}
 	return decodeObject(payload.Data)
+}
+
+func updateDatasetPath(datasetID string, body []byte) string {
+	escaped := url.PathEscape(datasetID)
+	if hasParserConfigCredentials(body) {
+		return "/api/v1/internal/datasets/" + escaped
+	}
+	return "/api/v1/datasets/" + escaped
 }
 
 func (c *Client) DeleteDataset(ctx context.Context, runtimeScopeID, datasetID string) error {

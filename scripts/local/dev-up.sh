@@ -312,6 +312,75 @@ apply_ai_gateway_local_seed_overlay() {
     psql "$POSTGRES_ADMIN_URL" -v ON_ERROR_STOP=1
 }
 
+sql_literal() {
+  local value="${1:-}"
+  value="${value//\'/\'\'}"
+  printf "'%s'" "$value"
+}
+
+apply_paddleocr_cloud_parser_overlay() {
+  if [[ -z "${PADDLEOCR_ACCESS_TOKEN:-}" ]]; then
+    log_info "PADDLEOCR_ACCESS_TOKEN is not set; keeping the existing default parser config"
+    return
+  fi
+
+  local base_url="${PADDLEOCR_BASE_URL:-https://paddleocr.aistudio-app.com}"
+  local algorithm="${PADDLEOCR_ALGORITHM:-PP-StructureV3}"
+  local parser_id="parser_config_paddleocr_cloud_default"
+
+  psql "$KNOWLEDGE_DATABASE_URL" -v ON_ERROR_STOP=1 <<SQL
+BEGIN;
+UPDATE parser_configs
+SET is_default = false, updated_at = now()
+WHERE is_default
+  AND deleted_at IS NULL
+  AND id <> $(sql_literal "$parser_id");
+
+INSERT INTO parser_configs (
+  id,
+  name,
+  backend,
+  enabled,
+  is_default,
+  concurrency,
+  supported_content_types,
+  endpoint_url,
+  default_parameters,
+  created_at,
+  updated_at
+) VALUES (
+  $(sql_literal "$parser_id"),
+  'Default PaddleOCR cloud parser',
+  'paddleocr_cloud',
+  true,
+  true,
+  4,
+  ARRAY['application/pdf'],
+  NULL,
+  jsonb_build_object(
+    'paddleocr_base_url', $(sql_literal "$base_url"),
+    'paddleocr_access_token', $(sql_literal "$PADDLEOCR_ACCESS_TOKEN"),
+    'paddleocr_algorithm', $(sql_literal "$algorithm")
+  ),
+  now(),
+  now()
+)
+ON CONFLICT (id) DO UPDATE
+SET
+  name = EXCLUDED.name,
+  backend = EXCLUDED.backend,
+  enabled = true,
+  is_default = true,
+  concurrency = EXCLUDED.concurrency,
+  supported_content_types = EXCLUDED.supported_content_types,
+  endpoint_url = NULL,
+  default_parameters = EXCLUDED.default_parameters,
+  updated_at = now(),
+  deleted_at = NULL;
+COMMIT;
+SQL
+}
+
 run_step "checking local tool dependencies" check_required_commands
 if (( CHINA_MIRRORS )); then
   run_step "preparing Knowledge runtime dependencies with China mirrors" prepare_knowledge_runtime_deps
@@ -346,5 +415,6 @@ psql "$POSTGRES_ADMIN_URL" \
 log_success "${CURRENT_STEP} succeeded"
 
 run_step "applying AI Gateway local env seed overlay" apply_ai_gateway_local_seed_overlay
+run_step "applying PaddleOCR cloud parser overlay" apply_paddleocr_cloud_parser_overlay
 
 log_success "infra, migrations, and seed are ready"

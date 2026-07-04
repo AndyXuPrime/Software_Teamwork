@@ -881,3 +881,36 @@ Normalized Knowledge document contentType values for common file types, preserve
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: PaddleOCR cloud parser default and parsing fixes
+
+**Date**: 2026-07-04
+**Task**: PaddleOCR cloud parser default and parsing fixes
+**Branch**: `L1nggTeam/chore/paddleocr-cloud-default`
+
+### Summary
+
+Default Knowledge parser configs to PaddleOCR cloud PP-StructureV3, preserve parser changes for future documents, harden runtime credential handling, fix PaddleOCR cloud OCR wrapper chunking, add retry for transient embedding bind failures, and verify real PDF parsing with targeted backend/runtime/frontend checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e64d2150` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

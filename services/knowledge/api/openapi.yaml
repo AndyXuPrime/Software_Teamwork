@@ -384,6 +384,9 @@ components:
         docType: { type: string }
         chunkStrategy: { type: object, additionalProperties: true }
         retrievalStrategy: { type: object, additionalProperties: true }
+        parserConfigId:
+          type: string
+          description: Parser configuration to apply to future document uploads in this knowledge base.
     UploadDocumentRequest:
       type: object
       required: [file]

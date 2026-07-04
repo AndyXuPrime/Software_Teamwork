@@ -25,6 +25,7 @@ from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
     InternalCreateDatasetReq,
+    InternalUpdateDatasetReq,
     ListDatasetReq,
     SearchDatasetReq,
     SearchDatasetsReq,
@@ -319,6 +320,30 @@ async def update(scope_id, dataset_id):
     # | chunk_method   | parser_id   |
     extras = {"dataset_id": dataset_id}
     req, err = await validate_and_parse_json_request(request, UpdateDatasetReq, extras=extras, exclude_unset=True)
+    if err is not None:
+        return get_error_argument_result(err)
+
+    try:
+        success, result = await dataset_api_service.update_dataset(scope_id, dataset_id, req)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except OperationalError as e:
+        logging.exception(e)
+        return get_error_data_result(message="Database operation failed")
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/internal/datasets/<dataset_id>", methods=["PUT"])  # noqa: F821
+@login_required
+@add_scope_id_to_kwargs
+async def update_internal(scope_id, dataset_id):
+    """Update a dataset from trusted internal services."""
+    extras = {"dataset_id": dataset_id}
+    req, err = await validate_and_parse_json_request(request, InternalUpdateDatasetReq, extras=extras, exclude_unset=True)
     if err is not None:
         return get_error_argument_result(err)
 

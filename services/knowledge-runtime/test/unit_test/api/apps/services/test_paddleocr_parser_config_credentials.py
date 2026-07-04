@@ -254,3 +254,57 @@ async def test_create_dataset_consumes_top_level_parser_config_credentials(monke
     assert "parser_config_credentials" not in captured["kwargs"]
     assert captured["kwargs"]["parser_config"]["chunk_token_num"] == 512
     assert captured["kwargs"]["parser_config"]["layout_recognize"] == "PaddleOCR-VL@PaddleOCR-VL@PaddleOCR"
+
+
+@pytest.mark.asyncio
+async def test_update_dataset_consumes_top_level_parser_config_credentials(monkeypatch):
+    captured = {}
+    kb = SimpleNamespace(
+        id="5e380fdc772711f183abc3bff99bb80f",
+        name="Manuals",
+        parser_config={"layout_recognize": "DeepDOC"},
+        parser_id="naive",
+        pipeline_id=None,
+        embd_id="BAAI/bge-m3@default@SILICONFLOW",
+        pagerank=0,
+        scope_id="scope-1",
+    )
+
+    def fake_update_by_id(kb_id, req):
+        captured.update(kb_id=kb_id, req=req)
+        kb.parser_config = req.get("parser_config", kb.parser_config)
+        return True
+
+    knowledgebase_service = SimpleNamespace(
+        get_or_none=lambda **_kwargs: kb,
+        update_by_id=fake_update_by_id,
+        get_by_id=lambda _kb_id: (True, SimpleNamespace(to_dict=lambda: {"id": kb.id, "parser_config": kb.parser_config})),
+    )
+    module = _load_dataset_service_module(
+        monkeypatch,
+        ensure_paddleocr_from_config=lambda *_args, **_kwargs: "PP-StructureV3@PP-StructureV3@PaddleOCR",
+        knowledgebase_service=knowledgebase_service,
+        remap_dictionary_keys=lambda data: data,
+        verify_embedding_availability=lambda *_args, **_kwargs: (True, None),
+    )
+
+    ok, result = await module.update_dataset(
+        "scope-1",
+        "5e380fdc772711f183abc3bff99bb80f",
+        {
+            "parser_config_credentials": {
+                "paddleocr_cloud": {
+                    "paddleocr_base_url": "https://paddleocr.example.com/api",
+                    "paddleocr_access_token": "sk-secret",
+                    "paddleocr_algorithm": "PP-StructureV3",
+                }
+            },
+        },
+    )
+
+    assert ok is True
+    assert result["id"] == "5e380fdc772711f183abc3bff99bb80f"
+    assert captured["kb_id"] == "5e380fdc772711f183abc3bff99bb80f"
+    assert "parser_config_credentials" not in captured["req"]
+    assert captured["req"]["parser_config"]["layout_recognize"] == "PP-StructureV3@PP-StructureV3@PaddleOCR"
+    assert "paddleocr_access_token" not in captured["req"]["parser_config"]

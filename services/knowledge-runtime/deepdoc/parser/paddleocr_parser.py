@@ -94,7 +94,7 @@ class PaddleOCRConfig:
 
     base_url: str = "https://paddleocr.aistudio-app.com"
     access_token: Optional[str] = None
-    algorithm: AlgorithmType = "PaddleOCR-VL"
+    algorithm: AlgorithmType = "PP-StructureV3"
     request_timeout: int = 600
     auth_scheme: Literal["token", "bearer"] = "token"
     prettify_markdown: bool = True
@@ -110,7 +110,7 @@ class PaddleOCRConfig:
             return cls()
 
         cfg = config.copy()
-        algorithm = cfg.get("algorithm", "PaddleOCR-VL")
+        algorithm = cfg.get("algorithm", "PP-StructureV3")
 
         # Validate algorithm
         if algorithm not in SUPPORTED_PADDLEOCR_ALGORITHMS:
@@ -203,7 +203,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
         self,
         base_url: Optional[str] = None,
         access_token: Optional[str] = None,
-        algorithm: AlgorithmType = "PaddleOCR-VL",
+        algorithm: AlgorithmType = "PP-StructureV3",
         *,
         request_timeout: int = 600,
         auth_scheme: Literal["token", "bearer"] = "token",
@@ -624,7 +624,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     parser = PaddleOCRParser(
         base_url=os.getenv("PADDLEOCR_BASE_URL") or None,
-        algorithm=os.getenv("PADDLEOCR_ALGORITHM", "PaddleOCR-VL"),
+        algorithm=os.getenv("PADDLEOCR_ALGORITHM", "PP-StructureV3"),
     )
     ok, reason = parser.check_installation()
     print("PaddleOCR available:", ok, reason)

@@ -23,6 +23,7 @@ for handling document processing tasks with refactored, testable methods.
 import asyncio
 import logging
 import json
+import os
 import xxhash
 
 from timeit import default_timer as timer
@@ -37,7 +38,7 @@ from api.db.joint_services.runtime_model_service import (
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from common.constants import LLMType
-from common.exceptions import TaskCanceledException
+from common.exceptions import ModelException, TaskCanceledException
 from common.connection_utils import timeout
 from common.misc_utils import thread_pool_exec
 from rag.nlp import search
@@ -52,6 +53,28 @@ from rag.graphrag.general.index import run_graphrag_for_kb
 from api.db.services.file2document_service import File2DocumentService
 from rag.prompts.generator import run_toc_from_text
 from common import settings
+
+
+def _embedding_bind_retry_attempts() -> int:
+    raw = (os.getenv("KNOWLEDGE_RUNTIME_EMBEDDING_BIND_RETRY_ATTEMPTS") or "").strip()
+    if not raw:
+        return 3
+    try:
+        value = int(raw)
+    except ValueError:
+        return 3
+    return min(max(value, 1), 10)
+
+
+def _embedding_bind_retry_delay_seconds() -> float:
+    raw = (os.getenv("KNOWLEDGE_RUNTIME_EMBEDDING_BIND_RETRY_DELAY_SECONDS") or "").strip()
+    if not raw:
+        return 2.0
+    try:
+        value = float(raw)
+    except ValueError:
+        return 2.0
+    return min(max(value, 0.0), 60.0)
 
 
 class TaskHandler:
@@ -182,23 +205,37 @@ class TaskHandler:
         task_embedding_id = ctx.embd_id
         task_language = ctx.language
 
-        try:
-            if task_embedding_id:
-                embd_model_config = get_model_config_from_provider_instance(
-                    task_scope_id, LLMType.EMBEDDING, task_embedding_id
+        attempts = _embedding_bind_retry_attempts()
+        retry_delay = _embedding_bind_retry_delay_seconds()
+        for attempt in range(1, attempts + 1):
+            try:
+                if task_embedding_id:
+                    embd_model_config = get_model_config_from_provider_instance(
+                        task_scope_id, LLMType.EMBEDDING, task_embedding_id
+                    )
+                else:
+                    embd_model_config = get_runtime_default_model_by_type(
+                        task_scope_id, LLMType.EMBEDDING
+                    )
+                embedding_model = LLMBundle(task_scope_id, embd_model_config, lang=task_language)
+                vts, _ = embedding_model.encode(["ok"])
+                return embedding_model, len(vts[0])
+            except Exception as e:
+                retryable = isinstance(e, ModelException) and getattr(e, "retryable", False)
+                if not retryable or attempt >= attempts:
+                    error_message = f'Fail to bind embedding model: {str(e)}'
+                    ctx.progress_cb(-1, msg=error_message)
+                    logging.exception(error_message)
+                    raise
+                logging.warning(
+                    "Retrying embedding model binding after transient error; attempt %s/%s failed: %s",
+                    attempt,
+                    attempts,
+                    e,
                 )
-            else:
-                embd_model_config = get_runtime_default_model_by_type(
-                    task_scope_id, LLMType.EMBEDDING
-                )
-            embedding_model = LLMBundle(task_scope_id, embd_model_config, lang=task_language)
-            vts, _ = embedding_model.encode(["ok"])
-            return embedding_model, len(vts[0])
-        except Exception as e:
-            error_message = f'Fail to bind embedding model: {str(e)}'
-            ctx.progress_cb(-1, msg=error_message)
-            logging.exception(error_message)
-            raise
+                if retry_delay > 0:
+                    await asyncio.sleep(retry_delay)
+        return None
 
     async def _run_raptor(
         self,

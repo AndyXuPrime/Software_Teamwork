@@ -47,6 +47,17 @@ func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 				t.Fatalf("internal create missing parser_config_credentials")
 			}
 			writeTestVendorJSON(w, `{"code":0,"data":{"id":"kb_internal","name":"Internal"}}`)
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/datasets/kb_1":
+			writeTestVendorJSON(w, `{"code":0,"data":{"id":"kb_1","name":"Plain Updated"}}`)
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/internal/datasets/kb_1":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode internal update body: %v", err)
+			}
+			if _, ok := body["parser_config_credentials"]; !ok {
+				t.Fatalf("internal update missing parser_config_credentials")
+			}
+			writeTestVendorJSON(w, `{"code":0,"data":{"id":"kb_1","name":"Internal Updated"}}`)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/datasets/kb_1/documents" && r.URL.Query().Get("type") == "local":
 			if err := r.ParseMultipartForm(1024); err != nil {
 				t.Fatalf("parse multipart form: %v", err)
@@ -105,6 +116,12 @@ func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 	if _, err := client.CreateDataset(ctx, "runtime_scope_1", []byte(`{"name":"Internal","parser_config_credentials":{"paddleocr_cloud":{"paddleocr_access_token":"sk-secret"}}}`)); err != nil {
 		t.Fatalf("CreateDataset internal credentials: %v", err)
 	}
+	if _, err := client.UpdateDataset(ctx, "runtime_scope_1", "kb_1", []byte(`{"name":"Plain Updated"}`)); err != nil {
+		t.Fatalf("UpdateDataset plain: %v", err)
+	}
+	if _, err := client.UpdateDataset(ctx, "runtime_scope_1", "kb_1", []byte(`{"parser_config_credentials":{"paddleocr_cloud":{"paddleocr_access_token":"sk-secret"}}}`)); err != nil {
+		t.Fatalf("UpdateDataset internal credentials: %v", err)
+	}
 	if _, err := client.UploadDocument(ctx, "runtime_scope_1", "kb_1", "notes.txt", "text/plain", strings.NewReader("hello")); err != nil {
 		t.Fatalf("UploadDocument: %v", err)
 	}
@@ -130,6 +147,8 @@ func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 		{method: http.MethodGet, path: "/api/v1/datasets", query: "page=2&page_size=10", serviceToken: "runtime-token"},
 		{method: http.MethodPost, path: "/api/v1/datasets", serviceToken: "runtime-token"},
 		{method: http.MethodPost, path: "/api/v1/internal/datasets", serviceToken: "runtime-token"},
+		{method: http.MethodPut, path: "/api/v1/datasets/kb_1", serviceToken: "runtime-token"},
+		{method: http.MethodPut, path: "/api/v1/internal/datasets/kb_1", serviceToken: "runtime-token"},
 		{method: http.MethodPost, path: "/api/v1/datasets/kb_1/documents", query: "type=local", serviceToken: "runtime-token"},
 		{method: http.MethodPost, path: "/api/v1/datasets/kb_1/documents/parse", serviceToken: "runtime-token"},
 		{method: http.MethodGet, path: "/api/v1/datasets/kb_1/documents", query: "page=1&page_size=100", serviceToken: "runtime-token"},

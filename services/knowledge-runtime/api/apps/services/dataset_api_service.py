@@ -302,7 +302,9 @@ async def update_dataset(scope_id: str, dataset_id: str, req: dict):
     :param req: dataset update request
     :return: (success, result) or (success, error_message)
     """
-    if not req:
+    parser_config_credentials = req.pop("parser_config_credentials", None)
+
+    if not req and not parser_config_credentials:
         return False, "No properties were modified"
 
     kb = KnowledgebaseService.get_or_none(id=dataset_id, status=StatusEnum.VALID.value)
@@ -355,6 +357,9 @@ async def update_dataset(scope_id: str, dataset_id: str, req: dict):
             req["parser_config"] = get_parser_config(chunk_method, None)
     elif "parser_config" in req and not req["parser_config"]:
         del req["parser_config"]
+
+    req.pop("parser_config_credentials", None)
+    _apply_parser_config_credentials(scope_id, req, parser_config_credentials)
 
     if kb.pipeline_id and req.get("parser_id") and not req.get("pipeline_id"):
         # shift to use parser_id, delete old pipeline_id

@@ -84,7 +84,7 @@ func TestBuildCreateDatasetBodyIncludesVendorEmbeddingID(t *testing.T) {
 
 func TestBuildUpdateDatasetBodyPreservesExplicitChunkStrategy(t *testing.T) {
 	explicit := json.RawMessage(`{"layout_recognize":"OpenDataLoader"}`)
-	body, err := buildUpdateDatasetBody(updateKnowledgeBaseRequest{ChunkStrategy: &explicit})
+	body, err := buildUpdateDatasetBody(updateKnowledgeBaseRequest{ChunkStrategy: &explicit}, nil)
 	if err != nil {
 		t.Fatalf("buildUpdateDatasetBody: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestBuildUpdateDatasetBodyPreservesExplicitChunkStrategy(t *testing.T) {
 
 func TestBuildUpdateDatasetBodyRejectsInvalidChunkStrategy(t *testing.T) {
 	explicit := json.RawMessage(`[]`)
-	_, err := buildUpdateDatasetBody(updateKnowledgeBaseRequest{ChunkStrategy: &explicit})
+	_, err := buildUpdateDatasetBody(updateKnowledgeBaseRequest{ChunkStrategy: &explicit}, nil)
 	if err == nil {
 		t.Fatal("buildUpdateDatasetBody returned nil error")
 	}
@@ -110,6 +110,54 @@ func TestBuildUpdateDatasetBodyRejectsInvalidChunkStrategy(t *testing.T) {
 	}
 	if appErr.Fields["chunkStrategy"] == "" {
 		t.Fatalf("fields=%v", appErr.Fields)
+	}
+}
+
+func TestBuildUpdateDatasetBodySendsResolvedParserConfig(t *testing.T) {
+	parserConfig := map[string]any{
+		"layout_recognize": ragflowLayoutPaddleOCR,
+		"chunk_token_num":  float64(1024),
+	}
+
+	body, err := buildUpdateDatasetBody(updateKnowledgeBaseRequest{}, parserConfig)
+	if err != nil {
+		t.Fatalf("buildUpdateDatasetBody: %v", err)
+	}
+	payload := decodeMap(t, body)
+	cfg, ok := payload["parser_config"].(map[string]any)
+	if !ok {
+		t.Fatalf("parser_config=%v", payload["parser_config"])
+	}
+	if cfg["layout_recognize"] != ragflowLayoutPaddleOCR {
+		t.Fatalf("layout_recognize=%v", cfg["layout_recognize"])
+	}
+	if cfg["chunk_token_num"] != float64(1024) {
+		t.Fatalf("chunk_token_num=%v", cfg["chunk_token_num"])
+	}
+	if _, ok := payload["parser_config_credentials"]; ok {
+		t.Fatalf("unexpected parser_config_credentials=%v", payload["parser_config_credentials"])
+	}
+}
+
+func TestBuildUpdateDatasetBodyChunkStrategyOverridesResolvedParserConfig(t *testing.T) {
+	explicit := json.RawMessage(`{"layout_recognize":"DeepDOC","chunk_token_num":256}`)
+	body, err := buildUpdateDatasetBody(
+		updateKnowledgeBaseRequest{ChunkStrategy: &explicit},
+		map[string]any{"layout_recognize": ragflowLayoutPaddleOCR, "chunk_token_num": float64(1024)},
+	)
+	if err != nil {
+		t.Fatalf("buildUpdateDatasetBody: %v", err)
+	}
+	payload := decodeMap(t, body)
+	cfg, ok := payload["parser_config"].(map[string]any)
+	if !ok {
+		t.Fatalf("parser_config=%v", payload["parser_config"])
+	}
+	if cfg["layout_recognize"] != ragflowLayoutDeepDOC {
+		t.Fatalf("layout_recognize=%v", cfg["layout_recognize"])
+	}
+	if cfg["chunk_token_num"] != float64(256) {
+		t.Fatalf("chunk_token_num=%v", cfg["chunk_token_num"])
 	}
 }
 
@@ -290,6 +338,48 @@ func TestBuildCreateDatasetBodySendsPaddleOCRCredentialsOutsideParserConfig(t *t
 		t.Fatalf("paddleocr_base_url=%v", paddleOCR["paddleocr_base_url"])
 	}
 	if paddleOCR["paddleocr_algorithm"] != "PaddleOCR-VL-1.6" {
+		t.Fatalf("paddleocr_algorithm=%v", paddleOCR["paddleocr_algorithm"])
+	}
+}
+
+func TestBuildUpdateDatasetBodySendsPaddleOCRCredentialsOutsideParserConfig(t *testing.T) {
+	cfg := ragflowParserConfigFromSnapshot(service.ParserConfigSnapshot{
+		ParserConfigID:    "parser_paddleocr",
+		Backend:           service.ParserBackendPaddleOCRCloud,
+		Concurrency:       4,
+		DefaultParameters: json.RawMessage(`{"paddleocr_base_url":"https://paddleocr.example.com/api","paddleocr_access_token":"sk-secret","paddleocr_algorithm":"PP-StructureV3"}`),
+	})
+
+	body, err := buildUpdateDatasetBody(updateKnowledgeBaseRequest{}, cfg)
+	if err != nil {
+		t.Fatalf("buildUpdateDatasetBody: %v", err)
+	}
+	payload := decodeMap(t, body)
+	parserConfig, ok := payload["parser_config"].(map[string]any)
+	if !ok {
+		t.Fatalf("parser_config=%v", payload["parser_config"])
+	}
+	if parserConfig["layout_recognize"] != ragflowLayoutPaddleOCR {
+		t.Fatalf("layout_recognize=%v", parserConfig["layout_recognize"])
+	}
+	for _, key := range []string{"paddleocr_base_url", "paddleocr_access_token", "paddleocr_algorithm", parserConfigCredentialsKey} {
+		if _, ok := parserConfig[key]; ok {
+			t.Fatalf("parser_config leaked protected PaddleOCR key %q: %v", key, parserConfig)
+		}
+	}
+
+	credentials, ok := payload["parser_config_credentials"].(map[string]any)
+	if !ok {
+		t.Fatalf("parser_config_credentials missing")
+	}
+	paddleOCR, ok := credentials["paddleocr_cloud"].(map[string]any)
+	if !ok {
+		t.Fatalf("paddleocr_cloud credentials missing")
+	}
+	if paddleOCR["paddleocr_access_token"] != "sk-secret" {
+		t.Fatalf("paddleocr_access_token was not preserved in protected credentials")
+	}
+	if paddleOCR["paddleocr_algorithm"] != "PP-StructureV3" {
 		t.Fatalf("paddleocr_algorithm=%v", paddleOCR["paddleocr_algorithm"])
 	}
 }

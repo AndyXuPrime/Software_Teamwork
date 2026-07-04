@@ -57,6 +57,16 @@ DL_T_673-1999.pdf
   retrieval support as an implementation detail behind the Knowledge adapter.
 - A real PDF E2E must record document readiness, chunk count, query id, hit
   count, and a short retrieval preview when the fixture is available.
+- Cloud OCR model adapters used by the runtime chunker must preserve the OCR
+  parser interface expected by chunking code, including `crop`, `remove_tag`,
+  and `outlines`. Unit coverage for a new OCR adapter must exercise these
+  delegation methods, not just the remote parse request.
+- Binding the embedding model is part of the parse job. Runtime code may retry
+  provider-marked transient model failures, such as a retryable upstream `502`,
+  with bounded attempts and delay; it must not retry non-retryable
+  authentication, authorization, or configuration errors.
+- Parser and model smoke logs may include provider job ids and redacted parser
+  configuration, but must not print access tokens or raw credential payloads.
 
 #### 4. Validation & Error Matrix
 
@@ -80,6 +90,10 @@ DL_T_673-1999.pdf
 
 - Knowledge adapter: `go test ./...` and `go build ./cmd/adapter`.
 - Runtime route/config tests for changed Python surfaces.
+- Runtime OCR adapter tests for cloud parser wrappers, including chunker-facing
+  helper methods used after parsing succeeds.
+- Runtime task executor tests for retryable versus non-retryable model binding
+  failures when embedding providers are involved.
 - Docker policy and Compose config checks when deployment wiring changes.
 - Real PDF E2E when `DL_T_673-1999.pdf` is present.
 

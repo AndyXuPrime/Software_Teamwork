@@ -64,6 +64,7 @@ type updateKnowledgeBaseRequest struct {
 	DocType           *string          `json:"docType"`
 	ChunkStrategy     *json.RawMessage `json:"chunkStrategy"`
 	RetrievalStrategy *json.RawMessage `json:"retrievalStrategy"`
+	ParserConfigID    *string          `json:"parserConfigId"`
 }
 
 type updateDocumentRequest struct {
@@ -433,7 +434,7 @@ func parserConfigCredentials(in map[string]any) map[string]any {
 	return cloneAnyMap(raw)
 }
 
-func buildUpdateDatasetBody(req updateKnowledgeBaseRequest) ([]byte, error) {
+func buildUpdateDatasetBody(req updateKnowledgeBaseRequest, parserConfig map[string]any) ([]byte, error) {
 	payload := map[string]any{}
 	if req.Name != nil {
 		payload["name"] = strings.TrimSpace(*req.Name)
@@ -444,12 +445,25 @@ func buildUpdateDatasetBody(req updateKnowledgeBaseRequest) ([]byte, error) {
 	if req.DocType != nil {
 		payload["chunk_method"] = strings.TrimSpace(*req.DocType)
 	}
+	if len(parserConfig) > 0 {
+		payload["parser_config"] = vendorParserConfig(parserConfig)
+		if credentials := parserConfigCredentials(parserConfig); len(credentials) > 0 {
+			payload["parser_config_credentials"] = credentials
+		}
+	}
 	if req.ChunkStrategy != nil {
 		var cfg map[string]any
 		if err := json.Unmarshal(*req.ChunkStrategy, &cfg); err != nil || cfg == nil {
 			return nil, service.ValidationError("request validation failed", map[string]string{"chunkStrategy": "must be a valid JSON object"})
 		}
-		payload["parser_config"] = cfg
+		if existing, ok := payload["parser_config"].(map[string]any); ok {
+			for key, value := range cfg {
+				existing[key] = value
+			}
+			payload["parser_config"] = existing
+		} else {
+			payload["parser_config"] = cfg
+		}
 	}
 	if len(payload) == 0 {
 		return nil, service.ValidationError("request validation failed", map[string]string{"body": "must include at least one supported field"})

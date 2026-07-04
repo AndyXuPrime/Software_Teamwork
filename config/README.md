@@ -138,7 +138,7 @@ PaddleOCR cloud parser 也通过 `.env.local` 配置：
 ```bash
 PADDLEOCR_BASE_URL=https://paddleocr.aistudio-app.com
 PADDLEOCR_ACCESS_TOKEN=<local-paddleocr-token>
-PADDLEOCR_ALGORITHM=PaddleOCR-VL
+PADDLEOCR_ALGORITHM=PP-StructureV3
 PADDLEOCR_AUTH_SCHEME=token
 PADDLEOCR_REQUEST_TIMEOUT=900
 ```
