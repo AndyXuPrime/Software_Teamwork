@@ -306,28 +306,30 @@ func (r saveSectionRequest) toService() service.SaveSectionInput {
 }
 
 type sectionVersionDTO struct {
-	ID        string           `json:"id"`
-	ReportID  string           `json:"reportId"`
-	SectionID string           `json:"sectionId"`
-	Version   int              `json:"version"`
-	Source    string           `json:"source"`
-	Content   string           `json:"content,omitempty"`
-	Tables    []map[string]any `json:"tables,omitempty"`
-	JobID     string           `json:"jobId,omitempty"`
-	CreatedAt string           `json:"createdAt"`
+	ID               string                          `json:"id"`
+	ReportID         string                          `json:"reportId"`
+	SectionID        string                          `json:"sectionId"`
+	Version          int                             `json:"version"`
+	Source           string                          `json:"source"`
+	Content          string                          `json:"content,omitempty"`
+	Tables           []map[string]any                `json:"tables,omitempty"`
+	JobID            string                          `json:"jobId,omitempty"`
+	KnowledgeSources []service.ReportKnowledgeSource `json:"knowledgeSources,omitempty"`
+	CreatedAt        string                          `json:"createdAt"`
 }
 
 func toSectionVersionDTO(version service.ReportSectionVersion) sectionVersionDTO {
 	return sectionVersionDTO{
-		ID:        version.ID,
-		ReportID:  version.ReportID,
-		SectionID: version.SectionID,
-		Version:   version.Version,
-		Source:    string(version.Source),
-		Content:   version.Content,
-		Tables:    version.Tables,
-		JobID:     version.JobID,
-		CreatedAt: version.CreatedAt.UTC().Format(time.RFC3339),
+		ID:               version.ID,
+		ReportID:         version.ReportID,
+		SectionID:        version.SectionID,
+		Version:          version.Version,
+		Source:           string(version.Source),
+		Content:          version.Content,
+		Tables:           version.Tables,
+		JobID:            version.JobID,
+		KnowledgeSources: version.KnowledgeSources,
+		CreatedAt:        version.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
 

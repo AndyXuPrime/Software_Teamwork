@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Download,
   FileText,
   GripVertical,
@@ -8,10 +9,8 @@ import {
   Play,
   Plus,
   RefreshCw,
-  Rocket,
   RotateCcw,
   Save,
-  Settings2,
   XCircle,
 } from 'lucide-react'
 import { type DragEvent, type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
@@ -27,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useModelProfiles } from '@/features/admin-config'
+import { useKnowledgeBases } from '@/features/knowledge'
 import { useCurrentQALLMConfigQuery } from '@/features/qa-settings/qa-settings.queries'
 import type {
   CreateReportFormValues,
@@ -44,6 +43,7 @@ import {
   createReportSchema,
   formatReportGatewayError,
   getCreateReportDefaults,
+  getReportMaterialDisplayDetails,
   isReportTypeDraftDefaultValue,
   useCancelReportJob,
   useCreateReportFileMutation,
@@ -52,15 +52,13 @@ import {
   useDownloadReportFileMutation,
   useReportBootstrapQueries,
   useReportDetailQueries,
+  useReportEventStream,
   useReportJobQuery,
-  useReportSettingsQuery,
   useRetryReportJobMutation,
   useSectionVersions,
   useUpdateReportOutlineMutation,
   useUpdateReportSectionMutation,
-  useUpdateReportSettingsMutation,
 } from '@/features/reports'
-import { canAccess } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -88,6 +86,13 @@ type SectionGenerationReset = {
   requireFreshSectionTimestamp?: boolean
   reportId: string
   status: Extract<ReportJobStatus, 'pending' | 'running'>
+}
+
+type StreamedSectionDraft = {
+  baseContent: string
+  draft: string
+  streamText: string
+  userEdited: boolean
 }
 
 const maxOutlineUndoSteps = 15
@@ -150,7 +155,7 @@ function mergeSectionsWithOutline(
   })
 
   const sectionIdByNodeId = new Map<string, string>()
-  return flattenOutlineSectionMetadata(outline.sections).flatMap(
+  const mergedSections = flattenOutlineSectionMetadata(outline.sections).flatMap(
     ({ node, parentNodeId, sortOrder }) => {
       const nodeId = node.id?.trim()
       if (!nodeId) return []
@@ -171,6 +176,8 @@ function mergeSectionsWithOutline(
       ]
     },
   )
+
+  return mergedSections.length > 0 ? mergedSections : sections
 }
 
 function renumberOutline(
@@ -378,6 +385,7 @@ type ReportGenerateSession = {
   form: CreateReportFormValues
   lastJob: ReportJob | null
   latestFile: ReportFile | null
+  selectedKnowledgeBaseIds: string[]
   selectedMaterialIds: string[]
   step: StepKey
   version: 1
@@ -464,6 +472,9 @@ function readReportGenerateSession(): ReportGenerateSession | null {
     const selectedMaterialIds = Array.isArray(parsed.selectedMaterialIds)
       ? parsed.selectedMaterialIds.filter((item): item is string => typeof item === 'string')
       : []
+    const selectedKnowledgeBaseIds = Array.isArray(parsed.selectedKnowledgeBaseIds)
+      ? parsed.selectedKnowledgeBaseIds.filter((item): item is string => typeof item === 'string')
+      : []
     const formResult = createReportSchema.safeParse(parsed.form)
 
     if (!currentReport && !lastJob && !activeJobId && !latestFile) return null
@@ -475,6 +486,7 @@ function readReportGenerateSession(): ReportGenerateSession | null {
       form: formResult.success ? formResult.data : createInitialReportForm(),
       lastJob,
       latestFile,
+      selectedKnowledgeBaseIds,
       selectedMaterialIds,
       step: inferRestoredStep(parsed.step, lastJob),
       version: 1,
@@ -727,6 +739,9 @@ export function ReportGeneratePage() {
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>(
     () => restoredSession?.selectedMaterialIds ?? [],
   )
+  const [selectedKnowledgeBaseIds, setSelectedKnowledgeBaseIds] = useState<string[]>(
+    () => restoredSession?.selectedKnowledgeBaseIds ?? [],
+  )
   const [currentReport, setCurrentReport] = useState<Report | null>(
     () => restoredSession?.currentReport ?? null,
   )
@@ -741,12 +756,13 @@ export function ReportGeneratePage() {
     () => restoredSession?.activeSectionId ?? '',
   )
   const [sectionDraft, setSectionDraft] = useState('')
+  const [streamedSectionDrafts, setStreamedSectionDrafts] = useState<
+    Record<string, StreamedSectionDraft>
+  >({})
+  const [manuallyEditedSectionDraftIds, setManuallyEditedSectionDraftIds] = useState<string[]>([])
   const [showVersions, setShowVersions] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
-  const [documentProfileId, setDocumentProfileId] = useState('')
-  const [documentProfileTouched, setDocumentProfileTouched] = useState(false)
-  const [documentSettingsNotice, setDocumentSettingsNotice] = useState<string | null>(null)
   const [outlineEditor, setOutlineEditor] = useState<OutlineEditorState>({
     future: [],
     nodes: [],
@@ -760,18 +776,9 @@ export function ReportGeneratePage() {
     useState<SectionGenerationReset | null>(null)
 
   const user = useAuthStore((state) => state.user)
-  const canManageDocumentModelSettings =
-    canAccess(user, { any: ['admin:model-profile:write', 'system:admin'] }) ||
-    canAccess(user, { roles: ['system:admin'] })
   const { typeQuery, templateQuery, materialQuery } = useReportBootstrapQueries(form.reportType)
-  const reportSettingsQuery = useReportSettingsQuery({
-    enabled: canManageDocumentModelSettings,
-  })
   const userDocumentModelQuery = useCurrentQALLMConfigQuery({
-    enabled: Boolean(user) && !canManageDocumentModelSettings,
-  })
-  const chatProfilesQuery = useModelProfiles('chat', true, {
-    queryEnabled: canManageDocumentModelSettings,
+    enabled: Boolean(user),
   })
   const jobQuery = useReportJobQuery(activeJobId)
   const activeJobForPolling = jobQuery.data ?? lastJob
@@ -779,12 +786,14 @@ export function ReportGeneratePage() {
     currentReport?.id ?? null,
     activeJobForPolling,
   )
+  const knowledgeBasesQuery = useKnowledgeBases(1, 50, undefined, undefined, {
+    enabled: step === 'outline' || step === 'content',
+  })
   const createReportMutation = useCreateReportMutation()
   const createJobMutation = useCreateReportJobMutation()
   const saveOutlineMutation = useUpdateReportOutlineMutation(currentReport?.id ?? '')
   const saveSectionMutation = useUpdateReportSectionMutation(currentReport?.id ?? '')
   const createFileMutation = useCreateReportFileMutation()
-  const updateReportSettingsMutation = useUpdateReportSettingsMutation()
   const retryJobMutation = useRetryReportJobMutation()
   const cancelJobMutation = useCancelReportJob()
   const downloadMutation = useDownloadReportFileMutation()
@@ -796,7 +805,10 @@ export function ReportGeneratePage() {
   const reportTypes = useMemo(() => typeQuery.data ?? [], [typeQuery.data])
   const templates = useMemo(() => templateQuery.data?.items ?? [], [templateQuery.data])
   const materials = useMemo(() => materialQuery.data?.items ?? [], [materialQuery.data])
-  const chatProfiles = useMemo(() => chatProfilesQuery.data ?? [], [chatProfilesQuery.data])
+  const knowledgeBases = useMemo(
+    () => knowledgeBasesQuery.data?.items ?? [],
+    [knowledgeBasesQuery.data],
+  )
   const currentOutline = outlinesQuery.data?.[0]
   const outlineSourceKey = currentOutline
     ? `${currentOutline.id}:${currentOutline.version}:${currentOutline.sections.length}`
@@ -818,6 +830,33 @@ export function ReportGeneratePage() {
     () => getRetryAwareJob(activeJobForPolling, sectionGenerationReset),
     [activeJobForPolling, sectionGenerationReset],
   )
+  const isLiveGenerationJob =
+    Boolean(currentReport?.id && effectiveJob) &&
+    (effectiveJob?.status === 'pending' || effectiveJob?.status === 'running') &&
+    (isOutlineJob(effectiveJob) || isContentJob(effectiveJob))
+  const isContentLiveGenerationJob = isLiveGenerationJob && isContentJob(effectiveJob)
+  const reportEventStreamResetKey = effectiveJob
+    ? `${effectiveJob.reportId}:${effectiveJob.id}`
+    : null
+  const reportEventStream = useReportEventStream({
+    enabled: isContentLiveGenerationJob,
+    jobId: effectiveJob?.id ?? null,
+    reportId: currentReport?.id ?? null,
+    resetKey: reportEventStreamResetKey,
+  })
+  const selectedKnowledgeBaseIdSet = useMemo(
+    () => new Set(selectedKnowledgeBaseIds),
+    [selectedKnowledgeBaseIds],
+  )
+  const manuallyEditedSectionDraftIdSet = useMemo(
+    () => new Set(manuallyEditedSectionDraftIds),
+    [manuallyEditedSectionDraftIds],
+  )
+  const shouldSubmitKnowledgeBaseIds =
+    selectedKnowledgeBaseIds.length > 0 && !knowledgeBasesQuery.isError
+  const selectedKnowledgeBaseCount = knowledgeBasesQuery.isError
+    ? 0
+    : selectedKnowledgeBaseIds.length
   const currentOutlineSections = useMemo(
     () => mergeSectionsWithOutline(sectionsQuery.data ?? [], currentOutline),
     [currentOutline, sectionsQuery.data],
@@ -837,19 +876,6 @@ export function ReportGeneratePage() {
     currentReport?.reportType ??
     form.reportType ??
     '-'
-  const configuredDocumentProfileId = reportSettingsQuery.data?.llm?.profileId ?? ''
-  const configuredDocumentModel = reportSettingsQuery.data?.llm?.model ?? ''
-  const selectedDocumentProfile = chatProfiles.find((profile) => profile.id === documentProfileId)
-  const selectedDocumentModel =
-    selectedDocumentProfile?.model ??
-    (documentProfileId === configuredDocumentProfileId ? configuredDocumentModel : '')
-  const firstChatProfileId = chatProfiles[0]?.id ?? ''
-  const showDocumentProfileFallback =
-    documentProfileId.trim() !== '' &&
-    !selectedDocumentProfile &&
-    documentProfileId === configuredDocumentProfileId
-  const hasDocumentProfileOptions = showDocumentProfileFallback || chatProfiles.length > 0
-  const noDocumentProfileOptions = !chatProfilesQuery.isLoading && !hasDocumentProfileOptions
   const hasDraftPendingOutlineJob = Boolean(currentReport && step === 'draft')
 
   const bootstrapErrors = useMemo(
@@ -898,28 +924,10 @@ export function ReportGeneratePage() {
   }, [form.templateId, templates])
 
   useEffect(() => {
-    if (!canManageDocumentModelSettings) {
-      setDocumentProfileId('')
-      setDocumentProfileTouched(false)
-      setDocumentSettingsNotice(null)
-      return
-    }
-
-    if (documentProfileTouched) return
-    if (!reportSettingsQuery.isSuccess) {
-      setDocumentProfileId('')
-      return
-    }
-
-    const nextProfileId = configuredDocumentProfileId || firstChatProfileId
-    setDocumentProfileId(nextProfileId)
-  }, [
-    canManageDocumentModelSettings,
-    configuredDocumentProfileId,
-    documentProfileTouched,
-    firstChatProfileId,
-    reportSettingsQuery.isSuccess,
-  ])
+    if (!knowledgeBasesQuery.isSuccess) return
+    const availableIds = new Set(knowledgeBases.map((item) => item.id))
+    setSelectedKnowledgeBaseIds((prev) => prev.filter((id) => availableIds.has(id)))
+  }, [knowledgeBases, knowledgeBasesQuery.isSuccess])
 
   useEffect(() => {
     if (sections.length === 0) {
@@ -932,12 +940,75 @@ export function ReportGeneratePage() {
   }, [activeSectionId, sections])
 
   useEffect(() => {
+    if (!isContentLiveGenerationJob || !reportEventStreamResetKey) return
+    setStreamedSectionDrafts({})
+    setManuallyEditedSectionDraftIds([])
+  }, [isContentLiveGenerationJob, reportEventStreamResetKey])
+
+  useEffect(() => {
+    if (!isContentLiveGenerationJob) return
+    const streamEntries = Object.entries(reportEventStream.sectionTextById)
+    if (streamEntries.length === 0) return
+
+    setStreamedSectionDrafts((prev) => {
+      let changed = false
+      const next = { ...prev }
+
+      for (const [sectionId, streamText] of streamEntries) {
+        const section = sections.find((item) => item.id === sectionId)
+        const baseContent = section?.content ?? ''
+        const existing = prev[sectionId]
+        const userEdited = existing?.userEdited ?? manuallyEditedSectionDraftIdSet.has(sectionId)
+        const draft = userEdited ? (existing?.draft ?? baseContent) : streamText
+
+        if (
+          existing &&
+          existing.baseContent === baseContent &&
+          existing.draft === draft &&
+          existing.streamText === streamText &&
+          existing.userEdited === userEdited
+        ) {
+          continue
+        }
+
+        next[sectionId] = { baseContent, draft, streamText, userEdited }
+        changed = true
+      }
+
+      return changed ? next : prev
+    })
+  }, [
+    isContentLiveGenerationJob,
+    manuallyEditedSectionDraftIdSet,
+    reportEventStream.sectionTextById,
+    sections,
+  ])
+
+  useEffect(() => {
+    if (isContentLiveGenerationJob || sections.length === 0) return
+
+    setStreamedSectionDrafts((prev) => {
+      let changed = false
+      const next = { ...prev }
+
+      for (const section of sections) {
+        const existing = prev[section.id]
+        if (!existing || existing.userEdited || !(section.content ?? '').trim()) continue
+        delete next[section.id]
+        changed = true
+      }
+
+      return changed ? next : prev
+    })
+  }, [isContentLiveGenerationJob, sections])
+
+  useEffect(() => {
     if (activeSection) {
-      setSectionDraft(activeSection.content ?? '')
+      setSectionDraft(streamedSectionDrafts[activeSection.id]?.draft ?? activeSection.content ?? '')
     } else {
       setSectionDraft('')
     }
-  }, [activeSection])
+  }, [activeSection, streamedSectionDrafts])
 
   useEffect(() => {
     if (jobQuery.data) {
@@ -977,6 +1048,7 @@ export function ReportGeneratePage() {
       form,
       lastJob,
       latestFile,
+      selectedKnowledgeBaseIds,
       selectedMaterialIds,
       step,
       version: 1,
@@ -988,6 +1060,7 @@ export function ReportGeneratePage() {
     form,
     lastJob,
     latestFile,
+    selectedKnowledgeBaseIds,
     selectedMaterialIds,
     step,
   ])
@@ -1109,43 +1182,40 @@ export function ReportGeneratePage() {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  const handleSelectDocumentProfile = (profileId: string) => {
-    setDocumentProfileTouched(true)
-    setDocumentProfileId(profileId)
-    setDocumentSettingsNotice(null)
-  }
-
-  const handlePublishDocumentProfile = async () => {
-    const profileId = documentProfileId.trim()
-    setDocumentSettingsNotice(null)
-
-    if (!canManageDocumentModelSettings) {
-      setDocumentSettingsNotice('当前账号无权发布文档生成模型配置。')
-      return
-    }
-    if (reportSettingsQuery.isLoading) {
-      setDocumentSettingsNotice('正在读取当前文档生成模型配置，请稍后再发布。')
-      return
-    }
-    if (!profileId) {
-      setDocumentSettingsNotice('请选择用于报告生成的文档生成模型。')
-      return
-    }
-
-    try {
-      await updateReportSettingsMutation.mutateAsync({
-        llm: { profileId, provider: 'ai-gateway' },
-      })
-      setDocumentSettingsNotice('文档生成模型配置已发布。')
-    } catch (error) {
-      setDocumentSettingsNotice(formatReportGatewayError(error, '文档生成模型配置发布失败'))
-    }
-  }
-
   const toggleMaterial = (id: string) => {
     setSelectedMaterialIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
     )
+  }
+
+  const toggleKnowledgeBase = (id: string) => {
+    setSelectedKnowledgeBaseIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    )
+  }
+
+  const handleSectionDraftChange = (value: string) => {
+    setSectionDraft(value)
+    if (!activeSection) return
+
+    setManuallyEditedSectionDraftIds((prev) =>
+      prev.includes(activeSection.id) ? prev : [...prev, activeSection.id],
+    )
+    setStreamedSectionDrafts((prev) => {
+      const existing = prev[activeSection.id]
+      if (!existing && !isContentLiveGenerationJob) return prev
+
+      return {
+        ...prev,
+        [activeSection.id]: {
+          baseContent: existing?.baseContent ?? activeSection.content ?? '',
+          draft: value,
+          streamText:
+            existing?.streamText ?? reportEventStream.sectionTextById[activeSection.id] ?? '',
+          userEdited: true,
+        },
+      }
+    })
   }
 
   const handleRestartDraft = () => {
@@ -1153,6 +1223,9 @@ export function ReportGeneratePage() {
     setStep('draft')
     setForm(createInitialReportForm())
     setSelectedMaterialIds([])
+    setSelectedKnowledgeBaseIds([])
+    setStreamedSectionDrafts({})
+    setManuallyEditedSectionDraftIds([])
     setCurrentReport(null)
     setActiveJobId(null)
     setLastJob(null)
@@ -1285,6 +1358,14 @@ export function ReportGeneratePage() {
       }
     }
 
+    const contentOptions: Record<string, unknown> = {
+      preserveManualEdits: true,
+      saveResult: true,
+    }
+    if (shouldSubmitKnowledgeBaseIds) {
+      contentOptions.knowledgeBaseIds = selectedKnowledgeBaseIds
+    }
+
     try {
       const job = await createJobMutation.mutateAsync({
         reportId: currentReport.id,
@@ -1292,7 +1373,7 @@ export function ReportGeneratePage() {
           jobType: 'content_generation',
           target: { scope: 'report' },
           materialIds: selectedMaterialIds,
-          options: { preserveManualEdits: true, saveResult: true },
+          options: contentOptions,
         },
       })
       setLastJob(job)
@@ -1485,7 +1566,7 @@ export function ReportGeneratePage() {
         )}
       </div>
 
-      <div className="grid flex-1 gap-6 p-6 xl:grid-cols-[minmax(0,1.1fr)_360px]">
+      <div className="grid flex-1 gap-6 p-6">
         <div className="min-w-0 space-y-6">
           {(currentReport || effectiveJob) && (
             <section className="rounded-lg border border-border bg-card p-5">
@@ -1565,6 +1646,11 @@ export function ReportGeneratePage() {
               {effectiveJob?.resultSummary && (
                 <p className="mt-4 rounded-lg bg-muted p-3 text-sm text-muted-foreground">
                   {effectiveJob.resultSummary}
+                </p>
+              )}
+              {reportEventStream.status === 'error' && (
+                <p className="mt-4 rounded-lg bg-muted p-3 text-sm text-muted-foreground">
+                  实时输出连接中断，已继续通过轮询更新任务进度。
                 </p>
               )}
             </section>
@@ -1649,6 +1735,19 @@ export function ReportGeneratePage() {
                   </Select>
                 </label>
                 <label className="space-y-1.5 text-sm">
+                  <span className="font-medium">生成模型</span>
+                  <Select value="personal-default" disabled={userDocumentModelQuery.isLoading}>
+                    <SelectTrigger className="h-8 w-full" aria-label="生成模型">
+                      <SelectValue placeholder="个人默认配置" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="personal-default">
+                        <SelectItemText>个人默认配置</SelectItemText>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </label>
+                <label className="space-y-1.5 text-sm">
                   <span className="font-medium">年份</span>
                   <Input
                     type="number"
@@ -1708,21 +1807,25 @@ export function ReportGeneratePage() {
                   <StateBlock size="compact" title="暂无可引用素材" variant="empty" />
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {materials.map((material) => (
-                      <button
-                        key={material.id}
-                        type="button"
-                        className={cn(
-                          'rounded-lg border px-3 py-2 text-sm transition-colors',
-                          selectedMaterialIds.includes(material.id)
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-border bg-background text-muted-foreground hover:text-foreground',
-                        )}
-                        onClick={() => toggleMaterial(material.id)}
-                      >
-                        {material.materialName}
-                      </button>
-                    ))}
+                    {materials.map((material) => {
+                      const materialDisplay = getReportMaterialDisplayDetails(material)
+
+                      return (
+                        <button
+                          key={material.id}
+                          type="button"
+                          className={cn(
+                            'rounded-lg border px-3 py-2 text-sm transition-colors',
+                            selectedMaterialIds.includes(material.id)
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-border bg-background text-muted-foreground hover:text-foreground',
+                          )}
+                          onClick={() => toggleMaterial(material.id)}
+                        >
+                          {materialDisplay.materialName}
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -1790,6 +1893,79 @@ export function ReportGeneratePage() {
                   </Button>
                 </div>
               </div>
+              <div className="mb-4 rounded-lg border border-border bg-background p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="size-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">知识库引用</h3>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {selectedKnowledgeBaseCount > 0
+                      ? `已选择 ${selectedKnowledgeBaseCount} 个`
+                      : '不引用知识库'}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    aria-pressed={selectedKnowledgeBaseCount === 0}
+                    type="button"
+                    className={cn(
+                      'rounded-lg border px-3 py-2 text-sm transition-colors',
+                      selectedKnowledgeBaseCount === 0
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-background text-muted-foreground hover:text-foreground',
+                    )}
+                    onClick={() => setSelectedKnowledgeBaseIds([])}
+                  >
+                    不引用知识库
+                  </button>
+                  {!knowledgeBasesQuery.isError &&
+                    knowledgeBases.map((knowledgeBase) => (
+                      <button
+                        key={knowledgeBase.id}
+                        aria-pressed={selectedKnowledgeBaseIdSet.has(knowledgeBase.id)}
+                        type="button"
+                        className={cn(
+                          'rounded-lg border px-3 py-2 text-sm transition-colors',
+                          selectedKnowledgeBaseIdSet.has(knowledgeBase.id)
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border bg-background text-muted-foreground hover:text-foreground',
+                        )}
+                        onClick={() => toggleKnowledgeBase(knowledgeBase.id)}
+                      >
+                        {knowledgeBase.name}
+                      </button>
+                    ))}
+                </div>
+
+                {knowledgeBasesQuery.isLoading ? (
+                  <StateBlock
+                    className="mt-3"
+                    size="compact"
+                    title="知识库加载中"
+                    variant="loading"
+                  />
+                ) : knowledgeBasesQuery.isError ? (
+                  <StateBlock
+                    className="mt-3"
+                    description={formatReportGatewayError(
+                      knowledgeBasesQuery.error,
+                      '知识库列表加载失败',
+                    )}
+                    size="compact"
+                    title="知识库列表加载失败"
+                    variant="warning"
+                  />
+                ) : knowledgeBases.length === 0 ? (
+                  <StateBlock
+                    className="mt-3"
+                    size="compact"
+                    title="暂无可引用知识库"
+                    variant="empty"
+                  />
+                ) : null}
+              </div>
               {outlinesQuery.isLoading ? (
                 <StateBlock size="compact" title="大纲加载中" variant="loading" />
               ) : outlinesQuery.isError ? (
@@ -1811,18 +1987,19 @@ export function ReportGeneratePage() {
                   aria-label="大纲章节列表"
                   className="space-y-2 transition-opacity duration-150"
                 >
-                  {flattenedOutline.map(({ node, path }) => {
+                  {flattenedOutline.map(({ node, path }, index) => {
                     const isDragging = pathsEqual(draggedOutlinePath, path)
                     const isDropTarget = pathsEqual(dragOverOutlinePath, path)
                     return (
                       <div
                         key={node.id ?? node.clientSectionId ?? node.title}
                         aria-label={`大纲章节：${node.title}`}
-                        style={
-                          node.level > 1 ? { marginLeft: `${(node.level - 1) * 2}rem` } : undefined
-                        }
+                        style={{
+                          ...(node.level > 1 ? { marginLeft: `${(node.level - 1) * 2}rem` } : {}),
+                          animationDelay: `${index * 70}ms`,
+                        }}
                         className={cn(
-                          'grid grid-cols-[auto_auto_auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 transition-[background-color,border-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-muted/40 focus-within:border-ring/70 focus-within:bg-muted/30',
+                          'grid animate-[fade-in-up_0.28s_ease-out_both] grid-cols-[auto_auto_auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 opacity-0 transition-[background-color,border-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-muted/40 focus-within:border-ring/70 focus-within:bg-muted/30 motion-reduce:animate-none motion-reduce:opacity-100',
                           isDragging && 'opacity-60',
                           isDropTarget && 'border-primary/60 bg-primary/5 shadow-sm',
                         )}
@@ -2021,7 +2198,7 @@ export function ReportGeneratePage() {
                                       type="button"
                                       className="text-primary hover:underline"
                                       onClick={() => {
-                                        setSectionDraft(version.content ?? '')
+                                        handleSectionDraftChange(version.content ?? '')
                                         setNotice(`已恢复版本 v${version.version} 的内容到编辑区。`)
                                       }}
                                     >
@@ -2043,7 +2220,7 @@ export function ReportGeneratePage() {
                       className="min-h-[420px] flex-1 resize-y rounded-lg border border-input bg-background px-4 py-3 text-sm leading-7 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                       maxLength={50000}
                       value={sectionDraft}
-                      onChange={(event) => setSectionDraft(event.target.value)}
+                      onChange={(event) => handleSectionDraftChange(event.target.value)}
                     />
                   </div>
                 </>
@@ -2087,165 +2264,6 @@ export function ReportGeneratePage() {
             </section>
           )}
         </div>
-
-        <aside className="flex flex-col space-y-4">
-          {user && !canManageDocumentModelSettings && (
-            <section className="rounded-lg border border-border bg-card p-4">
-              <h2 className="text-sm font-semibold">当前文档生成模型</h2>
-
-              {userDocumentModelQuery.isLoading ? (
-                <p className="mt-3 text-sm text-muted-foreground">加载中...</p>
-              ) : userDocumentModelQuery.isError ? (
-                <InlineNotice className="mt-3" title="文档生成模型加载失败" variant="error">
-                  {formatReportGatewayError(userDocumentModelQuery.error, '文档生成模型加载失败')}
-                </InlineNotice>
-              ) : (
-                <dl className="mt-3 grid gap-2 text-sm">
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">服务</dt>
-                    <dd className="text-foreground">
-                      {userDocumentModelQuery.data?.provider ?? 'ai-gateway'}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">Profile ID</dt>
-                    <dd className="break-all text-foreground">
-                      {userDocumentModelQuery.data?.profileId ?? '-'}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">模型</dt>
-                    <dd className="break-all text-foreground">
-                      {userDocumentModelQuery.data?.modelName ?? '-'}
-                    </dd>
-                  </div>
-                </dl>
-              )}
-            </section>
-          )}
-
-          {canManageDocumentModelSettings && (
-            <section className="rounded-lg border border-border bg-card p-4">
-              <div className="flex items-center gap-2">
-                <Settings2 className="size-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold">当前文档生成模型</h2>
-              </div>
-
-              <div className="mt-3 rounded-lg border border-border bg-background p-3 text-sm">
-                <div className="mb-2 font-medium text-foreground">当前生效引用</div>
-                <dl className="grid gap-2">
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">服务</dt>
-                    <dd className="text-foreground">ai-gateway</dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">Profile ID</dt>
-                    <dd className="break-all text-foreground">
-                      {configuredDocumentProfileId || '-'}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">模型</dt>
-                    <dd className="break-all text-foreground">{configuredDocumentModel || '-'}</dd>
-                  </div>
-                </dl>
-              </div>
-
-              <label className="mt-3 block space-y-1.5 text-sm">
-                <span className="font-medium text-foreground">文档生成模型</span>
-                <Select
-                  value={documentProfileId || undefined}
-                  onValueChange={(v) => handleSelectDocumentProfile(String(v))}
-                  disabled={
-                    reportSettingsQuery.isLoading ||
-                    chatProfilesQuery.isLoading ||
-                    !hasDocumentProfileOptions
-                  }
-                >
-                  <SelectTrigger className="h-8 w-full" aria-label="文档生成模型">
-                    <SelectValue
-                      placeholder={
-                        noDocumentProfileOptions
-                          ? '请先创建聊天模型 Profile'
-                          : '请选择聊天模型 Profile'
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {showDocumentProfileFallback && (
-                      <SelectItem value={documentProfileId}>
-                        <SelectItemText>
-                          当前配置：{selectedDocumentModel || documentProfileId}
-                        </SelectItemText>
-                      </SelectItem>
-                    )}
-                    {chatProfiles.map((profile) => (
-                      <SelectItem key={profile.id} value={profile.id}>
-                        <SelectItemText>
-                          {profile.name} / {profile.model}
-                        </SelectItemText>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </label>
-
-              <div className="mt-3 space-y-2 text-sm">
-                <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">待发布 Profile</span>
-                  <code className="break-all">{documentProfileId || '-'}</code>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">待发布模型</span>
-                  <span className="break-all">{selectedDocumentModel || '-'}</span>
-                </div>
-              </div>
-
-              {chatProfilesQuery.isError && (
-                <InlineNotice className="mt-3" title="模型列表加载失败" variant="error">
-                  {formatReportGatewayError(chatProfilesQuery.error, '模型列表加载失败')}
-                </InlineNotice>
-              )}
-              {reportSettingsQuery.isError && (
-                <InlineNotice className="mt-3" title="报告设置加载失败" variant="error">
-                  {formatReportGatewayError(reportSettingsQuery.error, '报告设置加载失败')}
-                </InlineNotice>
-              )}
-              {!chatProfilesQuery.isLoading && chatProfiles.length === 0 && (
-                <InlineNotice className="mt-3" title="暂无可用模型" variant="warning">
-                  请先在模型管理中新增并启用用途为 chat 的模型 Profile。
-                </InlineNotice>
-              )}
-              {documentSettingsNotice && (
-                <InlineNotice
-                  className="mt-3"
-                  title={documentSettingsNotice.includes('失败') ? '发布失败' : undefined}
-                  variant={documentSettingsNotice.includes('失败') ? 'error' : 'info'}
-                >
-                  {documentSettingsNotice}
-                </InlineNotice>
-              )}
-
-              <Button
-                type="button"
-                className="mt-3 w-full"
-                onClick={() => void handlePublishDocumentProfile()}
-                disabled={
-                  !documentProfileId.trim() ||
-                  reportSettingsQuery.isLoading ||
-                  updateReportSettingsMutation.isPending
-                }
-              >
-                {updateReportSettingsMutation.isPending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Rocket className="size-4" />
-                )}
-                发布文档模型配置
-              </Button>
-            </section>
-          )}
-        </aside>
       </div>
     </div>
   )

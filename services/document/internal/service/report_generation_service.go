@@ -33,6 +33,10 @@ type ReportGenerationChatClient interface {
 	CreateChatCompletion(ctx context.Context, reqCtx RequestContext, input ChatCompletionRequest) (ChatCompletionResponse, error)
 }
 
+type ReportGenerationStreamingChatClient interface {
+	StreamChatCompletion(ctx context.Context, reqCtx RequestContext, input ChatCompletionRequest, onDelta func(string)) (ChatCompletionResponse, error)
+}
+
 type ReportGenerationKnowledgeRetriever interface {
 	RetrieveReportContext(ctx context.Context, reqCtx RequestContext, input ReportKnowledgeRetrievalInput) ([]ReportKnowledgeSnippet, error)
 }
@@ -119,19 +123,24 @@ func (s *ReportGenerationService) executeOutlineGeneration(ctx context.Context, 
 		_ = s.recordEvent(ctx, report.ID, payload.JobID, "outline.failed", "outline generation failed")
 		return ReportGenerationExecutionResult{}, err
 	}
+	if generationContext.KnowledgeRetrievalDegraded {
+		_ = s.recordEvent(ctx, report.ID, payload.JobID, "knowledge.retrieval_degraded", "knowledge retrieval failed; generation continued without knowledge context")
+	}
 	if canceled, err := s.isJobCanceled(ctx, payload.JobID); err != nil {
 		return ReportGenerationExecutionResult{}, err
 	} else if canceled {
 		_ = s.recordEvent(ctx, report.ID, payload.JobID, "outline.canceled", "outline generation canceled")
 		return ReportGenerationExecutionResult{Status: JobStatusCanceled}, nil
 	}
-	resp, err := s.chat.CreateChatCompletion(ctx, reqCtx, ChatCompletionRequest{
+	resp, err := s.createChatCompletion(ctx, reqCtx, ChatCompletionRequest{
 		Model:     settings.LLM.Model,
 		ProfileID: settings.LLM.ProfileID,
 		Messages: []ChatMessage{
 			{Role: "system", Content: buildOutlineSystemPrompt(reportKind.DisplayName)},
 			{Role: "user", Content: buildOutlinePrompt(report, structure, generationContext, reportKind)},
 		},
+	}, func(delta string) {
+		s.recordOutlineDelta(ctx, report.ID, payload.JobID, delta)
 	})
 	if canceled, cancelErr := s.isJobCanceled(ctx, payload.JobID); cancelErr != nil {
 		return ReportGenerationExecutionResult{}, cancelErr
@@ -268,19 +277,24 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 			recordSectionFailure(section.ID, err)
 			continue
 		}
+		if generationContext.KnowledgeRetrievalDegraded {
+			_ = s.recordEvent(ctx, report.ID, payload.JobID, "knowledge.retrieval_degraded", "knowledge retrieval failed; generation continued without knowledge context")
+		}
 		if canceled, err := s.isJobCanceled(ctx, payload.JobID); err != nil {
 			return ReportGenerationExecutionResult{}, err
 		} else if canceled {
 			_ = s.recordEvent(ctx, report.ID, payload.JobID, "content.canceled", "content generation canceled")
 			return ReportGenerationExecutionResult{Status: JobStatusCanceled}, nil
 		}
-		resp, err := s.chat.CreateChatCompletion(ctx, reqCtx, ChatCompletionRequest{
+		resp, err := s.createChatCompletion(ctx, reqCtx, ChatCompletionRequest{
 			Model:     settings.LLM.Model,
 			ProfileID: settings.LLM.ProfileID,
 			Messages: []ChatMessage{
 				{Role: "system", Content: buildSectionSystemPrompt(reportKind.DisplayName)},
 				{Role: "user", Content: buildSectionPrompt(report, section, generationContext, sectionHasChildren(sections, section.ID), reportKind)},
 			},
+		}, func(delta string) {
+			s.recordSectionDelta(ctx, report.ID, payload.JobID, section.ID, delta)
 		})
 		if canceled, cancelErr := s.isJobCanceled(ctx, payload.JobID); cancelErr != nil {
 			return ReportGenerationExecutionResult{}, cancelErr
@@ -334,16 +348,17 @@ func (s *ReportGenerationService) executeContentGeneration(ctx context.Context, 
 				return dependencyError("update generated report section", err)
 			}
 			if _, err := txRepo.CreateReportSectionVersion(ctx, ReportSectionVersion{
-				ID:        newID(),
-				ReportID:  report.ID,
-				SectionID: updated.ID,
-				Version:   nextVersion,
-				Source:    ContentSourceAI,
-				Content:   updated.Content,
-				Tables:    updated.Tables,
-				JobID:     payload.JobID,
-				CreatedBy: payload.UserID,
-				CreatedAt: now,
+				ID:               newID(),
+				ReportID:         report.ID,
+				SectionID:        updated.ID,
+				Version:          nextVersion,
+				Source:           ContentSourceAI,
+				Content:          updated.Content,
+				Tables:           updated.Tables,
+				JobID:            payload.JobID,
+				KnowledgeSources: knowledgeSourcesFromSnippets(generationContext.Snippets),
+				CreatedBy:        payload.UserID,
+				CreatedAt:        now,
 			}); err != nil {
 				return dependencyError("create report section version", err)
 			}
@@ -446,10 +461,11 @@ func (s *ReportGenerationService) safeSettings(ctx context.Context) (ReportSetti
 }
 
 type reportGenerationContext struct {
-	Requirements         string
-	MaterialIDs          []string
-	SourceContentExcerpt string
-	Snippets             []ReportKnowledgeSnippet
+	Requirements               string
+	MaterialIDs                []string
+	SourceContentExcerpt       string
+	Snippets                   []ReportKnowledgeSnippet
+	KnowledgeRetrievalDegraded bool
 }
 
 func (s *ReportGenerationService) loadGenerationContext(ctx context.Context, reqCtx RequestContext, report Report, section ReportSection, job ReportJob) (reportGenerationContext, error) {
@@ -480,10 +496,45 @@ func (s *ReportGenerationService) loadGenerationContext(ctx context.Context, req
 		RerankTopN:       intPtrValue(retrieval["rerankTopN"]),
 	})
 	if err != nil {
-		return reportGenerationContext{}, dependencyError("retrieve report knowledge context", err)
+		result.KnowledgeRetrievalDegraded = true
+		return result, nil
 	}
 	result.Snippets = snippets
 	return result, nil
+}
+
+func knowledgeSourcesFromSnippets(snippets []ReportKnowledgeSnippet) []ReportKnowledgeSource {
+	if len(snippets) == 0 {
+		return nil
+	}
+	sources := make([]ReportKnowledgeSource, 0, len(snippets))
+	for _, snippet := range snippets {
+		source := ReportKnowledgeSource{
+			KnowledgeBaseID: sanitizeKnowledgeSourceText(snippet.KnowledgeBaseID, 128),
+			DocumentID:      sanitizeKnowledgeSourceText(snippet.DocumentID, 128),
+			ChunkID:         sanitizeKnowledgeSourceText(snippet.ChunkID, 128),
+			DocumentName:    sanitizeKnowledgeSourceText(snippet.DocumentName, 256),
+			SectionPath:     sanitizeKnowledgeSourceText(snippet.SectionPath, 256),
+			ContentPreview:  sanitizeKnowledgeSourceText(snippet.ContentPreview, 512),
+			Score:           snippet.Score,
+		}
+		if source.KnowledgeBaseID == "" && source.DocumentID == "" && source.ChunkID == "" && source.ContentPreview == "" {
+			continue
+		}
+		sources = append(sources, source)
+	}
+	if len(sources) == 0 {
+		return nil
+	}
+	return sources
+}
+
+func sanitizeKnowledgeSourceText(value string, limit int) string {
+	value = sanitizeStringValue(value)
+	if limit <= 0 {
+		return value
+	}
+	return compactTextForPrompt(value, limit)
 }
 
 func createSectionSkeletons(ctx context.Context, repo ReportGenerationRepository, reportID string, outline ReportOutline, jobID string, now time.Time) error {
@@ -538,6 +589,44 @@ func (s *ReportGenerationService) recordEvent(ctx context.Context, reportID, job
 		CreatedAt: s.clock(),
 	})
 	return err
+}
+
+func (s *ReportGenerationService) createChatCompletion(ctx context.Context, reqCtx RequestContext, input ChatCompletionRequest, onDelta func(string)) (ChatCompletionResponse, error) {
+	if streamer, ok := s.chat.(ReportGenerationStreamingChatClient); ok {
+		return streamer.StreamChatCompletion(ctx, reqCtx, input, onDelta)
+	}
+	return s.chat.CreateChatCompletion(ctx, reqCtx, input)
+}
+
+func (s *ReportGenerationService) recordOutlineDelta(ctx context.Context, reportID, jobID, delta string) {
+	message := compactReportGenerationDelta(delta)
+	if message == "" {
+		return
+	}
+	_ = s.recordEvent(ctx, reportID, jobID, "outline.delta", message)
+}
+
+func (s *ReportGenerationService) recordSectionDelta(ctx context.Context, reportID, jobID, sectionID, delta string) {
+	text := compactReportGenerationDelta(delta)
+	if text == "" {
+		return
+	}
+	payload := struct {
+		SectionID string `json:"sectionId"`
+		Text      string `json:"text"`
+	}{
+		SectionID: compactReportGenerationDelta(sectionID),
+		Text:      text,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	_ = s.recordEvent(ctx, reportID, jobID, "section.delta", string(data))
+}
+
+func compactReportGenerationDelta(delta string) string {
+	return sanitizeStringValue(compactTextForPrompt(delta, 180))
 }
 
 func buildOutlineSystemPrompt(reportDisplayName string) string {

@@ -63,6 +63,25 @@ REQUIRED_SEED_001_TOKENS = {
     ],
 }
 
+REQUIRED_REPORT_MATERIAL_COPY_TOKENS = [
+    "煤场库存盘点工作底稿",
+    "审计底稿",
+    "煤库存审计",
+    "煤场库存盘点工作底稿.md",
+    "记录2024年12月31日煤场库存盘点口径",
+    "煤场库存",
+    "盘点差异",
+    "热值折算",
+    "保供风险",
+]
+
+FORBIDDEN_REPORT_MATERIAL_PLACEHOLDER_TOKENS = [
+    "本地演示检查记录",
+    "local-demo-inspection-notes.md",
+    "用于本地联调的安全占位素材",
+    "无文件引用",
+]
+
 REQUIRED_DATABASE_SECTIONS = [
     r"\\connect\s+auth_system",
     r"\\connect\s+knowledge_system",
@@ -449,6 +468,12 @@ def validate_seed_001(content: str) -> list[str]:
         for token in tokens:
             if token not in content:
                 issues.append(f"{SEED_001} missing {group} token `{token}`")
+    for token in REQUIRED_REPORT_MATERIAL_COPY_TOKENS:
+        if token not in content:
+            issues.append(f"{SEED_001} report material seed should use realistic audit material copy; missing `{token}`")
+    for token in FORBIDDEN_REPORT_MATERIAL_PLACEHOLDER_TOKENS:
+        if token in content:
+            issues.append(f"{SEED_001} report material seed should use realistic audit material copy; found placeholder `{token}`")
     if content.count("ON CONFLICT") < 10:
         issues.append(f"{SEED_001} should use ON CONFLICT for deterministic idempotent rows")
     if "file_ref" in content.lower() and "file_ref,\n    filename" not in content:

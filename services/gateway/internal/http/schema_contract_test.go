@@ -233,9 +233,10 @@ func TestReportSectionVersionSchemasExposeEditableContent(t *testing.T) {
 
 // knownSSEOperationIDs is the exhaustive set of routes that return
 // text/event-stream (Server-Sent Events). Per the gateway OpenAPI contract,
-// only POST /api/v1/qa-sessions/{sessionId}/messages streams SSE.
+// QA message creation and report event streaming return SSE.
 var knownSSEOperationIDs = map[string]bool{
-	"createQAMessage": true,
+	"createQAMessage":    true,
+	"streamReportEvents": true,
 }
 
 // TestCreateReportSectionVersionDocumentsConflictResponse keeps the gateway
@@ -266,6 +267,29 @@ func TestStreamResponseFlagMatchesSSEContract(t *testing.T) {
 			t.Errorf("route %s %s (operationId=%q): is SSE per OpenAPI but StreamResponse=false",
 				route.Method, route.Pattern, route.OperationID)
 		}
+	}
+}
+
+func TestSSERoutesCoveredByRouteMatrix(t *testing.T) {
+	covered := map[string]bool{}
+	for _, route := range activeProxyRoutes {
+		if knownSSEOperationIDs[route.OperationID] {
+			covered[route.OperationID] = true
+		}
+	}
+	for operationID := range knownSSEOperationIDs {
+		if !covered[operationID] {
+			t.Fatalf("SSE operationId %q is missing from activeProxyRoutes", operationID)
+		}
+	}
+}
+
+func TestSkipsFixedRequestTimeoutForReportEventStream(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/report-1/events/stream", nil)
+	req.Header.Set("Accept", "text/event-stream")
+
+	if !skipsFixedRequestTimeout(req) {
+		t.Fatal("report event stream should bypass fixed request timeout")
 	}
 }
 

@@ -490,6 +490,23 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/ReportEvent' }
         default: { $ref: '#/components/responses/Error' }
+  /reports/{reportId}/events/stream:
+    get:
+      tags: [Jobs]
+      summary: Stream report events
+      operationId: streamReportEvents
+      description: Streams persisted report workflow events as Server-Sent Events. Frames use event name `report.event`; each data payload is a sanitized `ReportEvent` JSON object. Streaming generation deltas use `outline.delta` and `section.delta`.
+      parameters:
+        - $ref: '#/components/parameters/ReportId'
+      responses:
+        '200':
+          description: Report event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events whose data payloads are `ReportEvent` JSON objects.
+        default: { $ref: '#/components/responses/Error' }
   /report-files:
     get:
       tags: [ReportFiles]
@@ -994,6 +1011,17 @@ components:
         imageFileIds:
           type: array
           items: { type: string }
+    ReportKnowledgeSource:
+      type: object
+      description: Safe Knowledge source snapshot used by a generated report section version.
+      properties:
+        knowledgeBaseId: { type: string }
+        documentId: { type: string }
+        chunkId: { type: string }
+        documentName: { type: string }
+        sectionPath: { type: string }
+        contentPreview: { type: string }
+        score: { type: number, format: double }
     ReportSectionVersion:
       type: object
       required: [id, reportId, sectionId, version, source, createdAt]
@@ -1010,6 +1038,10 @@ components:
             type: object
             additionalProperties: true
         jobId: { type: string }
+        knowledgeSources:
+          type: array
+          description: Sanitized Knowledge retrieval sources used for this generated section version. Empty or omitted when no Knowledge context was used.
+          items: { $ref: '#/components/schemas/ReportKnowledgeSource' }
         createdAt: { type: string, format: date-time }
     CreateSectionVersionRequest:
       type: object

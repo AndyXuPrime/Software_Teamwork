@@ -43,7 +43,17 @@ export const knowledgeBaseKeys = {
  * in the return value, which is `true` whenever a filter is active and the
  * current page may not represent the full filtered dataset.
  */
-export function useKnowledgeBases(page = 1, pageSize = 10, keyword?: string, docType?: string) {
+type UseKnowledgeBasesOptions = {
+  enabled?: boolean
+}
+
+export function useKnowledgeBases(
+  page = 1,
+  pageSize = 10,
+  keyword?: string,
+  docType?: string,
+  options: UseKnowledgeBasesOptions = {},
+) {
   const hasFilter = Boolean(keyword || docType)
 
   return useQuery({
@@ -71,6 +81,7 @@ export function useKnowledgeBases(page = 1, pageSize = 10, keyword?: string, doc
         filteredLocally: hasFilter,
       }
     },
+    enabled: options.enabled ?? true,
     placeholderData: (prev) => prev,
   })
 }

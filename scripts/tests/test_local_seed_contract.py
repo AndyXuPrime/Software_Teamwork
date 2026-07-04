@@ -270,6 +270,37 @@ class LocalSeedContractTests(unittest.TestCase):
         self.assertIssueContains(issues, ".gitignore")
         self.assertIssueContains(issues, "/.local/")
 
+    def test_verifier_rejects_placeholder_report_material_copy(self) -> None:
+        verifier = load_verifier()
+
+        issues = verifier.validate_seed_001(
+            """
+            \\connect auth_system
+            \\connect knowledge_system
+            \\connect document_system
+            \\connect qa_system
+            INSERT INTO report_materials (
+                id, material_name, material_type, category, file_ref, filename,
+                file_size, description, tags_json
+            )
+            VALUES (
+                '22222222-2222-4222-8222-222222222201',
+                '本地演示检查记录',
+                'text',
+                'local-demo',
+                null,
+                'local-demo-inspection-notes.md',
+                0,
+                '用于本地联调的安全占位素材，不包含真实文件引用或生产内容。',
+                '["本地演示","种子数据","无文件引用"]'::jsonb
+            )
+            ON CONFLICT (id) DO UPDATE
+            SET material_name = EXCLUDED.material_name;
+            """
+        )
+
+        self.assertIssueContains(issues, "report material seed should use realistic audit material copy")
+
     def test_verifier_reports_container_only_ai_gateway_seed_url(self) -> None:
         verifier = load_verifier()
 

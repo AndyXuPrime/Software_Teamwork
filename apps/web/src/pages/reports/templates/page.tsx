@@ -1,4 +1,4 @@
-import { FileText, Trash2, Upload } from 'lucide-react'
+import { Eye, FileText, Trash2, Upload } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 
 import { InlineNotice, StateBlock } from '@/components/common'
@@ -21,10 +21,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import type { ReportTemplate } from '@/features/reports'
+import type { ReportMaterial, ReportTemplate } from '@/features/reports'
 import {
   formatReportGatewayError,
+  getReportMaterialDisplayDetails,
+  useCreateMaterial,
   useCreateTemplate,
+  useDeleteMaterial,
   useDeleteTemplate,
   useReportBootstrapQueries,
   useReportStatisticsQueries,
@@ -39,11 +42,29 @@ type TemplateUploadForm = {
   templateName: string
 }
 
+type MaterialUploadForm = {
+  category: string
+  description: string
+  file: File | null
+  materialName: string
+  materialType: string
+  tags: string
+}
+
 const emptyUploadForm: TemplateUploadForm = {
   description: '',
   file: null,
   reportType: '',
   templateName: '',
+}
+
+const emptyMaterialUploadForm: MaterialUploadForm = {
+  category: '',
+  description: '',
+  file: null,
+  materialName: '',
+  materialType: '',
+  tags: '',
 }
 
 const reportTemplateAcceptedMime =
@@ -68,17 +89,26 @@ export function ReportTemplatesPage() {
   const [jsonError, setJsonError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ReportTemplate | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [materialViewTarget, setMaterialViewTarget] = useState<ReportMaterial | null>(null)
+  const [materialDeleteTarget, setMaterialDeleteTarget] = useState<ReportMaterial | null>(null)
+  const [materialDeleteError, setMaterialDeleteError] = useState<string | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [uploadForm, setUploadForm] = useState<TemplateUploadForm>(emptyUploadForm)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadNotice, setUploadNotice] = useState<string | null>(null)
+  const [materialUploadOpen, setMaterialUploadOpen] = useState(false)
+  const [materialUploadForm, setMaterialUploadForm] =
+    useState<MaterialUploadForm>(emptyMaterialUploadForm)
+  const [materialUploadError, setMaterialUploadError] = useState<string | null>(null)
 
   const { typeQuery, templateQuery, materialQuery } = useReportBootstrapQueries()
   const { overviewQuery, dailyQuery } = useReportStatisticsQueries()
   const structureQuery = useTemplateStructure(structureTarget)
   const updateStructureMutation = useUpdateTemplateStructure(structureTarget ?? '')
   const createTemplateMutation = useCreateTemplate()
+  const createMaterialMutation = useCreateMaterial()
   const deleteMutation = useDeleteTemplate()
+  const deleteMaterialMutation = useDeleteMaterial()
 
   const reportTypes = useMemo(() => typeQuery.data ?? [], [typeQuery.data])
   const templates = templateQuery.data?.items ?? []
@@ -106,6 +136,16 @@ export function ReportTemplatesPage() {
   const handleUploadOpenChange = (open: boolean) => {
     setUploadOpen(open)
     if (!open) resetUploadDialog()
+  }
+
+  const resetMaterialUploadDialog = () => {
+    setMaterialUploadForm(emptyMaterialUploadForm)
+    setMaterialUploadError(null)
+  }
+
+  const handleMaterialUploadOpenChange = (open: boolean) => {
+    setMaterialUploadOpen(open)
+    if (!open) resetMaterialUploadDialog()
   }
 
   const handleUploadSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -148,6 +188,53 @@ export function ReportTemplatesPage() {
           setUploadNotice('模板上传成功，列表已刷新。')
           setUploadOpen(false)
           resetUploadDialog()
+        },
+      },
+    )
+  }
+
+  const handleMaterialUploadSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setMaterialUploadError(null)
+    setUploadNotice(null)
+
+    const materialName = materialUploadForm.materialName.trim()
+    const materialType = materialUploadForm.materialType.trim()
+    const category = materialUploadForm.category.trim()
+    const description = materialUploadForm.description.trim()
+    const tags = materialUploadForm.tags
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+
+    if (!materialName) {
+      setMaterialUploadError('请输入素材名称。')
+      return
+    }
+    if (!materialType) {
+      setMaterialUploadError('请输入素材类型。')
+      return
+    }
+    if (!materialUploadForm.file) {
+      setMaterialUploadError('请选择要上传的素材文件。')
+      return
+    }
+
+    createMaterialMutation.mutate(
+      {
+        category: category || undefined,
+        description: description || undefined,
+        file: materialUploadForm.file,
+        materialName,
+        materialType,
+        tags,
+      },
+      {
+        onError: (error) => setMaterialUploadError(formatReportGatewayError(error, '上传素材失败')),
+        onSuccess: () => {
+          setUploadNotice('素材上传成功，列表已刷新。')
+          setMaterialUploadOpen(false)
+          resetMaterialUploadDialog()
         },
       },
     )
@@ -208,6 +295,15 @@ export function ReportTemplatesPage() {
     })
   }
 
+  const handleMaterialDelete = () => {
+    if (!materialDeleteTarget) return
+    setMaterialDeleteError(null)
+    deleteMaterialMutation.mutate(materialDeleteTarget.id, {
+      onSuccess: () => setMaterialDeleteTarget(null),
+      onError: (error) => setMaterialDeleteError(formatReportGatewayError(error, '删除素材失败')),
+    })
+  }
+
   const structureData = structureQuery.data
   const structureJson = structureData ? JSON.stringify(structureData, null, 2) : ''
 
@@ -219,16 +315,6 @@ export function ReportTemplatesPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             管理员能力入口：模板、素材、结构配置、统计和任务诊断。
           </p>
-        </div>
-        <div className="flex gap-2">
-          <Button disabled title="上传素材表单尚未接入当前页面" variant="outline">
-            <Upload className="size-4" />
-            上传素材
-          </Button>
-          <Button onClick={() => setUploadOpen(true)}>
-            <Upload className="size-4" />
-            上传模板
-          </Button>
         </div>
       </div>
 
@@ -277,11 +363,15 @@ export function ReportTemplatesPage() {
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="rounded-lg border border-border bg-card">
-          <div className="border-b border-border px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
             <h2 className="flex items-center gap-2 text-base font-semibold">
               <FileText className="size-4" />
               模板列表
             </h2>
+            <Button size="sm" onClick={() => setUploadOpen(true)}>
+              <Upload className="size-3.5" />
+              上传模板
+            </Button>
           </div>
           <div className="divide-y divide-border">
             {templateQuery.isLoading ? (
@@ -303,9 +393,6 @@ export function ReportTemplatesPage() {
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{template.templateName}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {template.reportType} · v{template.version} · {template.filename}
-                    </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <Button
@@ -334,11 +421,15 @@ export function ReportTemplatesPage() {
         </section>
 
         <section className="rounded-lg border border-border bg-card">
-          <div className="border-b border-border px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
             <h2 className="flex items-center gap-2 text-base font-semibold">
               <FileText className="size-4" />
               专业素材
             </h2>
+            <Button size="sm" onClick={() => setMaterialUploadOpen(true)}>
+              <Upload className="size-3.5" />
+              上传素材
+            </Button>
           </div>
           <div className="divide-y divide-border">
             {materialQuery.isLoading ? (
@@ -353,22 +444,41 @@ export function ReportTemplatesPage() {
             ) : materials.length === 0 ? (
               <StateBlock size="compact" title="暂无报告素材" variant="empty" />
             ) : (
-              materials.map((material) => (
-                <div
-                  key={material.id}
-                  className="flex items-center justify-between gap-4 p-4 hover:bg-muted/20 transition-colors"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{material.materialName}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {material.category ?? '-'} · {material.materialType ?? 'material'}
-                    </p>
+              materials.map((material) => {
+                const materialDisplay = getReportMaterialDisplayDetails(material)
+
+                return (
+                  <div
+                    key={material.id}
+                    className="flex items-center justify-between gap-4 p-4 hover:bg-muted/20 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{materialDisplay.materialName}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        onClick={() => setMaterialViewTarget(material)}
+                      >
+                        <Eye className="size-3" />
+                        查看素材
+                      </Button>
+                      <span className="rounded-full bg-muted px-2 py-1 text-xs">
+                        {materialDisplay.enabledText}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label="删除素材"
+                        onClick={() => setMaterialDeleteTarget(material)}
+                      >
+                        <Trash2 className="size-3 text-destructive" />
+                      </Button>
+                    </div>
                   </div>
-                  <span className="rounded-full bg-muted px-2 py-1 text-xs">
-                    {material.enabled ? '可引用' : '停用'}
-                  </span>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
         </section>
@@ -470,6 +580,116 @@ export function ReportTemplatesPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Material upload dialog */}
+      <Dialog open={materialUploadOpen} onOpenChange={handleMaterialUploadOpenChange}>
+        <DialogContent className="sm:max-w-lg">
+          <form onSubmit={handleMaterialUploadSubmit}>
+            <DialogHeader>
+              <DialogTitle>上传专业素材</DialogTitle>
+              <DialogDescription>上传报告正文生成可引用的专业资料。</DialogDescription>
+            </DialogHeader>
+
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-1.5 text-sm">
+                <span className="font-medium">素材名称</span>
+                <Input
+                  value={materialUploadForm.materialName}
+                  onChange={(event) =>
+                    setMaterialUploadForm((prev) => ({
+                      ...prev,
+                      materialName: event.target.value,
+                    }))
+                  }
+                  placeholder="例如：煤场盘点素材"
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm">
+                <span className="font-medium">素材类型</span>
+                <Input
+                  value={materialUploadForm.materialType}
+                  onChange={(event) =>
+                    setMaterialUploadForm((prev) => ({
+                      ...prev,
+                      materialType: event.target.value,
+                    }))
+                  }
+                  placeholder="例如：technical_doc"
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm">
+                <span className="font-medium">分类</span>
+                <Input
+                  value={materialUploadForm.category}
+                  onChange={(event) =>
+                    setMaterialUploadForm((prev) => ({ ...prev, category: event.target.value }))
+                  }
+                  placeholder="可选，例如：煤库存"
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm">
+                <span className="font-medium">标签</span>
+                <Input
+                  value={materialUploadForm.tags}
+                  onChange={(event) =>
+                    setMaterialUploadForm((prev) => ({ ...prev, tags: event.target.value }))
+                  }
+                  placeholder="可选，多个标签用英文逗号分隔"
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm">
+                <span className="font-medium">素材文件</span>
+                <Input
+                  type="file"
+                  onChange={(event) =>
+                    setMaterialUploadForm((prev) => ({
+                      ...prev,
+                      file: event.target.files?.[0] ?? null,
+                    }))
+                  }
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm">
+                <span className="font-medium">描述</span>
+                <Textarea
+                  value={materialUploadForm.description}
+                  onChange={(event) =>
+                    setMaterialUploadForm((prev) => ({
+                      ...prev,
+                      description: event.target.value,
+                    }))
+                  }
+                  placeholder="可选，用于说明素材适用场景。"
+                />
+              </label>
+
+              {materialUploadError && (
+                <InlineNotice title="上传失败" variant="error">
+                  {materialUploadError}
+                </InlineNotice>
+              )}
+            </div>
+
+            <DialogFooter className="mt-5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleMaterialUploadOpenChange(false)}
+              >
+                取消
+              </Button>
+              <Button type="submit" disabled={createMaterialMutation.isPending}>
+                {createMaterialMutation.isPending ? '上传中...' : '上传'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Template structure viewer / editor dialog */}
       <Dialog
         open={Boolean(structureTarget)}
@@ -549,6 +769,53 @@ export function ReportTemplatesPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Material detail dialog */}
+      <Dialog
+        open={Boolean(materialViewTarget)}
+        onOpenChange={(open) => {
+          if (!open) setMaterialViewTarget(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>素材详情</DialogTitle>
+            <DialogDescription>查看专业素材的基础信息和使用状态。</DialogDescription>
+          </DialogHeader>
+
+          {materialViewTarget &&
+            (() => {
+              const materialDisplay = getReportMaterialDisplayDetails(materialViewTarget)
+
+              return (
+                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-[6rem_minmax(0,1fr)]">
+                  <dt className="text-muted-foreground">素材名称</dt>
+                  <dd className="min-w-0 font-medium">{materialDisplay.materialName}</dd>
+                  <dt className="text-muted-foreground">状态</dt>
+                  <dd>{materialDisplay.enabledText}</dd>
+                  <dt className="text-muted-foreground">文件名</dt>
+                  <dd className="min-w-0 break-all">{materialDisplay.filename}</dd>
+                  <dt className="text-muted-foreground">分类</dt>
+                  <dd>{materialDisplay.category}</dd>
+                  <dt className="text-muted-foreground">类型</dt>
+                  <dd>{materialDisplay.materialType}</dd>
+                  <dt className="text-muted-foreground">标签</dt>
+                  <dd>{materialDisplay.tags}</dd>
+                  <dt className="text-muted-foreground">创建时间</dt>
+                  <dd>{materialDisplay.createdAt}</dd>
+                  <dt className="text-muted-foreground">描述</dt>
+                  <dd className="min-w-0 whitespace-pre-wrap">{materialDisplay.description}</dd>
+                </dl>
+              )
+            })()}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMaterialViewTarget(null)}>
+              关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete template confirmation dialog */}
       <Dialog
         open={Boolean(deleteTarget)}
@@ -588,6 +855,52 @@ export function ReportTemplatesPage() {
               disabled={deleteMutation.isPending}
             >
               {deleteMutation.isPending ? '删除中...' : '确认删除'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete material confirmation dialog */}
+      <Dialog
+        open={Boolean(materialDeleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setMaterialDeleteTarget(null)
+            setMaterialDeleteError(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确定删除此素材？</DialogTitle>
+            <DialogDescription>
+              <span>
+                {materialDeleteTarget?.materialName
+                  ? `即将删除素材"${getReportMaterialDisplayDetails(materialDeleteTarget).materialName}"。此操作不可撤销。`
+                  : '此操作不可撤销。'}
+              </span>
+              {materialDeleteError && (
+                <span className="mt-2 block text-destructive">{materialDeleteError}</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setMaterialDeleteTarget(null)
+                setMaterialDeleteError(null)
+              }}
+              disabled={deleteMaterialMutation.isPending}
+            >
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleMaterialDelete}
+              disabled={deleteMaterialMutation.isPending}
+            >
+              {deleteMaterialMutation.isPending ? '删除中...' : '确认删除'}
             </Button>
           </DialogFooter>
         </DialogContent>

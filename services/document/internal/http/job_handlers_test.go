@@ -424,3 +424,55 @@ func assertAttemptResponseMatchesGatewayContract(t *testing.T, data map[string]a
 		t.Fatalf("error = %#v", data["error"])
 	}
 }
+
+func TestStreamEventsEmitsPersistedReportEventsAsSSE(t *testing.T) {
+	now := time.Date(2026, 7, 4, 7, 0, 0, 0, time.UTC)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mock := &mockJobSvc{
+		listEventsFn: func(ctx context.Context, rctx service.RequestContext, reportID string) ([]service.ReportEvent, error) {
+			if reportID != "550e8400-e29b-41d4-a716-446655440000" {
+				t.Fatalf("reportID = %q", reportID)
+			}
+			cancel()
+			return []service.ReportEvent{
+				{
+					ID:        "evt-1",
+					ReportID:  reportID,
+					JobID:     "job-1",
+					EventType: "outline.delta",
+					Message:   "{\"title\":\"Live outline\"}",
+					CreatedAt: now,
+				},
+			}, nil
+		},
+	}
+	server := newTestServerWithJobSvc(mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/reports/550e8400-e29b-41d4-a716-446655440000/events/stream", nil).WithContext(ctx)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("X-User-Id", "usr_owner")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "text/event-stream") {
+		t.Fatalf("Content-Type = %q, want text/event-stream", contentType)
+	}
+	if cacheControl := rec.Header().Get("Cache-Control"); cacheControl != "no-cache" {
+		t.Fatalf("Cache-Control = %q, want no-cache", cacheControl)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"id: evt-1",
+		"event: report.event",
+		`"eventType":"outline.delta"`,
+		`"message":"{\"title\":\"Live outline\"}"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("SSE body missing %q in:\n%s", want, body)
+		}
+	}
+}

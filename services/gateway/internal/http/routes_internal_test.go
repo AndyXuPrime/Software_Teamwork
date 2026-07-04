@@ -59,7 +59,7 @@ func TestActiveRouteMatrixCoversGatewayOwnerMap(t *testing.T) {
 		"auth":       11,
 		"knowledge":  20,
 		"ai-gateway": 5,
-		"document":   44,
+		"document":   45,
 		"qa":         29,
 	}
 	for owner, want := range expected {

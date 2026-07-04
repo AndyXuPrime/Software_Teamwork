@@ -20,6 +20,7 @@ import { AdminPage } from '@/pages/admin/page'
 import { ParserConfigsPage } from '@/pages/admin/parser-configs'
 import { QASettings } from '@/pages/admin/qa-settings'
 import { QASystemPromptPage } from '@/pages/admin/qa-system-prompt'
+import { ReportDocumentModelSettingsPage } from '@/pages/admin/report-document-model-settings'
 import { StatsOverviewPage } from '@/pages/admin/stats-overview'
 import { SystemSettings } from '@/pages/admin/system-settings'
 import { AdminUsersPage } from '@/pages/admin/users'
@@ -486,6 +487,13 @@ const adminReportTemplatesRoute = createRoute({
   component: ReportTemplatesPage,
 })
 
+const adminReportDocumentModelRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'reports/document-model',
+  beforeLoad: requireAuth(modelProfilesPerm),
+  component: ReportDocumentModelSettingsPage,
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   passwordChangeRequiredRoute,
@@ -519,6 +527,7 @@ const routeTree = rootRoute.addChildren([
       adminStatsRoute,
       adminReportRecordsRoute,
       adminReportTemplatesRoute,
+      adminReportDocumentModelRoute,
     ]),
   ]),
 ])

@@ -60,6 +60,12 @@ const menuItems: AdminNavigationItem[] = [
         path: '/admin/reports/templates',
         requirement: { any: ['report:write', 'reports:write'] },
       },
+      {
+        key: 'report-document-model',
+        label: '文档模型配置',
+        path: '/admin/reports/document-model',
+        requirement: { any: ['admin:model-profile:write', 'system:admin'] },
+      },
     ],
   },
   {

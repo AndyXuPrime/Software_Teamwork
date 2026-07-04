@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1267,6 +1269,281 @@ func TestReportGenerationServiceDoesNotOverwriteSupersededGenerationJob(t *testi
 	}
 }
 
+func TestReportGenerationServiceContinuesContentGenerationWhenKnowledgeRetrievalFails(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer report",
+		ReportType: "summer_peak_inspection",
+		Topic:      "summer peak inspection",
+		CreatorID:  "user-1",
+		Status:     ReportStatusOutlineGenerated,
+	}
+	repo.jobs["job-1"] = ReportJob{
+		ID:       "job-1",
+		JobType:  JobTypeContentGeneration,
+		ReportID: "report-1",
+		RequestPayload: map[string]any{
+			"options": map[string]any{
+				"knowledgeBaseIds": []any{"kb-1"},
+			},
+		},
+	}
+	repo.outlines["outline-1"] = ReportOutline{
+		ID:        "outline-1",
+		ReportID:  "report-1",
+		IsCurrent: true,
+		Sections: []ReportOutlineNode{{
+			ID:    "node-1",
+			Title: "Risk overview",
+			Level: 1,
+		}},
+	}
+	repo.sections["section-1"] = ReportSection{
+		ID:               "section-1",
+		ReportID:         "report-1",
+		OutlineID:        "outline-1",
+		OutlineNodeID:    "node-1",
+		Title:            "Risk overview",
+		Level:            1,
+		SortOrder:        0,
+		Content:          "previous body",
+		GenerationStatus: JobStatusPending,
+		ContentSource:    ContentSourceManual,
+		Version:          1,
+	}
+	chat := &fakeGenerationChatClient{
+		responses: []ChatCompletionResponse{{Content: `{"content":"generated without knowledge","tables":[]}`}},
+	}
+	retriever := &fakeReportKnowledgeRetriever{err: errors.New("knowledge runtime unavailable")}
+	svc := NewReportGenerationService(repo, chat, retriever)
+	svc.clock = func() time.Time { return time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC) }
+
+	result, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-content",
+		JobType:   JobTypeContentGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteReportGeneration() error = %v", err)
+	}
+	if result.Status != JobStatusSucceeded {
+		t.Fatalf("result status = %q, want succeeded", result.Status)
+	}
+	if len(chat.requests) != 1 {
+		t.Fatalf("chat request count = %d, want 1", len(chat.requests))
+	}
+	if strings.Contains(chat.requests[0].Messages[1].Content, "kb-1") {
+		t.Fatalf("prompt leaked knowledge id after degraded retrieval: %s", chat.requests[0].Messages[1].Content)
+	}
+	if got := repo.sections["section-1"].Content; got != "generated without knowledge" {
+		t.Fatalf("section content = %q, want generated fallback content", got)
+	}
+	if len(repo.sectionVersions["section-1"]) != 1 {
+		t.Fatalf("section version count = %d, want 1", len(repo.sectionVersions["section-1"]))
+	}
+	if !hasReportEvent(repo.events, "knowledge.retrieval_degraded") {
+		t.Fatalf("expected knowledge.retrieval_degraded event, got %+v", repo.events)
+	}
+	if !hasReportEvent(repo.events, "content.succeeded") {
+		t.Fatalf("expected content.succeeded event, got %+v", repo.events)
+	}
+}
+
+func TestReportGenerationServiceStoresKnowledgeSourcesOnGeneratedSectionVersion(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer report",
+		ReportType: "summer_peak_inspection",
+		Topic:      "summer peak inspection",
+		CreatorID:  "user-1",
+		Status:     ReportStatusOutlineGenerated,
+	}
+	repo.jobs["job-1"] = ReportJob{
+		ID:       "job-1",
+		JobType:  JobTypeContentGeneration,
+		ReportID: "report-1",
+		RequestPayload: map[string]any{
+			"options": map[string]any{
+				"knowledgeBaseIds": []any{"kb-1"},
+			},
+		},
+	}
+	repo.outlines["outline-1"] = ReportOutline{
+		ID:        "outline-1",
+		ReportID:  "report-1",
+		IsCurrent: true,
+		Sections: []ReportOutlineNode{{
+			ID:    "node-1",
+			Title: "Risk overview",
+			Level: 1,
+		}},
+	}
+	repo.sections["section-1"] = ReportSection{
+		ID:               "section-1",
+		ReportID:         "report-1",
+		OutlineID:        "outline-1",
+		OutlineNodeID:    "node-1",
+		Title:            "Risk overview",
+		Level:            1,
+		SortOrder:        0,
+		Content:          "previous body",
+		GenerationStatus: JobStatusPending,
+		ContentSource:    ContentSourceManual,
+		Version:          1,
+	}
+	chat := &fakeGenerationChatClient{
+		responses: []ChatCompletionResponse{{Content: `{"content":"generated with knowledge","tables":[]}`}},
+	}
+	retriever := &fakeReportKnowledgeRetriever{
+		snippets: []ReportKnowledgeSnippet{{
+			Score:           0.91,
+			KnowledgeBaseID: "kb-1",
+			DocumentID:      "doc-1",
+			ChunkID:         "chunk-1",
+			DocumentName:    "inspection guide",
+			SectionPath:     "chapter-2",
+			ContentPreview:  "breaker maintenance evidence",
+		}},
+	}
+	svc := NewReportGenerationService(repo, chat, retriever)
+	svc.clock = func() time.Time { return time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC) }
+
+	if _, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-content",
+		JobType:   JobTypeContentGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	}); err != nil {
+		t.Fatalf("ExecuteReportGeneration() error = %v", err)
+	}
+	versions := repo.sectionVersions["section-1"]
+	if len(versions) != 1 {
+		t.Fatalf("section version count = %d, want 1", len(versions))
+	}
+	sources, ok := knowledgeSourcesSnapshot(t, versions[0])
+	if !ok {
+		t.Fatalf("ReportSectionVersion is missing KnowledgeSources traceability field: %+v", versions[0])
+	}
+	if len(sources) != 1 {
+		t.Fatalf("knowledge sources len = %d, want 1: %+v", len(sources), sources)
+	}
+	source := sources[0]
+	if source["knowledgeBaseId"] != "kb-1" || source["documentId"] != "doc-1" || source["chunkId"] != "chunk-1" {
+		t.Fatalf("knowledge source ids = %+v", source)
+	}
+	if source["documentName"] != "inspection guide" || source["sectionPath"] != "chapter-2" || source["contentPreview"] != "breaker maintenance evidence" {
+		t.Fatalf("knowledge source content fields = %+v", source)
+	}
+	if source["score"] != 0.91 {
+		t.Fatalf("knowledge source score = %#v, want 0.91", source["score"])
+	}
+}
+
+func TestReportGenerationServiceRecordsOutlineStreamingDeltas(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer report",
+		ReportType: "summer_peak_inspection",
+		Topic:      "summer peak inspection",
+		CreatorID:  "user-1",
+		Status:     ReportStatusDraft,
+	}
+	repo.jobs["job-1"] = ReportJob{ID: "job-1", JobType: JobTypeOutlineGeneration, ReportID: "report-1"}
+	repo.templateStructures["template-1"] = ReportTemplateStructure{OutlineSchema: []byte(`{"sections":["overview"]}`)}
+	chat := &fakeStreamingGenerationChatClient{
+		streamDeltas: [][]string{{`{"sections":[{"title":"Overview"}]}`}},
+	}
+	svc := NewReportGenerationService(repo, chat)
+	svc.clock = func() time.Time { return time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC) }
+
+	if _, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-outline",
+		JobType:   JobTypeOutlineGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	}); err != nil {
+		t.Fatalf("ExecuteReportGeneration() error = %v", err)
+	}
+	if len(chat.requests) != 1 {
+		t.Fatalf("chat request count = %d, want 1", len(chat.requests))
+	}
+	deltaIndex := reportEventIndex(repo.events, "outline.delta")
+	successIndex := reportEventIndex(repo.events, "outline.succeeded")
+	if deltaIndex == -1 || successIndex == -1 || deltaIndex > successIndex {
+		t.Fatalf("outline.delta should be recorded before outline.succeeded, events = %+v", repo.events)
+	}
+	if got := repo.events[deltaIndex].Message; !strings.Contains(got, "Overview") {
+		t.Fatalf("outline.delta message = %q, want streamed content", got)
+	}
+}
+
+func TestReportGenerationServiceRecordsSectionStreamingDeltas(t *testing.T) {
+	repo := newFakeReportGenerationRepository()
+	repo.reports["report-1"] = Report{
+		ID:         "report-1",
+		Name:       "Summer report",
+		ReportType: "summer_peak_inspection",
+		Topic:      "summer peak inspection",
+		CreatorID:  "user-1",
+		Status:     ReportStatusOutlineGenerated,
+	}
+	repo.jobs["job-1"] = ReportJob{ID: "job-1", JobType: JobTypeContentGeneration, ReportID: "report-1"}
+	repo.outlines["outline-1"] = ReportOutline{
+		ID:        "outline-1",
+		ReportID:  "report-1",
+		IsCurrent: true,
+		Sections: []ReportOutlineNode{{
+			ID:    "node-1",
+			Title: "Overview",
+			Level: 1,
+		}},
+	}
+	repo.sections["section-1"] = ReportSection{
+		ID:               "section-1",
+		ReportID:         "report-1",
+		OutlineID:        "outline-1",
+		OutlineNodeID:    "node-1",
+		Title:            "Overview",
+		Level:            1,
+		SortOrder:        0,
+		GenerationStatus: JobStatusPending,
+		Version:          1,
+	}
+	chat := &fakeStreamingGenerationChatClient{
+		streamDeltas: [][]string{{`{"content":"streamed body","tables":[]}`}},
+	}
+	svc := NewReportGenerationService(repo, chat)
+	svc.clock = func() time.Time { return time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC) }
+
+	if _, err := svc.ExecuteReportGeneration(context.Background(), ReportGenerationExecutionPayload{
+		RequestID: "req-content",
+		JobType:   JobTypeContentGeneration,
+		JobID:     "job-1",
+		UserID:    "user-1",
+	}); err != nil {
+		t.Fatalf("ExecuteReportGeneration() error = %v", err)
+	}
+	deltaIndex := reportEventIndex(repo.events, "section.delta")
+	successIndex := reportEventIndex(repo.events, "section.succeeded")
+	if deltaIndex == -1 || successIndex == -1 || deltaIndex > successIndex {
+		t.Fatalf("section.delta should be recorded before section.succeeded, events = %+v", repo.events)
+	}
+	var payload map[string]string
+	if err := json.Unmarshal([]byte(repo.events[deltaIndex].Message), &payload); err != nil {
+		t.Fatalf("section.delta message should be JSON: %q: %v", repo.events[deltaIndex].Message, err)
+	}
+	if payload["sectionId"] != "section-1" || !strings.Contains(payload["text"], "streamed body") {
+		t.Fatalf("section.delta payload = %+v", payload)
+	}
+	if got := repo.sections["section-1"].Content; got != "streamed body" {
+		t.Fatalf("section content = %q, want streamed body", got)
+	}
+}
+
 func hasReportEvent(events []ReportEvent, eventType string) bool {
 	for _, event := range events {
 		if event.EventType == eventType {
@@ -1274,6 +1551,32 @@ func hasReportEvent(events []ReportEvent, eventType string) bool {
 		}
 	}
 	return false
+}
+
+func reportEventIndex(events []ReportEvent, eventType string) int {
+	for index, event := range events {
+		if event.EventType == eventType {
+			return index
+		}
+	}
+	return -1
+}
+
+func knowledgeSourcesSnapshot(t *testing.T, version ReportSectionVersion) ([]map[string]any, bool) {
+	t.Helper()
+	field := reflect.ValueOf(version).FieldByName("KnowledgeSources")
+	if !field.IsValid() {
+		return nil, false
+	}
+	data, err := json.Marshal(field.Interface())
+	if err != nil {
+		t.Fatalf("marshal knowledge sources: %v", err)
+	}
+	var sources []map[string]any
+	if err := json.Unmarshal(data, &sources); err != nil {
+		t.Fatalf("unmarshal knowledge sources: %v", err)
+	}
+	return sources, true
 }
 
 func TestReportGenerationServiceRetrievesKnowledgeContextForOutline(t *testing.T) {
@@ -1492,6 +1795,12 @@ type fakeGenerationChatClient struct {
 	errs      []error
 }
 
+type fakeStreamingGenerationChatClient struct {
+	requests     []ChatCompletionRequest
+	streamDeltas [][]string
+	streamErrs   []error
+}
+
 type fakeReportKnowledgeRetriever struct {
 	input    ReportKnowledgeRetrievalInput
 	snippets []ReportKnowledgeSnippet
@@ -1516,6 +1825,35 @@ func (f *fakeGenerationChatClient) CreateChatCompletion(_ context.Context, _ Req
 		return f.responses[index], nil
 	}
 	return ChatCompletionResponse{}, errors.New("missing fake chat response")
+}
+
+func (f *fakeStreamingGenerationChatClient) CreateChatCompletion(_ context.Context, _ RequestContext, input ChatCompletionRequest) (ChatCompletionResponse, error) {
+	f.requests = append(f.requests, input)
+	index := len(f.requests) - 1
+	if index < len(f.streamErrs) && f.streamErrs[index] != nil {
+		return ChatCompletionResponse{}, f.streamErrs[index]
+	}
+	if index < len(f.streamDeltas) {
+		return ChatCompletionResponse{Content: strings.Join(f.streamDeltas[index], "")}, nil
+	}
+	return ChatCompletionResponse{}, errors.New("missing fake chat response")
+}
+
+func (f *fakeStreamingGenerationChatClient) StreamChatCompletion(_ context.Context, _ RequestContext, input ChatCompletionRequest, onDelta func(string)) (ChatCompletionResponse, error) {
+	f.requests = append(f.requests, input)
+	index := len(f.requests) - 1
+	if index < len(f.streamErrs) && f.streamErrs[index] != nil {
+		return ChatCompletionResponse{}, f.streamErrs[index]
+	}
+	if index >= len(f.streamDeltas) {
+		return ChatCompletionResponse{}, errors.New("missing fake chat response")
+	}
+	for _, delta := range f.streamDeltas[index] {
+		if onDelta != nil {
+			onDelta(delta)
+		}
+	}
+	return ChatCompletionResponse{Content: strings.Join(f.streamDeltas[index], "")}, nil
 }
 
 type fakeReportGenerationRepository struct {

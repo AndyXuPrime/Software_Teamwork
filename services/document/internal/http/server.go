@@ -136,6 +136,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /report-jobs/{jobId}/attempts", s.handleListAttempts)
 	s.mux.HandleFunc("POST /report-jobs/{jobId}/attempts", s.handleRetryJob)
 	s.mux.HandleFunc("GET /reports/{reportId}/events", s.handleListEvents)
+	s.mux.HandleFunc("GET /reports/{reportId}/events/stream", s.handleStreamEvents)
 	s.mux.HandleFunc("GET /report-files", s.handleListReportFiles)
 	s.mux.HandleFunc("POST /report-files", s.handleCreateReportFile)
 	s.mux.HandleFunc("GET /report-files/{reportFileId}", s.handleGetReportFile)
@@ -305,4 +306,10 @@ func (r *statusRecorder) Write(body []byte) (int, error) {
 		r.status = http.StatusOK
 	}
 	return r.ResponseWriter.Write(body)
+}
+
+func (r *statusRecorder) Flush() {
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }

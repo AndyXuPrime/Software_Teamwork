@@ -47,6 +47,7 @@ export const ACTIVE_GATEWAY_PATHS = [
   '/api/v1/report-jobs/{jobId}',
   '/api/v1/report-jobs/{jobId}/attempts',
   '/api/v1/reports/{reportId}/events',
+  '/api/v1/reports/{reportId}/events/stream',
   '/api/v1/report-files',
   '/api/v1/report-files/{reportFileId}',
   '/api/v1/report-files/{reportFileId}/content',

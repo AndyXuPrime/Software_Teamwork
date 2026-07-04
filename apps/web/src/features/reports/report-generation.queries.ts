@@ -1,15 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 
-import type { CreateReportTemplateInput } from './report-generation.api'
+import type { CreateReportMaterialInput, CreateReportTemplateInput } from './report-generation.api'
 import {
   cancelReportJob,
   createReport,
   createReportFile,
   createReportJob,
   createReportJobAttempt,
+  createReportMaterial,
   createReportTemplate,
   deleteReport,
+  deleteReportMaterial,
   deleteReportTemplate,
   downloadReportFile,
   getReport,
@@ -475,6 +477,18 @@ export function useCreateTemplate() {
   })
 }
 
+export function useCreateMaterial() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (payload: CreateReportMaterialInput) => createReportMaterial(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: reportKeys.materials() })
+      void queryClient.invalidateQueries({ queryKey: reportKeys.stats() })
+    },
+  })
+}
+
 export function useDeleteTemplate() {
   const queryClient = useQueryClient()
 
@@ -482,6 +496,18 @@ export function useDeleteTemplate() {
     mutationFn: (templateId: string) => deleteReportTemplate(templateId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: reportKeys.templates() })
+    },
+  })
+}
+
+export function useDeleteMaterial() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (materialId: string) => deleteReportMaterial(materialId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: reportKeys.materials() })
+      void queryClient.invalidateQueries({ queryKey: reportKeys.stats() })
     },
   })
 }

@@ -1907,6 +1907,28 @@ paths:
                 $ref: '#/components/schemas/ReportEventListResponse'
         '404':
           $ref: '#/components/responses/Error'
+  /api/v1/reports/{reportId}/events/stream:
+    parameters:
+    - $ref: '#/components/parameters/ReportId'
+    get:
+      tags:
+      - report-generation
+      summary: Stream report events
+      operationId: streamReportEvents
+      x-owner-service: document
+      description: Streams persisted report workflow events for live report outline and content generation previews. The stream emits `report.event` SSE frames whose data payload is a sanitized `ReportEvent` JSON object. Browsers must keep polling as a recovery path if the stream disconnects.
+      responses:
+        '200':
+          description: Report event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events named `report.event`. Event data is a JSON `ReportEvent`; streaming delta events use `outline.delta` and `section.delta`. `section.delta` messages are compact JSON objects containing `sectionId` and `text`.
+        '404':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
   /api/v1/report-files:
     get:
       tags:
@@ -5191,6 +5213,25 @@ components:
           items:
             type: object
             additionalProperties: true
+    ReportKnowledgeSource:
+      type: object
+      description: Safe Knowledge source snapshot used by a generated report section version.
+      properties:
+        knowledgeBaseId:
+          type: string
+        documentId:
+          type: string
+        chunkId:
+          type: string
+        documentName:
+          type: string
+        sectionPath:
+          type: string
+        contentPreview:
+          type: string
+        score:
+          type: number
+          format: double
     ReportSectionVersion:
       type: object
       required:
@@ -5223,6 +5264,11 @@ components:
             additionalProperties: true
         jobId:
           type: string
+        knowledgeSources:
+          type: array
+          description: Sanitized Knowledge retrieval sources used for this generated section version. Empty or omitted when no Knowledge context was used.
+          items:
+            $ref: '#/components/schemas/ReportKnowledgeSource'
         createdAt:
           type: string
           format: date-time

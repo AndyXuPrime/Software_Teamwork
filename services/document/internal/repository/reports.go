@@ -650,6 +650,10 @@ func (r *PostgresRepository) CreateReportSectionVersion(ctx context.Context, val
 	if err != nil {
 		return service.ReportSectionVersion{}, err
 	}
+	knowledgeSourcesJSON, err := marshalKnowledgeSources(value.KnowledgeSources)
+	if err != nil {
+		return service.ReportSectionVersion{}, err
+	}
 	jobID, err := parseOptionalUUIDField(value.JobID, "jobId")
 	if err != nil {
 		return service.ReportSectionVersion{}, err
@@ -657,12 +661,12 @@ func (r *PostgresRepository) CreateReportSectionVersion(ctx context.Context, val
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO report_section_versions (
 			id, report_id, section_id, version, source, content, tables_json,
-			job_id, requirements, created_by, created_at
+			knowledge_sources_json, job_id, requirements, created_by, created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, '')::uuid, NULLIF($9, ''), NULLIF($10, ''), $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, '')::uuid, NULLIF($10, ''), NULLIF($11, ''), $12)
 		RETURNING
 			id::text, report_id::text, section_id::text, version, source, content,
-			tables_json, COALESCE(job_id::text, ''), COALESCE(requirements, ''),
+			tables_json, knowledge_sources_json, COALESCE(job_id::text, ''), COALESCE(requirements, ''),
 			COALESCE(created_by, ''), created_at`,
 		value.ID,
 		reportID,
@@ -671,6 +675,7 @@ func (r *PostgresRepository) CreateReportSectionVersion(ctx context.Context, val
 		string(value.Source),
 		value.Content,
 		tablesJSON,
+		knowledgeSourcesJSON,
 		jobID,
 		value.Requirements,
 		value.CreatedBy,
@@ -694,7 +699,7 @@ func (r *PostgresRepository) ListReportSectionVersions(ctx context.Context, sect
 	rows, err := r.db.Query(ctx, `
 		SELECT
 			id::text, report_id::text, section_id::text, version, source, content,
-			tables_json, COALESCE(job_id::text, ''), COALESCE(requirements, ''),
+			tables_json, knowledge_sources_json, COALESCE(job_id::text, ''), COALESCE(requirements, ''),
 			COALESCE(created_by, ''), created_at
 		FROM report_section_versions
 		WHERE section_id = $1
@@ -1053,6 +1058,7 @@ func scanReportSection(row scanner) (service.ReportSection, error) {
 func scanReportSectionVersion(row scanner) (service.ReportSectionVersion, error) {
 	var value service.ReportSectionVersion
 	var tablesJSON []byte
+	var knowledgeSourcesJSON []byte
 	var source string
 	if err := row.Scan(
 		&value.ID,
@@ -1062,6 +1068,7 @@ func scanReportSectionVersion(row scanner) (service.ReportSectionVersion, error)
 		&source,
 		&value.Content,
 		&tablesJSON,
+		&knowledgeSourcesJSON,
 		&value.JobID,
 		&value.Requirements,
 		&value.CreatedBy,
@@ -1075,6 +1082,11 @@ func scanReportSectionVersion(row scanner) (service.ReportSectionVersion, error)
 			return service.ReportSectionVersion{}, fmt.Errorf("unmarshal section version tables: %w", err)
 		}
 	}
+	if len(knowledgeSourcesJSON) > 0 {
+		if err := json.Unmarshal(knowledgeSourcesJSON, &value.KnowledgeSources); err != nil {
+			return service.ReportSectionVersion{}, fmt.Errorf("unmarshal section version knowledge sources: %w", err)
+		}
+	}
 	return value, nil
 }
 
@@ -1085,6 +1097,17 @@ func marshalTables(tables []map[string]any) ([]byte, error) {
 	data, err := json.Marshal(tables)
 	if err != nil {
 		return nil, fmt.Errorf("marshal section tables: %w", err)
+	}
+	return data, nil
+}
+
+func marshalKnowledgeSources(sources []service.ReportKnowledgeSource) ([]byte, error) {
+	if sources == nil {
+		return []byte("[]"), nil
+	}
+	data, err := json.Marshal(sources)
+	if err != nil {
+		return nil, fmt.Errorf("marshal section version knowledge sources: %w", err)
 	}
 	return data, nil
 }

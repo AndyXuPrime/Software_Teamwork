@@ -1,8 +1,9 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ModelProfile, UserSummary } from '@/lib/types'
+import { reportKeys } from '@/features/reports'
+import type { UserSummary } from '@/lib/types'
 import { useAuthStore } from '@/stores/auth-store'
 import { renderWithProviders } from '@/test/render'
 
@@ -26,6 +27,22 @@ function pageResponse(data: unknown[]) {
     page: { page: 1, pageSize: 20, total: data.length },
     requestId: 'req-page',
   })
+}
+
+function sseResponse(frames: string[]) {
+  const encoder = new TextEncoder()
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        frames.forEach((frame) => controller.enqueue(encoder.encode(frame)))
+        controller.close()
+      },
+    }),
+    {
+      headers: { 'Content-Type': 'text/event-stream' },
+      status: 200,
+    },
+  )
 }
 
 function createUser(permissions: string[]): UserSummary {
@@ -97,21 +114,186 @@ const reportMaterial = {
   materialType: 'technical_doc',
 }
 
-const chatProfile: ModelProfile = {
-  apiKeyConfigured: true,
-  baseUrl: 'https://api.example.com/v1',
-  createdAt: '2026-07-03T00:00:00Z',
-  defaultParameters: {},
+const legacySeedReportMaterial = {
+  category: 'local-demo',
+  createdAt: '2026-06-30T00:00:00Z',
+  description: '用于本地联调的安全占位素材，不包含真实文件引用或生产内容。',
   enabled: true,
-  id: 'mp-chat-report',
-  isDefault: false,
-  model: 'gpt-report',
-  name: '报告生成模型',
-  provider: 'openai_compatible',
-  purpose: 'chat',
-  supportsStreaming: true,
-  timeoutMs: 60000,
-  updatedAt: '2026-07-03T00:00:00Z',
+  filename: 'local-demo-inspection-notes.md',
+  id: '22222222-2222-4222-8222-222222222201',
+  materialName: '本地演示检查记录',
+  materialType: 'text',
+  tags: ['本地演示', '种子数据', '无文件引用'],
+}
+
+const operationsKnowledgeBase = {
+  chunkCount: 12,
+  chunkStrategy: { chunkSize: 1600, overlap: 200, type: 'SEMANTIC_TEXT' },
+  createdAt: '2026-07-01T00:00:00Z',
+  description: 'Operational procedures',
+  docType: 'policy',
+  documentCount: 3,
+  id: 'kb-ops',
+  name: 'Operations KB',
+  retrievalStrategy: { mode: 'VECTOR', scoreThreshold: 0.35, topK: 10 },
+  updatedAt: '2026-07-01T00:00:00Z',
+}
+
+const safetyKnowledgeBase = {
+  ...operationsKnowledgeBase,
+  description: 'Safety evidence',
+  id: 'kb-safety',
+  name: 'Safety KB',
+}
+
+async function createReportAndReachOutlineStep() {
+  const trigger = screen.getAllByRole('combobox')[0]!
+  await waitFor(() => expect(trigger).not.toBeDisabled())
+  fireEvent.click(trigger)
+  const option = await screen.findByRole('option', { name: reportType.name })
+  fireEvent.click(option)
+  await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: /创建草稿/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: /生成正文/ })).toBeEnabled())
+}
+
+function createKnowledgeSelectionFetchMock(options: {
+  contentBodies: Record<string, unknown>[]
+  events?: unknown[]
+  knowledgeBases?: unknown[]
+  knowledgeError?: boolean
+  outlineJobStatus?: 'running' | 'succeeded'
+  outlines?: unknown[]
+  sections?: unknown[]
+  streamFrames?: string[]
+}) {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(input, init)
+    const url = new URL(request.url)
+    const outlineJobStatus = options.outlineJobStatus ?? 'succeeded'
+
+    if (url.pathname.endsWith('/report-types')) {
+      return jsonResponse({ data: [reportType], requestId: 'req-types' })
+    }
+    if (url.pathname.endsWith('/report-templates')) {
+      return pageResponse([reportTemplate])
+    }
+    if (url.pathname.endsWith('/report-materials')) {
+      return pageResponse([reportMaterial])
+    }
+    if (url.pathname.endsWith('/knowledge-bases')) {
+      if (options.knowledgeError) {
+        return gatewayError('dependency_error', 'Knowledge list unavailable', 'req-knowledge')
+      }
+      return pageResponse(options.knowledgeBases ?? [operationsKnowledgeBase, safetyKnowledgeBase])
+    }
+    if (request.method === 'POST' && url.pathname.endsWith('/reports')) {
+      return jsonResponse({
+        data: {
+          id: 'rpt-knowledge-selection',
+          name: 'knowledge-selection-report',
+          reportType: 'summer_peak_inspection',
+          status: 'draft',
+          templateId: 'tpl-real',
+        },
+        requestId: 'req-create-report',
+      })
+    }
+    if (
+      request.method === 'POST' &&
+      url.pathname.endsWith('/reports/rpt-knowledge-selection/jobs')
+    ) {
+      const body = (await request.clone().json()) as Record<string, unknown>
+      if (body.jobType === 'content_generation') {
+        options.contentBodies.push(body)
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:02:00Z',
+            id: 'job-content-knowledge',
+            jobType: 'content_generation',
+            progress: { completed: 0, total: 1 },
+            reportId: 'rpt-knowledge-selection',
+            status: 'running',
+          },
+          requestId: 'req-content-job',
+        })
+      }
+      return jsonResponse({
+        data: {
+          createdAt: '2026-07-03T00:00:00Z',
+          finishedAt: outlineJobStatus === 'succeeded' ? '2026-07-03T00:01:00Z' : undefined,
+          id: 'job-outline-knowledge',
+          jobType: 'outline_generation',
+          progress:
+            outlineJobStatus === 'succeeded'
+              ? { completed: 1, total: 1 }
+              : { completed: 0, total: 1 },
+          reportId: 'rpt-knowledge-selection',
+          status: outlineJobStatus,
+        },
+        requestId: 'req-outline-job',
+      })
+    }
+    if (url.pathname.endsWith('/report-jobs/job-outline-knowledge')) {
+      return jsonResponse({
+        data: {
+          createdAt: '2026-07-03T00:00:00Z',
+          finishedAt: outlineJobStatus === 'succeeded' ? '2026-07-03T00:01:00Z' : undefined,
+          id: 'job-outline-knowledge',
+          jobType: 'outline_generation',
+          progress:
+            outlineJobStatus === 'succeeded'
+              ? { completed: 1, total: 1 }
+              : { completed: 0, total: 1 },
+          reportId: 'rpt-knowledge-selection',
+          status: outlineJobStatus,
+        },
+        requestId: 'req-outline-status',
+      })
+    }
+    if (url.pathname.endsWith('/report-jobs/job-content-knowledge')) {
+      return jsonResponse({
+        data: {
+          createdAt: '2026-07-03T00:02:00Z',
+          id: 'job-content-knowledge',
+          jobType: 'content_generation',
+          progress: { completed: 0, total: 1 },
+          reportId: 'rpt-knowledge-selection',
+          status: 'running',
+        },
+        requestId: 'req-content-status',
+      })
+    }
+    if (url.pathname.endsWith('/reports/rpt-knowledge-selection/outlines')) {
+      return jsonResponse({
+        data: options.outlines ?? [
+          {
+            createdAt: '2026-07-03T00:00:00Z',
+            id: 'outline-knowledge',
+            isCurrent: true,
+            reportId: 'rpt-knowledge-selection',
+            sections: [
+              { id: 'node-knowledge', level: 1, numbering: '1', title: 'Knowledge section' },
+            ],
+            source: 'ai',
+            version: 1,
+          },
+        ],
+        requestId: 'req-outlines',
+      })
+    }
+    if (url.pathname.endsWith('/reports/rpt-knowledge-selection/sections')) {
+      return jsonResponse({ data: options.sections ?? [], requestId: 'req-sections' })
+    }
+    if (url.pathname.endsWith('/reports/rpt-knowledge-selection/events/stream')) {
+      return sseResponse(options.streamFrames ?? [])
+    }
+    if (url.pathname.endsWith('/reports/rpt-knowledge-selection/events')) {
+      return jsonResponse({ data: options.events ?? [], requestId: 'req-events' })
+    }
+
+    return jsonResponse({ data: [], requestId: 'req-default' })
+  })
 }
 
 describe('ReportGeneratePage', () => {
@@ -191,9 +373,9 @@ describe('ReportGeneratePage', () => {
     expect(screen.getByRole('button', { name: /创建草稿/ })).toBeDisabled()
   })
 
-  it('publishes the selected document generation model profile through report settings', async () => {
-    setAuthenticatedUser(['report:write', 'admin:model-profile:write'])
-    const patchBodies: unknown[] = []
+  it('shows realistic seeded material labels while submitting the real material id', async () => {
+    const user = userEvent.setup()
+    const jobBodies: unknown[] = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init)
       const url = new URL(request.url)
@@ -205,64 +387,108 @@ describe('ReportGeneratePage', () => {
         return pageResponse([reportTemplate])
       }
       if (url.pathname.endsWith('/report-materials')) {
-        return pageResponse([reportMaterial])
+        return pageResponse([legacySeedReportMaterial])
       }
-      if (request.method === 'GET' && url.pathname.endsWith('/report-settings')) {
+      if (request.method === 'POST' && url.pathname.endsWith('/reports')) {
         return jsonResponse({
           data: {
-            llm: {
-              model: 'old-report-model',
-              profileId: 'old-report-profile',
-              provider: 'ai-gateway',
-              timeoutSeconds: 60,
-            },
+            id: 'rpt-material-seed',
+            name: '迎峰度夏报告',
+            reportType: 'summer_peak_inspection',
+            status: 'draft',
+            templateId: 'tpl-real',
           },
-          requestId: 'req-report-settings',
+          requestId: 'req-create-report',
         })
       }
-      if (request.method === 'GET' && url.pathname.endsWith('/admin/model-profiles')) {
-        expect(url.searchParams.get('purpose')).toBe('chat')
-        expect(url.searchParams.get('enabled')).toBe('true')
-        return jsonResponse({ data: [chatProfile], requestId: 'req-chat-profiles' })
-      }
-      if (request.method === 'PATCH' && url.pathname.endsWith('/report-settings')) {
-        patchBodies.push(await request.clone().json())
+      if (request.method === 'POST' && url.pathname.endsWith('/reports/rpt-material-seed/jobs')) {
+        jobBodies.push(await request.clone().json())
         return jsonResponse({
-          data: { updatedAt: '2026-07-03T08:00:00Z' },
-          requestId: 'req-report-settings-update',
+          data: {
+            createdAt: '2026-07-03T00:00:00Z',
+            id: 'job-material-seed',
+            jobType: 'outline_generation',
+            progress: { completed: 0, total: 1 },
+            reportId: 'rpt-material-seed',
+            status: 'running',
+          },
+          requestId: 'req-outline-job',
         })
+      }
+      if (url.pathname.endsWith('/report-jobs/job-material-seed')) {
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:00:00Z',
+            id: 'job-material-seed',
+            jobType: 'outline_generation',
+            progress: { completed: 0, total: 1 },
+            reportId: 'rpt-material-seed',
+            status: 'running',
+          },
+          requestId: 'req-outline-status',
+        })
+      }
+      if (
+        url.pathname.endsWith('/reports/rpt-material-seed/outlines') ||
+        url.pathname.endsWith('/reports/rpt-material-seed/sections') ||
+        url.pathname.endsWith('/reports/rpt-material-seed/events')
+      ) {
+        return jsonResponse({ data: [], requestId: 'req-empty' })
       }
 
-      return jsonResponse({ data: [], requestId: 'req-empty' })
+      return jsonResponse({ data: [], requestId: 'req-default' })
     })
     vi.stubGlobal('fetch', fetchMock)
 
     renderWithProviders(<ReportGeneratePage />)
 
-    const modelTrigger = screen.getByLabelText('文档生成模型')
-    expect(await screen.findByText('old-report-profile')).toBeVisible()
-
-    // Open the document model Select and pick the chat profile
-    fireEvent.click(modelTrigger)
-    const option = await screen.findByRole('option', { name: /报告生成模型/ })
-    fireEvent.click(option)
-    fireEvent.click(screen.getByRole('button', { name: /发布文档模型配置/ }))
-
-    await waitFor(() => expect(patchBodies).toHaveLength(1))
-    expect(patchBodies[0]).toEqual({
-      llm: { profileId: 'mp-chat-report', provider: 'ai-gateway' },
+    const materialButton = await screen.findByRole('button', {
+      name: '煤场库存盘点工作底稿',
     })
-    expect(patchBodies[0]).not.toHaveProperty('apiKey')
-    expect(patchBodies[0]).not.toHaveProperty('baseUrl')
-    expect(await screen.findByText(/文档生成模型配置已发布/)).toBeVisible()
+    expect(materialButton).toBeVisible()
+    expect(screen.queryByText('本地演示检查记录')).not.toBeInTheDocument()
+
+    await user.click(materialButton)
+    await user.click(screen.getAllByRole('combobox')[0]!)
+    await user.click(await screen.findByRole('option', { name: '真实巡检报告' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: /创建草稿/ }))
+
+    await waitFor(() => expect(jobBodies).toHaveLength(1))
+    expect(jobBodies[0]).toMatchObject({
+      jobType: 'outline_generation',
+      materialIds: ['22222222-2222-4222-8222-222222222201'],
+    })
   })
 
-  it('disables the document model selector when no enabled chat profiles exist', async () => {
+  it('does not render admin document model settings on the report generation page', async () => {
     setAuthenticatedUser(['report:write', 'admin:model-profile:write'])
+    const paths: string[] = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init)
       const url = new URL(request.url)
+      paths.push(`${request.method} ${url.pathname}${url.search}`)
 
+      if (request.method === 'GET' && url.pathname.endsWith('/llm-config-versions/current')) {
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:00:00Z',
+            id: 'llm-admin-current',
+            isActive: true,
+            modelName: 'gpt-admin',
+            profileId: 'mp-admin-chat',
+            provider: 'ai-gateway',
+            versionNo: 4,
+          },
+          requestId: 'req-admin-llm',
+        })
+      }
+      if (
+        url.pathname.endsWith('/report-settings') ||
+        url.pathname.endsWith('/admin/model-profiles')
+      ) {
+        return gatewayError('forbidden', 'admin settings moved', 'req-admin', 403)
+      }
       if (url.pathname.endsWith('/report-types')) {
         return jsonResponse({ data: [reportType], requestId: 'req-types' })
       }
@@ -272,15 +498,6 @@ describe('ReportGeneratePage', () => {
       if (url.pathname.endsWith('/report-materials')) {
         return pageResponse([reportMaterial])
       }
-      if (request.method === 'GET' && url.pathname.endsWith('/report-settings')) {
-        return jsonResponse({
-          data: { llm: { provider: 'ai-gateway' } },
-          requestId: 'req-report-settings',
-        })
-      }
-      if (request.method === 'GET' && url.pathname.endsWith('/admin/model-profiles')) {
-        return jsonResponse({ data: [], requestId: 'req-chat-profiles' })
-      }
 
       return jsonResponse({ data: [], requestId: 'req-empty' })
     })
@@ -288,17 +505,20 @@ describe('ReportGeneratePage', () => {
 
     renderWithProviders(<ReportGeneratePage />)
 
-    const modelTrigger = await screen.findByLabelText('文档生成模型')
-
-    await waitFor(() => expect(modelTrigger).toBeDisabled())
-    expect(modelTrigger).toHaveTextContent('请先创建聊天模型 Profile')
-    expect(await screen.findByText(/请先在模型管理中新增并启用用途为 chat/)).toBeVisible()
+    expect(await screen.findByLabelText('生成模型')).toBeVisible()
+    expect(screen.queryByText('当前文档生成模型')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /发布文档模型配置/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('mp-admin-chat')).not.toBeInTheDocument()
+    expect(screen.queryByText('gpt-admin')).not.toBeInTheDocument()
+    expect(paths.some((path) => path.includes('/report-settings'))).toBe(false)
+    expect(paths.some((path) => path.includes('/admin/model-profiles'))).toBe(false)
   })
 
-  it('shows the current document generation model to non-admin report writers without admin-only requests', async () => {
+  it('shows a compact personal generation model selector without admin-only requests', async () => {
     const user = userEvent.setup()
     setAuthenticatedUser(['report:write'])
     const paths: string[] = []
+    const reportBodies: unknown[] = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init)
       const url = new URL(request.url)
@@ -334,6 +554,7 @@ describe('ReportGeneratePage', () => {
         return pageResponse([reportMaterial])
       }
       if (request.method === 'POST' && url.pathname.endsWith('/reports')) {
+        reportBodies.push(await request.clone().json())
         return jsonResponse({
           data: {
             id: 'rpt-writer',
@@ -390,10 +611,11 @@ describe('ReportGeneratePage', () => {
     await user.click(trigger)
     await screen.findByRole('option', { name: '真实巡检报告' })
     await user.click(screen.getByRole('option', { name: '真实巡检报告' }))
-    expect(await screen.findByText('当前文档生成模型')).toBeVisible()
-    expect(screen.queryByText('当前 LLM 配置')).not.toBeInTheDocument()
-    expect(screen.getByText('mp-user-chat')).toBeVisible()
-    expect(screen.getByText('gpt-user')).toBeVisible()
+    expect(await screen.findByLabelText('生成模型')).toBeVisible()
+    expect(screen.getByLabelText('生成模型')).toHaveTextContent('个人默认配置')
+    expect(screen.queryByText('当前文档生成模型')).not.toBeInTheDocument()
+    expect(screen.queryByText('mp-user-chat')).not.toBeInTheDocument()
+    expect(screen.queryByText('gpt-user')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /发布文档模型配置/ })).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
 
@@ -405,71 +627,14 @@ describe('ReportGeneratePage', () => {
     expect(screen.queryByText('job-writer')).not.toBeInTheDocument()
     expect(paths.some((path) => path.includes('/report-settings'))).toBe(false)
     expect(paths.some((path) => path.includes('/admin/model-profiles'))).toBe(false)
-  })
-
-  it('waits for report settings before defaulting and publishing a document profile', async () => {
-    setAuthenticatedUser(['report:write', 'admin:model-profile:write'])
-    const settings = deferredResponse<Response>()
-    const patchBodies: unknown[] = []
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = input instanceof Request ? input : new Request(input, init)
-      const url = new URL(request.url)
-
-      if (url.pathname.endsWith('/report-types')) {
-        return jsonResponse({ data: [reportType], requestId: 'req-types' })
-      }
-      if (url.pathname.endsWith('/report-templates')) {
-        return pageResponse([reportTemplate])
-      }
-      if (url.pathname.endsWith('/report-materials')) {
-        return pageResponse([reportMaterial])
-      }
-      if (request.method === 'GET' && url.pathname.endsWith('/report-settings')) {
-        return settings.promise
-      }
-      if (request.method === 'GET' && url.pathname.endsWith('/admin/model-profiles')) {
-        return jsonResponse({ data: [chatProfile], requestId: 'req-chat-profiles' })
-      }
-      if (request.method === 'PATCH' && url.pathname.endsWith('/report-settings')) {
-        patchBodies.push(await request.clone().json())
-        return jsonResponse({
-          data: { updatedAt: '2026-07-03T08:00:00Z' },
-          requestId: 'req-report-settings-update',
-        })
-      }
-
-      return jsonResponse({ data: [], requestId: 'req-empty' })
+    expect(reportBodies[0]).toMatchObject({
+      name: '2026年迎峰度夏检查报告',
+      reportType: 'summer_peak_inspection',
+      source: 'frontend',
+      templateId: 'tpl-real',
     })
-    vi.stubGlobal('fetch', fetchMock)
-
-    renderWithProviders(<ReportGeneratePage />)
-
-    const publishButton = await screen.findByRole('button', { name: /发布文档模型配置/ })
-    expect(publishButton).toBeDisabled()
-    expect(screen.getByLabelText('文档生成模型')).toHaveTextContent('请选择聊天模型 Profile')
-
-    settings.resolve(
-      jsonResponse({
-        data: {
-          llm: {
-            model: 'old-report-model',
-            profileId: 'old-report-profile',
-            provider: 'ai-gateway',
-          },
-        },
-        requestId: 'req-report-settings',
-      }),
-    )
-
-    await waitFor(() =>
-      expect(screen.getByLabelText('文档生成模型')).toHaveTextContent(/old-report/),
-    )
-    fireEvent.click(publishButton)
-
-    await waitFor(() => expect(patchBodies).toHaveLength(1))
-    expect(patchBodies[0]).toEqual({
-      llm: { profileId: 'old-report-profile', provider: 'ai-gateway' },
-    })
+    expect(reportBodies[0]).not.toHaveProperty('profileId')
+    expect(reportBodies[0]).not.toHaveProperty('llm')
   })
 
   it('renders user-facing report progress from completed sections without internal ids', async () => {
@@ -648,6 +813,283 @@ describe('ReportGeneratePage', () => {
     expect(screen.queryByText('任务状态')).not.toBeInTheDocument()
     expect(screen.queryByText('事件日志')).not.toBeInTheDocument()
     expect(screen.queryByText('当前报告')).not.toBeInTheDocument()
+  })
+
+  it('submits selected knowledge base ids for content generation', async () => {
+    const contentBodies: Record<string, unknown>[] = []
+    vi.stubGlobal('fetch', createKnowledgeSelectionFetchMock({ contentBodies }))
+
+    renderWithProviders(<ReportGeneratePage />)
+
+    await createReportAndReachOutlineStep()
+    fireEvent.click(await screen.findByRole('button', { name: 'Operations KB' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Safety KB' }))
+    fireEvent.click(screen.getByRole('button', { name: /^生成正文$/ }))
+
+    await waitFor(() => expect(contentBodies).toHaveLength(1))
+    expect((contentBodies[0]?.options as Record<string, unknown>).knowledgeBaseIds).toEqual([
+      'kb-ops',
+      'kb-safety',
+    ])
+  })
+
+  it('omits knowledgeBaseIds when no knowledge base is selected', async () => {
+    const contentBodies: Record<string, unknown>[] = []
+    vi.stubGlobal('fetch', createKnowledgeSelectionFetchMock({ contentBodies }))
+
+    renderWithProviders(<ReportGeneratePage />)
+
+    await createReportAndReachOutlineStep()
+    fireEvent.click(screen.getByRole('button', { name: /^生成正文$/ }))
+
+    await waitFor(() => expect(contentBodies).toHaveLength(1))
+    expect(contentBodies[0]?.options).toEqual({ preserveManualEdits: true, saveResult: true })
+    expect(contentBodies[0]?.options).not.toHaveProperty('knowledgeBaseIds')
+  })
+
+  it('keeps content generation available when knowledge bases fail to load', async () => {
+    const contentBodies: Record<string, unknown>[] = []
+    vi.stubGlobal(
+      'fetch',
+      createKnowledgeSelectionFetchMock({ contentBodies, knowledgeError: true }),
+    )
+
+    renderWithProviders(<ReportGeneratePage />)
+
+    await createReportAndReachOutlineStep()
+    expect(await screen.findByText(/Knowledge list unavailable/)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: /^生成正文$/ }))
+
+    await waitFor(() => expect(contentBodies).toHaveLength(1))
+    expect(contentBodies[0]?.options).toEqual({ preserveManualEdits: true, saveResult: true })
+    expect(contentBodies[0]?.options).not.toHaveProperty('knowledgeBaseIds')
+  })
+
+  it('does not pop a degraded notice when knowledge retrieval is skipped during content generation', async () => {
+    const contentBodies: Record<string, unknown>[] = []
+    vi.stubGlobal(
+      'fetch',
+      createKnowledgeSelectionFetchMock({
+        contentBodies,
+        events: [
+          {
+            createdAt: '2026-07-03T00:02:30Z',
+            eventType: 'knowledge.retrieval_degraded',
+            id: 'evt-knowledge-degraded',
+            jobId: 'job-content-knowledge',
+            message: 'knowledge retrieval failed; generation continued without knowledge context',
+            reportId: 'rpt-knowledge-selection',
+          },
+        ],
+      }),
+    )
+
+    renderWithProviders(<ReportGeneratePage />)
+
+    await createReportAndReachOutlineStep()
+    fireEvent.click(screen.getByRole('button', { name: /^生成正文$/ }))
+
+    await waitFor(() => expect(contentBodies).toHaveLength(1))
+    expect(screen.queryByText(/本次生成未引用知识库/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/知识库检索失败/)).not.toBeInTheDocument()
+  })
+
+  it('ignores streamed outline chunks in the outline editor area', async () => {
+    const contentBodies: Record<string, unknown>[] = []
+    const fetchMock = createKnowledgeSelectionFetchMock({
+      contentBodies,
+      outlineJobStatus: 'running',
+      outlines: [],
+      streamFrames: [
+        [
+          'event: report.event',
+          'data: {"id":"evt-outline-delta-1","reportId":"rpt-knowledge-selection","jobId":"job-outline-knowledge","eventType":"outline.delta","message":"{\\"sections\\":[{\\"title\\":\\"Outline from JSON\\"},{\\"title\\":\\"Knowledge risks\\"}]}","createdAt":"2026-07-03T00:00:10Z"}',
+          '',
+          '',
+        ].join('\n'),
+      ],
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithProviders(<ReportGeneratePage />)
+
+    const trigger = screen.getAllByRole('combobox')[0]!
+    await waitFor(() => expect(trigger).not.toBeDisabled())
+    fireEvent.click(trigger)
+    fireEvent.click(await screen.findByRole('option', { name: reportType.name }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /创建草稿/ }))
+
+    await expect(
+      screen.findByDisplayValue('Outline from JSON', {}, { timeout: 300 }),
+    ).rejects.toThrow()
+    const streamRequested = fetchMock.mock.calls.some(([input, init]) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      return new URL(request.url).pathname.endsWith('/events/stream')
+    })
+    expect(streamRequested).toBe(false)
+    expect(screen.queryByDisplayValue('Knowledge risks')).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue(/sections/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/实时大纲预览/)).not.toBeInTheDocument()
+  })
+
+  it('fades persisted outline rows when the generated outline appears', async () => {
+    const contentBodies: Record<string, unknown>[] = []
+    vi.stubGlobal(
+      'fetch',
+      createKnowledgeSelectionFetchMock({
+        contentBodies,
+        streamFrames: [],
+      }),
+    )
+
+    renderWithProviders(<ReportGeneratePage />)
+
+    await createReportAndReachOutlineStep()
+
+    const outlineTitleInput = await screen.findByDisplayValue('Knowledge section')
+    const outlineRow = outlineTitleInput.closest('div')
+    expect(outlineRow).not.toBeNull()
+    expect(outlineRow as HTMLElement).toHaveClass('animate-[fade-in-up_0.28s_ease-out_both]')
+    expect(outlineRow as HTMLElement).toHaveClass('opacity-0')
+  })
+
+  it('types streamed report body chunks into the section editor', async () => {
+    const contentBodies: Record<string, unknown>[] = []
+    const previousPersistedBody = 'previous persisted audit scope'
+    const streamedBody = 'streamed body from knowledge'
+    vi.stubGlobal(
+      'fetch',
+      createKnowledgeSelectionFetchMock({
+        contentBodies,
+        sections: [
+          {
+            content: previousPersistedBody,
+            generatedAt: null,
+            generationStatus: 'running',
+            id: 'section-knowledge',
+            numbering: '1',
+            reportId: 'rpt-knowledge-selection',
+            sortOrder: 1,
+            title: 'Knowledge section',
+          },
+        ],
+        streamFrames: [
+          [
+            'event: report.event',
+            `data: ${JSON.stringify({
+              createdAt: '2026-07-03T00:02:10Z',
+              eventType: 'section.delta',
+              id: 'evt-section-delta-1',
+              jobId: 'job-content-knowledge',
+              message: JSON.stringify({
+                sectionId: 'section-knowledge',
+                text: JSON.stringify({
+                  content: streamedBody,
+                  tables: [
+                    {
+                      headers: ['Metric', 'Value'],
+                      rows: [['Peak load', '102 MW']],
+                    },
+                  ],
+                }),
+              }),
+              reportId: 'rpt-knowledge-selection',
+            })}`,
+            '',
+            '',
+          ].join('\n'),
+        ],
+      }),
+    )
+
+    renderWithProviders(<ReportGeneratePage />)
+
+    await createReportAndReachOutlineStep()
+    fireEvent.click(screen.getByRole('button', { name: /^生成正文$/ }))
+
+    await waitFor(() => expect(contentBodies).toHaveLength(1))
+    expect(await screen.findByDisplayValue(streamedBody)).toBeVisible()
+    expect(screen.getByLabelText('章节正文')).toHaveValue(streamedBody)
+    expect(screen.queryByDisplayValue(new RegExp(previousPersistedBody))).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue(/content/)).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue(/Metric/)).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue(/Peak load/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/实时正文预览/)).not.toBeInTheDocument()
+  })
+
+  it('does not duplicate streamed section text when polling returns persisted content during a live job', async () => {
+    const contentBodies: Record<string, unknown>[] = []
+    const streamedBody = 'streamed draft body'
+    vi.stubGlobal(
+      'fetch',
+      createKnowledgeSelectionFetchMock({
+        contentBodies,
+        sections: [
+          {
+            content: '',
+            generatedAt: null,
+            generationStatus: 'running',
+            id: 'section-knowledge',
+            numbering: '1',
+            reportId: 'rpt-knowledge-selection',
+            sortOrder: 1,
+            title: 'Knowledge section',
+          },
+        ],
+        streamFrames: [
+          [
+            'event: report.event',
+            `data: ${JSON.stringify({
+              createdAt: '2026-07-03T00:02:10Z',
+              eventType: 'section.delta',
+              id: 'evt-section-delta-1',
+              jobId: 'job-content-knowledge',
+              message: JSON.stringify({
+                sectionId: 'section-knowledge',
+                text: streamedBody,
+              }),
+              reportId: 'rpt-knowledge-selection',
+            })}`,
+            '',
+            '',
+          ].join('\n'),
+        ],
+      }),
+    )
+
+    const { queryClient } = renderWithProviders(<ReportGeneratePage />)
+
+    await createReportAndReachOutlineStep()
+    fireEvent.click(screen.getByRole('button', { name: /^生成正文$/ }))
+
+    await waitFor(() => expect(contentBodies).toHaveLength(1))
+    expect(await screen.findByDisplayValue(streamedBody)).toBeVisible()
+
+    act(() => {
+      queryClient.setQueryData(reportKeys.sections('rpt-knowledge-selection'), [
+        {
+          content: streamedBody,
+          generatedAt: '2026-07-03T00:02:30Z',
+          generationStatus: 'succeeded',
+          id: 'section-knowledge',
+          lastJobId: 'job-content-knowledge',
+          numbering: '1',
+          reportId: 'rpt-knowledge-selection',
+          sortOrder: 1,
+          title: 'Knowledge section',
+        },
+      ])
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(screen.getByText('已完成')).toBeVisible())
+    expect(screen.getByLabelText('章节正文')).toHaveValue(streamedBody)
+    expect(screen.queryByDisplayValue(`${streamedBody}${streamedBody}`)).not.toBeInTheDocument()
   })
 
   it('restores an in-progress content job after navigating away and back', async () => {

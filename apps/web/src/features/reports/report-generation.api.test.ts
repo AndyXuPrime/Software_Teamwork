@@ -3,36 +3,46 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   cancelReportJob,
   createReportJobAttempt,
+  createReportMaterial,
   createReportTemplate,
   deleteReport,
+  deleteReportMaterial,
   deleteReportTemplate,
   getReportSettings,
   updateReportSettings,
 } from './report-generation.api'
 
 describe('report generation API wrappers', () => {
-  it('treats report and template DELETE 204 responses as success', async () => {
+  it('treats report, template, and material DELETE 204 responses as success', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(deleteReport('rpt-real')).resolves.toBeUndefined()
     await expect(deleteReportTemplate('tpl-real')).resolves.toBeUndefined()
+    await expect(deleteReportMaterial('mat-real')).resolves.toBeUndefined()
 
     const reportRequest = fetchMock.mock.calls[0]?.[0]
     const templateRequest = fetchMock.mock.calls[1]?.[0]
+    const materialRequest = fetchMock.mock.calls[2]?.[0]
     expect(reportRequest).toBeInstanceOf(Request)
     expect(templateRequest).toBeInstanceOf(Request)
+    expect(materialRequest).toBeInstanceOf(Request)
     expect(reportRequest instanceof Request ? reportRequest.method : undefined).toBe('DELETE')
     expect(templateRequest instanceof Request ? templateRequest.method : undefined).toBe('DELETE')
+    expect(materialRequest instanceof Request ? materialRequest.method : undefined).toBe('DELETE')
     expect(reportRequest instanceof Request ? new URL(reportRequest.url).pathname : undefined).toBe(
       '/api/v1/reports/rpt-real',
     )
     expect(
       templateRequest instanceof Request ? new URL(templateRequest.url).pathname : undefined,
     ).toBe('/api/v1/report-templates/tpl-real')
+    expect(
+      materialRequest instanceof Request ? new URL(materialRequest.url).pathname : undefined,
+    ).toBe('/api/v1/report-materials/mat-real')
   })
 
   it('returns report job attempts from the retry endpoint', async () => {
@@ -120,6 +130,61 @@ describe('report generation API wrappers', () => {
     ).resolves.toMatchObject({
       id: 'tpl-uploaded',
       templateName: '巡检模板',
+    })
+  })
+
+  it('uploads report materials as multipart form data', async () => {
+    const appendSpy = vi.spyOn(FormData.prototype, 'append')
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      expect(request.method).toBe('POST')
+      expect(url.pathname).toBe('/api/v1/report-materials')
+      expect(request.headers.get('Content-Type')).not.toBe('application/json')
+      expect(request.headers.get('Content-Type')).toContain('multipart/form-data')
+
+      const form = new Map(appendSpy.mock.calls.map(([key, value]) => [key, value]))
+      expect(form.get('materialName')).toBe('煤场盘点素材')
+      expect(form.get('materialType')).toBe('technical_doc')
+      expect(form.get('category')).toBe('煤库存')
+      expect(form.get('description')).toBe('现场盘点依据')
+      expect(form.get('tags')).toBe('煤场,盘点')
+      expect(form.get('file')).toBeInstanceOf(File)
+
+      return new Response(
+        JSON.stringify({
+          data: {
+            category: '煤库存',
+            createdAt: '2026-07-03T08:00:00Z',
+            enabled: true,
+            filename: 'inventory.pdf',
+            id: 'mat-uploaded',
+            materialName: '煤场盘点素材',
+            materialType: 'technical_doc',
+          },
+          requestId: 'req-material-upload',
+        }),
+        {
+          headers: { 'Content-Type': 'application/json' },
+          status: 201,
+        },
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      createReportMaterial({
+        category: '煤库存',
+        description: '现场盘点依据',
+        file: new File(['material'], 'inventory.pdf', { type: 'application/pdf' }),
+        materialName: '煤场盘点素材',
+        materialType: 'technical_doc',
+        tags: ['煤场', '盘点'],
+      }),
+    ).resolves.toMatchObject({
+      id: 'mat-uploaded',
+      materialName: '煤场盘点素材',
     })
   })
 

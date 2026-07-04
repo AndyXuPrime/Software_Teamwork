@@ -40,6 +40,13 @@ const knowledgeReader: UserSummary = {
   username: 'reader',
 }
 
+const reportAdmin: UserSummary = {
+  id: 'report-admin-1',
+  permissions: ['report:write', 'admin:model-profile:write'],
+  roles: ['standard'],
+  username: 'report-admin',
+}
+
 describe('AdminSidebar knowledge permissions', () => {
   beforeEach(() => {
     routerMocks.pathname = '/admin/knowledge/search'
@@ -59,5 +66,23 @@ describe('AdminSidebar knowledge permissions', () => {
     expect(screen.getByRole('link', { name: /文档管理/ })).toBeVisible()
     expect(screen.queryByRole('link', { name: /知识管理/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /知识配置/ })).not.toBeInTheDocument()
+  })
+
+  it('shows document model settings under report generation for report admins', () => {
+    routerMocks.pathname = '/admin/reports/document-model'
+    useAuthStore.setState({
+      accessToken: 'opaque-test-token',
+      error: null,
+      status: 'authenticated',
+      user: reportAdmin,
+      userName: reportAdmin.username,
+    })
+
+    renderWithProviders(<AdminSidebar />)
+
+    expect(screen.getByRole('link', { name: /文档模型配置/ })).toHaveAttribute(
+      'href',
+      '/admin/reports/document-model',
+    )
   })
 })

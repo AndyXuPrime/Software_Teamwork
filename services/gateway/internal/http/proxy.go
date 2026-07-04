@@ -348,16 +348,26 @@ func isPublicErrorCode(code response.Code) bool {
 }
 
 func skipsFixedRequestTimeout(r *http.Request) bool {
-	if r.Method != http.MethodPost || !acceptsEventStream(r.Header.Get("Accept")) {
+	if !acceptsEventStream(r.Header.Get("Accept")) {
 		return false
 	}
 	segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	return len(segments) == 5 &&
+	if r.Method == http.MethodPost && len(segments) == 5 &&
 		segments[0] == "api" &&
 		segments[1] == "v1" &&
 		segments[2] == "qa-sessions" &&
 		segments[3] != "" &&
-		segments[4] == "messages"
+		segments[4] == "messages" {
+		return true
+	}
+	return r.Method == http.MethodGet &&
+		len(segments) == 6 &&
+		segments[0] == "api" &&
+		segments[1] == "v1" &&
+		segments[2] == "reports" &&
+		segments[3] != "" &&
+		segments[4] == "events" &&
+		segments[5] == "stream"
 }
 
 func isKnowledgeDocumentBatchUploadRequest(r *http.Request) bool {

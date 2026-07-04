@@ -386,17 +386,28 @@ type ReportSection struct {
 }
 
 type ReportSectionVersion struct {
-	ID           string
-	ReportID     string
-	SectionID    string
-	Version      int
-	Source       ContentSource
-	Content      string
-	Tables       []map[string]any
-	JobID        string
-	Requirements string
-	CreatedBy    string
-	CreatedAt    time.Time
+	ID               string
+	ReportID         string
+	SectionID        string
+	Version          int
+	Source           ContentSource
+	Content          string
+	Tables           []map[string]any
+	JobID            string
+	Requirements     string
+	KnowledgeSources []ReportKnowledgeSource
+	CreatedBy        string
+	CreatedAt        time.Time
+}
+
+type ReportKnowledgeSource struct {
+	KnowledgeBaseID string  `json:"knowledgeBaseId"`
+	DocumentID      string  `json:"documentId"`
+	ChunkID         string  `json:"chunkId"`
+	DocumentName    string  `json:"documentName,omitempty"`
+	SectionPath     string  `json:"sectionPath,omitempty"`
+	ContentPreview  string  `json:"contentPreview,omitempty"`
+	Score           float64 `json:"score,omitempty"`
 }
 
 type ReportSettingsModelConfig struct {

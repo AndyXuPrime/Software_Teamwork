@@ -18,6 +18,7 @@ type fakeReportService struct {
 	reports             map[string]service.Report
 	createdSectionInput service.CreateSectionInput
 	savedSections       []service.SaveSectionInput
+	sectionVersions     []service.ReportSectionVersion
 	createdVersionInput service.CreateSectionVersionInput
 }
 
@@ -158,7 +159,7 @@ func (f *fakeReportService) UpdateSection(context.Context, service.RequestContex
 	return service.ReportSection{}, nil
 }
 func (f *fakeReportService) ListSectionVersions(context.Context, service.RequestContext, string, string) ([]service.ReportSectionVersion, error) {
-	return nil, nil
+	return f.sectionVersions, nil
 }
 func (f *fakeReportService) CreateSectionVersion(_ context.Context, _ service.RequestContext, reportID, sectionID string, input service.CreateSectionVersionInput) (service.ReportSectionVersion, error) {
 	f.createdVersionInput = input
@@ -376,6 +377,59 @@ func TestPostSectionVersionParsesVersionBody(t *testing.T) {
 	}
 	if len(body.Data.Tables) != 1 || body.Data.Tables[0]["name"] != "risk table" {
 		t.Fatalf("response tables = %+v", body.Data.Tables)
+	}
+}
+
+func TestListSectionVersionsReturnsKnowledgeSources(t *testing.T) {
+	fake := newFakeReportService()
+	fake.sectionVersions = []service.ReportSectionVersion{{
+		ID:        "section-version-1",
+		ReportID:  "report-1",
+		SectionID: "section-1",
+		Version:   2,
+		Source:    service.ContentSourceAI,
+		Content:   "generated body",
+		KnowledgeSources: []service.ReportKnowledgeSource{{
+			KnowledgeBaseID: "kb-1",
+			DocumentID:      "doc-1",
+			ChunkID:         "chunk-1",
+			DocumentName:    "inspection guide",
+			SectionPath:     "chapter-2",
+			ContentPreview:  "breaker maintenance evidence",
+			Score:           0.91,
+		}},
+		CreatedAt: time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC),
+	}}
+	server := NewServer(Config{ReportService: fake})
+
+	req := httptest.NewRequest(http.MethodGet, "/reports/report-1/sections/section-1/versions", nil)
+	req.SetPathValue("reportId", "report-1")
+	req.SetPathValue("sectionId", "section-1")
+	req.Header.Set("X-User-Id", "user-1")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data []struct {
+			ID               string                          `json:"id"`
+			KnowledgeSources []service.ReportKnowledgeSource `json:"knowledgeSources"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data) != 1 || body.Data[0].ID != "section-version-1" {
+		t.Fatalf("unexpected response data: %+v", body.Data)
+	}
+	if len(body.Data[0].KnowledgeSources) != 1 {
+		t.Fatalf("knowledgeSources = %+v, want one source", body.Data[0].KnowledgeSources)
+	}
+	source := body.Data[0].KnowledgeSources[0]
+	if source.KnowledgeBaseID != "kb-1" || source.DocumentID != "doc-1" || source.ChunkID != "chunk-1" || source.Score != 0.91 {
+		t.Fatalf("knowledge source = %+v", source)
 	}
 }
 

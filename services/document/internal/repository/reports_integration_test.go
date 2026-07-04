@@ -167,8 +167,17 @@ func TestPostgresRepositoryReportOutlineSectionLifecycle(t *testing.T) {
 		ReportID:  report.ID,
 		SectionID: section.ID,
 		Version:   1,
-		Source:    service.ContentSourceManual,
+		Source:    service.ContentSourceAI,
 		Content:   "v1 snapshot",
+		KnowledgeSources: []service.ReportKnowledgeSource{{
+			KnowledgeBaseID: "kb-1",
+			DocumentID:      "doc-1",
+			ChunkID:         "chunk-1",
+			DocumentName:    "inspection guide",
+			SectionPath:     "chapter-2",
+			ContentPreview:  "breaker maintenance evidence",
+			Score:           0.91,
+		}},
 		CreatedBy: "user-1",
 		CreatedAt: now,
 	})
@@ -178,6 +187,9 @@ func TestPostgresRepositoryReportOutlineSectionLifecycle(t *testing.T) {
 	if version.Content != "v1 snapshot" {
 		t.Fatalf("version.Content = %q", version.Content)
 	}
+	if len(version.KnowledgeSources) != 1 || version.KnowledgeSources[0].KnowledgeBaseID != "kb-1" {
+		t.Fatalf("version.KnowledgeSources = %+v, want persisted source", version.KnowledgeSources)
+	}
 
 	versions, err := repo.ListReportSectionVersions(ctx, section.ID)
 	if err != nil {
@@ -185,6 +197,9 @@ func TestPostgresRepositoryReportOutlineSectionLifecycle(t *testing.T) {
 	}
 	if len(versions) != 1 {
 		t.Fatalf("ListReportSectionVersions() len = %d, want 1", len(versions))
+	}
+	if len(versions[0].KnowledgeSources) != 1 || versions[0].KnowledgeSources[0].DocumentID != "doc-1" || versions[0].KnowledgeSources[0].Score != 0.91 {
+		t.Fatalf("ListReportSectionVersions()[0].KnowledgeSources = %+v, want persisted source", versions[0].KnowledgeSources)
 	}
 
 	deleted, err := repo.SoftDeleteReport(ctx, report.ID, now.Add(2*time.Minute))

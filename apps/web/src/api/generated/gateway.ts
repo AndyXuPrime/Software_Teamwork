@@ -952,6 +952,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/reports/{reportId}/events/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reportId: components["parameters"]["ReportId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Stream report events
+         * @description Streams persisted report workflow events for live report outline and content generation previews. The stream emits `report.event` SSE frames whose data payload is a sanitized `ReportEvent` JSON object. Browsers must keep polling as a recovery path if the stream disconnects.
+         */
+        get: operations["streamReportEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/report-files": {
         parameters: {
             query?: never;
@@ -2509,6 +2531,17 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        /** @description Safe Knowledge source snapshot used by a generated report section version. */
+        ReportKnowledgeSource: {
+            knowledgeBaseId?: string;
+            documentId?: string;
+            chunkId?: string;
+            documentName?: string;
+            sectionPath?: string;
+            contentPreview?: string;
+            /** Format: double */
+            score?: number;
+        };
         ReportSectionVersion: {
             id: string;
             reportId: string;
@@ -2521,6 +2554,8 @@ export interface components {
                 [key: string]: unknown;
             }[];
             jobId?: string;
+            /** @description Sanitized Knowledge retrieval sources used for this generated section version. Empty or omitted when no Knowledge context was used. */
+            knowledgeSources?: components["schemas"]["ReportKnowledgeSource"][];
             /** Format: date-time */
             createdAt: string;
         };
@@ -5420,6 +5455,30 @@ export interface operations {
                 };
             };
             404: components["responses"]["Error"];
+        };
+    };
+    streamReportEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reportId: components["parameters"]["ReportId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Report event stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            404: components["responses"]["Error"];
+            502: components["responses"]["Error"];
         };
     };
     listReportFiles: {

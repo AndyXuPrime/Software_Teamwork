@@ -423,3 +423,51 @@ func TestChatClientUsesPerRequestModelAndProfile(t *testing.T) {
 		t.Fatalf("profile_id = %q, want override-profile", capturedBody.ProfileID)
 	}
 }
+
+func TestChatClientStreamsCompletionDeltas(t *testing.T) {
+	var capturedBody struct {
+		ProfileID string `json:"profile_id"`
+		Stream    bool   `json:"stream"`
+	}
+	var capturedAccept string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/internal/v1/chat/completions" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		capturedAccept = r.Header.Get("Accept")
+		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"sections\\\"\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\":[{\\\"title\\\":\\\"A\\\"}]}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	client := newChatTestClient(t, server)
+	var deltas []string
+	resp, err := client.StreamChatCompletion(context.Background(), service.RequestContext{
+		RequestID: "req-stream",
+		UserID:    "usr-stream",
+	}, service.ChatCompletionRequest{
+		Messages: []service.ChatMessage{{Role: "user", Content: "outline"}},
+	}, func(delta string) {
+		deltas = append(deltas, delta)
+	})
+	if err != nil {
+		t.Fatalf("StreamChatCompletion() error = %v", err)
+	}
+	if capturedAccept != "text/event-stream" {
+		t.Fatalf("Accept = %q, want text/event-stream", capturedAccept)
+	}
+	if !capturedBody.Stream || capturedBody.ProfileID != "profile-default" {
+		t.Fatalf("request body = %+v", capturedBody)
+	}
+	if resp.Content != "{\"sections\":[{\"title\":\"A\"}]}" || resp.FinishReason != "stop" || resp.Usage.TotalTokens != 3 {
+		t.Fatalf("stream response = %+v", resp)
+	}
+	if strings.Join(deltas, "") != resp.Content {
+		t.Fatalf("deltas = %#v, want content %q", deltas, resp.Content)
+	}
+}

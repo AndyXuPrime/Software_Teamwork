@@ -4,11 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Sakayori-Iroha-168/Software_Teamwork/services/document/internal/service"
 )
+
+const reportEventStreamPollInterval = time.Second
 
 type jobResponse struct {
 	ID            string            `json:"id"`
@@ -395,4 +399,115 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		resp[i] = toEventResponse(e)
 	}
 	writeData(w, r, http.StatusOK, resp)
+}
+
+func (s *Server) handleStreamEvents(w http.ResponseWriter, r *http.Request) {
+	if s.jobSvc == nil {
+		writeError(w, r, service.NewError(service.CodeDependency, "job service not configured", nil))
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, r, service.NewError(service.CodeDependency, "event stream is not supported", nil))
+		return
+	}
+
+	ctx := r.Context()
+	rctx := s.requestContext(r)
+	reportID := r.PathValue("reportId")
+
+	header := w.Header()
+	header.Set("Content-Type", "text/event-stream; charset=utf-8")
+	header.Set("Cache-Control", "no-cache")
+	header.Set("Connection", "keep-alive")
+	header.Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	seen := map[string]struct{}{}
+	ticker := time.NewTicker(reportEventStreamPollInterval)
+	defer ticker.Stop()
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+
+	for {
+		events, err := s.jobSvc.ListEvents(ctx, rctx, reportID)
+		if err != nil {
+			writeSSEError(w, flusher, err)
+			return
+		}
+		sortReportEventsChronologically(events)
+		for _, event := range events {
+			if _, exists := seen[event.ID]; exists {
+				continue
+			}
+			if err := writeReportEventSSE(w, event); err != nil {
+				return
+			}
+			seen[event.ID] = struct{}{}
+			flusher.Flush()
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		case <-heartbeat.C:
+			_, _ = fmt.Fprint(w, ": heartbeat\n\n")
+			flusher.Flush()
+		}
+	}
+}
+
+func sortReportEventsChronologically(events []service.ReportEvent) {
+	sort.SliceStable(events, func(i, j int) bool {
+		if events[i].CreatedAt.Equal(events[j].CreatedAt) {
+			return events[i].ID < events[j].ID
+		}
+		return events[i].CreatedAt.Before(events[j].CreatedAt)
+	})
+}
+
+func writeReportEventSSE(w http.ResponseWriter, event service.ReportEvent) error {
+	data, err := json.Marshal(toEventResponse(event))
+	if err != nil {
+		return err
+	}
+	if event.ID != "" {
+		if _, err := fmt.Fprintf(w, "id: %s\n", sanitizeSSELine(event.ID)); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprint(w, "event: report.event\n"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeSSEError(w http.ResponseWriter, flusher http.Flusher, err error) {
+	appErr, ok := service.Classify(err)
+	if !ok {
+		appErr = service.NewError(service.CodeDependency, "report event stream failed", err)
+	}
+	payload := struct {
+		Code    service.Code `json:"code"`
+		Message string       `json:"message"`
+	}{
+		Code:    appErr.Code,
+		Message: appErr.Message,
+	}
+	data, marshalErr := json.Marshal(payload)
+	if marshalErr != nil {
+		data = []byte(`{"code":"dependency_error","message":"report event stream failed"}`)
+	}
+	_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", data)
+	flusher.Flush()
+}
+
+func sanitizeSSELine(value string) string {
+	value = strings.ReplaceAll(value, "\r", " ")
+	value = strings.ReplaceAll(value, "\n", " ")
+	return value
 }

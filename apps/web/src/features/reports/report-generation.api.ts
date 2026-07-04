@@ -59,6 +59,15 @@ export type ReportMaterialListParams = {
   enabled?: boolean
 }
 
+export type CreateReportMaterialInput = {
+  category?: string
+  description?: string
+  file: File
+  materialName: string
+  materialType: string
+  tags?: string[]
+}
+
 export function listReportTypes(): Promise<ReportType[]> {
   return gatewayRequest<ReportType[]>('/report-types')
 }
@@ -82,6 +91,21 @@ export function createReportTemplate(input: CreateReportTemplateInput): Promise<
 
 export function listReportMaterials(params: ReportMaterialListParams = {}) {
   return gatewayPageRequest<ReportMaterial>(`/report-materials${buildQuery(params)}`)
+}
+
+export function createReportMaterial(input: CreateReportMaterialInput): Promise<ReportMaterial> {
+  const formData = new FormData()
+  formData.append('file', input.file, input.file.name)
+  formData.append('materialName', input.materialName)
+  formData.append('materialType', input.materialType)
+  if (input.category) formData.append('category', input.category)
+  if (input.description) formData.append('description', input.description)
+  if (input.tags && input.tags.length > 0) formData.append('tags', input.tags.join(','))
+
+  return gatewayRequest<ReportMaterial>('/report-materials', {
+    method: 'POST',
+    body: formData,
+  })
 }
 
 export function createReport(payload: CreateReportPayload): Promise<Report> {
@@ -220,6 +244,12 @@ export function updateReportTemplateStructure(
 
 export function deleteReportTemplate(templateId: string): Promise<void> {
   return requestVoid(`/report-templates/${encodeURIComponent(templateId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function deleteReportMaterial(materialId: string): Promise<void> {
+  return requestVoid(`/report-materials/${encodeURIComponent(materialId)}`, {
     method: 'DELETE',
   })
 }

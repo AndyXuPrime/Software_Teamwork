@@ -22,7 +22,7 @@ This document is the human-readable audit list for gateway active API paths. The
 | `auth` | 11 | Users, sessions, current-user identity, current-user profile, required password change, admin user management, roles, and permissions. |
 | `knowledge` | 20 | Knowledge bases, knowledge documents, chunks, retrieval, and parser runtime config. |
 | `ai-gateway` | 5 | Model profile runtime configuration exposed through gateway admin paths. |
-| `document` | 44 | Report templates, materials, records, outlines, sections, jobs, files, settings, statistics, and logs. |
+| `document` | 45 | Report templates, materials, records, outlines, sections, jobs, events, files, settings, statistics, and logs. |
 | `qa` | 29 | QA sessions, messages, attachments, runs, citations, configuration, retrieval tests, and QA metrics. |
 
 ## Missing Contracts
@@ -108,6 +108,7 @@ aggregation endpoints are now active gateway contracts listed below.
 | `GET` | `/api/v1/report-jobs/{jobId}/attempts` | `document` | `report-generation` | `listReportJobAttempts` | `bearerAuth` |
 | `POST` | `/api/v1/report-jobs/{jobId}/attempts` | `document` | `report-generation` | `createReportJobAttempt` | `bearerAuth` |
 | `GET` | `/api/v1/reports/{reportId}/events` | `document` | `report-generation` | `listReportEvents` | `bearerAuth` |
+| `GET` | `/api/v1/reports/{reportId}/events/stream` | `document` | `report-generation` | `streamReportEvents` | `bearerAuth` |
 | `GET` | `/api/v1/report-files` | `document` | `report-generation` | `listReportFiles` | `bearerAuth` |
 | `POST` | `/api/v1/report-files` | `document` | `report-generation` | `createReportFile` | `bearerAuth` |
 | `GET` | `/api/v1/report-files/{reportFileId}` | `document` | `report-generation` | `getReportFile` | `bearerAuth` |
