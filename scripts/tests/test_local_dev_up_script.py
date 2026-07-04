@@ -67,6 +67,28 @@ class LocalStartupScriptTests(unittest.TestCase):
             self.assertFalse((root / "uv-calls.log").exists())
             self.assertFalse((root / "go-calls.log").exists())
 
+    def test_start_china_rewrites_rendered_compose_env_for_infra(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+
+            result = self.run_start(root, args=["--infra-only", "--china"])
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            compose_env = (root / ".local" / "config" / "dev.env").read_text(encoding="utf-8")
+            self.assertIn("POSTGRES_IMAGE=docker.1ms.run/library/postgres:16-alpine", compose_env)
+            self.assertIn("REDIS_IMAGE=docker.1ms.run/library/redis:7-alpine", compose_env)
+            self.assertIn("MINIO_IMAGE=docker.1ms.run/minio/minio:RELEASE.2025-09-07T16-13-09Z", compose_env)
+            self.assertIn(
+                "KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE=docker.1ms.run/elasticsearch:8.15.3",
+                compose_env,
+            )
+            docker_env = (root / "docker-env.log").read_text(encoding="utf-8")
+            self.assertIn("POSTGRES_IMAGE=docker.1ms.run/library/postgres:16-alpine", docker_env)
+            self.assertIn("KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE=docker.1ms.run/elasticsearch:8.15.3", docker_env)
+            self.assertNotIn("docker.1ms.run", (root / ".env.local").read_text(encoding="utf-8"))
+
     def test_start_fails_with_hint_when_service_binaries_are_missing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.prepare_runtime(Path(directory))
@@ -100,6 +122,10 @@ class LocalStartupScriptTests(unittest.TestCase):
                 self.assertIn("host process groups", result.stdout)
                 for service in ["auth", "file", "knowledge", "ai-gateway", "qa", "document", "gateway"]:
                     self.assertTrue((root / ".local" / "run" / f"{service}.pid").exists())
+                service_env = (root / "service-env.log").read_text(encoding="utf-8")
+                self.assertIn(f"auth-server PWD={root / 'services' / 'auth'}", service_env)
+                self.assertIn(f"qa-server PWD={root / 'services' / 'qa'}", service_env)
+                self.assertNotIn(f"qa-server PWD={root} ", service_env)
                 self.assertFalse((root / "go-calls.log").exists())
                 self.assertFalse((root / "uv-calls.log").exists())
             finally:
@@ -298,8 +324,8 @@ class LocalStartupScriptTests(unittest.TestCase):
                 root / ".local" / "bin" / binary,
                 """\
                 #!/usr/bin/env bash
-                printf '%s MODEL_ID=%s DOCUMENT_AI_GATEWAY_MODEL=%s\\n' \
-                  "$(basename "$0")" "${MODEL_ID:-}" "${DOCUMENT_AI_GATEWAY_MODEL:-}" >> "$FAKE_ROOT/service-env.log"
+                printf '%s PWD=%s MODEL_ID=%s DOCUMENT_AI_GATEWAY_MODEL=%s\\n' \
+                  "$(basename "$0")" "$PWD" "${MODEL_ID:-}" "${DOCUMENT_AI_GATEWAY_MODEL:-}" >> "$FAKE_ROOT/service-env.log"
                 while true; do sleep 60; done
                 """,
             )

@@ -375,6 +375,9 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   committed config. Existing daemon mirrors or proxies are acceptable only
   after `python3 scripts/check_docker_environment.py --profile all --clean-env`
   proves their manifest path is healthy.
+- `start.sh --china` must apply Docker image rewrites after config rendering and
+  update the generated compose env file used for that run, while leaving
+  committed config and `.env.local` unchanged.
 - The current mainland China Docker registry rewrite uses `docker.1ms.run`.
   The Elasticsearch rewrite is `docker.1ms.run/elasticsearch:8.15.3`.
   `docker.1panel.live/elasticsearch:8.15.3` was not available in local manifest

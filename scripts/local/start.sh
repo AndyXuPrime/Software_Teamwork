@@ -29,13 +29,13 @@ CHINA_MINIO_MC_IMAGE="docker.1ms.run/minio/mc:RELEASE.2025-08-13T08-35-41Z"
 CHINA_ELASTICSEARCH_IMAGE="docker.1ms.run/elasticsearch:8.15.3"
 
 GO_SERVICES=(
-  "auth|auth-server"
-  "file|file-server"
-  "knowledge|knowledge-adapter"
-  "ai-gateway|ai-gateway-server"
-  "qa|qa-server"
-  "document|document-server"
-  "gateway|gateway-server"
+  "auth|auth-server|$ROOT_DIR/services/auth"
+  "file|file-server|$ROOT_DIR/services/file"
+  "knowledge|knowledge-adapter|$ROOT_DIR/services/knowledge"
+  "ai-gateway|ai-gateway-server|$ROOT_DIR/services/ai-gateway"
+  "qa|qa-server|$ROOT_DIR/services/qa"
+  "document|document-server|$ROOT_DIR/services/document"
+  "gateway|gateway-server|$ROOT_DIR/services/gateway"
 )
 
 # shellcheck source=scripts/local/lib/common.sh
@@ -80,7 +80,8 @@ runtime .venv when runtime startup is enabled.
 
 Options:
   --china             Use mainland China Docker image rewrites and runtime
-                      HuggingFace mirror for this run only. No files are edited.
+                      HuggingFace mirror for this run only. Committed config
+                      files and .env.local are not edited.
   --runtime api       Start only Knowledge runtime API from prepared .venv.
   --runtime full      Start Knowledge runtime API and worker. Default.
   --runtime none      Skip Knowledge runtime startup.
@@ -202,7 +203,35 @@ apply_china_sources() {
   export MINIO_IMAGE="$CHINA_MINIO_IMAGE"
   export MINIO_MC_IMAGE="$CHINA_MINIO_MC_IMAGE"
   export KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE="$CHINA_ELASTICSEARCH_IMAGE"
-  log_info "using mainland China mirrors for this run; config files and .env.local are not modified"
+  write_compose_env_value POSTGRES_IMAGE "$POSTGRES_IMAGE"
+  write_compose_env_value REDIS_IMAGE "$REDIS_IMAGE"
+  write_compose_env_value MINIO_IMAGE "$MINIO_IMAGE"
+  write_compose_env_value MINIO_MC_IMAGE "$MINIO_MC_IMAGE"
+  write_compose_env_value KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE "$KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE"
+  log_info "using mainland China mirrors for this run; committed config files and .env.local are not modified"
+}
+
+write_compose_env_value() {
+  local key="$1"
+  local value="$2"
+  local tmp_file
+  [[ -n "${CONFIG_COMPOSE_ENV_FILE:-}" && -f "$CONFIG_COMPOSE_ENV_FILE" ]] || return 0
+  tmp_file="$(mktemp "$CONFIG_COMPOSE_ENV_FILE.XXXXXX")"
+  awk -v key="$key" -v value="$value" '
+    BEGIN { written = 0 }
+    index($0, key "=") == 1 {
+      print key "=" value
+      written = 1
+      next
+    }
+    { print }
+    END {
+      if (!written) {
+        print key "=" value
+      }
+    }
+  ' "$CONFIG_COMPOSE_ENV_FILE" >"$tmp_file"
+  mv "$tmp_file" "$CONFIG_COMPOSE_ENV_FILE"
 }
 
 load_config() {
@@ -236,9 +265,9 @@ check_start_prerequisites() {
     require_file "$TOOLS_DIR/goose" "Run ./scripts/local/check.sh for setup suggestions." || return 1
   fi
   if (( ! INFRA_ONLY )); then
-    local item name binary
+    local item name binary dir
     for item in "${GO_SERVICES[@]}"; do
-      IFS='|' read -r name binary <<<"$item"
+      IFS='|' read -r name binary dir <<<"$item"
       require_file "$BIN_DIR/$binary" "Run ./scripts/local/check.sh for the manual build command." || return 1
     done
   fi
@@ -538,10 +567,10 @@ start_runtime() {
 
 start_backend() {
   configure_app_version_current_sha
-  local item name binary
+  local item name binary dir
   for item in "${GO_SERVICES[@]}"; do
-    IFS='|' read -r name binary <<<"$item"
-    start_process "$name" "$ROOT_DIR" "$BIN_DIR/$binary"
+    IFS='|' read -r name binary dir <<<"$item"
+    start_process "$name" "$dir" "$BIN_DIR/$binary"
   done
 }
 
@@ -549,11 +578,11 @@ parse_args "$@"
 trap on_exit EXIT
 
 log_info "starting local stack from prepared local environment"
-if (( CHINA_MIRRORS )); then
-  apply_china_sources
-fi
 run_step "checking prerequisites" check_start_prerequisites
 run_step "loading local config" load_config
+if (( CHINA_MIRRORS )); then
+  run_step "applying mainland China image rewrites" apply_china_sources
+fi
 align_host_run_ai_gateway_models
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 

@@ -202,6 +202,7 @@ REQUIRED_START_TOKENS = [
     "startup status",
     "host process groups",
     "compose_cmd ps",
+    "write_compose_env_value",
     "align_host_run_ai_gateway_models",
     "AI_GATEWAY_LOCAL_CHAT_MODEL for host-run QA",
     "AI_GATEWAY_LOCAL_CHAT_MODEL for host-run Document",

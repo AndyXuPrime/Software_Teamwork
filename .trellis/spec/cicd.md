@@ -956,6 +956,9 @@ Runtime rules:
   or forced by runtime scripts in official-default mode. Mainland China runtime
   model download mirrors are explicit through
   `start.sh --china` or local untracked env overrides.
+- `start.sh --china` should apply Docker image rewrites after config rendering
+  and update the generated compose env file used for that run, while leaving
+  committed config and `.env.local` unchanged.
 - Keep `GOPROXY` and `GOSUMDB` in `config/base.yaml` as the default host-run
   Go module proxy/checksum settings, using official upstream values by default.
   Mainland China mirror usage must be explicit through `check.sh --china`
