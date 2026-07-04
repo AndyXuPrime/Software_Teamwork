@@ -1222,7 +1222,8 @@ Implemented knowledge-backed report generation, report event streaming, report m
 
 | Hash | Message |
 |------|---------|
-| `f0d20e90` | (see git log) |
+| `efb8f2cf` | feat(report): add knowledge-backed streaming generation |
+| `1cbc3bc4` | fix(report): align gateway contracts after rebase |
 
 ### Testing
 
