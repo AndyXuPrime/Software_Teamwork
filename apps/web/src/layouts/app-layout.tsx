@@ -190,7 +190,7 @@ export function AppLayout({ children }: PropsWithChildren) {
           {visibleNavItems.some((item) => pathname.startsWith(item.to)) && (
             <div
               aria-hidden
-              className="absolute top-1 h-[calc(100%-8px)] rounded-md border border-border/80 bg-muted/80 shadow-inner transition-all duration-300 ease-out"
+              className="absolute top-1 h-[calc(100%-8px)] rounded-md bg-background shadow-sm transition-all duration-300 ease-out"
               style={{ left: sliderStyle.left, width: sliderStyle.width }}
             />
           )}

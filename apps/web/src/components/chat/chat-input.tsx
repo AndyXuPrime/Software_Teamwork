@@ -129,8 +129,8 @@ export default function ChatInput({
     <div
       className={cn(
         isLarge
-          ? 'rounded-[1.75rem] border border-primary/20 bg-background px-5 py-4 shadow-[0_18px_45px_-28px_rgba(15,23,42,0.55),0_6px_18px_-12px_rgba(15,118,110,0.20)] focus-within:border-primary/30 focus-within:shadow-[0_22px_58px_-30px_rgba(15,23,42,0.62),0_8px_24px_-14px_rgba(15,118,110,0.24)] focus-within:ring-4 focus-within:ring-primary/10'
-          : 'rounded-2xl border border-border/40 bg-background px-4 py-3 shadow-[0_2px_12px_-1px_rgba(0,0,0,0.07),0_1px_3px_-1px_rgba(0,0,0,0.04)] focus-within:border-primary/30 focus-within:shadow-[0_2px_12px_-1px_rgba(0,0,0,0.10),0_1px_3px_-1px_rgba(0,0,0,0.06)] focus-within:ring-2 focus-within:ring-primary/10',
+          ? 'rounded-2xl border border-border/50 bg-card px-5 py-4 shadow-[0_4px_24px_-2px_rgba(0,0,0,0.10),0_1px_4px_-1px_rgba(0,0,0,0.05)] focus-within:border-primary/50 focus-within:shadow-[0_4px_24px_-2px_rgba(0,0,0,0.14),0_1px_4px_-1px_rgba(0,0,0,0.07)] focus-within:ring-2 focus-within:ring-primary/10'
+          : 'rounded-xl border border-border/40 bg-card px-4 py-3 shadow-[0_2px_12px_-1px_rgba(0,0,0,0.07),0_1px_3px_-1px_rgba(0,0,0,0.04)] focus-within:border-primary/40 focus-within:shadow-[0_2px_12px_-1px_rgba(0,0,0,0.10),0_1px_3px_-1px_rgba(0,0,0,0.06)] focus-within:ring-2 focus-within:ring-primary/10',
         'shrink-0',
         className,
       )}
@@ -169,14 +169,11 @@ export default function ChatInput({
             type="button"
             onClick={handleAttachClick}
             disabled={attachDisabled}
-            className={cn(
-              'relative shrink-0 self-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40',
-              isLarge ? 'p-2.5' : 'p-2',
-            )}
+            className="relative shrink-0 self-center rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="添加附件"
             title={disableAttach ? '请先创建对话' : '添加附件'}
           >
-            <Paperclip className={isLarge ? 'size-5' : 'size-4'} />
+            <Paperclip className="size-4" />
             {attachmentCount > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[9px] font-medium text-primary-foreground">
                 {attachmentCount > 9 ? '9+' : attachmentCount}
@@ -189,7 +186,7 @@ export default function ChatInput({
             size="icon"
             onClick={onStop}
             className={cn(
-              'shrink-0 rounded-full bg-destructive text-destructive-foreground transition-all duration-200 hover:bg-destructive/90 hover:shadow-md active:scale-95',
+              'shrink-0 rounded-full bg-destructive text-destructive-foreground transition-all duration-200 hover:bg-destructive/90 hover:scale-110 hover:shadow-md active:scale-90',
               isLarge && 'size-11',
             )}
             aria-label="停止生成"
@@ -202,7 +199,7 @@ export default function ChatInput({
             onClick={handleSend}
             disabled={!canSend}
             className={cn(
-              'shrink-0 rounded-full bg-primary text-primary-foreground transition-all duration-200 hover:bg-primary/90 hover:shadow-md active:scale-95',
+              'shrink-0 rounded-full bg-primary text-primary-foreground transition-all duration-200 hover:bg-primary/90 hover:scale-110 hover:shadow-md active:scale-90',
               isLarge && 'size-11',
             )}
             aria-label="发送消息"
