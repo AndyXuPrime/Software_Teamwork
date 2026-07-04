@@ -35,6 +35,8 @@ class FulltextQueryer(QueryBase):
             "important_kwd^30",
             "important_tks^20",
             "question_tks^20",
+            "section_title_tks^12",
+            "section_path_tks^8",
             "content_ltks^2",
             "content_sm_ltks",
         ]

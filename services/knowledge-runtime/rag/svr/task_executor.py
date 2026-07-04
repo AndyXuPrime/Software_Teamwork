@@ -83,6 +83,7 @@ from common.versions import get_runtime_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, email, tag
 from rag.nlp import search, rag_tokenizer, add_positions
+from rag.nlp.retrieval_context import populate_section_token_fields, select_embedding_text
 from rag.raptor import (
     RAPTOR_TREE_BUILDER,
 )
@@ -361,6 +362,7 @@ async def build_chunks(task, progress_callback):
             d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
+            populate_section_token_fields(d)
 
             if d.get("img_id"):
                 docs.append(d)
@@ -668,11 +670,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     tts, cnts, indexable_docs = [], [], []
     skipped_empty_chunks = 0
     for d in docs:
-        c = d.get("embedding_text") or ""
-        if not c:
-            c = "\n".join(d.get("question_kwd", []))
-        if not c:
-            c = d["content_with_weight"]
+        c = select_embedding_text(d)
         c = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", c)
         if not c.strip():
             skipped_empty_chunks += 1
@@ -1082,6 +1080,9 @@ async def insert_chunks(task_id, task_scope_id, task_dataset_id, chunks, progres
         chunks: List of chunk dictionaries to insert
         progress_callback: Callback function for progress updates
     """
+    for ck in chunks:
+        populate_section_token_fields(ck)
+
     mothers = []
     mother_ids = set([])
     for ck in chunks:
@@ -1099,7 +1100,26 @@ async def insert_chunks(task_id, task_scope_id, task_dataset_id, chunks, progres
         mom_ck["available_int"] = 0
         flds = list(mom_ck.keys())
         for fld in flds:
-            if fld not in ["id", "content_with_weight", "doc_id", "docnm_kwd", "kb_id", "available_int", "position_int", "create_timestamp_flt", "page_num_int", "top_int"]:
+            if fld not in [
+                "id",
+                "content_with_weight",
+                "doc_id",
+                "docnm_kwd",
+                "kb_id",
+                "available_int",
+                "position_int",
+                "create_timestamp_flt",
+                "page_num_int",
+                "top_int",
+                "section_path",
+                "section_title",
+                "section_level",
+                "section_title_tks",
+                "section_path_tks",
+                "block_type",
+                "source_block_ids",
+                "repair_status",
+            ]:
                 del mom_ck[fld]
         mothers.append(mom_ck)
 

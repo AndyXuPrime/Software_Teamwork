@@ -106,7 +106,49 @@ def _empty_search_result(labels=None):
         "chunks": [],
         "doc_aggs": [],
         "labels": labels or {},
+        "context_packs": [],
+        "trace": {
+            "retrieval_mode": "legacy_hybrid",
+            "rewrite_enabled": True,
+            "intent": "fact_lookup",
+            "candidate_count": 0,
+            "returned_count": 0,
+            "rerank_applied": False,
+            "rerank_fallback": False,
+            "section_aware_enabled": False,
+        },
     }
+
+
+def _llm_query_planning_enabled(req: dict) -> bool:
+    raw = req.get("llm_query_planner", os.environ.get("KNOWLEDGE_RUNTIME_ENABLE_LLM_QUERY_PLANNER", ""))
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+async def _build_retrieval_plan(question: str, scope_id: str, req: dict, dataset_count: int, has_doc_filter: bool):
+    from api.db.joint_services.runtime_model_service import get_runtime_default_model_by_type
+    from api.db.services.llm_service import LLMBundle
+    from rag.nlp.retrieval_planner import RuntimeLLMQueryPlanner, async_plan_query
+
+    use_llm = _llm_query_planning_enabled(req)
+    metadata = {
+        "dataset_count": dataset_count,
+        "has_metadata_filter": bool(req.get("meta_data_filter")),
+        "has_doc_filter": has_doc_filter,
+    }
+    if not use_llm:
+        return await async_plan_query(question, use_llm=False, metadata=metadata)
+
+    try:
+        chat_model_config = get_runtime_default_model_by_type(scope_id, LLMType.CHAT)
+        with LLMBundle(scope_id, chat_model_config) as chat_mdl:
+            planner = RuntimeLLMQueryPlanner(chat_mdl)
+            return await async_plan_query(question, llm_planner=planner, use_llm=True, metadata=metadata)
+    except Exception:
+        logging.warning("LLM query planner unavailable; using deterministic plan: scope=%s", scope_id, exc_info=True)
+        return await async_plan_query(question, use_llm=False, metadata=metadata)
 
 
 async def create_dataset(scope_id: str, req: dict):
@@ -1060,6 +1102,7 @@ async def search(dataset_id: str, scope_id: str, req: dict):
         chat_mdl = LLMBundle(kb.scope_id, default_chat_model_config)
         _question += await keyword_extraction(chat_mdl, _question)
 
+    retrieval_plan = await _build_retrieval_plan(_question, kb.scope_id, req, 1, bool(local_doc_ids))
     labels = label_question(_question, [kb])
     ranks = await settings.retriever.retrieval(
         _question,
@@ -1075,6 +1118,7 @@ async def search(dataset_id: str, scope_id: str, req: dict):
         rerank_mdl=rerank_mdl,
         rank_feature=labels,
         trace_id=None,
+        retrieval_plan=retrieval_plan.as_dict(),
     )
 
     if use_kg:
@@ -1087,6 +1131,7 @@ async def search(dataset_id: str, scope_id: str, req: dict):
             logging.warning("search KG retrieval failed: dataset=%s scope=%s", dataset_id, scope_id, exc_info=True)
     ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], scope_ids)
     ranks["total"] = len(ranks["chunks"])
+    ranks = settings.retriever.attach_context_packs(ranks, retrieval_plan.as_dict())
 
     for c in ranks["chunks"]:
         c.pop("vector", None)
@@ -1392,6 +1437,7 @@ async def search_datasets(scope_id: str, req: dict):
         chat_mdl = LLMBundle(kb.scope_id, default_chat_model_config)
         _question += await keyword_extraction(chat_mdl, _question)
 
+    retrieval_plan = await _build_retrieval_plan(_question, kb.scope_id, req, len(kbs), bool(local_doc_ids))
     labels = label_question(_question, kbs)
     try:
         ranks = await settings.retriever.retrieval(
@@ -1408,6 +1454,7 @@ async def search_datasets(scope_id: str, req: dict):
             rerank_mdl=rerank_mdl,
             rank_feature=labels,
             trace_id=None,
+            retrieval_plan=retrieval_plan.as_dict(),
         )
     except Exception as exc:
         if _is_missing_search_index_error(exc):
@@ -1425,6 +1472,7 @@ async def search_datasets(scope_id: str, req: dict):
             logging.warning("search_datasets KG retrieval failed: datasets=%s scope=%s", kb_ids, scope_id, exc_info=True)
     ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], scope_ids)
     ranks["total"] = len(ranks["chunks"])
+    ranks = settings.retriever.attach_context_packs(ranks, retrieval_plan.as_dict())
 
     for c in ranks["chunks"]:
         c.pop("vector", None)

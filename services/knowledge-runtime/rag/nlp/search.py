@@ -29,10 +29,49 @@ from common.constants import PAGERANK_FLD, TAG_FLD
 from common.tag_feature_utils import parse_tag_features
 from common import settings
 from api.utils.runtime_scope import runtime_index_id
+from rag.nlp.retrieval_context import assemble_context_packs, prepare_rerank_document
 
 from common.misc_utils import thread_pool_exec
 
 def index_name(_uid=None): return f"ragflow_{runtime_index_id()}"
+
+
+SECTION_METADATA_FIELDS = [
+    "section_path",
+    "section_title",
+    "section_level",
+    "block_type",
+    "source_block_ids",
+    "repair_status",
+]
+SECTION_SEARCH_FIELDS = [*SECTION_METADATA_FIELDS, "embedding_text"]
+SECTION_TOKEN_FIELDS = ["section_title_tks", "section_path_tks"]
+DEFAULT_SEARCH_FIELDS = [
+    "docnm_kwd",
+    "content_ltks",
+    "kb_id",
+    "img_id",
+    "title_tks",
+    "important_kwd",
+    "position_int",
+    "doc_id",
+    "chunk_order_int",
+    "page_num_int",
+    "top_int",
+    "create_timestamp_flt",
+    "knowledge_graph_kwd",
+    "question_kwd",
+    "question_tks",
+    "doc_type_kwd",
+    "available_int",
+    "content_with_weight",
+    "mom_id",
+    PAGERANK_FLD,
+    TAG_FLD,
+    "row_id()",
+    *SECTION_SEARCH_FIELDS,
+    *SECTION_TOKEN_FIELDS,
+]
 
 
 class Dealer:
@@ -147,11 +186,7 @@ class Dealer:
         ps = int(req.get("size", topk))
         offset, limit = pg * ps, ps
 
-        src = req.get("fields",
-                      ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
-                       "doc_id", "chunk_order_int", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
-                       "question_kwd", "question_tks", "doc_type_kwd",
-                       "available_int", "content_with_weight", "mom_id", PAGERANK_FLD, TAG_FLD, "row_id()"])
+        src = req.get("fields", list(DEFAULT_SEARCH_FIELDS))
         kwds = set([])
 
         qst = req.get("question", "")
@@ -365,6 +400,188 @@ class Dealer:
                 rank_fea.append(nor / np.sqrt(denor) / q_denor)
         return np.array(rank_fea) * 10. + pageranks
 
+    @staticmethod
+    def _text_for_match(value):
+        if value is None:
+            return ""
+        if isinstance(value, list):
+            return " ".join(str(item) for item in value if item is not None)
+        if isinstance(value, dict):
+            return json.dumps(value, ensure_ascii=False, sort_keys=True)
+        return str(value)
+
+    @staticmethod
+    def _plan_weights(retrieval_plan):
+        if not isinstance(retrieval_plan, dict):
+            return {}
+        weights = retrieval_plan.get("weights") or {}
+        return weights if isinstance(weights, dict) else {}
+
+    @staticmethod
+    def _plan_intent(retrieval_plan):
+        if not isinstance(retrieval_plan, dict):
+            return ""
+        return str(retrieval_plan.get("intent") or "")
+
+    @staticmethod
+    def _plan_query_tokens(retrieval_plan):
+        if not isinstance(retrieval_plan, dict):
+            return []
+        queries = retrieval_plan.get("expanded_queries") or []
+        if not isinstance(queries, list):
+            queries = []
+        normalized = retrieval_plan.get("normalized_query")
+        if isinstance(normalized, str):
+            queries.append(normalized)
+        tokens = []
+        seen = set()
+        for query_text in queries:
+            text = query_text.lower()
+            for token in re.findall(r"[a-z0-9._/-]+|[\u4e00-\u9fff]+", text):
+                if len(token) < 2 or token in seen:
+                    continue
+                seen.add(token)
+                tokens.append(token)
+        return tokens[:32]
+
+    @staticmethod
+    def _plan_required_tokens(retrieval_plan):
+        if not isinstance(retrieval_plan, dict):
+            return []
+        filters = retrieval_plan.get("filters") or {}
+        if not isinstance(filters, dict):
+            return []
+        tokens = filters.get("required_tokens") or []
+        if not isinstance(tokens, list):
+            return []
+        return [str(token) for token in tokens if str(token).strip()][:16]
+
+    def _section_match_scores(self, retrieval_plan, search_res):
+        weights = self._plan_weights(retrieval_plan)
+        section_weight = float(weights.get("section", 0.0) or 0.0)
+        if section_weight <= 0 or not search_res.ids:
+            return np.zeros(len(search_res.ids), dtype=np.float64)
+        query_tokens = self._plan_query_tokens(retrieval_plan)
+        if not query_tokens:
+            return np.zeros(len(search_res.ids), dtype=np.float64)
+
+        scores = []
+        for chunk_id in search_res.ids:
+            chunk = search_res.field[chunk_id]
+            section_text = " ".join(
+                self._text_for_match(chunk.get(field))
+                for field in ("section_title", "section_path", "section_title_tks", "section_path_tks")
+            ).lower()
+            if not section_text.strip():
+                scores.append(0.0)
+                continue
+            matched = sum(1 for token in query_tokens if token in section_text)
+            scores.append(section_weight * min(1.0, matched / max(1, min(len(query_tokens), 8))))
+        return np.array(scores, dtype=np.float64)
+
+    def _exact_match_scores(self, retrieval_plan, search_res):
+        weights = self._plan_weights(retrieval_plan)
+        exact_weight = float(weights.get("exact", 0.0) or 0.0)
+        required_tokens = self._plan_required_tokens(retrieval_plan)
+        if exact_weight <= 0 or not required_tokens or not search_res.ids:
+            return np.zeros(len(search_res.ids), dtype=np.float64)
+
+        scores = []
+        for chunk_id in search_res.ids:
+            chunk = search_res.field[chunk_id]
+            haystack = " ".join(
+                self._text_for_match(chunk.get(field))
+                for field in (
+                    "content_with_weight",
+                    "content_ltks",
+                    "section_title",
+                    "section_path",
+                    "docnm_kwd",
+                )
+            ).lower()
+            matched = sum(1 for token in required_tokens if token.lower().replace(" ", "") in haystack.replace(" ", ""))
+            scores.append(exact_weight * min(1.0, matched / len(required_tokens)))
+        return np.array(scores, dtype=np.float64)
+
+    def _intent_boost_scores(self, retrieval_plan, search_res):
+        intent = self._plan_intent(retrieval_plan)
+        if not intent or not search_res.ids:
+            return np.zeros(len(search_res.ids), dtype=np.float64)
+
+        scores = []
+        for chunk_id in search_res.ids:
+            chunk = search_res.field[chunk_id]
+            block_type = self._text_for_match(chunk.get("block_type")).lower()
+            boost = 0.0
+            if intent == "table_lookup" and block_type in {"table", "formula"}:
+                boost = 0.08
+            elif intent == "procedure_lookup" and block_type in {"list", "paragraph"}:
+                boost = 0.03
+            elif intent == "citation_lookup" and (chunk.get("position_int") or chunk.get("source_block_ids")):
+                boost = 0.03
+            scores.append(boost)
+        return np.array(scores, dtype=np.float64)
+
+    def _repair_status_scores(self, search_res):
+        if not search_res.ids:
+            return np.zeros(0, dtype=np.float64)
+        scores = []
+        for chunk_id in search_res.ids:
+            status = self._text_for_match(search_res.field[chunk_id].get("repair_status")).lower()
+            if status == "repair_rejected":
+                scores.append(-0.05)
+            elif status == "repair_skipped":
+                scores.append(-0.02)
+            else:
+                scores.append(0.0)
+        return np.array(scores, dtype=np.float64)
+
+    def _candidate_extra_scores(self, retrieval_plan, search_res):
+        return (
+            self._section_match_scores(retrieval_plan, search_res)
+            + self._exact_match_scores(retrieval_plan, search_res)
+            + self._intent_boost_scores(retrieval_plan, search_res)
+            + self._repair_status_scores(search_res)
+        )
+
+    @staticmethod
+    def _copy_section_metadata(source, target):
+        for field in SECTION_METADATA_FIELDS:
+            value = source.get(field)
+            if value is None or value == "":
+                continue
+            target[field] = value
+
+    def _rerank_document_text(self, chunk, token_text):
+        return remove_redundant_spaces(prepare_rerank_document(chunk, token_text))
+
+    def _apply_same_section_saturation(self, indices, search_res, retrieval_plan, page_size):
+        intent = self._plan_intent(retrieval_plan)
+        if intent in {"", "section_lookup"}:
+            return indices
+        if not indices:
+            return indices
+        max_per_section = 1 if intent == "compare_lookup" else max(2, page_size // 3)
+        accepted = []
+        overflow = []
+        counts = defaultdict(int)
+        has_section = False
+        for idx in indices:
+            chunk = search_res.field[search_res.ids[idx]]
+            section_key = self._text_for_match(chunk.get("section_path") or chunk.get("section_title")).strip()
+            if not section_key:
+                accepted.append(idx)
+                continue
+            has_section = True
+            if counts[section_key] >= max_per_section:
+                overflow.append(idx)
+                continue
+            counts[section_key] += 1
+            accepted.append(idx)
+        if not has_section:
+            return indices
+        return accepted + overflow
+
     async def _knn_scores(self, sres: "Dealer.SearchResult",
                           idx_names: str | list[str],
                           kb_ids: list[str]) -> dict[str, float]:
@@ -444,7 +661,8 @@ class Dealer:
     def rerank_with_knn(self, sres, query, knn_scores: dict[str, float],
                         tkweight=0.3, vtweight=0.7,
                         cfield="content_ltks",
-                        rank_feature: dict | None = None):
+                        rank_feature: dict | None = None,
+                        retrieval_plan: dict | None = None):
         """
         Merge ES-side KNN cosine similarity with locally computed term
         similarity using the user-configured weights. Replaces the older
@@ -469,12 +687,14 @@ class Dealer:
         vtsim = np.array([knn_scores.get(chunk_id, 0.0) for chunk_id in sres.ids],
                          dtype=np.float64)
         rank_fea = self._rank_feature_scores(rank_feature, sres)
-        sim = tkweight * tksim + vtweight * vtsim + rank_fea
+        retrieval_fea = self._candidate_extra_scores(retrieval_plan, sres)
+        sim = tkweight * tksim + vtweight * vtsim + rank_fea + retrieval_fea
         return sim, tksim, vtsim
 
     def rerank(self, sres, query, tkweight=0.3,
                vtweight=0.7, cfield="content_ltks",
-               rank_feature: dict | None = None
+               rank_feature: dict | None = None,
+               retrieval_plan: dict | None = None
                ):
         _, keywords = self.qryr.question(query)
         vector_size = len(sres.query_vector)
@@ -503,17 +723,19 @@ class Dealer:
 
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
+        retrieval_fea = self._candidate_extra_scores(retrieval_plan, sres)
 
         sim, tksim, vtsim = self.qryr.hybrid_similarity(sres.query_vector,
                                                         ins_embd,
                                                         keywords,
                                                         ins_tw, tkweight, vtweight)
 
-        return sim + rank_fea, tksim, vtsim
+        return sim + rank_fea + retrieval_fea, tksim, vtsim
 
     def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3,
                         vtweight=0.7, cfield="content_ltks",
-                        rank_feature: dict | None = None):
+                        rank_feature: dict | None = None,
+                        retrieval_plan: dict | None = None):
         _, keywords = self.qryr.question(query)
 
         for i in sres.ids:
@@ -528,7 +750,10 @@ class Dealer:
             tks = content_ltks + title_tks + important_kwd
             ins_tw.append(tks)
 
-        docs = [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw]
+        docs = [
+            self._rerank_document_text(sres.field[chunk_id], " ".join(tks))
+            for chunk_id, tks in zip(sres.ids, ins_tw)
+        ]
 
         tksim = self.qryr.token_similarity(keywords, ins_tw)
         # rerank_mdl.similarity() returns scores normalized to [0, 1] for every
@@ -537,8 +762,9 @@ class Dealer:
         vtsim, _ = rerank_mdl.similarity(query, docs)
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
+        retrieval_fea = self._candidate_extra_scores(retrieval_plan, sres)
 
-        return tkweight * np.array(tksim) + vtweight * vtsim + rank_fea, tksim, vtsim
+        return tkweight * np.array(tksim) + vtweight * vtsim + rank_fea + retrieval_fea, tksim, vtsim
 
     def hybrid_similarity(self, ans_embd, ins_embd, ans, inst):
         return self.qryr.hybrid_similarity(ans_embd,
@@ -588,6 +814,7 @@ class Dealer:
             highlight=False,
             rank_feature: dict | None = {PAGERANK_FLD: 10},
             trace_id=None,
+            retrieval_plan: dict | None = None,
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
@@ -623,6 +850,7 @@ class Dealer:
         # Temporary retrieval-side guard: prune chunks whose parent document no
         # longer exists before reranking and returning results.
         sres = await self._prune_deleted_chunks(sres)
+        ranks["candidate_count"] = int(sres.total)
         if sres.total == 0:
             ranks["doc_aggs"] = []
             return ranks
@@ -639,22 +867,40 @@ class Dealer:
             bool(rerank_mdl),
         )
 
+        rerank_applied = False
+        rerank_fallback = False
         if rerank_mdl and sres.total > 0:
-            sim, tsim, vsim = self.rerank_by_model(
-                rerank_mdl,
-                sres,
-                question,
-                term_similarity_weight,
-                vector_similarity_weight,
-                rank_feature=rank_feature,
-            )
-        else:
+            try:
+                sim, tsim, vsim = self.rerank_by_model(
+                    rerank_mdl,
+                    sres,
+                    question,
+                    term_similarity_weight,
+                    vector_similarity_weight,
+                    rank_feature=rank_feature,
+                    retrieval_plan=retrieval_plan,
+                )
+                rerank_applied = True
+            except Exception:
+                rerank_fallback = True
+                logging.warning(
+                    "Model rerank failed; falling back to deterministic rank: trace_id=%s kb_count=%s candidate_count=%s",
+                    trace_id,
+                    len(kb_ids),
+                    sres.total,
+                    exc_info=True,
+                )
+
+        if not rerank_applied:
             if settings.DOC_ENGINE_INFINITY:
                 # Don't need rerank here since Infinity normalizes each way score before fusion.
                 sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
                 sim = [s if s is not None else 0.0 for s in sim]
                 tsim = sim
                 vsim = sim
+                if retrieval_plan:
+                    extra = self._candidate_extra_scores(retrieval_plan, sres)
+                    sim = list(np.array(sim, dtype=np.float64) + extra)
             elif settings.DOC_ENGINE_OCEANBASE:
                 # OceanBase still returns chunk vectors in the result; use
                 # the historical local rerank that depends on them.
@@ -664,6 +910,7 @@ class Dealer:
                     term_similarity_weight,
                     vector_similarity_weight,
                     rank_feature=rank_feature,
+                    retrieval_plan=retrieval_plan,
                 )
             else:
                 # ES path: ask ES for the clean cosine score via a second
@@ -678,7 +925,10 @@ class Dealer:
                     term_similarity_weight,
                     vector_similarity_weight,
                     rank_feature=rank_feature,
+                    retrieval_plan=retrieval_plan,
                 )
+        ranks["rerank_applied"] = rerank_applied
+        ranks["rerank_fallback"] = rerank_fallback
 
         sim_np = np.array(sim, dtype=np.float64)
         if sim_np.size == 0:
@@ -692,6 +942,7 @@ class Dealer:
         post_threshold = 0.0 if vector_similarity_weight <= 0 else similarity_threshold
 
         valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= post_threshold]
+        valid_idx = self._apply_same_section_saturation(valid_idx, sres, retrieval_plan, page_size)
         filtered_count = len(valid_idx)
         ranks["total"] = int(filtered_count)
 
@@ -706,6 +957,8 @@ class Dealer:
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
+        section_scores = self._section_match_scores(retrieval_plan, sres)
+        exact_scores = self._exact_match_scores(retrieval_plan, sres)
 
         for i in page_idx:
             id = sres.ids[i]
@@ -721,8 +974,8 @@ class Dealer:
             # Dealer.fetch_chunk_vectors when needed.
             d = {
                 "chunk_id": id,
-                "content_ltks": chunk["content_ltks"],
-                "content_with_weight": chunk["content_with_weight"],
+                "content_ltks": chunk.get("content_ltks", ""),
+                "content_with_weight": chunk.get("content_with_weight", ""),
                 "doc_id": did,
                 "docnm_kwd": dnm,
                 "kb_id": chunk["kb_id"],
@@ -732,12 +985,21 @@ class Dealer:
                 "similarity": float(sim_np[i]),
                 "vector_similarity": float(vsim[i]),
                 "term_similarity": float(tsim[i]),
+                "dense_score": float(vsim[i]),
+                "lexical_score": float(tsim[i]),
+                "section_score": float(section_scores[i]),
+                "exact_score": float(exact_scores[i]),
+                "base_score": float(sim_np[i]),
                 "vector": chunk.get(vector_column, zero_vector),
                 "positions": position_int,
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),
                 "mom_id": chunk.get("mom_id", ""),
                 "row_id": chunk.get("row_id()"),
+                "chunk_order_int": chunk.get("chunk_order_int"),
+                "page_num_int": chunk.get("page_num_int"),
+                "top_int": chunk.get("top_int"),
             }
+            self._copy_section_metadata(chunk, d)
             if highlight and sres.highlight:
                 if id in sres.highlight:
                     d["highlight"] = remove_redundant_spaces(sres.highlight[id])
@@ -769,6 +1031,32 @@ class Dealer:
         else:
             ranks["doc_aggs"] = []
 
+        return ranks
+
+    def attach_context_packs(self, ranks: dict, retrieval_plan: dict | None = None):
+        chunks = ranks.get("chunks") or []
+        context_packs = assemble_context_packs(chunks, retrieval_plan)
+        for chunk, context_pack in zip(chunks, context_packs):
+            chunk["context_pack"] = context_pack
+            primary = context_pack.get("primary_chunk") or {}
+            if "score_components" in primary:
+                chunk["score_components"] = primary["score_components"]
+        ranks["context_packs"] = context_packs
+        ranks["trace"] = {
+            "retrieval_mode": "section_aware_hybrid" if any(
+                chunk.get("section_path") or chunk.get("section_title") for chunk in chunks
+            ) else "legacy_hybrid",
+            "rewrite_enabled": True,
+            "intent": self._plan_intent(retrieval_plan) or "fact_lookup",
+            "candidate_count": int(ranks.get("candidate_count") or len(chunks)),
+            "returned_count": len(chunks),
+            "rerank_applied": bool(ranks.get("rerank_applied")),
+            "rerank_fallback": bool(ranks.get("rerank_fallback")),
+            "section_aware_enabled": any(
+                chunk.get("section_path") or chunk.get("section_title") or chunk.get("section_score", 0) > 0
+                for chunk in chunks
+            ),
+        }
         return ranks
 
     def sql_retrieval(self, sql, fetch_size=128, format="json"):
@@ -948,7 +1236,7 @@ class Dealer:
 
         vector_size = 1024
         for id, cks in mom_chunks.items():
-            chunk = self.dataStore.get(id, idx_nms[0], [ck["kb_id"] for ck in cks])
+            chunk = self.dataStore.get(id, idx_nms[0], list(dict.fromkeys(ck["kb_id"] for ck in cks)))
             if chunk is None:
                 logging.warning(
                     "Parent chunk '%s' not found in the index; falling back to %d child chunk(s).",
@@ -972,6 +1260,26 @@ class Dealer:
                 "positions": chunk.get("position_int", []),
                 "doc_type_kwd": chunk.get("doc_type_kwd", "")
             }
+            self._copy_section_metadata(chunk, d)
+            for field in SECTION_METADATA_FIELDS:
+                if d.get(field) is not None and d.get(field) != "":
+                    continue
+                if field == "source_block_ids":
+                    merged = []
+                    for child in cks:
+                        source_ids = child.get(field)
+                        if isinstance(source_ids, list):
+                            merged.extend(str(item) for item in source_ids if item)
+                        elif source_ids:
+                            merged.append(str(source_ids))
+                    if merged:
+                        d[field] = list(dict.fromkeys(merged))
+                    continue
+                for child in cks:
+                    value = child.get(field)
+                    if value is not None and value != "":
+                        d[field] = value
+                        break
             for k in cks[0].keys():
                 if k[-4:] == "_vec":
                     d["vector"] = cks[0][k]

@@ -39,6 +39,7 @@ from common.constants import PAGERANK_FLD, TAG_FLD
 from common.misc_utils import thread_pool_exec
 from common.float_utils import normalize_overlapped_percent
 from rag.nlp import search
+from rag.nlp.retrieval_context import populate_section_token_fields
 from rag.svr.task_executor_refactor.task_context import TaskContext
 from rag.utils.base64_image import image2id
 
@@ -201,6 +202,7 @@ class ChunkService:
                     (chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
                 d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
                 d["create_timestamp_flt"] = datetime.now().timestamp()
+                populate_section_token_fields(d)
 
                 if d.get("img_id"):
                     docs.append(d)
@@ -266,6 +268,9 @@ class ChunkService:
         """
         doc_bulk_size = doc_bulk_size or settings.DOC_BULK_SIZE
 
+        for chunk in chunks:
+            populate_section_token_fields(chunk)
+
         # Create mother chunks (summary chunks)
         mothers = self._create_mother_chunks(chunks)
 
@@ -306,7 +311,10 @@ class ChunkService:
             allowed_fields = [
                 "id", "content_with_weight", "doc_id", "docnm_kwd",
                 "kb_id", "available_int", "position_int",
-                "create_timestamp_flt", "page_num_int", "top_int"
+                "create_timestamp_flt", "page_num_int", "top_int",
+                "section_path", "section_title", "section_level",
+                "section_title_tks", "section_path_tks",
+                "block_type", "source_block_ids", "repair_status",
             ]
             for fld in list(mom_ck.keys()):
                 if fld not in allowed_fields:

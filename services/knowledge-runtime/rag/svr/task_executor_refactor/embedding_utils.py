@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from common.token_utils import truncate
+from rag.nlp.retrieval_context import select_embedding_text
 
 
 class EmbeddingUtils:
@@ -193,14 +194,7 @@ class EmbeddingUtils:
 
         Priority: embedding_text -> question_kwd (joined by newline) -> content_with_weight.
         """
-        embedding_text = doc.get("embedding_text")
-        if isinstance(embedding_text, str) and embedding_text.strip():
-            return embedding_text
-        if use_question_kwd:
-            question_kwd = doc.get("question_kwd", [])
-            if question_kwd:
-                return "\n".join(question_kwd)
-        return doc.get("content_with_weight", "")
+        return select_embedding_text(doc, use_question_kwd=use_question_kwd)
 
     @classmethod
     def _normalize_table_html(cls, text: str) -> str:

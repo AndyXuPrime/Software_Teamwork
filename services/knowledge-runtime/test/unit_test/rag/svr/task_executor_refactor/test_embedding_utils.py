@@ -52,6 +52,33 @@ class TestEmbeddingUtilsPrepareTexts:
         titles, contents = EmbeddingUtils.prepare_texts_for_embedding(docs)
         assert contents == ["Content1"]
 
+    def test_prepare_texts_with_embedding_text(self):
+        """Test text preparation uses embedding_text when questions are absent."""
+        docs = [
+            {
+                "docnm_kwd": "Title1",
+                "question_kwd": [],
+                "embedding_text": "Section / Title\nContent1",
+                "content_with_weight": "Content1",
+            },
+        ]
+        titles, contents = EmbeddingUtils.prepare_texts_for_embedding(docs)
+        assert titles == ["Title1"]
+        assert contents == ["Section / Title\nContent1"]
+
+    def test_prepare_texts_embedding_text_preempts_question_kwd(self):
+        """Test post-parse embedding_text drives dense retrieval when present."""
+        docs = [
+            {
+                "docnm_kwd": "Title1",
+                "question_kwd": ["Q1"],
+                "embedding_text": "Section / Title\nContent1",
+                "content_with_weight": "Content1",
+            },
+        ]
+        titles, contents = EmbeddingUtils.prepare_texts_for_embedding(docs)
+        assert contents == ["Section / Title\nContent1"]
+
     def test_prepare_texts_with_missing_question_kwd(self):
         """Test text preparation without question_kwd uses content."""
         docs = [

@@ -1,5 +1,6 @@
 import sys
 import types
+from pathlib import Path
 
 import numpy as np
 
@@ -32,6 +33,7 @@ sys.modules.setdefault("infinity", fake_infinity)
 sys.modules.setdefault("infinity.rag_tokenizer", fake_infinity_tokenizer)
 
 fake_query = types.ModuleType("rag.nlp.query")
+fake_rag_tokenizer = types.ModuleType("rag.nlp.rag_tokenizer")
 
 
 class _DummyFulltextQueryer:
@@ -39,7 +41,16 @@ class _DummyFulltextQueryer:
 
 
 fake_query.FulltextQueryer = _DummyFulltextQueryer
+try:
+    import rag.nlp  # noqa: F401
+except ModuleNotFoundError:
+    fake_nlp = types.ModuleType("rag.nlp")
+    fake_nlp.__path__ = [str(Path(__file__).resolve().parents[3] / "rag" / "nlp")]
+    fake_nlp.query = fake_query
+    fake_nlp.rag_tokenizer = fake_rag_tokenizer
+    sys.modules.setdefault("rag.nlp", fake_nlp)
 sys.modules.setdefault("rag.nlp.query", fake_query)
+sys.modules.setdefault("rag.nlp.rag_tokenizer", fake_rag_tokenizer)
 
 fake_settings = types.ModuleType("common.settings")
 sys.modules.setdefault("common.settings", fake_settings)

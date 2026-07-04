@@ -57,9 +57,23 @@ def test_dataset_search_returns_empty_payload_for_missing_index():
     assert 'or "not_found" in text' not in content
     assert 'or "not_found" in str(e)' not in content
     assert "return True, _empty_search_result(labels)" in content
+    assert '"context_packs": []' in content
+    assert '"retrieval_mode": "legacy_hybrid"' in content
+    assert '"section_aware_enabled": False' in content
 
     route = (_runtime_root() / "api" / "apps" / "restful_apis" / "dataset_api.py").read_text(encoding="utf-8")
     assert 'if "not_found" in str(e)' not in route
+
+
+def test_dataset_search_keeps_retrieval_context_runtime_internal():
+    source = _runtime_root() / "api" / "apps" / "services" / "dataset_api_service.py"
+    content = source.read_text(encoding="utf-8")
+
+    assert 'os.environ.get("KNOWLEDGE_RUNTIME_ENABLE_LLM_QUERY_PLANNER", "")' in content
+    assert 'req.get("llm_query_planner"' in content
+    assert "retrieval_plan.as_dict()" in content
+    assert "settings.retriever.attach_context_packs(ranks, retrieval_plan.as_dict())" in content
+    assert 'c.pop("vector", None)' in content
 
 
 def test_metadata_fallback_loader_enforces_limit_before_full_materialization():
@@ -139,8 +153,9 @@ def test_text_parser_debug_prints_are_removed():
 def test_runtime_worker_timeouts_are_enabled_in_local_defaults():
     repo_root = _repo_root()
 
-    env_example = (repo_root / "deploy" / ".env.example").read_text(encoding="utf-8")
-    assert "ENABLE_TIMEOUT_ASSERTION=1" in env_example
+    config_base = (repo_root / "config" / "base.yaml").read_text(encoding="utf-8")
+    assert "ENABLE_TIMEOUT_ASSERTION:" in config_base
+    assert 'value: "1"' in config_base
 
     runbook = (repo_root / "docs" / "runbooks" / "local-integration.md").read_text(encoding="utf-8")
     assert "ENABLE_TIMEOUT_ASSERTION=1" in runbook

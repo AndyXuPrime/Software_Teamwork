@@ -25,12 +25,14 @@ invariant and verify cross-block pagination loses nothing.
 import math
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
 # Stub the heavy / circular-importing dependencies before importing search,
 # mirroring test_rank_feature_scores.py so the module imports in isolation.
 _fake_query = types.ModuleType("rag.nlp.query")
+_fake_rag_tokenizer = types.ModuleType("rag.nlp.rag_tokenizer")
 
 
 class _DummyFulltextQueryer:
@@ -38,7 +40,16 @@ class _DummyFulltextQueryer:
 
 
 _fake_query.FulltextQueryer = _DummyFulltextQueryer
+try:
+    import rag.nlp  # noqa: F401
+except ModuleNotFoundError:
+    _fake_nlp = types.ModuleType("rag.nlp")
+    _fake_nlp.__path__ = [str(Path(__file__).resolve().parents[3] / "rag" / "nlp")]
+    _fake_nlp.query = _fake_query
+    _fake_nlp.rag_tokenizer = _fake_rag_tokenizer
+    sys.modules.setdefault("rag.nlp", _fake_nlp)
 sys.modules.setdefault("rag.nlp.query", _fake_query)
+sys.modules.setdefault("rag.nlp.rag_tokenizer", _fake_rag_tokenizer)
 sys.modules.setdefault("common.settings", types.ModuleType("common.settings"))
 
 from rag.nlp.search import Dealer  # noqa: E402

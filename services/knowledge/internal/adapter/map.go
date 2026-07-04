@@ -435,13 +435,17 @@ func mapRetrievalChunk(raw map[string]interface{}) knowledgeQueryResult {
 	if idx := optionalIntField(raw, "chunk_index", "page_num_int"); idx != nil && *idx >= 0 {
 		chunkIndex = idx
 	}
+	sectionPath := optionalStringField(raw, "section_path", "sectionPath")
+	chunkType := optionalStringField(raw, "chunk_type", "chunkType", "block_type", "blockType")
 	return knowledgeQueryResult{
 		Score:           score,
 		KnowledgeBaseID: kbID,
 		DocumentID:      docID,
 		ChunkID:         chunkID,
 		DocumentName:    docName,
+		SectionPath:     sectionPath,
 		ChunkIndex:      chunkIndex,
+		ChunkType:       chunkType,
 		ContentPreview:  content,
 	}
 }
