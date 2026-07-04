@@ -91,6 +91,7 @@ const ALLOWED_MIME_TYPES = [
 
 const FILE_ACCEPT_TYPES = [...ALLOWED_EXTENSIONS, ...ALLOWED_MIME_TYPES].join(',')
 const SUPPORTED_FILE_TYPES_TEXT = 'PDF, DOC/DOCX, PPT/PPTX, XLS/XLSX, CSV, MD, TXT, 图片'
+const UPLOAD_FILE_NAME_MAX_CHARS = 32
 
 const FILE_TYPE_LABELS_BY_EXTENSION: Record<string, string> = {
   '.pdf': 'PDF',
@@ -190,6 +191,20 @@ function formatSize(bytes?: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatUploadFileName(name: string): string {
+  const chars = Array.from(name)
+  if (chars.length <= UPLOAD_FILE_NAME_MAX_CHARS) return name
+
+  const extensionIndex = name.lastIndexOf('.')
+  const extension = extensionIndex > 0 ? name.slice(extensionIndex) : ''
+  const stem = extension ? name.slice(0, -extension.length) : name
+  const suffix = extension || chars.slice(-8).join('')
+  const prefixLength = Math.max(12, UPLOAD_FILE_NAME_MAX_CHARS - Array.from(suffix).length - 1)
+  const prefix = Array.from(stem).slice(0, prefixLength).join('')
+
+  return `${prefix}…${suffix}`
 }
 
 function formatDateTime(iso?: string | null): string {
@@ -971,7 +986,7 @@ export function KnowledgeDocumentsPage({
 
       {/* ── Upload Dialog ── */}
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="min-w-0 overflow-hidden sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>上传文档</DialogTitle>
             <DialogDescription>
@@ -982,7 +997,7 @@ export function KnowledgeDocumentsPage({
           <div className="space-y-4">
             {/* Drag-and-drop zone */}
             <div
-              className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-all duration-200 ${
+              className={`relative flex min-w-0 flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-all duration-200 ${
                 dragOver
                   ? 'border-primary bg-primary/5 scale-[1.02]'
                   : uploadItems.length > 0
@@ -1004,7 +1019,7 @@ export function KnowledgeDocumentsPage({
                 </div>
               )}
               {uploadItems.length > 0 ? (
-                <div className="w-full space-y-3">
+                <div className="w-full min-w-0 space-y-3">
                   <div className="text-center">
                     <FileText aria-hidden="true" className="mx-auto mb-2 size-8 text-emerald-500" />
                     <p className="text-sm font-medium text-foreground">
@@ -1014,19 +1029,22 @@ export function KnowledgeDocumentsPage({
                       单次最多 {MAX_BATCH_FILES} 个文件
                     </p>
                   </div>
-                  <div className="max-h-44 space-y-2 overflow-y-auto rounded-md border border-border bg-background/70 p-2">
+                  <div className="max-h-44 min-w-0 space-y-2 overflow-y-auto rounded-md border border-border bg-background/70 p-2">
                     {uploadItems.map((item) => (
                       <div
                         key={item.id}
-                        className="flex min-h-12 items-center gap-2 rounded-md px-2 py-1.5 text-left"
+                        className="grid min-h-12 min-w-0 grid-cols-[1rem_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left"
                       >
                         <FileText
                           aria-hidden="true"
                           className="size-4 shrink-0 text-muted-foreground"
                         />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-foreground">
-                            {item.file.name}
+                          <p
+                            className="truncate text-sm font-medium text-foreground"
+                            title={item.file.name}
+                          >
+                            {formatUploadFileName(item.file.name)}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {formatSize(item.file.size)}

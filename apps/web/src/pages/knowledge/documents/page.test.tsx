@@ -359,6 +359,22 @@ describe('KnowledgeDocumentsPage upload interactions', () => {
     expect(within(dialog).getByRole('button', { name: /^上传$/ })).toBeEnabled()
   })
 
+  it('shortens long upload filenames without rendering the full visible name', async () => {
+    const { user } = renderDocumentsPage()
+
+    await user.click(screen.getByRole('button', { name: /上传文档/ }))
+    const dialog = getDialogContent()
+
+    const longName = 'DB31-767-2013-super-long-power-standard-document.pdf'
+    selectFile(new File(['manual'], longName, { type: 'application/pdf' }))
+
+    const shortenedName = await within(dialog).findByText(/…\.pdf$/)
+    expect(shortenedName).toBeInTheDocument()
+    expect(shortenedName).toHaveAttribute('title', longName)
+    expect(within(dialog).queryByText(longName)).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /^上传$/ })).toBeEnabled()
+  })
+
   it('shows an error for an unsupported extension and keeps the previous valid file selected', async () => {
     const { uploadMutate, user } = renderDocumentsPage()
 
