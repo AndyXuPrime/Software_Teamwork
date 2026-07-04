@@ -140,6 +140,19 @@ def test_default_tiktoken_cache_stays_under_ragflow_deps(tmp_path, monkeypatch):
     assert not os.path.exists(os.path.join(str(tmp_path), hashlib.sha1(CL100K_ENCODING_URL.encode()).hexdigest()))
 
 
+def test_litellm_tokenizer_cache_is_not_reused_as_runtime_cache(tmp_path, monkeypatch):
+    monkeypatch.setenv("RAG_PROJECT_BASE", str(tmp_path))
+    monkeypatch.setenv(
+        "TIKTOKEN_CACHE_DIR",
+        "/tmp/site-packages/litellm/litellm_core_utils/tokenizers",
+    )
+
+    cache_dir = token_utils._ensure_tiktoken_cache()
+
+    assert cache_dir == str(tmp_path / "ragflow_deps" / "tiktoken_cache")
+    assert os.environ["TIKTOKEN_CACHE_DIR"] == cache_dir
+
+
 class TestTotalTokenCountFromResponse:
     """Test cases for total_token_count_from_response function"""
 

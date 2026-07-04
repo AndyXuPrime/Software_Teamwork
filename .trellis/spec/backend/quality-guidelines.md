@@ -864,6 +864,90 @@ fingerprint := hmacSHA256(fingerprintKey, []byte(apiKey))
 
 ---
 
+## Scenario: Knowledge Runtime Tiktoken Cache Ownership
+
+### 1. Scope / Trigger
+
+- Trigger: changing Knowledge runtime token counting, model-provider imports,
+  LiteLLM integration, runtime dependency bootstrap, or tests that import
+  `common.token_utils`.
+- Applies to `services/knowledge-runtime/common/token_utils.py` and runtime
+  modules that import provider SDKs before token utilities.
+
+### 2. Signatures
+
+Environment key:
+
+```text
+TIKTOKEN_CACHE_DIR=<absolute path>
+```
+
+Runtime default:
+
+```text
+services/knowledge-runtime/ragflow_deps/tiktoken_cache
+```
+
+### 3. Contracts
+
+- Knowledge runtime owns its tiktoken cache directory.
+- When `TIKTOKEN_CACHE_DIR` is absent, runtime must use
+  `ragflow_deps/tiktoken_cache` under the runtime project base.
+- If LiteLLM or another provider import mutates `TIKTOKEN_CACHE_DIR` to a
+  package-owned tokenizer directory such as
+  `litellm_core_utils/tokenizers`, runtime token utilities must restore the
+  runtime-owned cache before token counting.
+- Explicit user/operator `TIKTOKEN_CACHE_DIR` values outside provider package
+  internals may be honored.
+- The cache setup must copy the bundled `cl100k_base.tiktoken` into the hashed
+  tiktoken cache filename when needed, and must not write cache artifacts to the
+  repository root.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| `TIKTOKEN_CACHE_DIR` is unset | Use runtime `ragflow_deps/tiktoken_cache`. |
+| `TIKTOKEN_CACHE_DIR` points at `litellm_core_utils/tokenizers` | Override it with runtime `ragflow_deps/tiktoken_cache`. |
+| `TIKTOKEN_CACHE_DIR` is an explicit non-provider path | Keep that path and ensure it exists. |
+| Bundled `cl100k_base.tiktoken` exists but hashed cache file is missing | Copy it before calling `tiktoken.get_encoding`. |
+| Provider import changes the env after runtime startup | Public token helper functions reset the env back to the runtime cache before encoding/truncating. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: importing LiteLLM before or after `common.token_utils` still leaves
+  token counting on the runtime-owned cache path.
+- Base: a test or local shell sets a private cache path and runtime creates it.
+- Bad: accepting a provider package tokenizer directory as the runtime cache,
+  writing hashed tiktoken cache files into the repo root, or relying on test
+  import order to keep `TIKTOKEN_CACHE_DIR` stable.
+
+### 6. Tests Required
+
+- Unit-test the default cache path when the env key is absent.
+- Unit-test that provider package tokenizer paths are not reused as runtime
+  cache paths.
+- Run token utility tests in the same pytest process as model-provider tests to
+  catch import-order mutations.
+- Run `git diff --check` after cache path changes.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+cache_dir = os.environ.get("TIKTOKEN_CACHE_DIR") or get_project_base_directory("ragflow_deps", "tiktoken_cache")
+```
+
+#### Correct
+
+```python
+configured = os.environ.get("TIKTOKEN_CACHE_DIR")
+cache_dir = configured if configured and not is_provider_tokenizer_cache(configured) else runtime_cache_dir()
+```
+
+---
+
 ## Forbidden Patterns
 
 - Root-level Go module used to build all microservices together.

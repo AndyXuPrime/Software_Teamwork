@@ -24,8 +24,18 @@ from common.file_utils import get_project_base_directory
 CL100K_ENCODING_URL = "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
 
 
+def _default_tiktoken_cache_dir() -> str:
+    return get_project_base_directory("ragflow_deps", "tiktoken_cache")
+
+
+def _is_litellm_tokenizer_cache(cache_dir: str | None) -> bool:
+    normalized = os.path.normpath(cache_dir or "")
+    return os.path.join("litellm_core_utils", "tokenizers") in normalized
+
+
 def _ensure_tiktoken_cache() -> str:
-    cache_dir = os.environ.get("TIKTOKEN_CACHE_DIR") or get_project_base_directory("ragflow_deps", "tiktoken_cache")
+    configured_cache_dir = os.environ.get("TIKTOKEN_CACHE_DIR")
+    cache_dir = configured_cache_dir if configured_cache_dir and not _is_litellm_tokenizer_cache(configured_cache_dir) else _default_tiktoken_cache_dir()
     os.makedirs(cache_dir, exist_ok=True)
     os.environ["TIKTOKEN_CACHE_DIR"] = cache_dir
 
@@ -39,13 +49,13 @@ def _ensure_tiktoken_cache() -> str:
 
 
 tiktoken_cache_dir = _ensure_tiktoken_cache()
-os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
 # encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
 encoder = tiktoken.get_encoding("cl100k_base")
 
 
 def num_tokens_from_string(string: str) -> int:
     """Returns the number of tokens in a text string."""
+    os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
     try:
         code_list = encoder.encode(string)
         return len(code_list)
@@ -102,4 +112,5 @@ def total_token_count_from_response(resp):
 
 def truncate(string: str, max_len: int) -> str:
     """Returns truncated text if the length of text exceed max_len."""
+    os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
     return encoder.decode(encoder.encode(string)[:max_len])
