@@ -146,6 +146,49 @@ def _strip_chunk_runtime_fields(chunk):
     return chunk
 
 
+def _chunk_embedding_provider(document_id):
+    embd_id = DocumentService.get_embd_id(document_id)
+    return embd_id or None
+
+
+def _list_chunk_fields():
+    return [
+        "docnm_kwd",
+        "content_ltks",
+        "kb_id",
+        "img_id",
+        "important_kwd",
+        "position_int",
+        "doc_id",
+        "available_int",
+        "content_with_weight",
+        "tag_kwd",
+        "question_kwd",
+    ]
+
+
+def _chunk_from_search_result(chunk_id, field, highlight, question, embedding_provider):
+    content = (
+        remove_redundant_spaces(highlight[chunk_id])
+        if question and chunk_id in highlight
+        else field.get("content_with_weight", "")
+    )
+    return {
+        "id": chunk_id,
+        "content": content,
+        "document_id": field["doc_id"],
+        "docnm_kwd": field["docnm_kwd"],
+        "important_keywords": field.get("important_kwd", []),
+        "tag_kwd": field.get("tag_kwd", []),
+        "questions": field.get("question_kwd", []),
+        "dataset_id": field.get("kb_id", field.get("dataset_id")),
+        "image_id": field.get("img_id", ""),
+        "available": bool(int(field.get("available_int", "1"))),
+        "positions": field.get("position_int", []),
+        "embedding_provider": embedding_provider,
+    }
+
+
 def _get_dataset_scope_id(dataset_id):
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
@@ -443,11 +486,12 @@ async def list_chunks(scope_id, dataset_id, document_id):
             return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.DATA_ERROR)
         if str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
             return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.DATA_ERROR)
+        content = chunk["content_with_weight"]
         _strip_chunk_runtime_fields(chunk)
         res["total"] = 1
         final_chunk = {
             "id": chunk.get("id", chunk.get("chunk_id")),
-            "content": chunk["content_with_weight"],
+            "content": content,
             "document_id": chunk.get("doc_id", chunk.get("document_id")),
             "docnm_kwd": chunk["docnm_kwd"],
             "important_keywords": chunk.get("important_kwd", []),
@@ -458,36 +502,22 @@ async def list_chunks(scope_id, dataset_id, document_id):
             "positions": chunk.get("position_int", []),
             "tag_kwd": chunk.get("tag_kwd", []),
             "tag_feas": chunk.get("tag_feas", {}),
+            "embedding_provider": _chunk_embedding_provider(document_id),
         }
         res["chunks"].append(final_chunk)
         _ = Chunk(**final_chunk)
     elif settings.docStoreConn.index_exist(search.index_name(dataset_scope_id), dataset_id):
         sres = await settings.retriever.search(
-            query,
+            {**query, "fields": _list_chunk_fields()},
             search.index_name(dataset_scope_id),
             [dataset_id],
             emb_mdl=None,
             highlight=True,
         )
         res["total"] = sres.total
+        embedding_provider = _chunk_embedding_provider(document_id)
         for chunk_id in sres.ids:
-            d = {
-                "id": chunk_id,
-                "content": (
-                    remove_redundant_spaces(sres.highlight[chunk_id])
-                    if question and chunk_id in sres.highlight
-                    else sres.field[chunk_id].get("content_with_weight", "")
-                ),
-                "document_id": sres.field[chunk_id]["doc_id"],
-                "docnm_kwd": sres.field[chunk_id]["docnm_kwd"],
-                "important_keywords": sres.field[chunk_id].get("important_kwd", []),
-                "tag_kwd": sres.field[chunk_id].get("tag_kwd", []),
-                "questions": sres.field[chunk_id].get("question_kwd", []),
-                "dataset_id": sres.field[chunk_id].get("kb_id", sres.field[chunk_id].get("dataset_id")),
-                "image_id": sres.field[chunk_id].get("img_id", ""),
-                "available": bool(int(sres.field[chunk_id].get("available_int", "1"))),
-                "positions": sres.field[chunk_id].get("position_int", []),
-            }
+            d = _chunk_from_search_result(chunk_id, sres.field[chunk_id], sres.highlight, question, embedding_provider)
             res["chunks"].append(d)
             _ = Chunk(**d)
     return get_result(data=res)

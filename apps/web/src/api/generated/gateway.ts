@@ -2019,10 +2019,8 @@ export interface components {
             chunkIndex: number;
             sectionPath?: string | null;
             content: string;
-            tokenCount: number;
             chunkType?: string | null;
             embeddingProvider?: string | null;
-            embeddingDimension?: number | null;
             metadata?: components["schemas"]["JsonObject"];
             /** Format: date-time */
             createdAt: string;

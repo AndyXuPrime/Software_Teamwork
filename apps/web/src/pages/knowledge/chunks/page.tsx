@@ -48,6 +48,20 @@ function formatDateTime(iso?: string | null): string {
   }
 }
 
+function estimateTokenCount(content: string): number {
+  const text = content.trim()
+  if (!text) return 0
+
+  const cjkChars = text.match(/[\u3400-\u9fff\uf900-\ufaff]/gu)?.length ?? 0
+  const latinTokenCount = text
+    .replace(/[\u3400-\u9fff\uf900-\ufaff]/gu, ' ')
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean).length
+
+  return cjkChars + latinTokenCount
+}
+
 // ── Skeleton ──
 
 function ChunkListSkeleton() {
@@ -56,16 +70,16 @@ function ChunkListSkeleton() {
       <div className="h-6 w-48 rounded skeleton-shimmer" />
       <div className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-4 py-3">
-          <div className="grid grid-cols-5 gap-3">
-            {Array.from({ length: 5 }).map((_, i) => (
+          <div className="grid grid-cols-4 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="h-4 rounded skeleton-shimmer" />
             ))}
           </div>
         </div>
         <div className="divide-y divide-border">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="grid grid-cols-5 gap-3 px-4 py-3">
-              {Array.from({ length: 5 }).map((_, j) => (
+            <div key={i} className="grid grid-cols-4 gap-3 px-4 py-3">
+              {Array.from({ length: 4 }).map((_, j) => (
                 <div key={j} className="h-4 rounded skeleton-shimmer" />
               ))}
             </div>
@@ -273,13 +287,10 @@ export function KnowledgeChunksPage({
                         内容预览
                       </th>
                       <th className="hidden w-24 px-4 py-2.5 text-right font-medium text-muted-foreground md:table-cell">
-                        Token 数
+                        估计 Token 数
                       </th>
                       <th className="hidden w-24 px-4 py-2.5 text-left font-medium text-muted-foreground lg:table-cell">
                         嵌入服务
-                      </th>
-                      <th className="hidden w-20 px-4 py-2.5 text-right font-medium text-muted-foreground lg:table-cell">
-                        向量维度
                       </th>
                     </tr>
                   </thead>
@@ -287,6 +298,7 @@ export function KnowledgeChunksPage({
                     {data.items.map((chunk) => {
                       const isExpanded = expandedChunkIds.has(chunk.id)
                       const contentId = `chunk-content-${chunk.id}`
+                      const estimatedTokenCount = estimateTokenCount(chunk.content)
 
                       return (
                         <tr
@@ -337,13 +349,10 @@ export function KnowledgeChunksPage({
                             </div>
                           </td>
                           <td className="hidden whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-muted-foreground md:table-cell">
-                            {chunk.tokenCount}
+                            {estimatedTokenCount}
                           </td>
                           <td className="hidden whitespace-nowrap px-4 py-2.5 text-muted-foreground lg:table-cell">
                             {chunk.embeddingProvider ?? '-'}
-                          </td>
-                          <td className="hidden whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-muted-foreground lg:table-cell">
-                            {chunk.embeddingDimension ?? '-'}
                           </td>
                         </tr>
                       )

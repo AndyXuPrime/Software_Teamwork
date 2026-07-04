@@ -723,9 +723,7 @@ components:
         sectionPath: { type: string }
         chunkType: { type: string }
         content: { type: string }
-        tokenCount: { type: integer }
         embeddingProvider: { type: string, nullable: true }
-        embeddingDimension: { type: integer, nullable: true }
         metadata:
           type: object
           additionalProperties: true

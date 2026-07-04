@@ -4043,7 +4043,6 @@ components:
       - documentId
       - chunkIndex
       - content
-      - tokenCount
       - createdAt
       properties:
         id:
@@ -4060,17 +4059,11 @@ components:
           nullable: true
         content:
           type: string
-        tokenCount:
-          type: integer
-          minimum: 0
         chunkType:
           type: string
           nullable: true
         embeddingProvider:
           type: string
-          nullable: true
-        embeddingDimension:
-          type: integer
           nullable: true
         metadata:
           $ref: '#/components/schemas/JsonObject'

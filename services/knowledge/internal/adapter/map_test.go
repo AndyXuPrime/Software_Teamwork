@@ -532,6 +532,46 @@ func TestDocumentChunkFromVendorKeepsExplicitChunkIndex(t *testing.T) {
 	}
 }
 
+func TestDocumentChunkFromVendorMapsEmbeddingProvider(t *testing.T) {
+	chunk := documentChunkFromVendor(map[string]interface{}{
+		"id":                      "chunk_1",
+		"content_with_weight":     "alpha beta gamma",
+		"token_count":             float64(12),
+		"embedding_provider":      "BAAI/bge-m3@default@AI_GATEWAY",
+		"embedding_dimension_int": float64(1024),
+		"source":                  "runtime",
+	}, "kb_1", "doc_1", 0)
+
+	if chunk.EmbeddingProvider == nil || *chunk.EmbeddingProvider != "AI_GATEWAY" {
+		t.Fatalf("EmbeddingProvider=%v, want AI_GATEWAY", chunk.EmbeddingProvider)
+	}
+	if _, ok := chunk.Metadata["token_count"]; ok {
+		t.Fatalf("token_count leaked into metadata: %v", chunk.Metadata)
+	}
+	if _, ok := chunk.Metadata["embedding_dimension_int"]; ok {
+		t.Fatalf("embedding_dimension_int leaked into metadata: %v", chunk.Metadata)
+	}
+	if chunk.Metadata["source"] != "runtime" {
+		t.Fatalf("metadata=%v, want non-runtime metadata preserved", chunk.Metadata)
+	}
+}
+
+func TestDocumentChunkFromVendorDoesNotLeakVectorMetadata(t *testing.T) {
+	chunk := documentChunkFromVendor(map[string]interface{}{
+		"id":                  "chunk_1",
+		"content_with_weight": "content",
+		"q_4_vec":             []any{0.1, 0.2, 0.3, 0.4},
+		"source":              "runtime",
+	}, "kb_1", "doc_1", 0)
+
+	if _, ok := chunk.Metadata["q_4_vec"]; ok {
+		t.Fatalf("runtime vector leaked into metadata: %v", chunk.Metadata)
+	}
+	if chunk.Metadata["source"] != "runtime" {
+		t.Fatalf("metadata=%v, want non-runtime metadata preserved", chunk.Metadata)
+	}
+}
+
 func TestKnowledgeQueryTraceUsesConfiguredRuntimeValues(t *testing.T) {
 	summary := knowledgeQueryFromVendor(
 		"kq_test",

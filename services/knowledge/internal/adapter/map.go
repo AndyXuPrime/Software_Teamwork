@@ -204,16 +204,16 @@ type documentDeletionJobItemError struct {
 }
 
 type documentChunkSummary struct {
-	ID              string         `json:"id"`
-	KnowledgeBaseID string         `json:"knowledgeBaseId"`
-	DocumentID      string         `json:"documentId"`
-	ChunkIndex      int32          `json:"chunkIndex"`
-	SectionPath     *string        `json:"sectionPath,omitempty"`
-	Content         string         `json:"content"`
-	TokenCount      int32          `json:"tokenCount"`
-	ChunkType       *string        `json:"chunkType,omitempty"`
-	Metadata        map[string]any `json:"metadata,omitempty"`
-	CreatedAt       time.Time      `json:"createdAt"`
+	ID                string         `json:"id"`
+	KnowledgeBaseID   string         `json:"knowledgeBaseId"`
+	DocumentID        string         `json:"documentId"`
+	ChunkIndex        int32          `json:"chunkIndex"`
+	SectionPath       *string        `json:"sectionPath,omitempty"`
+	Content           string         `json:"content"`
+	ChunkType         *string        `json:"chunkType,omitempty"`
+	EmbeddingProvider *string        `json:"embeddingProvider,omitempty"`
+	Metadata          map[string]any `json:"metadata,omitempty"`
+	CreatedAt         time.Time      `json:"createdAt"`
 }
 
 func mapVendorError(err error) error {
@@ -352,21 +352,25 @@ func documentChunkFromVendor(raw map[string]interface{}, kbID, documentID string
 	}
 	metadata := map[string]any{}
 	for key, value := range raw {
+		if isRuntimeVectorField(key) {
+			continue
+		}
 		switch key {
-		case "id", "content_with_weight", "content", "content_ltks", "chunk_index", "page_num_int", "doc_id", "kb_id", "vector":
+		case "id", "chunk_id", "content_with_weight", "content", "content_ltks", "chunk_index", "chunkIndex", "page_num_int", "doc_id", "document_id", "kb_id", "dataset_id", "docnm_kwd", "image_id", "img_id", "available", "available_int", "positions", "position_int", "tag_kwd", "tag_feas", "important_kwd", "question_kwd", "vector", "token_count", "tokenCount", "token_num", "embedding_provider", "embeddingProvider", "embedding_model", "embeddingModel", "embd_id", "embedding_dimension_int", "embedding_dimension", "embeddingDimension", "vector_dim", "vectorDim":
 			continue
 		default:
 			metadata[key] = value
 		}
 	}
 	return documentChunkSummary{
-		ID:              stringField(raw, "id", "chunk_id"),
-		KnowledgeBaseID: firstNonEmpty(stringField(raw, "kb_id", "dataset_id"), kbID),
-		DocumentID:      firstNonEmpty(stringField(raw, "doc_id", "document_id"), documentID),
-		ChunkIndex:      chunkIndex,
-		Content:         content,
-		TokenCount:      int32(intField(raw, "token_count", "token_num")),
-		CreatedAt:       timeField(raw, "create_time", "created_at"),
+		ID:                stringField(raw, "id", "chunk_id"),
+		KnowledgeBaseID:   firstNonEmpty(stringField(raw, "kb_id", "dataset_id"), kbID),
+		DocumentID:        firstNonEmpty(stringField(raw, "doc_id", "document_id"), documentID),
+		ChunkIndex:        chunkIndex,
+		Content:           content,
+		EmbeddingProvider: embeddingProviderField(raw),
+		Metadata:          metadata,
+		CreatedAt:         timeField(raw, "create_time", "created_at"),
 	}
 }
 
@@ -936,6 +940,25 @@ func optionalIntField(raw map[string]interface{}, keys ...string) *int {
 		}
 	}
 	return nil
+}
+
+func embeddingProviderField(raw map[string]interface{}) *string {
+	value := stringField(raw, "embedding_provider", "embeddingProvider", "embedding_model", "embeddingModel", "embd_id")
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, "@")
+	if len(parts) > 1 {
+		value = strings.TrimSpace(parts[len(parts)-1])
+	}
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func isRuntimeVectorField(key string) bool {
+	return strings.HasPrefix(key, "q_") && strings.HasSuffix(key, "_vec")
 }
 
 func floatField(raw map[string]interface{}, keys ...string) float64 {

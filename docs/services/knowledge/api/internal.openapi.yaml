@@ -648,7 +648,7 @@ components:
         requestId: { type: string }
     DocumentChunk:
       type: object
-      required: [id, knowledgeBaseId, documentId, chunkIndex, content, tokenCount, createdAt]
+      required: [id, knowledgeBaseId, documentId, chunkIndex, content, createdAt]
       properties:
         id: { type: string }
         knowledgeBaseId: { type: string }
@@ -656,10 +656,8 @@ components:
         chunkIndex: { type: integer, minimum: 0 }
         sectionPath: { type: string, nullable: true }
         content: { type: string }
-        tokenCount: { type: integer, minimum: 0 }
         chunkType: { type: string, nullable: true }
         embeddingProvider: { type: string, nullable: true }
-        embeddingDimension: { type: integer, minimum: 1, nullable: true }
         metadata:
           type: object
           additionalProperties: true
