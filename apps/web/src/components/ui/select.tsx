@@ -255,18 +255,42 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
     itemsRef,
     listRef,
     listboxId,
+    triggerRef,
   } = useSelectContext()
   const innerRef = React.useRef<HTMLDivElement | null>(null)
-  const [contentHeight, setContentHeight] = React.useState(0)
+  const contentRef = React.useRef<HTMLDivElement | null>(null)
+  const [flip, setFlip] = React.useState(false)
+  const [availableHeight, setAvailableHeight] = React.useState(360)
+
+  // Measure content and decide flip direction on open
+  React.useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return
+
+    const triggerRect = triggerRef.current.getBoundingClientRect()
+    const spaceBelow = window.innerHeight - triggerRect.bottom - 8
+    const spaceAbove = triggerRect.top - 8
+
+    // Measure actual content height
+    if (innerRef.current) {
+      const h = innerRef.current.scrollHeight + 16 // +padding
+
+      if (h > spaceBelow && spaceAbove > spaceBelow) {
+        // Not enough space below, more above → flip upward
+        setFlip(true)
+        setAvailableHeight(Math.min(h, spaceAbove, 360))
+      } else {
+        setFlip(false)
+        setAvailableHeight(Math.min(h, spaceBelow, 360))
+      }
+    }
+  }, [open, children, triggerRef])
 
   React.useEffect(() => {
-    if (open && innerRef.current) {
-      setContentHeight(innerRef.current.scrollHeight)
-    }
     if (!open) {
       setHighlightedIndex(-1)
+      setFlip(false)
     }
-  }, [open, children, setHighlightedIndex])
+  }, [open, setHighlightedIndex])
 
   // Keyboard navigation within the open list
   React.useEffect(() => {
@@ -312,8 +336,13 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
 
   return (
     <div
+      ref={contentRef}
       data-slot="select-content"
-      className={cn('absolute top-full left-0 z-50 min-w-full w-fit', className)}
+      className={cn(
+        'absolute left-0 z-50 min-w-full w-fit',
+        flip ? 'bottom-full mb-1' : 'top-full mt-1',
+        className,
+      )}
       role="listbox"
       id={listboxId}
       hidden={!open}
@@ -322,11 +351,11 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
     >
       <div
         className={cn(
-          'mt-1 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-md transition-all duration-300 ease-out',
+          'overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-md transition-all duration-300 ease-out',
           open ? 'opacity-100 overflow-y-auto' : 'max-h-0 opacity-0 border-0',
           '[&::-webkit-scrollbar-thumb]:bg-transparent [&::-webkit-scrollbar-track]:bg-transparent',
         )}
-        style={open ? { maxHeight: Math.min(contentHeight, 360) } : undefined}
+        style={open ? { maxHeight: availableHeight } : undefined}
       >
         <div ref={innerRef} className="p-1">
           <SelectContentInner>{children}</SelectContentInner>
