@@ -34,7 +34,7 @@ Use this stack unless a task has an explicit reason to diverge:
 | Markdown | react-markdown + remark-gfm | AI answers, code, tables, and citation-aware rendering. |
 | Rich text | TipTap / ProseMirror | Report section and template editing. |
 | Drag sorting | dnd-kit | Report outline and block ordering. |
-| Charts | Recharts | 30-day trends and dashboard metrics. |
+| Charts | Apache ECharts (`6.x`) | Dashboard metrics, trends, rose/pie, and statistical charts. Tree-shakeable via `echarts/core`. |
 | Icons | lucide-react | Menus, actions, and status indicators. |
 | API types | OpenAPI + `openapi-typescript@7.13.0` | Generated API client/types from the public Gateway contract. |
 | Tests | Vitest + React Testing Library + Playwright | Unit, component, and critical workflow E2E tests. |
