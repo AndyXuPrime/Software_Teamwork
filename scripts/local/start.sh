@@ -497,6 +497,16 @@ run_go_install() {
   run_with_heartbeat "installing goose $GOOSE_VERSION" env "${env_args[@]}" GOBIN="$TOOLS_DIR" go install "$@"
 }
 
+goose_version_output() {
+  [[ -x "$TOOLS_DIR/goose" ]] || return 0
+  "$TOOLS_DIR/goose" -version 2>/dev/null || true
+}
+
+goose_version_matches() {
+  local version_output="$1"
+  [[ "$version_output" == *"$GOOSE_VERSION"* ]]
+}
+
 prepare_config_renderer() {
   mkdir -p "$TOOLS_DIR"
   local artifact="$TOOLS_DIR/config-ctl"
@@ -516,8 +526,8 @@ prepare_goose() {
   (( SKIP_MIGRATIONS )) && return 0
   mkdir -p "$TOOLS_DIR"
   local version_output
-  version_output="$("$TOOLS_DIR/goose" -version 2>/dev/null || true)"
-  if [[ "$version_output" == *"$GOOSE_VERSION"* ]]; then
+  version_output="$(goose_version_output)"
+  if goose_version_matches "$version_output"; then
     log_ok "goose already prepared: $version_output"
     return 0
   fi
@@ -802,6 +812,17 @@ check_prepared_config_renderer() {
     "$ROOT_DIR/config/ctl" || return 1
 }
 
+check_prepared_goose() {
+  local version_output
+  require_file "$TOOLS_DIR/goose" "Rerun ./scripts/local/start.sh without --skip-prepare to install goose $GOOSE_VERSION." || return 1
+  version_output="$(goose_version_output)"
+  if ! goose_version_matches "$version_output"; then
+    log_error "goose is not $GOOSE_VERSION: ${version_output:-<unknown>}"
+    log_hint "Rerun ./scripts/local/start.sh without --skip-prepare to install goose $GOOSE_VERSION."
+    return 1
+  fi
+}
+
 ai_gateway_local_seed_enabled() {
   case "${AI_GATEWAY_LOCAL_SEED_ENABLED:-}" in
     1|true|TRUE|yes|YES|on|ON) return 0 ;;
@@ -812,7 +833,7 @@ ai_gateway_local_seed_enabled() {
 check_prepared_local_tools() {
   check_prepared_config_renderer || return 1
   if (( ! SKIP_MIGRATIONS )); then
-    require_file "$TOOLS_DIR/goose" "Rerun ./scripts/local/start.sh to install goose $GOOSE_VERSION." || return 1
+    check_prepared_goose || return 1
   fi
   if (( ! SKIP_SEED )) && ai_gateway_local_seed_enabled; then
     local seed_artifact="$TOOLS_DIR/render-ai-gateway-local-seed"
@@ -1020,6 +1041,10 @@ check_started_services() {
   CURRENT_STEP="checking started services"
   local wait_seconds="${LOCAL_STARTUP_CHECK_SECONDS:-8}"
   local failed=()
+  if [[ "$wait_seconds" == "0" ]]; then
+    log_info "startup process check skipped because LOCAL_STARTUP_CHECK_SECONDS=0"
+    return 0
+  fi
   if [[ "$wait_seconds" =~ ^[0-9]+$ ]] && (( wait_seconds > 0 )) && (( ${#STARTED_SERVICES[@]} > 0 )); then
     log_info "checking process groups for ${wait_seconds}s"
     sleep "$wait_seconds"

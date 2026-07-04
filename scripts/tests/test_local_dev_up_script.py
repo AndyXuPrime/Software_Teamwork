@@ -116,6 +116,23 @@ class LocalStartupScriptTests(unittest.TestCase):
             self.assertNotIn("pull", docker_calls)
             self.assertNotIn("up", docker_calls)
 
+    def test_start_skip_prepare_rejects_wrong_goose_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root, goose_version="v3.27.1")
+
+            result = self.run_start(root, args=["--infra-only", "--skip-prepare"])
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("goose is not v3.27.0", result.stderr)
+            self.assertIn("goose version: v3.27.1", result.stderr)
+            self.assertFalse((root / "go-calls.log").exists())
+            docker_calls = (root / "docker-calls.log").read_text(encoding="utf-8")
+            self.assertIn("info", docker_calls)
+            self.assertNotIn("pull", docker_calls)
+            self.assertNotIn("up", docker_calls)
+
     def test_start_rebuilds_stale_backend_binary_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.prepare_runtime(Path(directory))
@@ -476,10 +493,10 @@ class LocalStartupScriptTests(unittest.TestCase):
             """,
         )
 
-    def create_prepared_tools(self, root: Path) -> None:
+    def create_prepared_tools(self, root: Path, goose_version: str = "v3.27.0") -> None:
         self.write_executable(
             root / ".local" / "tools" / "goose",
-            "#!/usr/bin/env bash\nprintf 'goose version: v3.27.0\\n'\nexit 0\n",
+            f"#!/usr/bin/env bash\nprintf 'goose version: {goose_version}\\n'\nexit 0\n",
         )
         self.write_executable(
             root / ".local" / "tools" / "render-ai-gateway-local-seed",
