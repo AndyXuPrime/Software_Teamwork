@@ -324,6 +324,7 @@ function SelectContent({ className, children, ...props }: SelectContentProps) {
         className={cn(
           'mt-1 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-md transition-all duration-300 ease-out',
           open ? 'opacity-100 overflow-y-auto' : 'max-h-0 opacity-0 border-0',
+          '[&::-webkit-scrollbar-thumb]:bg-transparent [&::-webkit-scrollbar-track]:bg-transparent',
         )}
         style={open ? { maxHeight: Math.min(contentHeight, 360) } : undefined}
       >
