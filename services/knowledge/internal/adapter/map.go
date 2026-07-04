@@ -44,6 +44,27 @@ const (
 	runtimeManagedEmbeddingDimension = -1
 )
 
+var runtimeParserConfigParameterKeys = map[string]struct{}{
+	"auto_keywords":        {},
+	"auto_questions":       {},
+	"chunk_token_num":      {},
+	"delimiter":            {},
+	"ext":                  {},
+	"filename_embd_weight": {},
+	"graphrag":             {},
+	"html4excel":           {},
+	"layout_recognize":     {},
+	"pages":                {},
+	"parent_child":         {},
+	"raptor":               {},
+	"table_column_mode":    {},
+	"table_column_names":   {},
+	"table_column_roles":   {},
+	"tag_kb_ids":           {},
+	"task_page_size":       {},
+	"topn_tags":            {},
+}
+
 type knowledgeBaseSummary struct {
 	ID                string          `json:"id"`
 	Name              string          `json:"name"`
@@ -552,8 +573,8 @@ func ragflowParserConfigFromSnapshot(snapshot service.ParserConfigSnapshot) map[
 	layoutRecognize := ragflowLayoutFromParserConfig(snapshot, defaultParameters)
 	cfg := map[string]any{}
 	for key, value := range defaultParameters {
-		key = normalizeParserParameterKey(key)
-		if key == "" || key == "layout_recognize" || isSensitiveParserParameter(key) || isPaddleOCRCloudParameter(key) {
+		key, ok := runtimeParserConfigParameterKey(key, defaultParameters)
+		if !ok || key == "layout_recognize" || isSensitiveParserParameter(key) || isPaddleOCRCloudParameter(key) {
 			continue
 		}
 		if sanitized, ok := sanitizeParserParameterValue(value); ok {
@@ -673,6 +694,34 @@ func isPaddleOCRCloudParameter(key string) bool {
 	default:
 		return false
 	}
+}
+
+func runtimeParserConfigParameterKey(key string, params map[string]any) (string, bool) {
+	key = strings.TrimSpace(key)
+	switch key {
+	case "chunk_size", "chunkSize":
+		if parserParameterHasAnyKey(params, "chunk_token_num", "chunkTokenNum") {
+			return "", false
+		}
+		return "chunk_token_num", true
+	case "chunkTokenNum":
+		return "chunk_token_num", true
+	}
+	key = normalizeParserParameterKey(key)
+	if key == "" {
+		return "", false
+	}
+	_, ok := runtimeParserConfigParameterKeys[key]
+	return key, ok
+}
+
+func parserParameterHasAnyKey(params map[string]any, keys ...string) bool {
+	for _, key := range keys {
+		if _, ok := params[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func sanitizeParserParameterValue(value any) (any, bool) {

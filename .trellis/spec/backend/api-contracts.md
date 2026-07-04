@@ -1622,6 +1622,11 @@ METADATA_FILTER_IN_MEMORY_FALLBACK_LIMIT=10000
 - Adapter-owned parser config trace fields such as
   `software_teamwork_parser_config` must not be forwarded into strict vendor
   runtime request bodies unless the vendor schema explicitly allows them.
+- Adapter-resolved default parser parameters must be projected to the strict
+  Knowledge runtime `parser_config` schema before create/update dataset calls:
+  keep only runtime-supported top-level keys, map reviewed legacy aliases such
+  as `chunk_size` to `chunk_token_num`, and drop unsupported adapter/admin
+  fields instead of forwarding them to the vendor runtime.
 - Document metadata is read from the dataset document-list endpoint. Do not use
   the binary content route as JSON metadata; `GET /api/v1/datasets/{kb}/documents/{doc}`
   is the download/content path.
