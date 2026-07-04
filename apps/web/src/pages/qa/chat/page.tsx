@@ -1693,13 +1693,14 @@ export function ChatPage() {
                 sessionId={activeId}
               />
 
-              <div className="mb-2">
+              <div className="mb-2 flex justify-start">
                 <KnowledgeBaseMultiSelect
                   value={selectedKnowledgeBaseIds}
                   onChange={setSelectedKnowledgeBaseIds}
                   label="知识库范围"
                   description="未选择时使用当前 QA 配置或项目默认知识库范围。"
                   disabled={streaming}
+                  variant="compact"
                 />
               </div>
 

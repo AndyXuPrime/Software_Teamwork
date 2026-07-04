@@ -342,6 +342,57 @@ func TestBuildCreateDatasetBodySendsPaddleOCRCredentialsOutsideParserConfig(t *t
 	}
 }
 
+func TestBuildCreateDatasetBodyMapsDefaultParserConfigToRuntimeSchema(t *testing.T) {
+	cfg := ragflowParserConfigFromSnapshot(service.ParserConfigSnapshot{
+		ParserConfigID: "parser_paddleocr",
+		Backend:        service.ParserBackendPaddleOCRCloud,
+		Concurrency:    4,
+		DefaultParameters: json.RawMessage(`{
+			"chunk_size":512,
+			"chunk_overlap":64,
+			"separators":[],
+			"paddleocr_base_url":"https://paddleocr.example.com/api",
+			"paddleocr_access_token":"sk-secret",
+			"paddleocr_algorithm":"PaddleOCR-VL-1.6"
+		}`),
+	})
+
+	body, err := buildCreateDatasetBody(createKnowledgeBaseRequest{Name: "Manuals"}, cfg, createDatasetOptions{})
+	if err != nil {
+		t.Fatalf("buildCreateDatasetBody: %v", err)
+	}
+	payload := decodeMap(t, body)
+	parserConfig, ok := payload["parser_config"].(map[string]any)
+	if !ok {
+		t.Fatalf("parser_config=%v", payload["parser_config"])
+	}
+	if parserConfig["chunk_token_num"] != float64(512) {
+		t.Fatalf("chunk_token_num=%v", parserConfig["chunk_token_num"])
+	}
+	for _, key := range []string{"chunk_size", "chunk_overlap", "separators"} {
+		if _, ok := parserConfig[key]; ok {
+			t.Fatalf("parser_config should not include runtime-unsupported key %q: %v", key, parserConfig)
+		}
+	}
+	for _, key := range []string{"paddleocr_base_url", "paddleocr_access_token", "paddleocr_algorithm", parserConfigCredentialsKey} {
+		if _, ok := parserConfig[key]; ok {
+			t.Fatalf("parser_config leaked protected PaddleOCR key %q: %v", key, parserConfig)
+		}
+	}
+
+	credentials, ok := payload["parser_config_credentials"].(map[string]any)
+	if !ok {
+		t.Fatalf("parser_config_credentials missing")
+	}
+	paddleOCR, ok := credentials["paddleocr_cloud"].(map[string]any)
+	if !ok {
+		t.Fatalf("paddleocr_cloud credentials missing")
+	}
+	if paddleOCR["paddleocr_access_token"] != "sk-secret" {
+		t.Fatalf("paddleocr_access_token was not preserved in protected credentials")
+	}
+}
+
 func TestBuildUpdateDatasetBodySendsPaddleOCRCredentialsOutsideParserConfig(t *testing.T) {
 	cfg := ragflowParserConfigFromSnapshot(service.ParserConfigSnapshot{
 		ParserConfigID:    "parser_paddleocr",

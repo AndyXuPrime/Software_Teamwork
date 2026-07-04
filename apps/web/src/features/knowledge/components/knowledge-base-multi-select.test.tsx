@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -27,12 +27,21 @@ function knowledgeBase(id: string, name: string) {
   }
 }
 
-function ControlledSelector({ onValueChange }: { onValueChange: (value: string[]) => void }) {
-  const [value, setValue] = useState<string[]>([])
+function ControlledSelector({
+  initialValue = [],
+  onValueChange,
+  variant = 'panel',
+}: {
+  initialValue?: string[]
+  onValueChange: (value: string[]) => void
+  variant?: 'panel' | 'compact'
+}) {
+  const [value, setValue] = useState<string[]>(initialValue)
 
   return (
     <KnowledgeBaseMultiSelect
       value={value}
+      variant={variant}
       onChange={(nextValue) => {
         setValue(nextValue)
         onValueChange(nextValue)
@@ -42,6 +51,122 @@ function ControlledSelector({ onValueChange }: { onValueChange: (value: string[]
 }
 
 describe('KnowledgeBaseMultiSelect', () => {
+  it('opens the compact knowledge selector upward from a left aligned trigger', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        jsonResponse({
+          data: [knowledgeBase('kb-001', '运行规程库')],
+          page: { page: 1, pageSize: 100, total: 1 },
+          requestId: 'req-kb-page-1',
+        }),
+      ),
+    )
+
+    renderWithProviders(<ControlledSelector variant="compact" onValueChange={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: /选择知识库/ })).toBeVisible()
+    const closedPopover = screen.getByTestId('knowledge-base-selector-popover')
+    expect(closedPopover).toHaveAttribute('aria-hidden', 'true')
+    expect(closedPopover).toHaveClass('opacity-0', 'pointer-events-none')
+    expect(screen.getByLabelText('知识库范围搜索')).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: /选择知识库/ }))
+
+    const popover = screen.getByTestId('knowledge-base-selector-popover')
+    expect(popover).toHaveAttribute('data-side', 'top')
+    expect(popover).toHaveAttribute('aria-hidden', 'false')
+    expect(popover).toHaveClass('opacity-100', 'pointer-events-auto')
+    expect(popover).toHaveClass('w-[min(14.75rem,calc(100vw-2rem))]')
+    expect(screen.getByLabelText('知识库范围搜索')).toBeVisible()
+    expect(screen.getByLabelText('知识库范围搜索')).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: /运行规程库 \(kb-001\)/ })).toBeVisible()
+    expect(screen.queryByText('kb-001')).not.toBeInTheDocument()
+  })
+
+  it('selects multiple knowledge bases from compact checkbox items', async () => {
+    const user = userEvent.setup()
+    const values: string[][] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        jsonResponse({
+          data: [knowledgeBase('kb-001', '运行规程库'), knowledgeBase('kb-002', '检修案例库')],
+          page: { page: 1, pageSize: 100, total: 2 },
+          requestId: 'req-kb-page-1',
+        }),
+      ),
+    )
+
+    renderWithProviders(
+      <ControlledSelector
+        variant="compact"
+        onValueChange={(nextValue) => values.push(nextValue)}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /选择知识库/ }))
+    await user.click(await screen.findByRole('checkbox', { name: /运行规程库 \(kb-001\)/ }))
+    await user.click(screen.getByRole('checkbox', { name: /检修案例库 \(kb-002\)/ }))
+
+    await waitFor(() => expect(values.at(-1)).toEqual(['kb-001', 'kb-002']))
+    expect(screen.getByRole('button', { name: /已选 2 个知识库/ })).toBeVisible()
+  })
+
+  it('clears compact selections through the no knowledge base option', async () => {
+    const user = userEvent.setup()
+    const values: string[][] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        jsonResponse({
+          data: [knowledgeBase('kb-001', '运行规程库'), knowledgeBase('kb-002', '检修案例库')],
+          page: { page: 1, pageSize: 100, total: 2 },
+          requestId: 'req-kb-page-1',
+        }),
+      ),
+    )
+
+    renderWithProviders(
+      <ControlledSelector
+        initialValue={['kb-001', 'kb-002']}
+        variant="compact"
+        onValueChange={(nextValue) => values.push(nextValue)}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /已选 2 个知识库/ }))
+    await user.click(await screen.findByRole('checkbox', { name: '不选择知识库' }))
+
+    await waitFor(() => expect(values.at(-1)).toEqual([]))
+    expect(screen.getByRole('button', { name: /选择知识库/ })).toBeVisible()
+  })
+
+  it('keeps many compact knowledge bases inside a scrollable picker list', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        jsonResponse({
+          data: Array.from({ length: 12 }, (_, index) =>
+            knowledgeBase(`kb-${String(index + 1).padStart(3, '0')}`, `知识库 ${index + 1}`),
+          ),
+          page: { page: 1, pageSize: 100, total: 12 },
+          requestId: 'req-kb-page-1',
+        }),
+      ),
+    )
+
+    renderWithProviders(<ControlledSelector variant="compact" onValueChange={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: /选择知识库/ }))
+
+    const list = await screen.findByTestId('knowledge-base-selector-list')
+    expect(list).toHaveClass('max-h-64', 'overflow-y-auto')
+    expect(within(list).getByRole('checkbox', { name: /知识库 12 \(kb-012\)/ })).toBeVisible()
+  })
+
   it('can page beyond the first 100 knowledge bases and select later results', async () => {
     const user = userEvent.setup()
     const values: string[][] = []
