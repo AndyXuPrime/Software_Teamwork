@@ -16,6 +16,11 @@ type ChatInputProps = {
   streaming?: boolean
 }
 
+type KnowledgeBaseMultiSelectProps = {
+  onChange: (ids: string[]) => void
+  value: string[]
+}
+
 const qaHookState = vi.hoisted(() => ({
   createSession: vi.fn(),
   deleteSession: vi.fn(),
@@ -74,7 +79,16 @@ vi.mock('@/components/common', () => ({
 }))
 
 vi.mock('@/features/knowledge', () => ({
-  KnowledgeBaseMultiSelect: () => null,
+  KnowledgeBaseMultiSelect: ({ onChange, value }: KnowledgeBaseMultiSelectProps) => (
+    <div>
+      <button type="button" onClick={() => onChange(['kb-session-a'])}>
+        select knowledge base
+      </button>
+      <span data-testid="selected-knowledge-bases">
+        {value.length > 0 ? value.join(',') : 'default'}
+      </span>
+    </div>
+  ),
 }))
 
 vi.mock('@/features/qa', () => ({
@@ -103,7 +117,7 @@ vi.mock('@/features/qa', () => ({
 const mockedStreamChat = vi.mocked(streamChat)
 const now = '2026-07-04T00:00:00.000Z'
 
-function makeSession(): QASession {
+function makeSession(overrides: Partial<QASession> = {}): QASession {
   return {
     id: 'session-1',
     title: 'Background stream',
@@ -112,10 +126,11 @@ function makeSession(): QASession {
     lastMessagePreview: '',
     createdAt: now,
     updatedAt: now,
+    ...overrides,
   }
 }
 
-function seedChatState(session = makeSession()) {
+function seedChatState(session = makeSession(), sessions = [session]) {
   useChatStore.setState({
     activeId: session.id,
     activeStream: null,
@@ -126,11 +141,11 @@ function seedChatState(session = makeSession()) {
     messagesBySession: {},
     qaChatVisible: true,
     qaUnreadCompletion: null,
-    sessionIds: [session.id],
-    sessions: [session],
+    sessionIds: sessions.map((item) => item.id),
+    sessions,
     streaming: false,
   })
-  qaHookState.sessionsData = { items: [session] }
+  qaHookState.sessionsData = { items: sessions }
 }
 
 describe('ChatPage background streaming lifecycle', () => {
@@ -224,5 +239,30 @@ describe('ChatPage background streaming lifecycle', () => {
     expect(useChatStore.getState().messagesBySession['session-1']?.at(-1)).toMatchObject({
       status: 'stopped',
     })
+  })
+
+  it('does not reuse selected knowledge bases after switching sessions', async () => {
+    const firstSession = makeSession({ id: 'session-1', title: 'Session one' })
+    const secondSession = makeSession({ id: 'session-2', title: 'Session two' })
+    seedChatState(firstSession, [firstSession, secondSession])
+
+    renderWithProviders(<ChatPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'select knowledge base' }))
+    expect(screen.getByTestId('selected-knowledge-bases')).toHaveTextContent('kb-session-a')
+
+    act(() => {
+      useChatStore.getState().setActiveId(secondSession.id)
+    })
+
+    await waitFor(() =>
+      expect(screen.getByTestId('selected-knowledge-bases')).toHaveTextContent('default'),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+
+    await waitFor(() => expect(mockedStreamChat).toHaveBeenCalledTimes(1))
+    expect(mockedStreamChat.mock.calls[0]?.[0]).toBe(secondSession.id)
+    expect(mockedStreamChat.mock.calls[0]?.[5]).toBeUndefined()
   })
 })
