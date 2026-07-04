@@ -10,9 +10,9 @@
 
 业务服务、migration、seed、Knowledge runtime 和前端都不通过 Docker 启动。
 Knowledge runtime 的 `uv sync` 下载 Python 包，不走 Docker registry。uv 默认包索引由
-`config/base.yaml` 里的 `UV_DEFAULT_INDEX` 控制；默认是官方 PyPI。中国大陆网络运行
-`./scripts/local/dev-up.sh --china` 时会一并准备 runtime 依赖和 GitHub release/raw 等
-artifact；如果用 `--skip-knowledge-runtime-deps` 跳过，可按
+`config/base.yaml` 里的 `UV_DEFAULT_INDEX` 控制；默认是官方 PyPI。`./scripts/local/dev-up.sh`
+默认会准备 runtime 依赖和 GitHub release/raw 等 artifact；中国大陆网络加 `--china`
+时只切换这些下载源。如果用 `--skip-knowledge-runtime-deps` 跳过，可按
 `services/knowledge-runtime/README.md` 手工补跑 runtime 下载脚本。不要把
 `pyproject.toml` 或 `uv.lock` 的默认 URL 改成第三方代理。
 Go 后端 host-run 期间的模块下载由 `config/base.yaml` 里的 `GOPROXY` /

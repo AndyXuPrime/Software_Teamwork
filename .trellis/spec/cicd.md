@@ -925,10 +925,10 @@ Runtime rules:
   Knowledge parsing runs through the Knowledge runtime API/worker path.
 - Keep `UV_DEFAULT_INDEX` in `config/base.yaml` as the default host-run uv
   package index, using official PyPI by default. Mainland China mirror usage
-  must be explicit, preferably through `dev-up.sh --china` which prepares
-  Knowledge runtime dependencies/artifacts, or local untracked `.env.local`
-  overrides.
-  `ragflow_deps/download_deps.py --china` remains the manual fallback when that
+  must be explicit through `dev-up.sh --china` or local untracked `.env.local`
+  overrides. `dev-up.sh` prepares Knowledge runtime dependencies/artifacts by
+  default; `--china` only switches that preparation to mirror sources.
+  `ragflow_deps/download_deps.py --china` remains the manual fallback when
   preparation was intentionally skipped. It affects Python dependency downloads
   only; Docker registry rewrite remains the Compose image path.
 - Treat `services/knowledge-runtime/**` and its host-run API/worker scripts as

@@ -93,6 +93,46 @@ class LocalDevUpScriptTests(unittest.TestCase):
             self.assertIn("--with huggingface-hub>=1.3.1", uv_calls)
             self.assertIn("ragflow_deps/download_deps.py --china", uv_calls)
 
+    def test_default_mode_prepares_knowledge_runtime_deps_with_official_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+
+            result = self.run_dev_up(root)
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("[dev-up] preparing Knowledge runtime dependencies", result.stdout)
+            uv_calls = (root / "uv-calls.log").read_text(encoding="utf-8")
+            self.assertIn("run --no-project", uv_calls)
+            self.assertIn("--with nltk>=3.9.4", uv_calls)
+            self.assertIn("--with huggingface-hub>=1.3.1", uv_calls)
+            self.assertIn("ragflow_deps/download_deps.py", uv_calls)
+            self.assertNotIn("ragflow_deps/download_deps.py --china", uv_calls)
+
+    def test_skip_knowledge_runtime_deps_does_not_require_or_call_uv(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+            (root / "fake-bin" / "uv").unlink()
+
+            result = self.run_dev_up(root, args=["--skip-knowledge-runtime-deps"])
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("skipping Knowledge runtime dependency preparation", result.stdout)
+            self.assertFalse((root / "uv-calls.log").exists())
+
+    def test_missing_uv_fails_before_docker_work_when_runtime_deps_are_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+            (root / "fake-bin" / "uv").unlink()
+
+            result = self.run_dev_up(root, {"PATH": str(root / "fake-bin")})
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("missing required local command(s): uv", result.stderr)
+            self.assertIn("uv is required when Knowledge runtime dependencies are prepared", result.stderr)
+            self.assertIn("[dev-up] checking local tool dependencies", result.stdout)
+            self.assertNotIn("[dev-up] pulling infrastructure images", result.stdout)
+            self.assertFalse((root / "docker-calls.log").exists())
+
     def test_elasticsearch_starts_with_default_infra(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.prepare_runtime(Path(directory))

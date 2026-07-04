@@ -82,9 +82,9 @@ Starts local infrastructure, runs host migrations, and applies local seed data.
 Options:
   --china   Use mainland China mirrors for this run only:
             Docker registry rewrite, Go proxy/checksum DB, uv index, and
-            Knowledge runtime dependency/artifact downloads.
+            Knowledge runtime dependency/artifact download sources.
   --skip-knowledge-runtime-deps
-            With --china, skip Knowledge runtime dependency/artifact downloads.
+            Skip the default Knowledge runtime dependency/artifact preparation.
             You can also set LOCAL_SKIP_KNOWLEDGE_RUNTIME_DEPS=1.
   -h, --help
             Show this help.
@@ -152,8 +152,7 @@ check_required_commands() {
       missing+=("$command")
     fi
   done
-  if (( CHINA_MIRRORS )) &&
-    [[ "$SKIP_KNOWLEDGE_RUNTIME_DEPS" != "1" ]] &&
+  if [[ "$SKIP_KNOWLEDGE_RUNTIME_DEPS" != "1" ]] &&
     [[ "${LOCAL_SKIP_KNOWLEDGE_RUNTIME_DEPS:-0}" != "1" ]] &&
     ! command -v uv >/dev/null 2>&1; then
     missing+=(uv)
@@ -161,7 +160,7 @@ check_required_commands() {
   if (( ${#missing[@]} > 0 )); then
     log_error "missing required local command(s): ${missing[*]}"
     log_error "Install Docker, Go, psql, and uv in the same host environment that runs ./scripts/local/dev-up.sh."
-    log_error "uv is only required when --china prepares Knowledge runtime dependencies; rerun with --skip-knowledge-runtime-deps to skip that step."
+    log_error "uv is required when Knowledge runtime dependencies are prepared; rerun with --skip-knowledge-runtime-deps to skip that step."
     return 1
   fi
 }
@@ -259,12 +258,17 @@ prepare_knowledge_runtime_deps() {
     return 1
   fi
 
+  local download_args=(ragflow_deps/download_deps.py)
+  if (( CHINA_MIRRORS )); then
+    download_args+=(--china)
+  fi
+
   (
     cd "$ROOT_DIR/services/knowledge-runtime"
     uv run --no-project \
       --with "nltk>=3.9.4" \
       --with "huggingface-hub>=1.3.1" \
-      ragflow_deps/download_deps.py --china
+      "${download_args[@]}"
   )
 }
 
@@ -382,9 +386,11 @@ SQL
 }
 
 run_step "checking local tool dependencies" check_required_commands
+runtime_deps_step="preparing Knowledge runtime dependencies"
 if (( CHINA_MIRRORS )); then
-  run_step "preparing Knowledge runtime dependencies with China mirrors" prepare_knowledge_runtime_deps
+  runtime_deps_step+=" with China mirrors"
 fi
+run_step "$runtime_deps_step" prepare_knowledge_runtime_deps
 run_step "validating Docker Compose config" "${compose[@]}" config --quiet
 run_step "pulling infrastructure images" "${compose[@]}" pull "${PULL_SERVICES[@]}"
 run_step "starting infrastructure and waiting for health" "${compose[@]}" up -d --wait --wait-timeout "${LOCAL_INFRA_WAIT_TIMEOUT_SECONDS:-180}" "${INFRA_SERVICES[@]}"

@@ -106,12 +106,18 @@ past the parser boundary.
 ## Dependency Preparation
 
 The worker lazily downloads OCR and vision model artifacts when those modules
-are imported. Committed defaults use official artifact sources. On mainland
-China networks, run the helper with `--china` or prepare runtime artifacts
-manually:
+are imported. Committed defaults use official artifact sources. The repository
+root `./scripts/local/dev-up.sh` prepares these artifacts by default; pass
+`--china` to that script on mainland China networks, or run the helper manually:
 
 ```bash
 cd services/knowledge-runtime
+uv run --no-project \
+  --with "nltk>=3.9.4" \
+  --with "huggingface-hub>=1.3.1" \
+  ragflow_deps/download_deps.py
+
+# Mainland China mirrors:
 uv run --no-project \
   --with "nltk>=3.9.4" \
   --with "huggingface-hub>=1.3.1" \

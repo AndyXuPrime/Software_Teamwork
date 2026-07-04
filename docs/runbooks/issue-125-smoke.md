@@ -28,10 +28,10 @@ networks, use explicit mirror mode for the affected step:
 ./scripts/local/run-backend.sh --china
 ```
 
-`dev-up.sh --china` includes Knowledge runtime dependency and GitHub release/raw
-artifact preparation. If you intentionally skipped it with
-`--skip-knowledge-runtime-deps`, rerun the runtime download script manually
-before claiming Knowledge runtime coverage.
+`dev-up.sh` includes Knowledge runtime dependency and GitHub release/raw artifact
+preparation by default. `--china` switches those downloads to mainland China
+mirrors. If you intentionally skipped preparation with `--skip-knowledge-runtime-deps`,
+rerun the runtime download script manually before claiming Knowledge runtime coverage.
 
 If image pulls, Knowledge runtime dependency downloads, GitHub release/raw
 downloads, or Go module downloads are blocked, use

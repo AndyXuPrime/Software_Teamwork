@@ -297,10 +297,11 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   Knowledge parsing runs through the Knowledge runtime API/worker path.
 - Host-run uv package downloads should use `UV_DEFAULT_INDEX` from
   `config/base.yaml`, with official PyPI as the committed default. Mainland
-  China mirror usage must be explicit, preferably through `dev-up.sh --china`
-  which prepares Knowledge runtime dependencies/artifacts, or through local
-  untracked env overrides. `ragflow_deps/download_deps.py --china` remains the
-  manual fallback when runtime dependency preparation was intentionally skipped.
+  China mirror usage must be explicit through `dev-up.sh --china` or local
+  untracked env overrides. `dev-up.sh` prepares Knowledge runtime
+  dependencies/artifacts by default; `--china` only switches that preparation to
+  mirror sources. `ragflow_deps/download_deps.py --china` remains the manual
+  fallback when runtime dependency preparation was intentionally skipped.
   This is separate from Docker registry rewrite and should not be handled in
   Docker policy.
 - Runtime Python dependency changes belong under `services/knowledge-runtime`;

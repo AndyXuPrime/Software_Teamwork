@@ -36,9 +36,9 @@ Go modules 不稳定，启动脚本支持进程内大陆镜像，不改写 `conf
 ./scripts/local/run-backend.sh --china
 ```
 
-`dev-up.sh --china` 会一并准备 Knowledge runtime 的 Python 依赖和 GitHub release/raw、
-NLTK、HuggingFace、Tika、Chrome 等 artifact 下载；重复启动或只想拉起 infra 时可加
-`--skip-knowledge-runtime-deps`。
+`dev-up.sh` 默认会准备 Knowledge runtime 的 Python 依赖和 GitHub release/raw、
+NLTK、HuggingFace、Tika、Chrome 等 artifact 下载；`--china` 只把这些下载切到大陆镜像。
+重复启动或只想拉起 infra 时可加 `--skip-knowledge-runtime-deps`。
 
 ```bash
 cp .env.example .env.local
@@ -202,11 +202,11 @@ client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue
 
 ## 谁负责什么
 
-- `dev-up.sh`：检查同一宿主机环境中的 Docker、Go、`psql`、`uv`（仅 `--china`
-  runtime 准备需要），infra pull/up、等待 `postgres` / `redis` / `minio` / `elasticsearch`
+- `dev-up.sh`：检查同一宿主机环境中的 Docker、Go、`psql`、`uv`（默认
+  runtime 准备需要；跳过该步骤时不需要），infra pull/up、等待 `postgres` / `redis` / `minio` / `elasticsearch`
   Compose health checks；单独运行一次性 `minio-init`、Go module 配置检查、migration、
-  demo seed；传入 `--china` 时还会自动准备 Knowledge runtime 依赖和 artifact 下载，
-  可用 `--skip-knowledge-runtime-deps` 或 `LOCAL_SKIP_KNOWLEDGE_RUNTIME_DEPS=1` 跳过。
+  demo seed；默认准备 Knowledge runtime 依赖和 artifact 下载，传入 `--china` 时使用镜像源，
+  可用 `--skip-knowledge-runtime-deps` 或 `LOCAL_SKIP_KNOWLEDGE_RUNTIME_DEPS=1` 跳过该准备步骤。
   当前 Knowledge 索引准备属于宿主机 Knowledge runtime/doc engine 路径，不再执行 Go
   侧向量库 collection bootstrap。
   `minio-init` 正常 `Exited (0)` 不应阻断后续步骤；非零失败时看
@@ -253,8 +253,8 @@ Infra 拉取慢：
 Knowledge runtime 启动慢：
 
 - 默认 `UV_DEFAULT_INDEX=https://pypi.org/simple`，host-run `uv sync` 使用官方 PyPI。
-- 中国大陆网络运行 `./scripts/local/dev-up.sh --china` 时会自动执行 runtime 依赖和
-  artifact 下载。该步骤会用临时 overlay 将 Python 包、GitHub release/raw、NLTK、
+- `./scripts/local/dev-up.sh` 默认会执行 runtime 依赖和 artifact 下载；中国大陆网络
+  加 `--china` 时，该步骤会用临时 overlay 将 Python 包、GitHub release/raw、NLTK、
   HuggingFace、Tika 和 Chrome 下载切到镜像，但提交的 `pyproject.toml` / `uv.lock`
   仍保持官方 URL。
 - 如果此前用 `--skip-knowledge-runtime-deps` 跳过，可按

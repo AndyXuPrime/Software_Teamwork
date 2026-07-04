@@ -134,10 +134,13 @@ class LocalSeedContractTests(unittest.TestCase):
                 "Install Docker, Go, psql, and uv\n"
                 "Install the missing host tool(s)\n"
                 "Mainland China network: rerun ./scripts/local/dev-up.sh --china.\n"
-                "preparing Knowledge runtime dependencies with China mirrors\n"
+                "preparing Knowledge runtime dependencies\n"
+                "with China mirrors\n"
                 '--with "nltk>=3.9.4"\n'
                 '--with "huggingface-hub>=1.3.1"\n'
-                "ragflow_deps/download_deps.py --china\n"
+                "ragflow_deps/download_deps.py\n"
+                "download_args+=(--china)\n"
+                "uv is required when Knowledge runtime dependencies are prepared\n"
                 "--skip-knowledge-runtime-deps\n"
                 "LOCAL_SKIP_KNOWLEDGE_RUNTIME_DEPS\n"
                 "checking Go module settings\n"
