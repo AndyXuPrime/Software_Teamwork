@@ -215,3 +215,36 @@ Addressed PR review feedback by scoping QA attachment upload state to the owning
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Fix Knowledge runtime China libssl mirror
+
+**Date**: 2026-07-04
+**Task**: Fix Knowledge runtime China libssl mirror
+**Branch**: `Special/fix/knowledge-runtime-china-libssl-mirror`
+
+### Summary
+
+Replaced the failing TUNA libssl1.1 China artifact URLs with Huawei Cloud HTTPS mirrors for issue #612, added a guard test, verified the new URLs with Mozilla/5.0, and archived the RAG/OCR smoke diagnostic task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f00c873b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

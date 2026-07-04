@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
-- **Last Active**: 2026-07-03
+- **Total Sessions**: 7
+- **Last Active**: 2026-07-04
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~217 | Active |
+| `journal-1.md` | ~250 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-07-04 | Fix Knowledge runtime China libssl mirror | `f00c873b` | `Special/fix/knowledge-runtime-china-libssl-mirror` |
 | 6 | 2026-07-03 | F-038 review follow-up | `72e72fda`, `c00fc391` | `Frontend/fix/qa-reuse-empty-chat-session` |
 | 5 | 2026-07-03 | F-038 QA empty session reuse | `f4f8c4d5`, `fc6226db` | `Frontend/fix/qa-reuse-empty-chat-session` |
 | 4 | 2026-07-01 | A-021 Knowledge ingestion real dependency smoke | `ca055db` | `L1nggTeam/test/knowledge-ingestion-real-deps` |
