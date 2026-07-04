@@ -202,6 +202,10 @@ func (s *Server) handleUploadDocument(w http.ResponseWriter, r *http.Request) {
 	contentType := ""
 	if header != nil {
 		contentType = strings.TrimSpace(header.Header.Get("Content-Type"))
+		if inferred := documentContentTypeFromFilename(header.Filename); inferred != "" &&
+			(contentType == "" || contentType == genericDocumentContentType) {
+			contentType = inferred
+		}
 	}
 	uploaded, err := s.vendor.UploadDocument(r.Context(), s.runtimeScopeID(), r.PathValue("knowledgeBaseId"), header.Filename, contentType, file)
 	if err != nil {

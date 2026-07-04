@@ -10,6 +10,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -184,7 +185,15 @@ func (c *Client) ListDocuments(ctx context.Context, runtimeScopeID, datasetID st
 func (c *Client) UploadDocument(ctx context.Context, runtimeScopeID, datasetID, filename, contentType string, content io.Reader) (map[string]interface{}, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
-	part, err := writer.CreateFormFile("file", filename)
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{
+		"name":     "file",
+		"filename": filename,
+	}))
+	if contentType = strings.TrimSpace(contentType); contentType != "" {
+		header.Set("Content-Type", contentType)
+	}
+	part, err := writer.CreatePart(header)
 	if err != nil {
 		return nil, err
 	}

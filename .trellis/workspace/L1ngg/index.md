@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 24
+- **Total Sessions**: 25
 - **Last Active**: 2026-07-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~850 | Active |
+| `journal-1.md` | ~883 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 25 | 2026-07-04 | Fix knowledge document content type display | `1ee28159` | `L1nggTeam/fix/frontend-bug` |
 | 24 | 2026-07-04 | AI Gateway unified model provider exit | `1674ccb3`, `4f214828` | `L1nggTeam/refactor/ai-gateway-unified-exit` |
 | 23 | 2026-07-04 | Clean config entrypoint docs | `e22838d6` | `L1nggTeam/feat/ragflow-runtime-vendor` |
 | 22 | 2026-07-04 | Archive AI Gateway runtime tasks | `9dc4d945`, `24c35efa` | `L1nggTeam/feat/ragflow-runtime-vendor` |

@@ -28,6 +28,7 @@ type fakeVendorState struct {
 	documents          map[string]map[string]any
 	parseCalls         []string
 	deleteCalls        []deleteCall
+	uploadContentTypes []string
 	listDatasetsCalls  int
 	listDocumentsCalls int
 	taskExecutorReady  bool
@@ -164,6 +165,7 @@ func startFakeVendor(t *testing.T, state *fakeVendorState) *httptest.Server {
 				return
 			}
 			defer file.Close()
+			state.uploadContentTypes = append(state.uploadContentTypes, header.Header.Get("Content-Type"))
 			docID := "doc_fake_1"
 			doc := map[string]any{
 				"id": docID, "kb_id": kbID, "dataset_id": kbID, "name": header.Filename,
@@ -495,6 +497,77 @@ func TestAdapterDocumentUploadStartsVendorIngestion(t *testing.T) {
 	defer state.mu.Unlock()
 	if len(state.parseCalls) != 1 || state.parseCalls[0] != "doc_fake_1" {
 		t.Fatalf("parseCalls=%v", state.parseCalls)
+	}
+	if len(state.uploadContentTypes) != 1 || state.uploadContentTypes[0] != "text/plain" {
+		t.Fatalf("uploadContentTypes=%v, want [text/plain]", state.uploadContentTypes)
+	}
+}
+
+func TestAdapterListDocumentsNormalizesContentTypes(t *testing.T) {
+	state := newFakeVendorState()
+	state.documents["doc_fake_1"] = map[string]any{
+		"id": "doc_fake_1", "kb_id": "kb_fake_1", "dataset_id": "kb_fake_1", "name": "manual.docx", "type": "doc",
+	}
+	state.documents["doc_fake_2"] = map[string]any{
+		"id": "doc_fake_2", "kb_id": "kb_fake_1", "dataset_id": "kb_fake_1", "name": "records.csv", "type": "doc",
+	}
+	state.documents["doc_fake_3"] = map[string]any{
+		"id": "doc_fake_3", "kb_id": "kb_fake_1", "dataset_id": "kb_fake_1", "name": "slides.pptx", "type": "doc",
+	}
+	state.documents["doc_fake_4"] = map[string]any{
+		"id": "doc_fake_4", "kb_id": "kb_fake_1", "dataset_id": "kb_fake_1", "name": "photo.png", "type": "visual",
+	}
+	state.documents["doc_fake_5"] = map[string]any{
+		"id": "doc_fake_5", "kb_id": "kb_fake_1", "dataset_id": "kb_fake_1", "name": "unknown", "type": "doc",
+	}
+	vendor := startFakeVendor(t, state)
+	defer vendor.Close()
+
+	server := NewServer(adapterconfig.Config{
+		ServiceVersion:   "test",
+		VendorRuntimeURL: vendor.URL,
+		ServiceToken:     testServiceToken,
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/v1/knowledge-bases/kb_fake_1/documents", nil)
+	req.Header.Set("X-User-Id", "usr_test")
+	req.Header.Set("X-Service-Token", testServiceToken)
+	req.Header.Set("X-User-Permissions", "knowledge:read")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var body struct {
+		Data []struct {
+			Name        string  `json:"name"`
+			ContentType *string `json:"contentType"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	got := map[string]string{}
+	for _, doc := range body.Data {
+		if doc.ContentType != nil {
+			got[doc.Name] = *doc.ContentType
+		}
+	}
+	want := map[string]string{
+		"manual.docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"records.csv": "text/csv",
+		"slides.pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		"photo.png":   "image/png",
+	}
+	for name, contentType := range want {
+		if got[name] != contentType {
+			t.Fatalf("content type for %s = %q, want %q; all=%v", name, got[name], contentType, got)
+		}
+	}
+	if _, ok := got["unknown"]; ok {
+		t.Fatalf("unknown document should not expose runtime doc class: %v", got)
 	}
 }
 

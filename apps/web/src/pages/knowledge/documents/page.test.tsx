@@ -170,6 +170,59 @@ beforeEach(() => {
   } as unknown as ReturnType<typeof useKnowledgeBases>)
 })
 
+describe('KnowledgeDocumentsPage document type labels', () => {
+  it('derives labels from filenames when legacy responses still contain broad doc content type', () => {
+    vi.mocked(useDocuments).mockReturnValue({
+      data: {
+        items: [
+          createDocument({ contentType: 'doc', id: 'doc-docx', name: 'manual.docx' }),
+          createDocument({ contentType: 'doc', id: 'doc-pdf', name: 'policy.pdf' }),
+          createDocument({ contentType: 'doc', id: 'doc-csv', name: 'records.csv' }),
+          createDocument({ contentType: 'doc', id: 'doc-pptx', name: 'slides.pptx' }),
+          createDocument({ contentType: 'doc', id: 'doc-png', name: 'photo.png' }),
+        ],
+        page: { page: 1, pageSize: 20, total: 5 },
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useDocuments>)
+
+    renderDocumentsPage()
+
+    expect(screen.getByText('DOCX')).toBeVisible()
+    expect(screen.getByText('PDF')).toBeVisible()
+    expect(screen.getByText('CSV')).toBeVisible()
+    expect(screen.getByText('PPTX')).toBeVisible()
+    expect(screen.getByText('PNG')).toBeVisible()
+    expect(screen.queryByText('DOC')).not.toBeInTheDocument()
+  })
+
+  it('normalizes MIME values before rendering the label', () => {
+    vi.mocked(useDocuments).mockReturnValue({
+      data: {
+        items: [
+          createDocument({
+            contentType: 'Application/PDF; charset=binary',
+            id: 'doc-mime',
+            name: 'unknown.bin',
+          }),
+        ],
+        page: { page: 1, pageSize: 20, total: 1 },
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useDocuments>)
+
+    renderDocumentsPage()
+
+    expect(screen.getByText('PDF')).toBeVisible()
+  })
+})
+
 describe('KnowledgeDocumentsPage upload interactions', () => {
   it('hides the upload entry when the user lacks upload and write permissions', () => {
     renderDocumentsPage({ permissions: ['knowledge:read'] })
