@@ -80,11 +80,13 @@ describe('QARetrievalTestPage accessibility smoke', () => {
 
     const queryInput = screen.getByLabelText('Query')
     const knowledgeSearchInput = await screen.findByLabelText('知识库范围搜索')
+    const knowledgeIdInput = screen.getByLabelText('知识库范围ID')
     const topKInput = screen.getByLabelText('Top K')
     const rerankCheckbox = screen.getByRole('checkbox', { name: /rerank/i })
 
     expect(queryInput).toHaveAccessibleName('Query')
     expect(knowledgeSearchInput).toHaveAccessibleName('知识库范围搜索')
+    expect(knowledgeIdInput).toHaveAccessibleName('知识库范围ID')
     expect(topKInput).toHaveAccessibleName('Top K')
     expect(rerankCheckbox).toHaveAccessibleName(/rerank/i)
 
@@ -94,6 +96,8 @@ describe('QARetrievalTestPage accessibility smoke', () => {
     await keyboard.tab()
     expect(knowledgeSearchInput).toHaveFocus()
     await keyboard.keyboard('a11y')
+    await keyboard.tab()
+    expect(knowledgeIdInput).toHaveFocus()
     await keyboard.tab()
     const knowledgeButton = screen.getByRole('button', { name: /A11Y 知识库/ })
     expect(knowledgeButton).toHaveFocus()

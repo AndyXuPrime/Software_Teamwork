@@ -1195,3 +1195,58 @@ Implemented knowledge-base selection for QA retrieval testing, QA chat, and repo
 ### Next Steps
 
 - Push branch to `origin` and open PR to `Sakayori-Iroha-168/Software_Teamwork:develop`.
+
+
+## Session 34: PR 649 knowledge selector review follow-up
+
+**Date**: 2026-07-04
+**Task**: PR 649 knowledge selector review follow-up
+**Branch**: `Frontend/feat/f044-f048-frontend-fixes`
+
+### Summary
+
+Fixed PR #649 review feedback by adding selector pagination and exact ID fallback after rebasing onto latest develop.
+
+### Main Changes
+
+### Summary
+
+Followed up on PR #649 review feedback after rebasing onto latest `upstream/develop`. Fixed `KnowledgeBaseMultiSelect` so it no longer traps users on the first 100 knowledge bases.
+
+### Main Changes
+
+- Rebased `Frontend/feat/f044-f048-frontend-fixes` onto latest `upstream/develop` (`0f1b0331`).
+- Added server-backed pagination controls to the reusable knowledge-base selector.
+- Added exact knowledge-base ID entry as a fallback for records outside the loaded page.
+- Removed the selector's feature barrel self-import to avoid circular dependency risk.
+- Added regression coverage for selecting page-2 knowledge bases, manual ID fallback, and chat request `knowledgeBaseIds` payloads.
+
+### Testing
+
+- [OK] `bun run --cwd apps/web test:unit -- src/features/knowledge/components/knowledge-base-multi-select.test.tsx src/pages/qa/retrieval-test/page.a11y.test.tsx src/pages/reports/generate/page.test.tsx src/api/chat.test.ts`
+- [OK] `bun run --cwd apps/web check`
+- [OK] `bun run --cwd apps/web test:unit`
+- [OK] `bun run --cwd apps/web build`
+- [OK] `bun run --cwd apps/web test:e2e`
+- [OK] `git diff --check`
+
+### Status
+
+[OK] Ready for commit and PR update.
+
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

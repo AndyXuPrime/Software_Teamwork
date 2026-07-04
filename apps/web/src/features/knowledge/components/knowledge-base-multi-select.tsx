@@ -1,12 +1,14 @@
-import { Check, Loader2, RefreshCw, Search, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Loader2, Plus, RefreshCw, Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type { KnowledgeBaseSummary } from '@/api/knowledge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getGatewayCapabilityIssue, useKnowledgeBases } from '@/features/knowledge'
 import { cn } from '@/lib/utils'
+
+import { getGatewayCapabilityIssue } from '../capability'
+import { useKnowledgeBases } from '../hooks/use-knowledge-bases'
 
 type KnowledgeBaseMultiSelectProps = {
   className?: string
@@ -34,11 +36,14 @@ export function KnowledgeBaseMultiSelect({
   value,
 }: KnowledgeBaseMultiSelectProps) {
   const [keyword, setKeyword] = useState('')
-  const query = useKnowledgeBases(1, pageSize)
+  const [manualId, setManualId] = useState('')
+  const [page, setPage] = useState(1)
+  const query = useKnowledgeBases(page, pageSize)
   const items = query.data?.items ?? emptyKnowledgeBases
   const selectedItems = items.filter((item) => value.includes(item.id))
   const selectedUnknownIds = value.filter((id) => !items.some((item) => item.id === id))
   const normalizedKeyword = keyword.trim().toLowerCase()
+  const normalizedManualId = manualId.trim()
   const filteredItems = useMemo(() => {
     if (!normalizedKeyword) return items
     return items.filter((item) =>
@@ -46,6 +51,19 @@ export function KnowledgeBaseMultiSelect({
     )
   }, [items, normalizedKeyword])
   const issue = query.isError ? getGatewayCapabilityIssue(query.error, '知识库列表') : null
+  const pageInfo = query.data?.page
+  const currentPage = pageInfo?.page ?? page
+  const totalItems = pageInfo?.total ?? items.length
+  const effectivePageSize = pageInfo?.pageSize ?? pageSize
+  const totalPages = Math.max(1, Math.ceil(totalItems / effectivePageSize))
+  const canGoPrevious = currentPage > 1
+  const canGoNext = currentPage < totalPages
+
+  const addManualId = () => {
+    if (!normalizedManualId || value.includes(normalizedManualId)) return
+    onChange([...value, normalizedManualId])
+    setManualId('')
+  }
 
   return (
     <div className={cn('space-y-2 text-sm', className)}>
@@ -120,6 +138,32 @@ export function KnowledgeBaseMultiSelect({
         />
       </div>
 
+      <div className="flex gap-2">
+        <Input
+          aria-label={`${label}ID`}
+          className="font-mono text-xs"
+          placeholder="输入知识库 ID"
+          value={manualId}
+          onChange={(event) => setManualId(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              addManualId()
+            }
+          }}
+          disabled={disabled}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={addManualId}
+          disabled={disabled || !normalizedManualId || value.includes(normalizedManualId)}
+        >
+          <Plus className="size-3.5" />
+          添加
+        </Button>
+      </div>
+
       {query.isLoading ? (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-background p-3 text-sm text-muted-foreground">
           <Loader2 aria-hidden="true" className="size-4 animate-spin" />
@@ -149,44 +193,78 @@ export function KnowledgeBaseMultiSelect({
           未找到匹配的知识库。
         </div>
       ) : (
-        <div
-          role="group"
-          aria-label={label}
-          className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-border bg-background p-1"
-        >
-          {filteredItems.map((item) => {
-            const checked = value.includes(item.id)
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={cn(
-                  'flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors',
-                  checked
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                )}
-                aria-pressed={checked}
-                onClick={() => onChange(toggleId(value, item.id))}
-                disabled={disabled}
-              >
-                <span
-                  aria-hidden="true"
+        <>
+          <div
+            role="group"
+            aria-label={label}
+            className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-border bg-background p-1"
+          >
+            {filteredItems.map((item) => {
+              const checked = value.includes(item.id)
+              return (
+                <button
+                  key={item.id}
+                  type="button"
                   className={cn(
-                    'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border',
-                    checked ? 'border-primary bg-primary text-primary-foreground' : 'border-input',
+                    'flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors',
+                    checked
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                   )}
+                  aria-pressed={checked}
+                  onClick={() => onChange(toggleId(value, item.id))}
+                  disabled={disabled}
                 >
-                  {checked && <Check className="size-3" />}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{item.name}</span>
-                  <span className="block truncate text-xs opacity-80">{item.id}</span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border',
+                      checked
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-input',
+                    )}
+                  >
+                    {checked && <Check className="size-3" />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{item.name}</span>
+                    <span className="block truncate text-xs opacity-80">{item.id}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>
+                第 {currentPage} / {totalPages} 页
+              </span>
+              <div className="flex gap-1">
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="outline"
+                  aria-label="上一页知识库"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={disabled || query.isFetching || !canGoPrevious}
+                >
+                  <ChevronLeft className="size-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="outline"
+                  aria-label="下一页知识库"
+                  onClick={() => setPage((current) => current + 1)}
+                  disabled={disabled || query.isFetching || !canGoNext}
+                >
+                  <ChevronRight className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
