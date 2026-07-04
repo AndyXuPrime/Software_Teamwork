@@ -5,6 +5,7 @@ export {
   getGatewayCapabilityIssue,
   isCapabilityUnavailable,
 } from './capability'
+export { KnowledgeBaseMultiSelect } from './components/knowledge-base-multi-select'
 export {
   documentKeys,
   useChunks,

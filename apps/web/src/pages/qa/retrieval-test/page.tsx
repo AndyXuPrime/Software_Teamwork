@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { KnowledgeBaseMultiSelect } from '@/features/knowledge'
 import {
   useCreateQARetrievalTestRunMutation,
   useQARetrievalTestRunQuery,
@@ -21,7 +22,7 @@ import { cn } from '@/lib/utils'
 
 type RetrievalFormState = {
   question: string
-  knowledgeBaseIds: string
+  knowledgeBaseIds: string[]
   topK: string
   scoreThreshold: string
   enableRerank: boolean
@@ -31,7 +32,7 @@ type RetrievalFormState = {
 
 const initialForm: RetrievalFormState = {
   question: '',
-  knowledgeBaseIds: '',
+  knowledgeBaseIds: [],
   topK: '5',
   scoreThreshold: '',
   enableRerank: true,
@@ -90,19 +91,10 @@ function optionalInteger(
   return parsed
 }
 
-function splitIds(value: string): string[] | undefined {
-  const ids = value
-    .split(/\r?\n|,/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-
-  return ids.length > 0 ? ids : undefined
-}
-
 function buildPayload(form: RetrievalFormState): CreateQARetrievalTestRunRequest {
   const parsed = retrievalTestPayloadSchema.safeParse({
     question: form.question.trim(),
-    knowledgeBaseIds: splitIds(form.knowledgeBaseIds),
+    knowledgeBaseIds: form.knowledgeBaseIds.length > 0 ? form.knowledgeBaseIds : undefined,
     retrieval: {
       topK: optionalInteger(form.topK, 'Top K', 1, 100),
       scoreThreshold: optionalNumber(form.scoreThreshold, '阈值', 0, 1),
@@ -287,16 +279,12 @@ export function QARetrievalTestPage({ embedded = false }: { embedded?: boolean }
               placeholder="输入要验证召回效果的问题"
             />
           </label>
-          <label className="space-y-1.5 text-sm">
-            <span className="font-medium text-foreground">知识库 ID</span>
-            <Textarea
-              maxLength={2000}
-              value={form.knowledgeBaseIds}
-              onChange={(event) => setForm({ ...form, knowledgeBaseIds: event.target.value })}
-              className="min-h-28 font-mono text-xs"
-              placeholder="每行或逗号分隔；为空则使用当前 QA 配置"
-            />
-          </label>
+          <KnowledgeBaseMultiSelect
+            value={form.knowledgeBaseIds}
+            onChange={(knowledgeBaseIds) => setForm({ ...form, knowledgeBaseIds })}
+            label="知识库范围"
+            description="未选择时使用当前 QA 配置或项目默认知识库范围。"
+          />
         </div>
 
         <div className="grid gap-3 md:grid-cols-5">

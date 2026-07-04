@@ -20,6 +20,25 @@ describe('QARetrievalTestPage accessibility smoke', () => {
       const request = input instanceof Request ? input.clone() : new Request(input, init)
       const url = new URL(request.url)
 
+      if (request.method === 'GET' && url.pathname.endsWith('/knowledge-bases')) {
+        return jsonResponse({
+          data: [
+            {
+              createdAt: '2026-07-02T08:00:00Z',
+              description: 'A11Y test knowledge base',
+              documentCount: 1,
+              id: 'kb-a11y',
+              name: 'A11Y 知识库',
+              retrievalStrategy: { mode: 'semantic' },
+              status: 'ready',
+              updatedAt: '2026-07-02T08:00:00Z',
+            },
+          ],
+          page: { page: 1, pageSize: 100, total: 1 },
+          requestId: 'req-knowledge-bases',
+        })
+      }
+
       if (request.method === 'POST' && url.pathname.endsWith('/retrieval-test-runs')) {
         submittedPayloads.push(await request.json())
         return jsonResponse({
@@ -59,12 +78,15 @@ describe('QARetrievalTestPage accessibility smoke', () => {
 
     renderWithProviders(<QARetrievalTestPage />)
 
-    const textboxes = screen.getAllByRole('textbox')
     const queryInput = screen.getByLabelText('Query')
+    const knowledgeSearchInput = await screen.findByLabelText('知识库范围搜索')
+    const knowledgeIdInput = screen.getByLabelText('知识库范围ID')
     const topKInput = screen.getByLabelText('Top K')
     const rerankCheckbox = screen.getByRole('checkbox', { name: /rerank/i })
 
     expect(queryInput).toHaveAccessibleName('Query')
+    expect(knowledgeSearchInput).toHaveAccessibleName('知识库范围搜索')
+    expect(knowledgeIdInput).toHaveAccessibleName('知识库范围ID')
     expect(topKInput).toHaveAccessibleName('Top K')
     expect(rerankCheckbox).toHaveAccessibleName(/rerank/i)
 
@@ -72,8 +94,15 @@ describe('QARetrievalTestPage accessibility smoke', () => {
     expect(queryInput).toHaveFocus()
     await keyboard.keyboard('transformer oil temperature')
     await keyboard.tab()
-    expect(textboxes[1]).toHaveFocus()
-    await keyboard.keyboard('kb-a11y')
+    expect(knowledgeSearchInput).toHaveFocus()
+    await keyboard.keyboard('a11y')
+    await keyboard.tab()
+    expect(knowledgeIdInput).toHaveFocus()
+    await keyboard.tab()
+    const knowledgeButton = screen.getByRole('button', { name: /A11Y 知识库/ })
+    expect(knowledgeButton).toHaveFocus()
+    await keyboard.keyboard('{Enter}')
+    expect(knowledgeButton).toHaveAttribute('aria-pressed', 'true')
     await keyboard.tab()
     expect(topKInput).toHaveFocus()
     await keyboard.tab()

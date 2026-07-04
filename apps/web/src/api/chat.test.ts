@@ -10,6 +10,37 @@ function streamResponse(body: string) {
 }
 
 describe('chat stream API', () => {
+  it('sends attachment and knowledge base context ids in the stream request body', async () => {
+    const requestBodies: unknown[] = []
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input.clone() : new Request(input)
+      requestBodies.push(await request.json())
+      return streamResponse(
+        ['event: answer.completed', 'data: {"responseRunId":"run-1"}', '', ''].join('\n'),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    streamChat(
+      'session-1',
+      'question',
+      {
+        onAnswerCompleted: vi.fn(),
+        onError: vi.fn(),
+      },
+      undefined,
+      ['att-1'],
+      ['kb-101'],
+    )
+
+    await vi.waitFor(() => expect(requestBodies).toHaveLength(1))
+    expect(requestBodies[0]).toEqual({
+      attachmentIds: ['att-1'],
+      knowledgeBaseIds: ['kb-101'],
+      message: 'question',
+    })
+  })
+
   it('normalizes answer.delta text payloads to content', async () => {
     const onAnswerDelta = vi.fn()
     const onAnswerCompleted = vi.fn()

@@ -19,6 +19,7 @@ import {
   useAttachmentUpload,
 } from '@/components/chat'
 import { ConfirmDialog } from '@/components/common'
+import { KnowledgeBaseMultiSelect } from '@/features/knowledge'
 import {
   useCreateSession,
   useDeleteSession,
@@ -554,6 +555,7 @@ export function ChatPage() {
 
   // ── Local input text ──
   const [inputText, setInputText] = useState('')
+  const [selectedKnowledgeBaseIds, setSelectedKnowledgeBaseIds] = useState<string[]>([])
 
   // ── Three-phase state machine: empty → transitioning → active ──
   const [chatPhase, setChatPhase] = useState<'empty' | 'active'>('empty')
@@ -1481,6 +1483,7 @@ export function ChatPage() {
         streamHandlers,
         undefined,
         attachmentIds.length > 0 ? attachmentIds : undefined,
+        selectedKnowledgeBaseIds.length > 0 ? selectedKnowledgeBaseIds : undefined,
       )
 
       abortRef.current = abort
@@ -1493,6 +1496,7 @@ export function ChatPage() {
       clearQaUnreadCompletion,
       createSessionMut,
       markQaCompletionUnread,
+      selectedKnowledgeBaseIds,
       setActiveId,
       setActiveStream,
       setError,
@@ -1666,6 +1670,16 @@ export function ChatPage() {
                 onDelete={handleDeleteAttachment}
                 sessionId={activeId}
               />
+
+              <div className="mb-2">
+                <KnowledgeBaseMultiSelect
+                  value={selectedKnowledgeBaseIds}
+                  onChange={setSelectedKnowledgeBaseIds}
+                  label="知识库范围"
+                  description="未选择时使用当前 QA 配置或项目默认知识库范围。"
+                  disabled={streaming}
+                />
+              </div>
 
               <ChatInput
                 onSend={sendMessage}
