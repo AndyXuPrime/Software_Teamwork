@@ -848,6 +848,8 @@ export function ReportGeneratePage() {
     documentProfileId.trim() !== '' &&
     !selectedDocumentProfile &&
     documentProfileId === configuredDocumentProfileId
+  const hasDocumentProfileOptions = showDocumentProfileFallback || chatProfiles.length > 0
+  const noDocumentProfileOptions = !chatProfilesQuery.isLoading && !hasDocumentProfileOptions
   const hasDraftPendingOutlineJob = Boolean(currentReport && step === 'draft')
 
   const bootstrapErrors = useMemo(
@@ -2154,10 +2156,20 @@ export function ReportGeneratePage() {
                 <Select
                   value={documentProfileId || undefined}
                   onValueChange={(v) => handleSelectDocumentProfile(String(v))}
-                  disabled={reportSettingsQuery.isLoading || chatProfilesQuery.isLoading}
+                  disabled={
+                    reportSettingsQuery.isLoading ||
+                    chatProfilesQuery.isLoading ||
+                    !hasDocumentProfileOptions
+                  }
                 >
                   <SelectTrigger className="h-8 w-full" aria-label="文档生成模型">
-                    <SelectValue placeholder="请选择聊天模型 Profile" />
+                    <SelectValue
+                      placeholder={
+                        noDocumentProfileOptions
+                          ? '请先创建聊天模型 Profile'
+                          : '请选择聊天模型 Profile'
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {showDocumentProfileFallback && (

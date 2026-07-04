@@ -153,4 +153,55 @@ describe('QASettings', () => {
     expect(postBodies[1]).not.toHaveProperty('apiKey')
     expect(postBodies[1]).not.toHaveProperty('baseUrl')
   })
+
+  it('disables the chat profile selector when no enabled chat profiles exist', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (request.method === 'GET' && url.pathname.endsWith('/qa-config-versions/current')) {
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-02T08:00:00Z',
+            id: 'qa-current',
+            isActive: true,
+            retrieval: { enableRerank: false, topK: 5 },
+            versionNo: 3,
+          },
+          requestId: 'req-qa-current',
+        })
+      }
+
+      if (request.method === 'GET' && url.pathname.endsWith('/llm-config-versions/current')) {
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-02T08:30:00Z',
+            id: 'llm-current',
+            isActive: true,
+            modelName: '',
+            profileId: '',
+            provider: 'ai-gateway',
+            timeoutSeconds: 60,
+            versionNo: 6,
+          },
+          requestId: 'req-llm-current',
+        })
+      }
+
+      if (request.method === 'GET' && url.pathname.endsWith('/admin/model-profiles')) {
+        return jsonResponse({ data: [], requestId: 'req-chat-profiles' })
+      }
+
+      return jsonResponse({ data: null, requestId: 'req-default' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithProviders(<QASettings />)
+
+    const modelTrigger = await screen.findByLabelText('聊天模型')
+
+    expect(modelTrigger).toBeDisabled()
+    expect(modelTrigger).toHaveTextContent('请先创建聊天模型')
+    expect(await screen.findByText(/暂无已启用的聊天模型/)).toBeVisible()
+  })
 })

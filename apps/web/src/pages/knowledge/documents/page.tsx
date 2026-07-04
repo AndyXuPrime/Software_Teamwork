@@ -365,6 +365,8 @@ export function KnowledgeDocumentsPage({
   const totalPages = data ? Math.max(1, Math.ceil(data.page.total / PAGE_SIZE)) : 1
   const showPagination = totalPages > 1
   const isEmpty = !isLoading && !isError && data && data.items.length === 0
+  const availableKnowledgeBases = kbListData?.items ?? []
+  const hasKnowledgeBases = availableKnowledgeBases.length > 0
   const documentListIssue = isError ? getGatewayCapabilityIssue(error, '文档列表') : null
   const knowledgeBaseListIssue =
     !knowledgeBaseId && isKbListError ? getGatewayCapabilityIssue(kbListError, '知识库列表') : null
@@ -576,7 +578,8 @@ export function KnowledgeDocumentsPage({
       {!knowledgeBaseId && !knowledgeBaseListIssue && (
         <StateBlock
           action={
-            !isKbListLoading && (
+            !isKbListLoading &&
+            hasKnowledgeBases && (
               <Select
                 value={activeKbId || undefined}
                 onValueChange={(value) => setActiveKbId(String(value))}
@@ -585,7 +588,7 @@ export function KnowledgeDocumentsPage({
                   <SelectValue placeholder="选择知识库…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(kbListData?.items ?? []).map((kb) => (
+                  {availableKnowledgeBases.map((kb) => (
                     <SelectItem key={kb.id} value={kb.id}>
                       {kb.name}
                     </SelectItem>
@@ -598,7 +601,13 @@ export function KnowledgeDocumentsPage({
           description={isKbListLoading ? '正在从 Gateway 获取知识库列表。' : undefined}
           icon={isKbListLoading ? undefined : FileText}
           size="compact"
-          title={isKbListLoading ? '正在加载知识库' : '选择一个知识库以查看和管理其文档'}
+          title={
+            isKbListLoading
+              ? '正在加载知识库'
+              : hasKnowledgeBases
+                ? '选择一个知识库以查看和管理其文档'
+                : '请先创建知识库'
+          }
           variant={isKbListLoading ? 'loading' : 'empty'}
         />
       )}

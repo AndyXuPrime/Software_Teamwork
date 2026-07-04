@@ -6,6 +6,7 @@ import { ApiError } from '@/api/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
   useCreateQARetrievalTestRunMutation,
@@ -220,6 +221,7 @@ function ResultsList({ results }: { results: QARetrievalTestResult[] }) {
 }
 
 export function QARetrievalTestPage({ embedded = false }: { embedded?: boolean } = {}) {
+  const rerankSwitchId = 'qa-retrieval-test-rerank-switch-label'
   const [form, setForm] = useState<RetrievalFormState>(initialForm)
   const [latestRun, setLatestRun] = useState<QARetrievalTestRun | null>(null)
   const [latestRunId, setLatestRunId] = useState<string | null>(null)
@@ -319,15 +321,19 @@ export function QARetrievalTestPage({ embedded = false }: { embedded?: boolean }
               onChange={(event) => setForm({ ...form, scoreThreshold: event.target.value })}
             />
           </label>
-          <label className="flex items-center gap-2 rounded-lg border border-border p-3 text-sm">
-            <input
-              type="checkbox"
-              className="size-4"
-              checked={form.enableRerank}
-              onChange={(event) => setForm({ ...form, enableRerank: event.target.checked })}
-            />
-            <span className="font-medium text-foreground">启用 rerank</span>
-          </label>
+          <div className="space-y-1.5 text-sm">
+            <span id={rerankSwitchId} className="font-medium text-foreground">
+              启用 rerank
+            </span>
+            <div className="flex h-8 items-center justify-between gap-2 rounded-lg border border-input bg-background px-2.5 text-sm">
+              <span className="text-muted-foreground">{form.enableRerank ? '开启' : '关闭'}</span>
+              <Switch
+                aria-labelledby={rerankSwitchId}
+                checked={form.enableRerank}
+                onChange={(event) => setForm({ ...form, enableRerank: event.target.checked })}
+              />
+            </div>
+          </div>
           <label className="space-y-1.5 text-sm">
             <span className="font-medium text-foreground">Rerank 阈值</span>
             <Input
