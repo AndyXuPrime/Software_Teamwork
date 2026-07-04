@@ -155,7 +155,6 @@ SECTION_AWARE_CHUNK_FIELDS = (
     "block_type",
     "source_block_ids",
     "repair_status",
-    "embedding_text",
 )
 
 

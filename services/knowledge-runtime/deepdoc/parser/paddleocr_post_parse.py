@@ -643,6 +643,8 @@ def _chunk_dict(
 ) -> dict[str, Any]:
     section_path = " > ".join(section.section_path)
     pages = sorted({int(pos[0]) for pos in positions if pos})
+    normalized_positions = [[int(pos[0]), int(pos[1]), int(pos[2]), int(pos[3]), int(pos[4])] for pos in positions]
+    tops = [pos[3] for pos in normalized_positions]
     chunk = {
         "content_with_weight": text,
         "embedding_text": f"Section: {section_path}\n\n{text}" if section_path else text,
@@ -652,8 +654,9 @@ def _chunk_dict(
         "source_block_ids": _dedupe(source_block_ids),
         "repair_status": repair_status,
         "quality_flags": sorted(set(quality_flags)),
-        "position_int": [[int(pos[0]), int(pos[1]), int(pos[2]), int(pos[3]), int(pos[4])] for pos in positions],
+        "position_int": normalized_positions,
         "page_num_int": pages,
+        "top_int": tops,
     }
     if section.block_type in {"table", "formula", "image"}:
         chunk["doc_type_kwd"] = section.block_type

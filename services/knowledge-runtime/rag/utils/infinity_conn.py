@@ -32,6 +32,21 @@ class InfinityConnection(InfinityConnectionBase):
     Dataframe and fields convert
     """
 
+    EXTRA_METADATA_FIELDS = {
+        "section_path",
+        "section_title",
+        "section_level",
+        "block_type",
+        "source_block_ids",
+        "repair_status",
+        "quality_flags",
+        "section_title_tks",
+        "section_path_tks",
+    }
+    INTERNAL_ONLY_EXTRA_FIELDS = {"embedding_text"}
+    EXTRA_FIELD_NAMES = EXTRA_METADATA_FIELDS | INTERNAL_ONLY_EXTRA_FIELDS
+    EXTRA_MATCH_FALLBACK_FIELDS = {"section_title_tks", "section_path_tks"}
+
     @staticmethod
     def field_keyword(field_name: str):
         # Treat "*_kwd" tag-like columns as keyword lists except knowledge_graph_kwd; source_id is also keyword-like.
@@ -54,12 +69,13 @@ class InfinityConnection(InfinityConnectionBase):
                 output_fields[i] = "content"
             elif field in ["authors_tks", "authors_sm_tks"]:
                 output_fields[i] = "authors"
+            elif field in self.EXTRA_FIELD_NAMES:
+                output_fields[i] = "extra"
         if need_empty_count and "important_kwd_empty_count" not in output_fields:
             output_fields.append("important_kwd_empty_count")
         return list(set(output_fields))
 
-    @staticmethod
-    def convert_matching_field(field_weight_str: str) -> str:
+    def convert_matching_field(self, field_weight_str: str) -> str:
         tokens = field_weight_str.split("^")
         field = tokens[0]
         if field == "docnm_kwd" or field == "title_tks":
@@ -84,8 +100,45 @@ class InfinityConnection(InfinityConnectionBase):
             field = "authors@ft_authors_rag_fine"
         elif field == "tag_kwd":
             field = "tag_kwd@ft_tag_kwd_whitespace__"
+        elif field in self.EXTRA_MATCH_FALLBACK_FIELDS:
+            field = "content@ft_content_rag_coarse"
         tokens[0] = field
         return "^".join(tokens)
+
+    @classmethod
+    def _extra_to_dict(cls, raw):
+        if isinstance(raw, dict):
+            return copy.deepcopy(raw)
+        if not raw:
+            return {}
+        if isinstance(raw, str):
+            try:
+                payload = json.loads(raw)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return {}
+            return payload if isinstance(payload, dict) else {}
+        return {}
+
+    @classmethod
+    def _compact_extra_fields(cls, row: dict, column_names: set[str]) -> dict:
+        extra = cls._extra_to_dict(row.get("extra"))
+        touched_extra = "extra" in row
+        for field in sorted(cls.EXTRA_METADATA_FIELDS):
+            if field not in row or field in column_names:
+                continue
+            value = row.pop(field)
+            if value not in ("", None, []):
+                extra[field] = value
+            touched_extra = True
+        for field in cls.INTERNAL_ONLY_EXTRA_FIELDS:
+            if field not in row or field in column_names:
+                continue
+            row.pop(field, None)
+        if "extra" in column_names and touched_extra:
+            row["extra"] = json.dumps(extra, ensure_ascii=False) if extra else ""
+        elif "extra" not in column_names:
+            row.pop("extra", None)
+        return row
 
     """
     CRUD operations
@@ -380,6 +433,7 @@ class InfinityConnection(InfinityConnectionBase):
             # embedding fields can't have a default value....
             embedding_clmns = []
             clmns = table_instance.show_columns().rows()
+            column_names = {n for n, *_ in clmns}
             for n, ty, _, _ in clmns:
                 r = re.search(r"Embedding\([a-z]+,([0-9]+)\)", ty)
                 if not r:
@@ -479,6 +533,7 @@ class InfinityConnection(InfinityConnectionBase):
                     if n in d:
                         continue
                     d[n] = [0] * vs
+                self._compact_extra_fields(d, column_names)
             ids = ["'{}'".format(d["id"]) for d in docs]
             str_ids = ", ".join(ids)
             str_filter = f"id IN ({str_ids})"
@@ -517,6 +572,7 @@ class InfinityConnection(InfinityConnectionBase):
             if table_instance:
                 for n, ty, de, _ in table_instance.show_columns().rows():
                     clmns[n] = (ty, de)
+            column_names = set(clmns)
             filter = self.equivalent_condition_to_str(condition, table_instance)
             removeValue = {}
             for k, v in list(new_value.items()):
@@ -593,6 +649,7 @@ class InfinityConnection(InfinityConnectionBase):
                       "question_tks"]:
                 if k in new_value:
                     del new_value[k]
+            self._compact_extra_fields(new_value, column_names)
 
             remove_opt = {}  # "[k,new_value]": [id_to_update, ...]
             if removeValue:
@@ -749,6 +806,10 @@ class InfinityConnection(InfinityConnectionBase):
         if "row_id()" in fields_all and "row_id" in column_map:
             column_map["row_id()"] = column_map["row_id"]
         matched_columns = {column_map[col.lower()]: col for col in fields_all if col.lower() in column_map}
+        extra_requested = "extra" in fields_all
+        needs_extra = bool(self.EXTRA_METADATA_FIELDS.intersection(fields_all))
+        if needs_extra and "extra" in column_map:
+            matched_columns[column_map["extra"]] = "extra"
         none_columns = [col for col in fields_all if col.lower() not in column_map]
 
         res2 = res[matched_columns.keys()]
@@ -778,10 +839,21 @@ class InfinityConnection(InfinityConnectionBase):
                 res2[column] = res2[column].apply(lambda v: [int(hex_val, 16) for hex_val in v.split("_")] if v else [])
             else:
                 pass
+        hydrated_from_extra = set()
+        if "extra" in res2.columns:
+            extra_values = res2["extra"].apply(self._extra_to_dict)
+            for field in sorted(self.EXTRA_METADATA_FIELDS):
+                if field in fields_all and field not in res2.columns:
+                    res2[field] = extra_values.apply(lambda payload, name=field: payload.get(name))
+                    hydrated_from_extra.add(field)
+            if not extra_requested:
+                del res2["extra"]
         for column in ["docnm", "important_keywords", "questions", "content", "authors"]:
             if column in res2:
                 del res2[column]
         for column in none_columns:
+            if column in hydrated_from_extra:
+                continue
             res2[column] = None
 
         return res2.set_index("id").to_dict(orient="index")

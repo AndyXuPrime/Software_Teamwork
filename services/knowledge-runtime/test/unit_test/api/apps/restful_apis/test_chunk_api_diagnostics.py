@@ -17,6 +17,24 @@ def test_list_chunk_fields_avoid_backend_missing_columns():
     assert "source_block_ids" in fields
 
 
+def test_external_chunk_metadata_copy_rejects_internal_embedding_text(monkeypatch):
+    monkeypatch.setattr(chunk_api, "populate_section_token_fields", lambda chunk: chunk)
+    chunk = {}
+
+    chunk_api._copy_section_aware_chunk_fields(
+        {
+            "section_path": "A > B",
+            "repair_status": "clean",
+            "embedding_text": "hidden poison",
+        },
+        chunk,
+    )
+
+    assert chunk["section_path"] == "A > B"
+    assert chunk["repair_status"] == "clean"
+    assert "embedding_text" not in chunk
+
+
 def test_chunk_from_search_result_does_not_read_doc_store(monkeypatch):
     class FailingDocStore:
         def get(self, *args, **kwargs):

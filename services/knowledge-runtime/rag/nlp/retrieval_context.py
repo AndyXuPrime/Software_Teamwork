@@ -42,6 +42,32 @@ def _int_or_none(value: Any) -> int | None:
         return None
 
 
+def _first_int_or_none(value: Any) -> int | None:
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            parsed = _first_int_or_none(item)
+            if parsed is not None:
+                return parsed
+        return None
+    return _int_or_none(value)
+
+
+def _top_from_positions(positions: Any) -> int | None:
+    if not isinstance(positions, (list, tuple)) or not positions:
+        return None
+    first = positions[0]
+    if not isinstance(first, (list, tuple)):
+        return None
+    # Existing runtime position tuples are (page, left, right, top, bottom).
+    # Keep index 3 first, then accept index 2 for older/misaligned producers.
+    for index in (3, 2):
+        if len(first) > index:
+            parsed = _int_or_none(first[index])
+            if parsed is not None:
+                return parsed
+    return None
+
+
 def _string_list(value: Any) -> list[str]:
     if value is None or value == "":
         return []
@@ -115,6 +141,10 @@ class CandidateChunk:
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> "CandidateChunk":
+        positions = raw.get("positions") or raw.get("position_int") or []
+        top = _first_int_or_none(raw.get("top_int") or raw.get("top"))
+        if top is None:
+            top = _top_from_positions(positions)
         return cls(
             chunk_id=_string(raw.get("chunk_id") or raw.get("id")),
             doc_id=_string(raw.get("doc_id") or raw.get("document_id")),
@@ -123,14 +153,14 @@ class CandidateChunk:
             document_name=_string(raw.get("docnm_kwd") or raw.get("document_name") or raw.get("doc_name")),
             section_path=_string(raw.get("section_path") or raw.get("sectionPath")),
             section_title=_string(raw.get("section_title") or raw.get("sectionTitle")),
-            section_level=_int_or_none(raw.get("section_level") or raw.get("sectionLevel")),
+            section_level=_first_int_or_none(raw.get("section_level") or raw.get("sectionLevel")),
             block_type=_string(raw.get("block_type") or raw.get("blockType") or "unknown"),
             source_block_ids=_string_list(raw.get("source_block_ids") or raw.get("sourceBlockIds")),
-            positions=raw.get("positions") or raw.get("position_int") or [],
+            positions=positions,
             repair_status=_string(raw.get("repair_status") or raw.get("repairStatus")),
-            chunk_order=_int_or_none(raw.get("chunk_order_int") or raw.get("chunkOrder")),
-            page_number=_int_or_none(raw.get("page_num_int") or raw.get("pageNumber")),
-            top=_int_or_none(raw.get("top_int") or raw.get("top")),
+            chunk_order=_first_int_or_none(raw.get("chunk_order_int") or raw.get("chunkOrder")),
+            page_number=_first_int_or_none(raw.get("page_num_int") or raw.get("pageNumber")),
+            top=top,
             score=ScoreComponents(
                 dense=_float(raw.get("dense_score") or raw.get("vector_similarity")),
                 lexical=_float(raw.get("lexical_score") or raw.get("term_similarity")),

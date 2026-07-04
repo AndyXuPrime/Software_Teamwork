@@ -82,7 +82,10 @@ def test_default_search_fields_request_optional_section_metadata():
         assert field in DEFAULT_SEARCH_FIELDS
 
 
-def test_populate_section_token_fields_from_section_metadata():
+def test_populate_section_token_fields_from_section_metadata(monkeypatch):
+    from rag.nlp import rag_tokenizer
+
+    monkeypatch.setattr(rag_tokenizer, "tokenize", lambda text: " ".join(str(text).lower().split()))
     chunk = {
         "section_title": "Relay Settings",
         "section_path": ["Substation", "Protection"],
@@ -252,6 +255,44 @@ def test_context_pack_assembles_same_section_adjacent_and_safe_citations():
         }
     ]
     assert "vector" not in packs[1]["primary_chunk"]
+
+
+def test_context_pack_orders_adjacent_chunks_from_array_page_and_position_fields():
+    chunks = [
+        {
+            "chunk_id": "c3",
+            "doc_id": "doc_1",
+            "kb_id": "kb_1",
+            "content_with_weight": "third",
+            "section_path": "Root / Relay",
+            "page_num_int": [1],
+            "position_int": [[1, 10, 20, 90, 110]],
+        },
+        {
+            "chunk_id": "c1",
+            "doc_id": "doc_1",
+            "kb_id": "kb_1",
+            "content_with_weight": "first",
+            "section_path": "Root / Relay",
+            "page_num_int": [1],
+            "position_int": [[1, 10, 20, 10, 30]],
+        },
+        {
+            "chunk_id": "c2",
+            "doc_id": "doc_1",
+            "kb_id": "kb_1",
+            "content_with_weight": "second",
+            "section_path": "Root / Relay",
+            "page_num_int": [1],
+            "position_int": [[1, 10, 20, 50, 70]],
+        },
+    ]
+
+    packs = assemble_context_packs(chunks, {"context_policy": "chunk"})
+
+    assert packs[1]["primary_chunk"]["chunk_id"] == "c1"
+    assert [chunk["chunk_id"] for chunk in packs[1]["adjacent_chunks"]] == ["c2"]
+    assert [chunk["chunk_id"] for chunk in packs[2]["adjacent_chunks"]] == ["c1", "c3"]
 
 
 def test_context_pack_keeps_table_chunk_intact_without_adjacent_context():

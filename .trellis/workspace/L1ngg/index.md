@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 28
-- **Last Active**: 2026-07-05
+- **Total Sessions**: 27
+- **Last Active**: 2026-07-04
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~985 | Active |
+| `journal-1.md` | ~949 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,7 +29,6 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
-| 28 | 2026-07-05 | Document post-parse chain | `02c0792b`, `843f77b9`, `bc170ecf`, `1a8113f7` | `L1nggTeam/perf/document-post-parse-chain` |
 | 27 | 2026-07-04 | Remove AI provider compatibility | `bec238cb` | `L1nggTeam/refactor/remove-ai-provider-compat` |
 | 26 | 2026-07-04 | PaddleOCR cloud parser default and parsing fixes | `e64d2150` | `L1nggTeam/chore/paddleocr-cloud-default` |
 | 25 | 2026-07-04 | Fix knowledge document content type display | `1ee28159` | `L1nggTeam/fix/frontend-bug` |
