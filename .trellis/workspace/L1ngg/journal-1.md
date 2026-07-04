@@ -848,3 +848,36 @@ Unified AI model/provider calls around services/ai-gateway: added provider-exit 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: Fix knowledge document content type display
+
+**Date**: 2026-07-04
+**Task**: Fix knowledge document content type display
+**Branch**: `L1nggTeam/fix/frontend-bug`
+
+### Summary
+
+Normalized Knowledge document contentType values for common file types, preserved upload multipart file Content-Type, and added frontend filename fallback so document tables no longer show all legacy files as DOC.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1ee28159` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
