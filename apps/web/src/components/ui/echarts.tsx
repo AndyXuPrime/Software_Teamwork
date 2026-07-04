@@ -1,6 +1,6 @@
 'use client'
 
-import { BarChart, LineChart, PieChart } from 'echarts/charts'
+import { BarChart, LineChart, PictorialBarChart, PieChart } from 'echarts/charts'
 import {
   DataZoomComponent,
   GridComponent,
@@ -17,6 +17,7 @@ echarts.use([
   CanvasRenderer,
   LineChart,
   BarChart,
+  PictorialBarChart,
   PieChart,
   GridComponent,
   TooltipComponent,

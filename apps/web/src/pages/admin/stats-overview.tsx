@@ -1,17 +1,8 @@
 import * as echarts from 'echarts/core'
-import {
-  AlertCircle,
-  BarChart3,
-  Database,
-  FileText,
-  MessageSquare,
-  Timer,
-  Users,
-} from 'lucide-react'
+import { AlertCircle, MessageSquare, Timer, Users, Zap } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ApiError } from '@/api/client'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EChartsWrapper } from '@/components/ui/echarts'
 import { Input } from '@/components/ui/input'
@@ -23,80 +14,34 @@ import type {
   QATopQuery,
 } from '@/features/qa-admin/qa-admin.types'
 
-// ── Metric card config ──
-
-type MetricCardConfig = {
-  key: keyof QAMetricsOverview
-  label: string
-  icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean | 'true' }>
-  format: (value: number) => string
-}
-
-const metricCards: MetricCardConfig[] = [
-  {
-    key: 'totalQaCount',
-    label: '总问答次数',
-    icon: MessageSquare,
-    format: (value) => value.toLocaleString(),
-  },
-  {
-    key: 'todayQaCount',
-    label: '今日问答',
-    icon: BarChart3,
-    format: (value) => value.toLocaleString(),
-  },
-  {
-    key: 'totalQuestionCount',
-    label: '问题总数',
-    icon: MessageSquare,
-    format: (value) => value.toLocaleString(),
-  },
-  {
-    key: 'conversationCount',
-    label: '会话数',
-    icon: Users,
-    format: (value) => value.toLocaleString(),
-  },
-  {
-    key: 'avgLatencyMs',
-    label: '平均延迟',
-    icon: Timer,
-    format: (value) => `${Math.round(value)} ms`,
-  },
-  {
-    key: 'activeUsersToday',
-    label: '今日活跃用户',
-    icon: Users,
-    format: (value) => value.toLocaleString(),
-  },
-  {
-    key: 'knowledgeBaseCount',
-    label: '知识库数量',
-    icon: Database,
-    format: (value) => value.toLocaleString(),
-  },
-  {
-    key: 'documentCount',
-    label: '文档总数',
-    icon: FileText,
-    format: (value) => value.toLocaleString(),
-  },
-]
-
-// ── Helpers ──
+// ── Theme helpers ──
 
 function isDark(): boolean {
   if (typeof document === 'undefined') return false
   return document.documentElement.classList.contains('dark')
 }
 
-function chartTextColor(): string {
+function textColor(): string {
   return isDark() ? '#a1a1aa' : '#71717a'
 }
 
-function chartBorderColor(): string {
+function borderColor(): string {
   return isDark() ? '#27272a' : '#e4e4e7'
 }
+
+function cardBg(): string {
+  return isDark() ? '#18181b' : '#fff'
+}
+
+// ── Color palettes ──
+
+const ROSE_COLORS = ['#ec4899', '#d946ef', '#a855f7', '#6366f1']
+const PIE_COLORS = [
+  '#0d9488', '#0891b2', '#0284c7', '#4f46e5',
+  '#7c3aed', '#db2777', '#ea580c', '#65a30d',
+]
+
+// ── Helpers ──
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
@@ -130,136 +75,299 @@ function SectionState({ message, tone }: { message: string; tone: 'empty' | 'err
   )
 }
 
-function MetricCardSkeleton() {
-  return (
-    <div className="h-28 rounded-lg border border-border bg-card p-4">
-      <div className="mb-4 h-4 w-24 rounded skeleton-shimmer" />
-      <div className="h-7 w-20 rounded skeleton-shimmer" />
-    </div>
-  )
+function ChartSkeleton({ height }: { height: number }) {
+  return <div className="skeleton-shimmer rounded-lg" style={{ height: `${height}px` }} />
 }
 
-function MetricCard({
-  config,
-  overview,
+function SkeletonBlock({ className }: { className?: string }) {
+  return <div className={`${className ?? 'h-6 w-20'} rounded skeleton-shimmer`} />
+}
+
+// ── Top stat cards ──
+
+function StatCard({
+  label,
+  value,
+  icon: Icon,
+  suffix,
+  accent,
 }: {
-  config: MetricCardConfig
-  overview: QAMetricsOverview
+  label: string
+  value: string
+  icon: React.ComponentType<{ className?: string }>
+  suffix?: string
+  accent: string
 }) {
-  const Icon = config.icon
-  const rawValue = overview[config.key]
-  const unavailable = rawValue === undefined || rawValue === null
-
   return (
-    <div className="rounded-lg border border-border bg-card p-4 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
-      <div className="mb-2 flex items-center justify-between gap-2 text-sm text-muted-foreground">
-        <span className="flex items-center gap-2">
-          <Icon aria-hidden="true" className="size-4" />
-          {config.label}
-        </span>
-        {unavailable && <Badge variant="outline">不可用</Badge>}
+    <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
+      <div
+        className="flex size-10 shrink-0 items-center justify-center rounded-lg"
+        style={{ backgroundColor: `${accent}18` }}
+      >
+        <Icon className="size-5" style={{ color: accent }} />
       </div>
-      <p className="text-2xl font-semibold text-foreground">
-        {unavailable ? '-' : config.format(rawValue)}
-      </p>
+      <div className="min-w-0">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-xl font-bold text-foreground tabular-nums">
+          {value}
+          {suffix && <span className="ml-0.5 text-sm font-normal text-muted-foreground">{suffix}</span>}
+        </p>
+      </div>
     </div>
   )
 }
 
-// ── ECharts-based charts ──
-
-function TrendChart({ points }: { points: QAMetricsTrendPoint[] }) {
-  const normalizedPoints = points.map((point) => ({
-    date: point.date,
-    count: point.count ?? point.questionCount ?? 0,
-  }))
-
-  const textColor = chartTextColor()
-  const borderColor = chartBorderColor()
-
-  const option = useMemo(
-    () => ({
-      grid: { top: 16, right: 16, bottom: 24, left: 48 },
-      xAxis: {
-        type: 'category' as const,
-        data: normalizedPoints.map((p) => p.date),
-        axisLine: { lineStyle: { color: borderColor } },
-        axisTick: { show: false },
-        axisLabel: { color: textColor, fontSize: 11 },
-      },
-      yAxis: {
-        type: 'value' as const,
-        splitLine: { lineStyle: { color: borderColor, type: 'dashed' as const } },
-        axisLabel: { color: textColor, fontSize: 11 },
-      },
-      tooltip: {
-        trigger: 'axis' as const,
-        backgroundColor: isDark() ? '#18181b' : '#fff',
-        borderColor,
-        textStyle: { fontSize: 13 },
-      },
-      series: [
-        {
-          name: '问答数量',
-          type: 'line',
-          data: normalizedPoints.map((p) => p.count),
-          smooth: true,
-          showSymbol: false,
-          lineStyle: { width: 2, color: '#6366f1' },
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(99,102,241,0.25)' },
-              { offset: 1, color: 'rgba(99,102,241,0.02)' },
-            ]),
-          },
-        },
-      ],
-    }),
-    [normalizedPoints, textColor, borderColor],
+function StatCards({ overview }: { overview: QAMetricsOverview }) {
+  const v = (k: string) => (overview as Record<string, number | undefined>)[k]
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <StatCard label="今日问答" value={formatNumber(v('todayQaCount'))} icon={Zap} accent="#6366f1" />
+      <StatCard label="今日活跃用户" value={formatNumber(v('activeUsersToday'))} icon={Users} accent="#06b6d4" />
+      <StatCard label="平均延迟" value={v('avgLatencyMs') != null ? `${Math.round(v('avgLatencyMs')!)}` : '-'} icon={Timer} suffix="ms" accent="#f59e0b" />
+      <StatCard label="会话数" value={formatNumber(v('conversationCount'))} icon={MessageSquare} accent="#10b981" />
+    </div>
   )
-
-  return <EChartsWrapper option={option} style={{ minHeight: 280 }} />
 }
 
-function IntentRoseChart({ items }: { items: QAIntentDistributionItem[] }) {
-  const textColor = chartTextColor()
-  const data = items.map((item) => ({
-    name: item.label ?? item.intent,
-    value: item.count,
-  }))
+// ── Chart 1: Volume metrics Nightingale Rose ──
+
+const ROSE_METRICS: { key: keyof QAMetricsOverview; label: string }[] = [
+  { key: 'totalQaCount', label: '总问答次数' },
+  { key: 'totalQuestionCount', label: '问题总数' },
+  { key: 'knowledgeBaseCount', label: '知识库数量' },
+  { key: 'documentCount', label: '文档总数' },
+]
+
+function MetricsRoseChart({ overview }: { overview: QAMetricsOverview }) {
+  // Store real values for tooltip lookup
+  const realValues = useMemo(
+    () => Object.fromEntries(
+      ROSE_METRICS.map(({ key, label }) => [label, overview[key] ?? 0]),
+    ),
+    [overview],
+  )
+
+  // All petals use uniform visual weight for a perfect rose shape
+  const data = useMemo(
+    () => ROSE_METRICS.map(({ label }, i) => ({
+      name: label,
+      value: 100 + i * 20,    // small gradient for slight visual variety
+      real: realValues[label],
+    })),
+    [realValues],
+  )
 
   const option = useMemo(
     () => ({
       tooltip: {
         trigger: 'item' as const,
-        backgroundColor: isDark() ? '#18181b' : '#fff',
-        borderColor: chartBorderColor(),
+        backgroundColor: cardBg(),
+        borderColor: borderColor(),
+        textStyle: { fontSize: 13 },
+        formatter: (params: { name: string; data: { real: number } }) =>
+          `${params.name}: ${params.data.real.toLocaleString()}`,
+      },
+      series: [
+        {
+          name: '容量指标',
+          type: 'pie',
+          radius: ['30%', '78%'],
+          center: ['50%', '50%'],
+          roseType: 'area',
+          itemStyle: {
+            borderRadius: 8,
+            borderColor: cardBg(),
+            borderWidth: 3,
+          },
+          color: ROSE_COLORS,
+          label: {
+            show: true,
+            color: textColor(),
+            fontSize: 12,
+            formatter: (params: { name: string; data: { real: number } }) =>
+              `${params.name}\n${params.data.real.toLocaleString()}`,
+          },
+          emphasis: {
+            label: { fontSize: 15, fontWeight: 'bold', formatter: (params: { name: string; data: { real: number } }) => `${params.name}\n${params.data.real.toLocaleString()}` },
+            itemStyle: { shadowBlur: 14, shadowColor: 'rgba(0,0,0,0.2)' },
+          },
+          data,
+        },
+      ],
+    }),
+    [data],
+  )
+
+  return <EChartsWrapper option={option} style={{ minHeight: 300 }} />
+}
+
+// ── Chart 2: Trend Bar + Line + Dotted overlay ──
+
+function TrendChart({ points }: { points: QAMetricsTrendPoint[] }) {
+  const normalized = useMemo(
+    () => points.map((p) => ({ date: p.date, count: p.count ?? p.questionCount ?? 0 })),
+    [points],
+  )
+  const tc = textColor()
+  const bc = borderColor()
+
+  const option = useMemo(() => {
+    const categories = normalized.map((p) => p.date)
+    const realData = normalized.map((p) => p.count)
+    const maxVal = Math.max(1, ...realData)
+    // Use real values directly; yAxis.min=0 ensures axis starts at zero
+    const barData = realData.map((v) => v + 0.5) // imperceptible offset so zero bars still render
+    const lineData = barData.map((v) => v + maxVal * 0.15) // line sits slightly above bars
+
+    return {
+      grid: { top: 40, right: 24, bottom: 32, left: 48 },
+      xAxis: {
+        type: 'category' as const,
+        data: categories,
+        axisLine: { lineStyle: { color: bc } },
+        axisTick: { show: false },
+        axisLabel: { color: tc, fontSize: 10, rotate: categories.length > 14 ? 45 : 0 },
+      },
+      yAxis: {
+        type: 'value' as const,
+        min: 0,
+        axisLine: { show: true, lineStyle: { color: bc } },
+        splitLine: { lineStyle: { color: bc, type: 'dashed' as const } },
+        axisLabel: { show: false },
+        axisTick: { show: false },
+      },
+      tooltip: {
+        trigger: 'axis' as const,
+        backgroundColor: cardBg(),
+        borderColor: bc,
+        textStyle: { fontSize: 13 },
+        formatter: (params: { name: string; data: number; seriesName: string }[]) => {
+          const barSeries = params.find((p) => p.seriesName === '问答数量')
+          if (!barSeries) return ''
+          const idx = params[0].dataIndex
+          const real = realData[idx]
+          return `${categories[idx]}<br/>问答数量: ${real.toLocaleString()}`
+        },
+      },
+      animationDuration: 1400,
+      animationEasing: 'elasticOut' as const,
+      animationDelay: (idx: number) => idx * 40,
+      series: [
+        {
+          name: 'backdrop',
+          type: 'bar',
+          barGap: '-100%',
+          barWidth: '50%',
+          itemStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(99,102,241,0.25)' },
+              { offset: 0.3, color: 'rgba(99,102,241,0.08)' },
+              { offset: 1, color: 'rgba(99,102,241,0)' },
+            ]),
+            borderRadius: [6, 6, 0, 0],
+          },
+          z: 1,
+          data: lineData,
+        },
+        {
+          name: '问答数量',
+          type: 'bar',
+          barWidth: '50%',
+          itemStyle: {
+            borderRadius: [4, 4, 0, 0],
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: '#818cf8' },
+              { offset: 1, color: '#4f46e5' },
+            ]),
+          },
+          emphasis: {
+            itemStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: '#a5b4fc' },
+                { offset: 1, color: '#6366f1' },
+              ]),
+            },
+          },
+          z: 3,
+          data: barData,
+        },
+        {
+          name: 'trend-line',
+          type: 'line',
+          smooth: true,
+          showSymbol: true,
+          symbol: 'emptyCircle',
+          symbolSize: 10,
+          lineStyle: { color: '#a5b4fc', width: 2 },
+          itemStyle: { color: '#818cf8', borderColor: '#a5b4fc', borderWidth: 2 },
+          z: 4,
+          data: lineData,
+          label: { show: false },
+        },
+        {
+          name: 'dot-matrix',
+          type: 'pictorialBar',
+          symbol: 'rect',
+          symbolRepeat: true,
+          symbolSize: [10, 3],
+          symbolMargin: 2,
+          itemStyle: { color: isDark() ? 'rgba(24,24,27,0.6)' : 'rgba(255,255,255,0.7)' },
+          z: 2,
+          data: lineData,
+        },
+      ],
+    }
+  }, [normalized, tc, bc])
+
+  return <EChartsWrapper option={option} style={{ minHeight: 320 }} />
+}
+
+// ── Chart 3: Intent Pie with gaps + label lines ──
+
+function IntentGapPie({ items }: { items: QAIntentDistributionItem[] }) {
+  const tc = textColor()
+  const data = useMemo(
+    () => items.map((item) => ({ name: item.label ?? item.intent, value: item.count })),
+    [items],
+  )
+
+  const option = useMemo(
+    () => ({
+      color: PIE_COLORS,
+      tooltip: {
+        trigger: 'item' as const,
+        backgroundColor: cardBg(),
+        borderColor: borderColor(),
         textStyle: { fontSize: 13 },
         formatter: '{b}: {c} ({d}%)',
-      },
-      legend: {
-        orient: 'vertical' as const,
-        left: 0,
-        top: 'center',
-        textStyle: { color: textColor, fontSize: 12 },
-        itemWidth: 10,
-        itemHeight: 10,
-        itemGap: 12,
       },
       series: [
         {
           name: '意图分布',
           type: 'pie',
-          radius: ['20%', '75%'],
-          center: ['58%', '50%'],
-          roseType: 'area',
-          itemStyle: { borderRadius: 4, borderColor: isDark() ? '#18181b' : '#fff', borderWidth: 2 },
+          radius: ['38%', '70%'],
+          center: ['50%', '52%'],
+          padAngle: 3,
+          itemStyle: {
+            borderRadius: 6,
+            borderColor: cardBg(),
+            borderWidth: 3,
+          },
           label: {
-            color: textColor,
+            show: true,
+            position: 'outside' as const,
+            color: tc,
             fontSize: 11,
-            formatter: '{b}\n{d}%',
+            formatter: '{b} {d}%',
+          },
+          labelLine: {
+            show: true,
+            length: 18,
+            length2: 24,
+            lineStyle: { color: tc, width: 1 },
           },
           emphasis: {
+            scaleSize: 8,
             label: { fontSize: 14, fontWeight: 'bold' },
             itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.15)' },
           },
@@ -267,10 +375,10 @@ function IntentRoseChart({ items }: { items: QAIntentDistributionItem[] }) {
         },
       ],
     }),
-    [data, textColor],
+    [data, tc],
   )
 
-  return <EChartsWrapper option={option} style={{ minHeight: 300 }} />
+  return <EChartsWrapper option={option} style={{ minHeight: 320 }} />
 }
 
 // ── Table ──
@@ -318,7 +426,6 @@ export function StatsOverviewPage() {
   const [rankingLimit, setRankingLimit] = useState('10')
   const [, setDarkModeKey] = useState(0)
 
-  // Re-render charts on theme change
   useEffect(() => {
     const observer = new MutationObserver(() => setDarkModeKey((k) => k + 1))
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
@@ -353,23 +460,17 @@ export function StatsOverviewPage() {
     intentDistributionQuery.isFetching
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-2xl font-semibold text-foreground">QA 统计</h3>
           <p className="mt-2 text-sm text-muted-foreground">
-            展示概览指标、趋势、热门问题和意图分布；缺失的知识指标会标记为不可用。
+            即时指标
           </p>
         </div>
-        <Button type="button" variant="outline" onClick={refreshAll} disabled={isFetching}>
-          刷新
-        </Button>
-      </div>
-
-      {/* Metric cards */}
-      <section className="space-y-4">
         <div className="flex flex-wrap items-end gap-3">
-          <label className="w-32 space-y-1 text-sm">
+          <label className="w-28 space-y-1 text-sm">
             <span className="font-medium text-foreground">概览天数</span>
             <Input
               value={overviewDays}
@@ -377,37 +478,59 @@ export function StatsOverviewPage() {
               onChange={(event) => setOverviewDays(event.target.value)}
             />
           </label>
+          <Button
+            type="button"
+            onClick={refreshAll}
+            disabled={isFetching}
+            className="bg-primary text-primary-foreground transition-all duration-200 hover:bg-primary/90 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]"
+          >
+            刷新
+          </Button>
         </div>
+      </div>
 
+      {/* Row 1: Instant stat cards */}
+      <section>
         {overviewQuery.isError ? (
-          <SectionState
-            tone="error"
-            message={`概览指标加载失败：${getErrorMessage(overviewQuery.error)}`}
-          />
+          <SectionState tone="error" message={`概览指标加载失败：${getErrorMessage(overviewQuery.error)}`} />
         ) : overviewQuery.isLoading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 8 }).map((_, index) => (
-              <MetricCardSkeleton key={index} />
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-20 rounded-lg border border-border bg-card p-4">
+                <SkeletonBlock className="mb-2 h-3 w-16" />
+                <SkeletonBlock className="h-6 w-24" />
+              </div>
             ))}
           </div>
         ) : overviewQuery.data ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {metricCards.map((config) => (
-              <MetricCard key={config.key} config={config} overview={overviewQuery.data} />
-            ))}
-          </div>
+          <StatCards overview={overviewQuery.data} />
         ) : (
           <SectionState tone="empty" message="暂无概览指标。" />
         )}
       </section>
 
-      {/* Trend chart + Intent rose chart */}
-      <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+      {/* Row 2: Volume rose chart (full width) */}
+      <section className="rounded-lg border border-border bg-card p-5">
+        <h4 className="mb-1 text-lg font-semibold text-foreground">容量指标</h4>
+        <p className="mb-4 text-sm text-muted-foreground">总问答、问题、知识库、文档存量</p>
+        {overviewQuery.isError ? (
+          <SectionState tone="error" message={`容量指标加载失败：${getErrorMessage(overviewQuery.error)}`} />
+        ) : overviewQuery.isLoading ? (
+          <ChartSkeleton height={300} />
+        ) : overviewQuery.data ? (
+          <MetricsRoseChart overview={overviewQuery.data} />
+        ) : (
+          <SectionState tone="empty" message="暂无容量指标。" />
+        )}
+      </section>
+
+      {/* Row 3: Trend pictorial bar + Intent gap pie */}
+      <section className="grid gap-4 xl:grid-cols-2">
         <div className="space-y-4 rounded-lg border border-border bg-card p-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h4 className="text-lg font-semibold text-foreground">趋势</h4>
-              <p className="mt-1 text-sm text-muted-foreground">按日期展示问答数量。</p>
+              <h4 className="text-lg font-semibold text-foreground">问答趋势</h4>
+              <p className="mt-1 text-sm text-muted-foreground">按日期展示问答数量</p>
             </div>
             <label className="w-28 space-y-1 text-sm">
               <span className="font-medium text-foreground">天数</span>
@@ -419,12 +542,9 @@ export function StatsOverviewPage() {
             </label>
           </div>
           {trendQuery.isError ? (
-            <SectionState
-              tone="error"
-              message={`趋势加载失败：${getErrorMessage(trendQuery.error)}`}
-            />
+            <SectionState tone="error" message={`趋势加载失败：${getErrorMessage(trendQuery.error)}`} />
           ) : trendQuery.isLoading ? (
-            <div className="h-72 skeleton-shimmer rounded-lg" />
+            <ChartSkeleton height={300} />
           ) : trendPoints.length === 0 ? (
             <SectionState tone="empty" message="当前窗口内暂无趋势数据。" />
           ) : (
@@ -435,24 +555,21 @@ export function StatsOverviewPage() {
         <div className="space-y-4 rounded-lg border border-border bg-card p-5">
           <div>
             <h4 className="text-lg font-semibold text-foreground">意图分布</h4>
-            <p className="mt-1 text-sm text-muted-foreground">南丁格尔玫瑰图 · 按问答意图聚合占比。</p>
+            <p className="mt-1 text-sm text-muted-foreground">引导线标注占比</p>
           </div>
           {intentDistributionQuery.isError ? (
-            <SectionState
-              tone="error"
-              message={`意图分布加载失败：${getErrorMessage(intentDistributionQuery.error)}`}
-            />
+            <SectionState tone="error" message={`意图分布加载失败：${getErrorMessage(intentDistributionQuery.error)}`} />
           ) : intentDistributionQuery.isLoading ? (
-            <div className="h-72 skeleton-shimmer rounded-lg" />
+            <ChartSkeleton height={320} />
           ) : (intentDistributionQuery.data ?? []).length === 0 ? (
             <SectionState tone="empty" message="当前窗口内暂无意图分布数据。" />
           ) : (
-            <IntentRoseChart items={intentDistributionQuery.data ?? []} />
+            <IntentGapPie items={intentDistributionQuery.data ?? []} />
           )}
         </div>
       </section>
 
-      {/* Top queries */}
+      {/* Row 4: Top queries */}
       <section className="space-y-4 rounded-lg border border-border bg-card p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -480,12 +597,9 @@ export function StatsOverviewPage() {
         </div>
 
         {topQueriesQuery.isError ? (
-          <SectionState
-            tone="error"
-            message={`热门问题加载失败：${getErrorMessage(topQueriesQuery.error)}`}
-          />
+          <SectionState tone="error" message={`热门问题加载失败：${getErrorMessage(topQueriesQuery.error)}`} />
         ) : topQueriesQuery.isLoading ? (
-          <div className="h-60 skeleton-shimmer rounded-lg" />
+          <ChartSkeleton height={240} />
         ) : (topQueriesQuery.data ?? []).length === 0 ? (
           <SectionState tone="empty" message="当前窗口内暂无热门问题。" />
         ) : (
