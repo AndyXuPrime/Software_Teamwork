@@ -195,8 +195,10 @@ client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue
   和 Go 版本，并确认 `.env.local` 已由用户创建但不改写；再按需准备 `.local/tools`、
   `.local/bin`、Docker infra images、Knowledge runtime `.venv` 和 runtime artifact。Knowledge
   runtime `.venv` 会按 `--runtime` 模式校验 dependency profile，默认 full 模式会补齐 worker
-  group；已存在且匹配的产物会跳过。Go 构建/安装、Docker pull、uv sync 和模型/artifact
-  下载都会输出原生命令进度或周期性心跳。
+  group，并校验 `pyproject.toml`、`uv.lock` 和 `download_deps.py` fingerprint。Go 本地产物会用
+  `.local/stamps/` 记录源码 fingerprint；存在且匹配才跳过，源码变化会自动重建，`--skip-prepare`
+  遇到过期产物会失败。Go 构建/安装、Docker pull、uv sync 和模型/artifact 下载都会输出
+  原生命令进度或周期性心跳。
 - `start.sh` 会渲染 `.local/config/<profile>.env`，等待 `postgres` / `redis` / `minio` /
   `elasticsearch` health checks，单独运行一次性 `minio-init`，执行 migration 和 demo seed，
   再启动 host-run 后端进程组。Compose 启动仍使用 `--pull never`，镜像拉取只发生在

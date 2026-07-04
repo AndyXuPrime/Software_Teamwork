@@ -36,6 +36,7 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
   `./scripts/local/start.sh`，
   `cd apps/web && bun install && bun run dev`。
 - `./scripts/local/start.sh` 是唯一标准本地 setup/start 入口：先检查 `.env.local`、Docker、Go、Python、uv、psql、curl 等宿主机环境和版本，再按需准备本地 Go tools、`goose@v3.27.0`、服务二进制、Docker infra images、Knowledge runtime `.venv`/artifact，最后启动 infra、migration、seed、runtime 和后端服务。
+- `start.sh` 不能只因为 `.local/tools/*` 或 `.local/bin/*` 存在就复用；本地 Go 产物必须通过源码 fingerprint/stamp 或等价机制确认新鲜。默认启动应重建过期产物，`--skip-prepare` 遇到过期产物应失败并提示重新运行不带 `--skip-prepare`。Knowledge runtime `.venv` 必须校验 runtime profile 和 `pyproject.toml` / `uv.lock` / `download_deps.py` 依赖输入变化。
 - `./scripts/local/stop.sh` 只停止 `start.sh` 记录在 `.local/run/` 里的 host-run 后端和 Knowledge runtime 进程组；不会停止 Docker infra，也不会停止前端 Vite dev server。
 - `./scripts/local/clean.sh` 先执行 stop，再删除本地 infra Compose 容器和 PostgreSQL/MinIO/Elasticsearch 数据卷；不会删除 Docker images、`.env.local`、`.local/tools` 或 `.local/bin`。非交互确认用 `--yes`。
 - 根级 Docker Compose 只允许拉取并启动基础设施：`postgres`、`redis`、`minio`、`minio-init`、`elasticsearch`。Auth、File、Knowledge、QA、Document、AI Gateway、Gateway、Parser 和前端都必须按文档在宿主机启动。

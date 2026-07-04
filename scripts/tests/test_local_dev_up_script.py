@@ -79,6 +79,69 @@ class LocalStartupScriptTests(unittest.TestCase):
             self.assertIn("GOSUMDB=sum.example.internal", go_env)
             self.assertIn("loaded Go module source settings from .env.local", result.stdout)
 
+    def test_start_rebuilds_stale_config_renderer_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+            source = root / "config" / "ctl" / "main.go"
+            source.write_text("package main\nfunc main() {}\n", encoding="utf-8")
+            future = time.time() + 10
+            os.utime(source, (future, future))
+
+            result = self.run_start(root, args=["--infra-only"])
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            go_calls = (root / "go-calls.log").read_text(encoding="utf-8")
+            self.assertIn(f"-C {root / 'config' / 'ctl'} build -o {root / '.local' / 'tools' / 'config-ctl'} .", go_calls)
+            self.assertTrue((root / ".local" / "stamps" / "config-ctl.sha256").exists())
+
+    def test_start_skip_prepare_fails_for_stale_config_renderer(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+            source = root / "config" / "ctl" / "main.go"
+            source.write_text("package main\nfunc main() {}\n", encoding="utf-8")
+            future = time.time() + 10
+            os.utime(source, (future, future))
+
+            result = self.run_start(root, args=["--infra-only", "--skip-prepare"])
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("config renderer is stale", result.stderr)
+            self.assertFalse((root / "go-calls.log").exists())
+            docker_calls = (root / "docker-calls.log").read_text(encoding="utf-8")
+            self.assertIn("info", docker_calls)
+            self.assertNotIn("pull", docker_calls)
+            self.assertNotIn("up", docker_calls)
+
+    def test_start_rebuilds_stale_backend_binary_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+            self.create_service_binaries(root)
+            source = root / "services" / "auth" / "cmd" / "server" / "main.go"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text("package main\nfunc main() {}\n", encoding="utf-8")
+            future = time.time() + 10
+            os.utime(source, (future, future))
+
+            try:
+                result = self.run_start(
+                    root,
+                    args=["--backend-only", "--no-runtime"],
+                    extra_env={"LOCAL_STARTUP_CHECK_SECONDS": "0"},
+                )
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                go_calls = (root / "go-calls.log").read_text(encoding="utf-8")
+                self.assertIn(f"-C {root / 'services' / 'auth'} build -o {root / '.local' / 'bin' / 'auth-server'} ./cmd/server", go_calls)
+                self.assertTrue((root / ".local" / "stamps" / "auth-server.sha256").exists())
+            finally:
+                self.cleanup_started_processes(root)
+
     def test_start_infra_only_pulls_missing_images(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.prepare_runtime(Path(directory))
@@ -231,7 +294,32 @@ class LocalStartupScriptTests(unittest.TestCase):
                 python_calls = (root / "python-calls.log").read_text(encoding="utf-8")
                 self.assertIn("ragflow_deps/download_deps.py --sync-only --profile worker", python_calls)
                 stamp = root / "services" / "knowledge-runtime" / ".venv" / ".local-start-profile"
-                self.assertEqual("worker\n", stamp.read_text(encoding="utf-8"))
+                stamp_text = stamp.read_text(encoding="utf-8")
+                self.assertTrue(stamp_text.startswith("worker\n"))
+                self.assertIn("fingerprint=", stamp_text)
+            finally:
+                self.cleanup_started_processes(root)
+
+    def test_start_resyncs_runtime_dependencies_when_lockfile_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+            self.create_service_binaries(root)
+            self.create_runtime_files(root)
+            lockfile = root / "services" / "knowledge-runtime" / "uv.lock"
+            lockfile.write_text("updated lock\n", encoding="utf-8")
+            future = time.time() + 10
+            os.utime(lockfile, (future, future))
+
+            try:
+                result = self.run_start(root, args=["--backend-only"], extra_env={"LOCAL_STARTUP_CHECK_SECONDS": "0"})
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                python_calls = (root / "python-calls.log").read_text(encoding="utf-8")
+                self.assertIn("ragflow_deps/download_deps.py --sync-only --profile worker", python_calls)
+                stamp = root / "services" / "knowledge-runtime" / ".venv" / ".local-start-profile"
+                self.assertIn("fingerprint=", stamp.read_text(encoding="utf-8"))
             finally:
                 self.cleanup_started_processes(root)
 

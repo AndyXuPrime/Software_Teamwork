@@ -942,7 +942,10 @@ Runtime rules:
   downloads only; Docker registry rewrite remains the Compose image path.
   Runtime `.venv` readiness must validate the selected dependency profile, not
   only directory existence; `--runtime full` must resync the worker profile when
-  an existing `.venv` was prepared for API-only startup.
+  an existing `.venv` was prepared for API-only startup. It must also validate
+  a dependency-input fingerprint covering `pyproject.toml`, `uv.lock`, and
+  `ragflow_deps/download_deps.py`, or otherwise run an idempotent frozen sync so
+  lockfile/group changes cannot be skipped.
 - Treat `services/knowledge-runtime/**` and its host-run API/worker scripts as
   the local runtime contract for Knowledge parsing and retrieval changes.
 - `start.sh --runtime full` must not run direct `docker build` or `docker run`
@@ -975,6 +978,10 @@ Runtime rules:
   service binaries, inspect/pull selected Docker infra images, and prepare
   Knowledge runtime `.venv`/artifacts. It must not run unpinned `go run`
   startup commands or use `go run ./cmd/server` for long-lived services.
+- Prepared host-run Go artifacts must not be reused only because the binary
+  exists. `start.sh` should validate a source fingerprint, commit/mtime stamp,
+  or equivalent freshness marker; default startup rebuilds stale artifacts, and
+  `--skip-prepare` fails with an actionable hint for stale artifacts.
 - Host-run process management is part of the local startup contract:
   `start.sh` should start service commands in managed process groups and
   `stop.sh` should stop those process groups, not just wrapper PIDs.

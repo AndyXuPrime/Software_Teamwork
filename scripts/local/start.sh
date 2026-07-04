@@ -8,6 +8,7 @@ RUN_DIR="$ROOT_DIR/.local/run"
 LOG_DIR="$ROOT_DIR/.local/logs"
 TOOLS_DIR="$ROOT_DIR/.local/tools"
 BIN_DIR="$ROOT_DIR/.local/bin"
+STAMP_DIR="$ROOT_DIR/.local/stamps"
 RUNTIME_DIR="$ROOT_DIR/services/knowledge-runtime"
 LOCAL_RUNTIME_DIR="$ROOT_DIR/.local/knowledge-runtime"
 RUNTIME_SYNC_STAMP="$RUNTIME_DIR/.venv/.local-start-profile"
@@ -388,6 +389,96 @@ run_go() {
   env "${env_args[@]}" go "$@"
 }
 
+source_fingerprint() {
+  local path file
+  {
+    for path in "$@"; do
+      if [[ -d "$path" ]]; then
+        (
+          cd "$path"
+          while IFS= read -r -d '' file; do
+            printf '%s  ' "$path/${file#./}"
+            sha256sum "$file"
+          done < <(find . -type f \( -name '*.go' -o -name 'go.mod' -o -name 'go.sum' \) -print0 | sort -z)
+        )
+      elif [[ -f "$path" ]]; then
+        printf '%s  ' "$path"
+        sha256sum "$path"
+      else
+        printf 'missing  %s\n' "$path"
+      fi
+    done
+  } | sha256sum | awk '{print $1}'
+}
+
+source_inputs_newer_than() {
+  local artifact="$1"
+  shift
+  local path newer
+  for path in "$@"; do
+    if [[ -f "$path" ]]; then
+      [[ "$path" -nt "$artifact" ]] && return 0
+    elif [[ -d "$path" ]]; then
+      newer="$(find "$path" -type f \( -name '*.go' -o -name 'go.mod' -o -name 'go.sum' \) -newer "$artifact" -print -quit)"
+      [[ -n "$newer" ]] && return 0
+    fi
+  done
+  return 1
+}
+
+artifact_stamp_path() {
+  local name="$1"
+  printf '%s/%s.sha256\n' "$STAMP_DIR" "$name"
+}
+
+artifact_current_for_sources() {
+  local artifact="$1"
+  local stamp="$2"
+  local expected="$3"
+  shift 3
+  [[ -x "$artifact" ]] || return 1
+  if [[ -f "$stamp" ]]; then
+    [[ "$(cat "$stamp")" == "$expected" ]]
+    return
+  fi
+  ! source_inputs_newer_than "$artifact" "$@"
+}
+
+mark_artifact_current_for_sources() {
+  local stamp="$1"
+  local fingerprint="$2"
+  mkdir -p "$STAMP_DIR"
+  printf '%s\n' "$fingerprint" > "$stamp"
+}
+
+log_artifact_prepare_reason() {
+  local label="$1"
+  local artifact="$2"
+  local stamp="$3"
+  if [[ ! -x "$artifact" ]]; then
+    log_info "building $label"
+  elif [[ ! -f "$stamp" ]]; then
+    log_info "rebuilding $label (missing local build stamp or source is newer)"
+  else
+    log_info "rebuilding $label (source changed)"
+  fi
+}
+
+require_current_artifact() {
+  local label="$1"
+  local artifact="$2"
+  local stamp="$3"
+  local fingerprint="$4"
+  local hint="$5"
+  shift 5
+  require_file "$artifact" "$hint" || return 1
+  if ! artifact_current_for_sources "$artifact" "$stamp" "$fingerprint" "$@"; then
+    log_error "$label is stale for the current source tree: $artifact"
+    log_hint "$hint"
+    return 1
+  fi
+}
+
 run_go_with_heartbeat() {
   local label="$1"
   shift
@@ -408,12 +499,17 @@ run_go_install() {
 
 prepare_config_renderer() {
   mkdir -p "$TOOLS_DIR"
-  if [[ -x "$TOOLS_DIR/config-ctl" ]]; then
-    log_ok "config renderer already prepared: $TOOLS_DIR/config-ctl"
+  local artifact="$TOOLS_DIR/config-ctl"
+  local stamp fingerprint
+  stamp="$(artifact_stamp_path config-ctl)"
+  fingerprint="$(source_fingerprint "$ROOT_DIR/config/ctl")"
+  if artifact_current_for_sources "$artifact" "$stamp" "$fingerprint" "$ROOT_DIR/config/ctl"; then
+    log_ok "config renderer already prepared for current source: $artifact"
     return 0
   fi
-  log_info "building config renderer"
-  run_go_with_heartbeat "building config renderer" -C "$ROOT_DIR/config/ctl" build -o "$TOOLS_DIR/config-ctl" .
+  log_artifact_prepare_reason "config renderer" "$artifact" "$stamp"
+  run_go_with_heartbeat "building config renderer" -C "$ROOT_DIR/config/ctl" build -o "$artifact" .
+  mark_artifact_current_for_sources "$stamp" "$fingerprint"
 }
 
 prepare_goose() {
@@ -436,12 +532,18 @@ prepare_goose() {
 prepare_ai_gateway_seed_helper() {
   (( SKIP_SEED )) && return 0
   mkdir -p "$TOOLS_DIR"
-  if [[ -x "$TOOLS_DIR/render-ai-gateway-local-seed" ]]; then
-    log_ok "AI Gateway local seed helper already prepared: $TOOLS_DIR/render-ai-gateway-local-seed"
+  local artifact="$TOOLS_DIR/render-ai-gateway-local-seed"
+  local source="$ROOT_DIR/scripts/local/render_ai_gateway_local_seed.go"
+  local stamp fingerprint
+  stamp="$(artifact_stamp_path render-ai-gateway-local-seed)"
+  fingerprint="$(source_fingerprint "$source")"
+  if artifact_current_for_sources "$artifact" "$stamp" "$fingerprint" "$source"; then
+    log_ok "AI Gateway local seed helper already prepared for current source: $artifact"
     return 0
   fi
-  log_info "building AI Gateway local seed helper"
-  run_go_with_heartbeat "building AI Gateway local seed helper" build -o "$TOOLS_DIR/render-ai-gateway-local-seed" "$ROOT_DIR/scripts/local/render_ai_gateway_local_seed.go"
+  log_artifact_prepare_reason "AI Gateway local seed helper" "$artifact" "$stamp"
+  run_go_with_heartbeat "building AI Gateway local seed helper" build -o "$artifact" "$source"
+  mark_artifact_current_for_sources "$stamp" "$fingerprint"
 }
 
 prepare_local_tools() {
@@ -453,15 +555,19 @@ prepare_local_tools() {
 prepare_backend_binaries() {
   (( INFRA_ONLY )) && return 0
   mkdir -p "$BIN_DIR"
-  local item name binary dir target
+  local item name binary dir target artifact stamp fingerprint
   for item in "${GO_SERVICES[@]}"; do
     IFS='|' read -r name binary dir target <<<"$item"
-    if [[ -x "$BIN_DIR/$binary" ]]; then
-      log_ok "$name binary already prepared: $BIN_DIR/$binary"
+    artifact="$BIN_DIR/$binary"
+    stamp="$(artifact_stamp_path "$binary")"
+    fingerprint="$(source_fingerprint "$dir")"
+    if artifact_current_for_sources "$artifact" "$stamp" "$fingerprint" "$dir"; then
+      log_ok "$name binary already prepared for current source: $artifact"
       continue
     fi
-    log_info "building $name binary"
-    run_go_with_heartbeat "building $name binary" -C "$dir" build -o "$BIN_DIR/$binary" "$target"
+    log_artifact_prepare_reason "$name binary" "$artifact" "$stamp"
+    run_go_with_heartbeat "building $name binary" -C "$dir" build -o "$artifact" "$target"
+    mark_artifact_current_for_sources "$stamp" "$fingerprint"
   done
 }
 
@@ -488,19 +594,52 @@ runtime_profile_satisfies() {
   return 1
 }
 
+runtime_dependency_inputs() {
+  printf '%s\n' \
+    "$RUNTIME_DIR/pyproject.toml" \
+    "$RUNTIME_DIR/uv.lock" \
+    "$RUNTIME_DIR/ragflow_deps/download_deps.py"
+}
+
+runtime_dependency_fingerprint() {
+  local inputs=()
+  while IFS= read -r path; do
+    inputs+=("$path")
+  done < <(runtime_dependency_inputs)
+  source_fingerprint "${inputs[@]}"
+}
+
 runtime_synced_profile() {
   if [[ -f "$RUNTIME_SYNC_STAMP" ]]; then
-    head -n 1 "$RUNTIME_SYNC_STAMP"
+    head -n 1 "$RUNTIME_SYNC_STAMP" | sed 's/^profile=//'
+  fi
+}
+
+runtime_synced_fingerprint() {
+  if [[ -f "$RUNTIME_SYNC_STAMP" ]]; then
+    sed -n 's/^fingerprint=//p' "$RUNTIME_SYNC_STAMP" | head -n 1
   fi
 }
 
 runtime_dependencies_synced() {
   local required="$1"
-  local prepared
+  local prepared expected actual
+  local inputs=()
   [[ -d "$RUNTIME_DIR/.venv" ]] || return 1
+  [[ -f "$RUNTIME_SYNC_STAMP" ]] || return 1
   prepared="$(runtime_synced_profile)"
   [[ -n "$prepared" ]] || return 1
-  runtime_profile_satisfies "$prepared" "$required"
+  runtime_profile_satisfies "$prepared" "$required" || return 1
+  expected="$(runtime_dependency_fingerprint)"
+  actual="$(runtime_synced_fingerprint)"
+  if [[ -n "$actual" ]]; then
+    [[ "$actual" == "$expected" ]]
+    return
+  fi
+  while IFS= read -r path; do
+    inputs+=("$path")
+  done < <(runtime_dependency_inputs)
+  ! source_inputs_newer_than "$RUNTIME_SYNC_STAMP" "${inputs[@]}"
 }
 
 mark_runtime_dependencies_synced() {
@@ -509,7 +648,10 @@ mark_runtime_dependencies_synced() {
     log_error "Knowledge runtime sync completed but $RUNTIME_DIR/.venv is missing"
     return 1
   fi
-  printf '%s\n' "$profile" > "$RUNTIME_SYNC_STAMP"
+  {
+    printf '%s\n' "$profile"
+    printf 'fingerprint=%s\n' "$(runtime_dependency_fingerprint)"
+  } > "$RUNTIME_SYNC_STAMP"
 }
 
 runtime_artifacts_ready() {
@@ -646,16 +788,64 @@ compose_cmd() {
   docker compose -f "$COMPOSE_FILE" --env-file "$CONFIG_COMPOSE_ENV_FILE" "$@"
 }
 
-check_start_prerequisites() {
-  require_file "$TOOLS_DIR/config-ctl" "Rerun ./scripts/local/start.sh to build the config renderer." || return 1
+check_prepared_config_renderer() {
+  local config_artifact="$TOOLS_DIR/config-ctl"
+  local config_stamp config_fingerprint
+  config_stamp="$(artifact_stamp_path config-ctl)"
+  config_fingerprint="$(source_fingerprint "$ROOT_DIR/config/ctl")"
+  require_current_artifact \
+    "config renderer" \
+    "$config_artifact" \
+    "$config_stamp" \
+    "$config_fingerprint" \
+    "Rerun ./scripts/local/start.sh without --skip-prepare to build the config renderer for the current source." \
+    "$ROOT_DIR/config/ctl" || return 1
+}
+
+ai_gateway_local_seed_enabled() {
+  case "${AI_GATEWAY_LOCAL_SEED_ENABLED:-}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+check_prepared_local_tools() {
+  check_prepared_config_renderer || return 1
   if (( ! SKIP_MIGRATIONS )); then
     require_file "$TOOLS_DIR/goose" "Rerun ./scripts/local/start.sh to install goose $GOOSE_VERSION." || return 1
   fi
+  if (( ! SKIP_SEED )) && ai_gateway_local_seed_enabled; then
+    local seed_artifact="$TOOLS_DIR/render-ai-gateway-local-seed"
+    local seed_source="$ROOT_DIR/scripts/local/render_ai_gateway_local_seed.go"
+    local seed_stamp seed_fingerprint
+    seed_stamp="$(artifact_stamp_path render-ai-gateway-local-seed)"
+    seed_fingerprint="$(source_fingerprint "$seed_source")"
+    require_current_artifact \
+      "AI Gateway local seed helper" \
+      "$seed_artifact" \
+      "$seed_stamp" \
+      "$seed_fingerprint" \
+      "Rerun ./scripts/local/start.sh without --skip-prepare to build the AI Gateway local seed helper for the current source." \
+      "$seed_source" || return 1
+  fi
+}
+
+check_start_prerequisites() {
+  check_prepared_local_tools || return 1
   if (( ! INFRA_ONLY )); then
-    local item name binary dir target
+    local item name binary dir target artifact stamp fingerprint
     for item in "${GO_SERVICES[@]}"; do
       IFS='|' read -r name binary dir target <<<"$item"
-      require_file "$BIN_DIR/$binary" "Rerun ./scripts/local/start.sh to build host-run service binaries." || return 1
+      artifact="$BIN_DIR/$binary"
+      stamp="$(artifact_stamp_path "$binary")"
+      fingerprint="$(source_fingerprint "$dir")"
+      require_current_artifact \
+        "$name binary" \
+        "$artifact" \
+        "$stamp" \
+        "$fingerprint" \
+        "Rerun ./scripts/local/start.sh without --skip-prepare to build host-run service binaries for the current source." \
+        "$dir" || return 1
     done
   fi
   if (( ! SKIP_INFRA )); then
@@ -718,12 +908,10 @@ sql_literal() {
 }
 
 apply_ai_gateway_local_seed_overlay() {
-  case "${AI_GATEWAY_LOCAL_SEED_ENABLED:-}" in
-    ""|0|false|False|FALSE|no|No|NO|off|Off|OFF)
-      log_info "AI_GATEWAY_LOCAL_SEED_ENABLED is not true; keeping seeded placeholder model profiles"
-      return
-      ;;
-  esac
+  if ! ai_gateway_local_seed_enabled; then
+    log_info "AI_GATEWAY_LOCAL_SEED_ENABLED is not true; keeping seeded placeholder model profiles"
+    return
+  fi
   require_file "$TOOLS_DIR/render-ai-gateway-local-seed" "Rerun ./scripts/local/start.sh to build the AI Gateway local seed helper." || return 1
   "$TOOLS_DIR/render-ai-gateway-local-seed" | psql "$POSTGRES_ADMIN_URL" -v ON_ERROR_STOP=1
 }
@@ -975,6 +1163,8 @@ log_info "starting local stack; missing local artifacts will be prepared"
 run_step "preflighting host environment" preflight_host_environment
 if (( ! SKIP_PREPARE )); then
   run_step "preparing local Go tools" prepare_local_tools
+else
+  run_step "checking prepared config renderer" check_prepared_config_renderer
 fi
 run_step "loading local config" load_config
 if (( CHINA_MIRRORS )); then

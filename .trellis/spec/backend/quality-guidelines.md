@@ -308,7 +308,9 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$
 - Knowledge runtime `.venv` readiness must validate the selected dependency
   profile, not only directory existence; default/full startup must resync the
   worker dependency group when an existing `.venv` was prepared by
-  `--runtime api`.
+  `--runtime api`. It must also validate a dependency-input fingerprint covering
+  `pyproject.toml`, `uv.lock`, and `ragflow_deps/download_deps.py`, or otherwise
+  run an idempotent frozen sync so lockfile/group changes cannot be skipped.
 - Runtime Python dependency changes belong under `services/knowledge-runtime`;
   the default local backend startup path must not depend on `services/parser`.
 - `start.sh --runtime full` must not run direct `docker build` or `docker run`
@@ -343,6 +345,11 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$
   service binaries, inspect/pull selected Docker infra images, and prepare
   Knowledge runtime `.venv`/artifacts. It must not run unpinned `go run`
   startup commands or use `go run ./cmd/server` for long-lived services.
+- `start.sh` must not silently reuse stale host-run Go artifacts. Prepared
+  config tools, seed helpers, and service binaries need a source fingerprint,
+  commit/mtime stamp, or equivalent freshness check. Default startup should
+  rebuild stale artifacts; `--skip-prepare` should fail with a clear hint when a
+  required prepared artifact does not match the current source tree.
 - Host-run backend processes should be started in managed process groups and
   stopped by process group so `go run` or `uv run` wrapper processes do not
   leave child service binaries listening on local ports.

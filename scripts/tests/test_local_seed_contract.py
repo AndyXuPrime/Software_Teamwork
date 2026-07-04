@@ -174,6 +174,10 @@ class LocalSeedContractTests(unittest.TestCase):
                 "preparing Knowledge runtime dependencies\n"
                 "preparing backend service binaries\n"
                 "run_with_heartbeat\n"
+                "source_fingerprint\n"
+                "artifact_current_for_sources\n"
+                "require_current_artifact\n"
+                ".local/stamps\n"
                 "--pull never\n"
                 "config-ctl\n"
                 "GOOSE_VERSION=\"v3.27.0\"\n"
@@ -195,6 +199,9 @@ class LocalSeedContractTests(unittest.TestCase):
                 "knowledge-runtime-api\n"
                 "knowledge-runtime-worker\n"
                 ".local-start-profile\n"
+                "fingerprint=\n"
+                "pyproject.toml\n"
+                "uv.lock\n"
                 "runtime_dependencies_synced\n"
                 "download_deps.py\n",
                 encoding="utf-8",
