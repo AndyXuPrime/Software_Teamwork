@@ -76,6 +76,8 @@ export function AppLayout({ children }: PropsWithChildren) {
   const router = useRouter()
   const routerState = useRouterState()
   const pathname = routerState.location.pathname
+  const isAdminRoute = pathname.startsWith('/admin')
+  const pageTransitionKey = isAdminRoute ? '/admin' : pathname
   const [helpOpen, setHelpOpen] = useState(false)
   const currentLabel =
     Object.entries(pathLabels).find(([key]) => pathname.startsWith(key))?.[1] ?? '首页'
@@ -266,8 +268,11 @@ export function AppLayout({ children }: PropsWithChildren) {
       </header>
 
       <main
-        key={pathname}
-        className="page-enter-right flex-1 overflow-y-auto overflow-x-hidden"
+        key={pageTransitionKey}
+        className={cn(
+          'flex-1 overflow-y-auto overflow-x-hidden',
+          !isAdminRoute && 'page-enter-right',
+        )}
         style={{ scrollbarGutter: 'stable' }}
       >
         {children}

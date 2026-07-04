@@ -193,6 +193,19 @@ describe('AppLayout accessibility smoke', () => {
     expect(within(nav).getByRole('link', { name: '管理' })).toBeVisible()
   })
 
+  it('keeps admin child route transitions out of the global shell', () => {
+    routerMocks.pathname = '/admin/knowledge/search'
+
+    renderWithProviders(
+      <AppLayout>
+        <section aria-label="admin workspace">Workspace</section>
+      </AppLayout>,
+    )
+
+    const workspace = screen.getByRole('region', { name: 'admin workspace' })
+    expect(workspace.closest('main')).not.toHaveClass('page-enter-right')
+  })
+
   it('shows the QA unread completion dot only when the QA nav item is visible', () => {
     useChatStore.setState({
       qaUnreadCompletion: {

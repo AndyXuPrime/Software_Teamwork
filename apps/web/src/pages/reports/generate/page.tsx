@@ -2129,19 +2129,6 @@ export function ReportGeneratePage() {
                         </Button>
                         <Button
                           variant="outline"
-                          className="text-foreground"
-                          onClick={handleCancelJob}
-                          disabled={!canCancelJob || cancelJobMutation.isPending}
-                        >
-                          {cancelJobMutation.isPending ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : (
-                            <XCircle className="size-4" />
-                          )}
-                          取消任务
-                        </Button>
-                        <Button
-                          variant="outline"
                           onClick={handleRetry}
                           disabled={
                             effectiveJob?.status !== 'failed' &&

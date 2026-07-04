@@ -1255,7 +1255,7 @@ describe('ReportGeneratePage', () => {
 
     expect(await screen.findByText(/restore progress 1 \/ 2/)).toBeVisible()
     expect((await screen.findAllByText('restore-section-1')).length).toBeGreaterThan(0)
-    expect(screen.getAllByRole('button', { name: /取消任务/ }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: /取消任务/ })).toHaveLength(1)
   })
 
   it('allows retrying a succeeded content generation job', async () => {
