@@ -49,8 +49,8 @@ EN_CORE_WEB_SM_MIRROR_URL = f"{GITHUB_PROXY_PREFIX}{EN_CORE_WEB_SM_URL}"
 def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
     if use_china_mirrors:
         return [
-            "http://mirrors.tuna.tsinghua.edu.cn/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb",
-            "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_arm64.deb",
+            "https://repo.huaweicloud.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb",
+            "https://repo.huaweicloud.com/ubuntu-ports/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_arm64.deb",
             "https://repo.huaweicloud.com/repository/maven/org/apache/tika/tika-server-standard/3.3.0/tika-server-standard-3.3.0.jar",
             "https://repo.huaweicloud.com/repository/maven/org/apache/tika/tika-server-standard/3.3.0/tika-server-standard-3.3.0.jar.md5",
             "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
@@ -121,13 +121,20 @@ def download_model_files(repository_id: str, local_directory: Path, endpoint: st
         encoded = quote(filename, safe="/")
         url = f"{endpoint}/{repository_id}/resolve/{info.sha}/{encoded}"
         print(f"Downloading {filename} from {url}...")
-        temp_target = target.with_name(target.name + ".tmp")
-        try:
-            urllib.request.urlretrieve(url, temp_target)
-            os.replace(temp_target, target)
-        finally:
-            if temp_target.exists():
-                temp_target.unlink()
+        download_file(url, target)
+
+
+def download_file(download_url: str, target: Path):
+    target = Path(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp_target = target.with_name(target.name + ".tmp")
+
+    try:
+        urllib.request.urlretrieve(download_url, temp_target)
+        os.replace(temp_target, target)
+    finally:
+        if temp_target.exists():
+            temp_target.unlink()
 
 
 def rewrite_text_for_china_mirrors(text: str) -> str:
@@ -221,8 +228,8 @@ if __name__ == "__main__":
         if not args.skip_uv_sync:
             sync_runtime_dependencies_with_china_mirrors()
 
-    # Some mirrors (e.g. archive.ubuntu.com) reject the default urllib
-    # User-Agent with HTTP 403, so install an opener with a browser-like UA.
+    # Keep a single browser-like User-Agent for all direct urllib downloads.
+    # The --china URLs above are selected to accept this header.
     opener = urllib.request.build_opener()
     opener.addheaders = [("User-Agent", "Mozilla/5.0")]
     urllib.request.install_opener(opener)
@@ -230,9 +237,11 @@ if __name__ == "__main__":
     for url in urls:
         download_url = url[0] if isinstance(url, list) else url
         filename = url[1] if isinstance(url, list) else url.split("/")[-1]
+        if os.path.exists(filename):
+            print(f"Using cached {filename}")
+            continue
         print(f"Downloading {filename} from {download_url}...")
-        if not os.path.exists(filename):
-            urllib.request.urlretrieve(download_url, filename)
+        download_file(download_url, Path(filename))
 
     local_dir = os.path.abspath("nltk_data")
     nltk_downloader = build_nltk_downloader(args.china_mirrors)

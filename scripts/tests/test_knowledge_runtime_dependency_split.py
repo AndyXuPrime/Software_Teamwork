@@ -53,6 +53,14 @@ class KnowledgeRuntimeDependencySplitTests(unittest.TestCase):
         self.assertIn('"InfiniFlow/deepdoc"', script)
         self.assertIn('"InfiniFlow/text_concat_xgb_v1.0"', script)
 
+    def test_china_runtime_deps_use_mozilla_compatible_ubuntu_mirror(self) -> None:
+        script = Path("services/knowledge-runtime/ragflow_deps/download_deps.py").read_text(encoding="utf-8")
+
+        self.assertIn("https://repo.huaweicloud.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb", script)
+        self.assertIn("https://repo.huaweicloud.com/ubuntu-ports/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_arm64.deb", script)
+        self.assertNotIn("mirrors.tuna.tsinghua.edu.cn/ubuntu/pool/main/o/openssl/libssl1.1", script)
+        self.assertIn('opener.addheaders = [("User-Agent", "Mozilla/5.0")]', script)
+
 
 if __name__ == "__main__":
     unittest.main()
