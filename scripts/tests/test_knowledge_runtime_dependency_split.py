@@ -61,6 +61,16 @@ class KnowledgeRuntimeDependencySplitTests(unittest.TestCase):
         self.assertNotIn("mirrors.tuna.tsinghua.edu.cn/ubuntu/pool/main/o/openssl/libssl1.1", script)
         self.assertIn('opener.addheaders = [("User-Agent", "Mozilla/5.0")]', script)
 
+    def test_download_deps_syncs_runtime_project_dependencies_in_all_source_modes(self) -> None:
+        script = Path("services/knowledge-runtime/ragflow_deps/download_deps.py").read_text(encoding="utf-8")
+
+        self.assertIn("sync_runtime_dependencies(args.china_mirrors)", script)
+        self.assertIn('"sync"', script)
+        self.assertIn('"--python"', script)
+        self.assertIn('"3.13"', script)
+        self.assertIn('"--frozen"', script)
+        self.assertIn('"--no-install-project"', script)
+
 
 if __name__ == "__main__":
     unittest.main()

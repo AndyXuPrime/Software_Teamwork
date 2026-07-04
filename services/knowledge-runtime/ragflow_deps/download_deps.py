@@ -145,12 +145,28 @@ def rewrite_text_for_china_mirrors(text: str) -> str:
     )
 
 
-def sync_runtime_dependencies_with_china_mirrors():
+def sync_runtime_dependencies(use_china_mirrors: bool):
     uv = shutil.which("uv")
     if not uv:
         raise RuntimeError("uv is required to sync knowledge-runtime dependencies")
 
     root = knowledge_runtime_root()
+    if not use_china_mirrors:
+        print("Syncing knowledge-runtime Python dependencies with official sources...")
+        subprocess.run(
+            [
+                uv,
+                "sync",
+                "--python",
+                "3.13",
+                "--frozen",
+                "--no-install-project",
+            ],
+            cwd=root,
+            check=True,
+        )
+        return
+
     with tempfile.TemporaryDirectory(prefix="knowledge-runtime-china-") as temp_dir:
         temp_root = Path(temp_dir)
         for filename in ("pyproject.toml", "uv.lock"):
@@ -214,7 +230,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--skip-uv-sync",
         action="store_true",
-        help="With --china, skip the temporary mirrored uv sync step and only download runtime artifacts",
+        help="Skip Knowledge runtime project uv sync and only download runtime artifacts",
     )
     args = parser.parse_args()
 
@@ -225,8 +241,9 @@ if __name__ == "__main__":
         os.environ.setdefault("HF_ENDPOINT", HF_MIRROR_ENDPOINT)
         os.environ.setdefault("NLTK_DOWNLOAD_INDEX_URL", NLTK_DATA_MIRROR_INDEX_URL)
         os.environ.setdefault("NLTK_DOWNLOAD_PACKAGE_PREFIX", NLTK_DATA_MIRROR_PACKAGE_PREFIX)
-        if not args.skip_uv_sync:
-            sync_runtime_dependencies_with_china_mirrors()
+
+    if not args.skip_uv_sync:
+        sync_runtime_dependencies(args.china_mirrors)
 
     # Keep a single browser-like User-Agent for all direct urllib downloads.
     # The --china URLs above are selected to accept this header.

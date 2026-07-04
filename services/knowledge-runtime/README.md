@@ -107,8 +107,9 @@ past the parser boundary.
 
 The worker lazily downloads OCR and vision model artifacts when those modules
 are imported. Committed defaults use official artifact sources. The repository
-root `./scripts/local/dev-up.sh` prepares these artifacts by default; pass
-`--china` to that script on mainland China networks, or run the helper manually:
+root `./scripts/local/dev-up.sh` syncs the runtime `.venv` and prepares these
+artifacts by default; pass `--china` to that script on mainland China networks,
+or run the helper manually:
 
 ```bash
 cd services/knowledge-runtime
