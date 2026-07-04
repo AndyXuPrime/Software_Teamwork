@@ -166,7 +166,7 @@ model provider variables documented in `../knowledge-runtime/README.md` and
 ```bash
 ./scripts/local/dev-up.sh
 ./scripts/local/run-knowledge-parse-stack.sh
-python3 scripts/local/knowledge-pdf-e2e.py DL_T_673-1999.pdf
+python3 scripts/local/knowledge-pdf-e2e.py /path/to/DL_T_673-1999.pdf
 ```
 
 For query-only validation against an already-built knowledge base, start only
@@ -185,8 +185,12 @@ The helper normalizes local wiring that is easy to get wrong by hand:
 
 - `VENDOR_RUNTIME_URL=host.docker.internal` from an old `.env` is not used for
   the host-run adapter; the script defaults to `http://127.0.0.1:9380`.
-- The runtime URL host is added to `NO_PROXY`, so shell proxy settings do not
-  intercept adapter calls to localhost or Docker bridge IPs.
+- Loopback runtime URLs are added to `NO_PROXY`, and loopback health checks use
+  `curl --noproxy '*'`, so shell proxy settings do not intercept localhost
+  adapter calls.
+- External runtime URLs continue to use the host proxy environment. If you point
+  `KNOWLEDGE_PARSE_VENDOR_RUNTIME_URL` at a Docker bridge IP and your proxy
+  intercepts private addresses, add that IP to local `NO_PROXY` yourself.
 - Old local `.env` files that lack the runtime service token use the tracked
   local development token defaults for `scripts/local` only.
 - For `DOC_ENGINE=elasticsearch`, `./scripts/local/dev-up.sh` starts the root

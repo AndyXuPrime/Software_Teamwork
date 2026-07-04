@@ -7,10 +7,18 @@ RUN_DIR="$ROOT_DIR/.local/run"
 LOG_DIR="$ROOT_DIR/.local/logs"
 RUNTIME_DIR="$ROOT_DIR/services/knowledge-runtime"
 LOCAL_RUNTIME_DIR="$ROOT_DIR/.local/knowledge-runtime"
+LOCAL_LIB_DIR="$ROOT_DIR/scripts/local/lib"
 CURRENT_STEP="initializing"
 STARTED_SERVICES=()
 RAGFLOW_CONF_EXPLICIT=0
 CHINA_MIRRORS=0
+
+# shellcheck source=scripts/local/lib/common.sh
+. "$LOCAL_LIB_DIR/common.sh"
+# shellcheck source=scripts/local/lib/process.sh
+. "$LOCAL_LIB_DIR/process.sh"
+# shellcheck source=scripts/local/lib/knowledge-runtime.sh
+. "$LOCAL_LIB_DIR/knowledge-runtime.sh"
 
 on_exit() {
   status=$?
@@ -56,64 +64,6 @@ parse_args() {
     esac
     shift
   done
-}
-
-require_command() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    echo "$1 is required for the host-run Knowledge runtime API" >&2
-    return 1
-  fi
-}
-
-append_no_proxy() {
-  local item="$1"
-  local current="${NO_PROXY:-${no_proxy:-}}"
-  [[ -n "${item// }" ]] || return 0
-  case ",$current," in
-    *",$item,"*) ;;
-    *)
-      if [[ -z "$current" ]]; then
-        current="$item"
-      else
-        current="$current,$item"
-      fi
-      ;;
-  esac
-  export NO_PROXY="$current"
-  export no_proxy="$current"
-}
-
-url_host() {
-  local url="$1"
-  local rest host_port host
-  rest="${url#*://}"
-  host_port="${rest%%/*}"
-  if [[ "$host_port" == \[*\]* ]]; then
-    host="${host_port#\[}"
-    host="${host%%\]*}"
-  else
-    host="${host_port%%:*}"
-  fi
-  printf '%s\n' "$host"
-}
-
-append_no_proxy_for_url() {
-  local url="$1"
-  local host
-  host="$(url_host "$url")"
-  append_no_proxy "$host"
-}
-
-normalize_http_url() {
-  local value="$1"
-  if [[ "$value" != http://* && "$value" != https://* ]]; then
-    value="http://$value"
-  fi
-  printf '%s\n' "${value%/}"
-}
-
-to_lower() {
-  printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]'
 }
 
 print_required_env_hint() {
@@ -179,10 +129,7 @@ require_env() {
   export RAGFLOW_CONF="${RAGFLOW_CONF:-$RUNTIME_DIR/conf/service_conf.yaml}"
   export PYTHONPATH="."
   export LITELLM_LOCAL_MODEL_COST_MAP="${LITELLM_LOCAL_MODEL_COST_MAP:-True}"
-  if (( CHINA_MIRRORS )) && [[ -z "${HF_ENDPOINT:-}" ]]; then
-    export HF_ENDPOINT="https://hf-mirror.com"
-    echo "using HF_ENDPOINT=https://hf-mirror.com for this run (--china); profile files and .env.local are not modified"
-  fi
+  enable_china_hf_endpoint "$CHINA_MIRRORS"
 
   append_no_proxy "127.0.0.1"
   append_no_proxy "localhost"
@@ -191,43 +138,6 @@ require_env() {
   if [[ -n "${KNOWLEDGE_RUNTIME_ES_URL:-}" ]]; then
     append_no_proxy_for_url "$KNOWLEDGE_RUNTIME_ES_URL"
   fi
-}
-
-prepare_runtime_config() {
-  [[ "$(to_lower "${DOC_ENGINE:-elasticsearch}")" == "elasticsearch" ]] || return 0
-  [[ -n "${KNOWLEDGE_RUNTIME_ES_URL:-}" ]] || return 0
-  if [[ "$RAGFLOW_CONF_EXPLICIT" == "1" && "${KNOWLEDGE_RUNTIME_GENERATE_LOCAL_CONF:-0}" != "1" ]]; then
-    echo "using explicit RAGFLOW_CONF=$RAGFLOW_CONF; ensure its es.hosts matches $KNOWLEDGE_RUNTIME_ES_URL"
-    return 0
-  fi
-
-  CURRENT_STEP="preparing knowledge-runtime config"
-  local config_file="$LOCAL_RUNTIME_DIR/service_conf.yaml"
-  mkdir -p "$LOCAL_RUNTIME_DIR"
-  awk -v es_url="$KNOWLEDGE_RUNTIME_ES_URL" '
-    BEGIN { in_es = 0; replaced = 0 }
-    /^es:[[:space:]]*$/ { in_es = 1; print; next }
-    /^[^[:space:]][^:]*:/ {
-      if (in_es && !replaced) {
-        print "  hosts: " es_url
-        replaced = 1
-      }
-      in_es = 0
-    }
-    in_es && /^[[:space:]]+hosts:[[:space:]]*/ {
-      print "  hosts: " es_url
-      replaced = 1
-      next
-    }
-    { print }
-    END {
-      if (in_es && !replaced) {
-        print "  hosts: " es_url
-      }
-    }
-  ' "$RUNTIME_DIR/conf/service_conf.yaml" >"$config_file"
-  export RAGFLOW_CONF="$config_file"
-  echo "knowledge-runtime config generated: $RAGFLOW_CONF"
 }
 
 ensure_runtime_venv() {
@@ -259,25 +169,6 @@ run_runtime_preflight() {
     print_required_env_hint
     return 1
   fi
-}
-
-launch_process_group() {
-  local dir="$1"
-  shift
-  cd "$dir"
-  if command -v setsid >/dev/null 2>&1; then
-    exec setsid "$@"
-  fi
-  exec python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' "$@"
-}
-
-service_group_alive() {
-  local pid_file="$1"
-  [[ -f "$pid_file" ]] || return 1
-  local pid
-  pid="$(cat "$pid_file")"
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  kill -0 -- "-$pid" 2>/dev/null
 }
 
 start_service() {
@@ -338,11 +229,16 @@ wait_for_http_ok() {
   local timeout_seconds="$3"
   local deadline=$((SECONDS + timeout_seconds))
   local response_file
+  local status
   response_file="$(mktemp)"
 
   CURRENT_STEP="waiting for $name"
   while (( SECONDS < deadline )); do
-    status="$(curl --noproxy '*' -sS -o "$response_file" -w '%{http_code}' "$url" 2>/dev/null || true)"
+    local curl_args=(-sS -o "$response_file" -w '%{http_code}')
+    if should_bypass_proxy_for_url "$url"; then
+      curl_args=(--noproxy '*' "${curl_args[@]}")
+    fi
+    status="$(curl "${curl_args[@]}" "$url" 2>/dev/null || true)"
     if [[ "$status" =~ ^2[0-9][0-9]$ ]]; then
       rm -f "$response_file"
       echo "$name is ready"
@@ -392,7 +288,7 @@ require_command curl
 require_command uv
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
-prepare_runtime_config
+prepare_knowledge_runtime_config
 if [[ "$(to_lower "${DOC_ENGINE:-elasticsearch}")" == "elasticsearch" && -n "${KNOWLEDGE_RUNTIME_ES_URL:-}" ]]; then
   wait_for_http_ok "Elasticsearch" "$KNOWLEDGE_RUNTIME_ES_URL/_cluster/health" "${KNOWLEDGE_RUNTIME_ELASTICSEARCH_READY_TIMEOUT_SECONDS:-120}"
 fi

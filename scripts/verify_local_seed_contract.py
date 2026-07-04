@@ -29,6 +29,9 @@ START_KNOWLEDGE_RUNTIME_WORKER_SCRIPT = Path("scripts/local/start-knowledge-runt
 WATCH_KNOWLEDGE_RUNTIME_WORKER_IDLE_SCRIPT = Path("scripts/local/watch-knowledge-runtime-worker-idle.sh")
 RUN_KNOWLEDGE_PARSE_STACK_SCRIPT = Path("scripts/local/run-knowledge-parse-stack.sh")
 STOP_BACKEND_SCRIPT = Path("scripts/local/stop-backend.sh")
+LOCAL_COMMON_HELPER = Path("scripts/local/lib/common.sh")
+LOCAL_PROCESS_HELPER = Path("scripts/local/lib/process.sh")
+LOCAL_KNOWLEDGE_RUNTIME_HELPER = Path("scripts/local/lib/knowledge-runtime.sh")
 AI_GATEWAY_LOCAL_SEED_MAIN = Path("services/ai-gateway/cmd/local-seed/main.go")
 
 REQUIRED_SEED_001_TOKENS = {
@@ -176,7 +179,7 @@ REQUIRED_DEV_UP_TOKENS = [
     "checking Go module settings",
     "--china",
     "using selected default for this run",
-    "docker.m.daocloud.io/library/postgres:16-alpine",
+    "docker.1ms.run/library/postgres:16-alpine",
     "goose@v3.27.1",
     "psql",
     "INFRA_SERVICES=(postgres redis minio elasticsearch)",
@@ -451,6 +454,9 @@ def verify_local_seed_contract(root: Path) -> list[str]:
     watch_knowledge_runtime_worker_idle_script = read_required(root, WATCH_KNOWLEDGE_RUNTIME_WORKER_IDLE_SCRIPT, issues)
     run_knowledge_parse_stack_script = read_required(root, RUN_KNOWLEDGE_PARSE_STACK_SCRIPT, issues)
     stop_backend_script = read_required(root, STOP_BACKEND_SCRIPT, issues)
+    local_common_helper = read_required(root, LOCAL_COMMON_HELPER, issues)
+    local_process_helper = read_required(root, LOCAL_PROCESS_HELPER, issues)
+    local_knowledge_runtime_helper = read_required(root, LOCAL_KNOWLEDGE_RUNTIME_HELPER, issues)
     ai_gateway_local_seed_main = read_required(root, AI_GATEWAY_LOCAL_SEED_MAIN, issues)
     gitignore = read_required(root, GITIGNORE, issues)
 
@@ -476,6 +482,9 @@ def verify_local_seed_contract(root: Path) -> list[str]:
             run_knowledge_parse_stack_script,
             stop_backend_script,
             ai_gateway_local_seed_main,
+            local_common_helper,
+            local_process_helper,
+            local_knowledge_runtime_helper,
         )
     )
     issues.extend(validate_gitignore(gitignore))
@@ -627,9 +636,25 @@ def validate_docs(
     run_knowledge_parse_stack_script: str,
     stop_backend_script: str,
     ai_gateway_local_seed_main: str,
+    local_common_helper: str = "",
+    local_process_helper: str = "",
+    local_knowledge_runtime_helper: str = "",
 ) -> list[str]:
     issues: list[str] = []
     combined = "\n".join([deploy_readme, runbook, env_example, config_readme])
+    local_runtime_helper_contract = "\n".join(
+        [local_common_helper, local_process_helper, local_knowledge_runtime_helper]
+    )
+    run_knowledge_runtime_api_contract = "\n".join(
+        [run_knowledge_runtime_api_script, local_runtime_helper_contract]
+    )
+    start_knowledge_runtime_worker_contract = "\n".join(
+        [start_knowledge_runtime_worker_script, local_runtime_helper_contract]
+    )
+    run_knowledge_parse_stack_contract = "\n".join(
+        [run_knowledge_parse_stack_script, local_runtime_helper_contract]
+    )
+    stop_backend_contract = "\n".join([stop_backend_script, local_process_helper])
     for token in REQUIRED_DOC_TOKENS:
         if token not in combined:
             issues.append(f"seed documentation missing `{token}`")
@@ -664,12 +689,12 @@ def validate_docs(
         if token not in run_backend_script:
             issues.append(f"{RUN_BACKEND_SCRIPT} missing backend startup token `{token}`")
     for token in REQUIRED_RUN_KNOWLEDGE_RUNTIME_API_TOKENS:
-        if token not in run_knowledge_runtime_api_script:
+        if token not in run_knowledge_runtime_api_contract:
             issues.append(f"{RUN_KNOWLEDGE_RUNTIME_API_SCRIPT} missing Knowledge runtime API token `{token}`")
     if 'start_service "knowledge-runtime-worker"' in run_knowledge_runtime_api_script:
         issues.append(f"{RUN_KNOWLEDGE_RUNTIME_API_SCRIPT} must not start knowledge-runtime-worker")
     for token in REQUIRED_START_KNOWLEDGE_RUNTIME_WORKER_TOKENS:
-        if token not in start_knowledge_runtime_worker_script:
+        if token not in start_knowledge_runtime_worker_contract:
             issues.append(f"{START_KNOWLEDGE_RUNTIME_WORKER_SCRIPT} missing Knowledge runtime worker token `{token}`")
     if 'start_service "knowledge-runtime-api"' in start_knowledge_runtime_worker_script:
         issues.append(f"{START_KNOWLEDGE_RUNTIME_WORKER_SCRIPT} must not start knowledge-runtime-api")
@@ -677,10 +702,10 @@ def validate_docs(
         if token not in watch_knowledge_runtime_worker_idle_script:
             issues.append(f"{WATCH_KNOWLEDGE_RUNTIME_WORKER_IDLE_SCRIPT} missing Knowledge runtime worker idle token `{token}`")
     for token in REQUIRED_RUN_KNOWLEDGE_PARSE_STACK_TOKENS:
-        if token not in run_knowledge_parse_stack_script:
+        if token not in run_knowledge_parse_stack_contract:
             issues.append(f"{RUN_KNOWLEDGE_PARSE_STACK_SCRIPT} missing Knowledge parse stack token `{token}`")
     for token in REQUIRED_STOP_BACKEND_TOKENS:
-        if token not in stop_backend_script:
+        if token not in stop_backend_contract:
             issues.append(f"{STOP_BACKEND_SCRIPT} missing backend stop token `{token}`")
     for token in [
         "QA_DATABASE_URL",
@@ -723,6 +748,9 @@ def validate_forbidden_content(root: Path) -> list[str]:
         START_KNOWLEDGE_RUNTIME_WORKER_SCRIPT,
         WATCH_KNOWLEDGE_RUNTIME_WORKER_IDLE_SCRIPT,
         RUN_KNOWLEDGE_PARSE_STACK_SCRIPT,
+        LOCAL_COMMON_HELPER,
+        LOCAL_PROCESS_HELPER,
+        LOCAL_KNOWLEDGE_RUNTIME_HELPER,
         AI_GATEWAY_LOCAL_SEED_MAIN,
         STOP_BACKEND_SCRIPT,
     ]:

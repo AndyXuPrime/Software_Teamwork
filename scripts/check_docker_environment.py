@@ -34,12 +34,12 @@ OUTBOUND_PROXY_ENV_KEYS = (
 LOCALHOST_NO_PROXY_ENTRIES = ("localhost", "127.0.0.1", "::1")
 
 CHINA_IMAGES = {
-    "postgres": "docker.m.daocloud.io/library/postgres:16-alpine",
-    "redis": "docker.m.daocloud.io/library/redis:7-alpine",
-    "minio server": "docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z",
-    "minio mc": "docker.m.daocloud.io/minio/mc:RELEASE.2025-08-13T08-35-41Z",
-    "elasticsearch": "docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3",
-    "ragflow deps": "docker.m.daocloud.io/infiniflow/ragflow_deps:51ce6aab",
+    "postgres": "docker.1ms.run/library/postgres:16-alpine",
+    "redis": "docker.1ms.run/library/redis:7-alpine",
+    "minio server": "docker.1ms.run/minio/minio:RELEASE.2025-09-07T16-13-09Z",
+    "minio mc": "docker.1ms.run/minio/mc:RELEASE.2025-08-13T08-35-41Z",
+    "elasticsearch": "docker.1ms.run/elasticsearch:8.15.3",
+    "ragflow deps": "docker.1ms.run/infiniflow/ragflow_deps:51ce6aab",
 }
 
 DEFAULT_IMAGES = {
@@ -120,7 +120,7 @@ def main() -> int:
             "- For mainland China, run ./scripts/local/dev-up.sh --china or keep local untracked *_IMAGE overrides."
         )
         print(
-            "- Do not rely on docker.m.daocloud.io as a daemon registry-mirror unless manifest probes prove mirror-mode works."
+            "- Do not rely on public registry rewrites as daemon registry-mirrors unless manifest probes prove mirror-mode works."
         )
     print("- Keep root Compose infra-only; business services run on the host.")
     return 1 if failed else 0

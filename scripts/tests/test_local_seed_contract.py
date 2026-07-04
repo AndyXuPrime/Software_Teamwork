@@ -39,10 +39,10 @@ class LocalSeedContractTests(unittest.TestCase):
                 "UV_DEFAULT_INDEX=https://pypi.org/simple\n"
                 "GOPROXY=https://proxy.golang.org,direct\n"
                 "GOSUMDB=sum.golang.org\n"
-                "# POSTGRES_IMAGE=docker.m.daocloud.io/library/postgres:16-alpine\n"
-                "# REDIS_IMAGE=docker.m.daocloud.io/library/redis:7-alpine\n"
-                "# MINIO_IMAGE=docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z\n"
-                "# MINIO_MC_IMAGE=docker.m.daocloud.io/minio/mc:RELEASE.2025-08-13T08-35-41Z\n"
+                "# POSTGRES_IMAGE=docker.1ms.run/library/postgres:16-alpine\n"
+                "# REDIS_IMAGE=docker.1ms.run/library/redis:7-alpine\n"
+                "# MINIO_IMAGE=docker.1ms.run/minio/minio:RELEASE.2025-09-07T16-13-09Z\n"
+                "# MINIO_MC_IMAGE=docker.1ms.run/minio/mc:RELEASE.2025-08-13T08-35-41Z\n"
                 "VENDOR_RUNTIME_URL=http://127.0.0.1:9380\n"
                 "VENDOR_RUNTIME_SERVICE_TOKEN=local-dev-runtime-service-token-change-me\n"
                 "KNOWLEDGE_RUNTIME_SERVICE_TOKEN=local-dev-runtime-service-token-change-me\n"
@@ -120,6 +120,26 @@ class LocalSeedContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (root / "scripts" / "local").mkdir(parents=True)
+            (root / "scripts" / "local" / "lib").mkdir(parents=True)
+            (root / "scripts" / "local" / "lib" / "common.sh").write_text(
+                "to_lower\n"
+                "normalize_http_url\n"
+                "append_no_proxy\n"
+                "HF_ENDPOINT=https://hf-mirror.com\n",
+                encoding="utf-8",
+            )
+            (root / "scripts" / "local" / "lib" / "process.sh").write_text(
+                "setsid\n"
+                "os.setsid()\n"
+                'kill -0 -- "-$pid"\n'
+                'kill -TERM -- "-$pid"\n'
+                'kill -KILL -- "-$pid"\n',
+                encoding="utf-8",
+            )
+            (root / "scripts" / "local" / "lib" / "knowledge-runtime.sh").write_text(
+                ".local/knowledge-runtime/service_conf.yaml\n",
+                encoding="utf-8",
+            )
             (root / "scripts" / "local" / "dev-up.sh").write_text(
                 "[dev-up]\n"
                 "[ok]\n"
@@ -146,7 +166,7 @@ class LocalSeedContractTests(unittest.TestCase):
                 "checking Go module settings\n"
                 "--china\n"
                 "using selected default for this run\n"
-                "docker.m.daocloud.io/library/postgres:16-alpine\n"
+                "docker.1ms.run/library/postgres:16-alpine\n"
                 "goose@v3.27.1\n"
                 "psql\n"
                 "INFRA_SERVICES=(postgres redis minio elasticsearch)\n"

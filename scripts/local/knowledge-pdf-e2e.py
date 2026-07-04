@@ -20,7 +20,6 @@ from typing import Any
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_ENV_FILE = ROOT_DIR / "deploy" / ".env"
-DEFAULT_PDF = ROOT_DIR / "DL_T_673-1999.pdf"
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
@@ -42,9 +41,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "pdf",
-        nargs="?",
-        default=str(DEFAULT_PDF),
-        help="PDF fixture path. Defaults to ./DL_T_673-1999.pdf.",
+        help="Existing PDF fixture path to upload. The repository does not bundle DL_T_673-1999.pdf.",
     )
     parser.add_argument(
         "--env-file",
@@ -52,6 +49,17 @@ def parse_args() -> argparse.Namespace:
         help="Local env file to read when process env is missing values.",
     )
     return parser.parse_args()
+
+
+def resolve_pdf_path(raw_path: str) -> pathlib.Path:
+    pdf = pathlib.Path(raw_path).expanduser().resolve()
+    if not pdf.is_file():
+        raise SystemExit(
+            f"PDF fixture not found before starting Knowledge smoke: {pdf}\n"
+            "Pass an existing local PDF path, for example: "
+            "python3 scripts/local/knowledge-pdf-e2e.py /path/to/DL_T_673-1999.pdf"
+        )
+    return pdf
 
 
 def load_env_file(path: pathlib.Path) -> None:
@@ -388,11 +396,9 @@ def cleanup(cfg: Config, kb_id: str | None, doc_id: str | None) -> dict[str, str
 
 def run() -> int:
     args = parse_args()
+    pdf = resolve_pdf_path(args.pdf)
     load_env_file(pathlib.Path(args.env_file))
     cfg = load_config()
-    pdf = pathlib.Path(args.pdf).resolve()
-    if not pdf.is_file():
-        raise SystemExit(f"PDF fixture not found: {pdf}")
 
     run_id = time.strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:8]
     kb_id: str | None = None

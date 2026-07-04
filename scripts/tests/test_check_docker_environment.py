@@ -22,20 +22,20 @@ class DockerEnvironmentTests(unittest.TestCase):
 
         self.assertEqual({"PATH": "/bin"}, env)
 
-    def test_china_profile_uses_explicit_daocloud_registry(self) -> None:
+    def test_china_profile_uses_explicit_registry_rewrite(self) -> None:
         image_sets = selected_image_sets("china")
 
         self.assertEqual(1, len(image_sets))
         images = image_sets[0][1]
         self.assertNotIn("go builder", images)
         self.assertNotIn("parser python", images)
-        self.assertEqual("docker.m.daocloud.io/library/postgres:16-alpine", images["postgres"])
+        self.assertEqual("docker.1ms.run/library/postgres:16-alpine", images["postgres"])
         self.assertEqual(
-            "docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3",
+            "docker.1ms.run/elasticsearch:8.15.3",
             images["elasticsearch"],
         )
         self.assertEqual(
-            "docker.m.daocloud.io/infiniflow/ragflow_deps:51ce6aab",
+            "docker.1ms.run/infiniflow/ragflow_deps:51ce6aab",
             images["ragflow deps"],
         )
 

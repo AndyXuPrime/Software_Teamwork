@@ -173,7 +173,7 @@ profile 渲染结果里的 `GOPROXY` / `GOSUMDB`；`dev-up.sh` 执行 goose migr
 
 中国大陆网络使用大陆镜像时，不要把仓库默认文件改成第三方代理；运行
 `./scripts/local/dev-up.sh --china` 和 `./scripts/local/run-backend.sh --china` 即可。
-如果已有 `.env.local` 仍保留 TUNA、DaoCloud、`goproxy.cn` 或
+如果已有 `.env.local` 仍保留 TUNA、旧 Docker registry rewrite、`goproxy.cn` 或
 `sum.golang.google.cn`，脚本会继续尊重这些本地值并提示你这是本地覆盖。想回到官方
 默认值，重新复制 `.env.example` 后再恢复私有配置，或手动改回官方地址。
 
@@ -185,10 +185,13 @@ superadmin / LocalDemoAdmin#12345
 ```
 
 Docker 镜像默认使用 Compose 里的 Docker Hub pinned tags。中国大陆网络可用
-`./scripts/local/dev-up.sh --china` 在本次进程切换到 DaoCloud registry rewrite；企业
+`./scripts/local/dev-up.sh --china` 在本次进程切换到 `docker.1ms.run` registry rewrite；企业
 镜像仓库可在本机 `.env.local` 设置 `POSTGRES_IMAGE`、`REDIS_IMAGE`、
 `MINIO_IMAGE`、`MINIO_MC_IMAGE` 和 `KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE`，
 但不要提交为默认值。
+如果使用官方 Docker Hub pinned tags 并依赖本机代理访问，先配置宿主机/Docker 代理，
+再运行 `python3 scripts/check_docker_environment.py --profile default` 验证；不要加
+`--clean-env`，该参数用于直连或 daemon mirror 排查，会清掉 shell 出站代理变量。
 
 `UV_DEFAULT_INDEX` 控制宿主机 uv 在解析或重锁依赖时使用的 Python 包索引，默认使用
 官方 PyPI。`services/parser` 已退役，默认路径不再准备 standalone Parser；解析、切块、
@@ -377,6 +380,9 @@ scope 在 runtime 进程内通过 `KNOWLEDGE_RUNTIME_SCOPE_ID` 配置。
   该 helper 会在 runtime API 可达时等待 worker heartbeat，并在空闲超时后关闭 worker。
   full parse-stack 脚本默认最多等待 300 秒，可用
   `KNOWLEDGE_ADAPTER_READY_TIMEOUT_SECONDS` 调整。
+  runtime helpers 只会自动把 loopback runtime URL 加入 `NO_PROXY`，并对本机 health
+  check 使用 `curl --noproxy '*'`。外部 runtime URL 继续尊重宿主机代理环境；如果使用
+  Docker bridge IP 且本机代理会截获私网地址，请在本机显式补 `NO_PROXY`。
 
 只有可信本地 provider 才可显式设置 `KNOWLEDGE_RUNTIME_ALLOW_EMPTY_MODEL_API_KEY=1`。
 

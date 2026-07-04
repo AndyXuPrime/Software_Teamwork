@@ -17,11 +17,11 @@ CHINA_GOPROXY="https://goproxy.cn,direct"
 OFFICIAL_GOSUMDB="sum.golang.org"
 CHINA_GOSUMDB="sum.golang.google.cn"
 
-CHINA_POSTGRES_IMAGE="docker.m.daocloud.io/library/postgres:16-alpine"
-CHINA_REDIS_IMAGE="docker.m.daocloud.io/library/redis:7-alpine"
-CHINA_MINIO_IMAGE="docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
-CHINA_MINIO_MC_IMAGE="docker.m.daocloud.io/minio/mc:RELEASE.2025-08-13T08-35-41Z"
-CHINA_ELASTICSEARCH_IMAGE="docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3"
+CHINA_POSTGRES_IMAGE="docker.1ms.run/library/postgres:16-alpine"
+CHINA_REDIS_IMAGE="docker.1ms.run/library/redis:7-alpine"
+CHINA_MINIO_IMAGE="docker.1ms.run/minio/minio:RELEASE.2025-09-07T16-13-09Z"
+CHINA_MINIO_MC_IMAGE="docker.1ms.run/minio/mc:RELEASE.2025-08-13T08-35-41Z"
+CHINA_ELASTICSEARCH_IMAGE="docker.1ms.run/elasticsearch:8.15.3"
 
 COLOR_RESET=""
 COLOR_BLUE=""
@@ -236,7 +236,7 @@ warn_legacy_mirror_env() {
     "${GOPROXY:-}" \
     "${GOSUMDB:-}"; do
     case "$value" in
-      *docker.m.daocloud.io*|*pypi.tuna.tsinghua.edu.cn*|*goproxy.cn*|sum.golang.google.cn)
+      *docker.1ms.run*|*docker.m.daocloud.io*|*pypi.tuna.tsinghua.edu.cn*|*goproxy.cn*|sum.golang.google.cn)
         mirrored+=("$value")
         ;;
     esac

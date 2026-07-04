@@ -221,11 +221,13 @@ client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue
   host-run `services/knowledge-runtime` API、runtime worker 和 Knowledge adapter，
   并把 `KNOWLEDGE_AUTO_START_INGESTION` 打开，使用 `uv sync --python 3.13
   --frozen --group worker` 的 worker dependency profile，适合验证 PDF 上传、解析、
-  切块、embedding、索引和检索。脚本会把 runtime URL host 加入 `NO_PROXY`，避免 shell
-  代理把 `127.0.0.1` 或 Docker bridge IP 请求截成 `502`；runtime token 来自当前
+  切块、embedding、索引和检索。脚本只会自动把 loopback runtime URL 加入 `NO_PROXY`
+  并对本机 health check 使用 `curl --noproxy '*'`，避免 shell 代理把 `127.0.0.1`
+  请求截成 `502`；外部 runtime URL 继续尊重宿主机代理环境。runtime token 来自当前
   profile 渲染结果。若要复用已运行的 runtime API，可设置
   `KNOWLEDGE_PARSE_VENDOR_RUNTIME_URL=http://<runtime-host>:9380`，非本机地址会自动进入
-  external-runtime 模式，仅启动 Knowledge adapter。
+  external-runtime 模式，仅启动 Knowledge adapter；如果该地址是 Docker bridge IP 且本机
+  代理会截获私网地址，请在本机显式补 `NO_PROXY`。
 - Go module 下载默认来自 profile 渲染结果里的 `GOPROXY` / `GOSUMDB`，覆盖
   `dev-up.sh` 里的 goose migration 和 `run-backend.sh` 里的 Go 服务 `go run`。
   官方默认值是 `https://proxy.golang.org,direct` / `sum.golang.org`；`--china`
@@ -247,10 +249,12 @@ client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue
 Infra 拉取慢：
 
 - 默认是 Compose 里的 Docker Hub pinned tags。
-- 中国大陆网络先运行 `./scripts/local/dev-up.sh --china`，本次进程会使用 DaoCloud
-  registry rewrite；`.env.local` 不会被脚本改写。
+- 中国大陆网络先运行 `./scripts/local/dev-up.sh --china`，本次进程会使用
+  `docker.1ms.run` registry rewrite；`.env.local` 不会被脚本改写。
 - 已配置 Docker daemon mirror 时，运行 `python3 scripts/check_docker_environment.py --profile all --clean-env`。
 - 代理只作为最后选择；shell proxy、daemon proxy 和 registry rewrite 是三条不同路径。
+  验证官方 Docker Hub 路径经 shell/Docker 代理可达时，运行
+  `python3 scripts/check_docker_environment.py --profile default`，不要加 `--clean-env`。
 
 Knowledge runtime 启动慢：
 
@@ -281,13 +285,16 @@ Knowledge runtime 启动慢：
   # First set provider vars in .env.local; Elasticsearch starts with default infra.
   ./scripts/local/dev-up.sh
   ./scripts/local/run-knowledge-parse-stack.sh
-  python3 scripts/local/knowledge-pdf-e2e.py DL_T_673-1999.pdf
+  python3 scripts/local/knowledge-pdf-e2e.py /path/to/DL_T_673-1999.pdf
   ```
 
   如果 runtime API 已在容器网络中运行但没有映射 `9380` 到宿主机，显式传入容器 bridge
-  地址即可；脚本会补 `NO_PROXY` 并只启动 adapter：
+  地址即可；脚本会进入 external-runtime 模式并只启动 adapter。该地址不是 loopback，
+  脚本不会自动加入 `NO_PROXY`；如果本机代理会截获私网地址，请在本机显式补
+  `NO_PROXY`：
 
   ```bash
+  export NO_PROXY="${NO_PROXY:-localhost,127.0.0.1,::1},172.22.0.6"
   KNOWLEDGE_PARSE_VENDOR_RUNTIME_URL=http://172.22.0.6:9380 \
     ./scripts/local/run-knowledge-parse-stack.sh
   ```

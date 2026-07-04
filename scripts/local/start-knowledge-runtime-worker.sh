@@ -7,6 +7,7 @@ RUN_DIR="$ROOT_DIR/.local/run"
 LOG_DIR="$ROOT_DIR/.local/logs"
 RUNTIME_DIR="$ROOT_DIR/services/knowledge-runtime"
 LOCAL_RUNTIME_DIR="$ROOT_DIR/.local/knowledge-runtime"
+LOCAL_LIB_DIR="$ROOT_DIR/scripts/local/lib"
 WATCHER_SCRIPT="$ROOT_DIR/scripts/local/watch-knowledge-runtime-worker-idle.sh"
 WORKER_PID_FILE="$RUN_DIR/knowledge-runtime-worker.pid"
 WATCHER_PID_FILE="$RUN_DIR/knowledge-runtime-worker-idle-watcher.pid"
@@ -15,6 +16,13 @@ WATCHER_LOG_FILE="$LOG_DIR/knowledge-runtime-worker-idle-watcher.log"
 CURRENT_STEP="initializing"
 RAGFLOW_CONF_EXPLICIT=0
 CHINA_MIRRORS=0
+
+# shellcheck source=scripts/local/lib/common.sh
+. "$LOCAL_LIB_DIR/common.sh"
+# shellcheck source=scripts/local/lib/process.sh
+. "$LOCAL_LIB_DIR/process.sh"
+# shellcheck source=scripts/local/lib/knowledge-runtime.sh
+. "$LOCAL_LIB_DIR/knowledge-runtime.sh"
 
 on_exit() {
   status=$?
@@ -64,25 +72,6 @@ parse_args() {
   done
 }
 
-require_command() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    echo "$1 is required for the host-run Knowledge runtime worker" >&2
-    return 1
-  fi
-}
-
-normalize_http_url() {
-  local value="$1"
-  if [[ "$value" != http://* && "$value" != https://* ]]; then
-    value="http://$value"
-  fi
-  printf '%s\n' "${value%/}"
-}
-
-to_lower() {
-  printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]'
-}
-
 require_env() {
   local runtime_token="${VENDOR_RUNTIME_SERVICE_TOKEN:-${KNOWLEDGE_RUNTIME_SERVICE_TOKEN:-}}"
   if [[ -z "${runtime_token// }" ]]; then
@@ -108,47 +97,7 @@ require_env() {
   export RAGFLOW_CONF="${RAGFLOW_CONF:-$RUNTIME_DIR/conf/service_conf.yaml}"
   export PYTHONPATH="."
   export LITELLM_LOCAL_MODEL_COST_MAP="${LITELLM_LOCAL_MODEL_COST_MAP:-True}"
-  if (( CHINA_MIRRORS )) && [[ -z "${HF_ENDPOINT:-}" ]]; then
-    export HF_ENDPOINT="https://hf-mirror.com"
-    echo "using HF_ENDPOINT=https://hf-mirror.com for this run (--china); profile files and .env.local are not modified"
-  fi
-}
-
-prepare_runtime_config() {
-  [[ "$(to_lower "${DOC_ENGINE:-elasticsearch}")" == "elasticsearch" ]] || return 0
-  [[ -n "${KNOWLEDGE_RUNTIME_ES_URL:-}" ]] || return 0
-  if [[ "$RAGFLOW_CONF_EXPLICIT" == "1" && "${KNOWLEDGE_RUNTIME_GENERATE_LOCAL_CONF:-0}" != "1" ]]; then
-    echo "using explicit RAGFLOW_CONF=$RAGFLOW_CONF; ensure its es.hosts matches $KNOWLEDGE_RUNTIME_ES_URL"
-    return 0
-  fi
-
-  CURRENT_STEP="preparing knowledge-runtime config"
-  local config_file="$LOCAL_RUNTIME_DIR/service_conf.yaml"
-  mkdir -p "$LOCAL_RUNTIME_DIR"
-  awk -v es_url="$KNOWLEDGE_RUNTIME_ES_URL" '
-    BEGIN { in_es = 0; replaced = 0 }
-    /^es:[[:space:]]*$/ { in_es = 1; print; next }
-    /^[^[:space:]][^:]*:/ {
-      if (in_es && !replaced) {
-        print "  hosts: " es_url
-        replaced = 1
-      }
-      in_es = 0
-    }
-    in_es && /^[[:space:]]+hosts:[[:space:]]*/ {
-      print "  hosts: " es_url
-      replaced = 1
-      next
-    }
-    { print }
-    END {
-      if (in_es && !replaced) {
-        print "  hosts: " es_url
-      }
-    }
-  ' "$RUNTIME_DIR/conf/service_conf.yaml" >"$config_file"
-  export RAGFLOW_CONF="$config_file"
-  echo "knowledge-runtime config generated: $RAGFLOW_CONF"
+  enable_china_hf_endpoint "$CHINA_MIRRORS"
 }
 
 ensure_runtime_venv() {
@@ -173,34 +122,6 @@ ensure_runtime_venv() {
   (cd "$RUNTIME_DIR" && uv sync --python 3.13 --frozen --group worker)
 }
 
-launch_process_group() {
-  local dir="$1"
-  shift
-  cd "$dir"
-  if command -v setsid >/dev/null 2>&1; then
-    exec setsid "$@"
-  fi
-  exec python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' "$@"
-}
-
-service_group_alive() {
-  local pid_file="$1"
-  [[ -f "$pid_file" ]] || return 1
-  local pid
-  pid="$(cat "$pid_file")"
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  kill -0 -- "-$pid" 2>/dev/null
-}
-
-process_alive() {
-  local pid_file="$1"
-  [[ -f "$pid_file" ]] || return 1
-  local pid
-  pid="$(cat "$pid_file")"
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  kill -0 "$pid" 2>/dev/null
-}
-
 runtime_api_url() {
   normalize_http_url "${VENDOR_RUNTIME_URL:-http://127.0.0.1:9380}"
 }
@@ -209,15 +130,22 @@ runtime_api_available() {
   local base_url
   base_url="$(runtime_api_url)"
   local body
-  body="$(curl --noproxy '*' -sS --max-time 3 "$base_url/api/v1/system/ping" 2>/dev/null || true)"
+  local curl_args=(-sS --max-time 3)
+  if should_bypass_proxy_for_url "$base_url"; then
+    curl_args=(--noproxy '*' "${curl_args[@]}")
+  fi
+  body="$(curl "${curl_args[@]}" "$base_url/api/v1/system/ping" 2>/dev/null || true)"
   [[ "$body" == "pong" ]]
 }
 
 worker_heartbeat_ready() {
   local base_url
   base_url="$(runtime_api_url)"
-  curl --noproxy '*' -sS --max-time 5 \
-    -H "X-Service-Token: ${VENDOR_RUNTIME_SERVICE_TOKEN:-}" \
+  local curl_args=(-sS --max-time 5 -H "X-Service-Token: ${VENDOR_RUNTIME_SERVICE_TOKEN:-}")
+  if should_bypass_proxy_for_url "$base_url"; then
+    curl_args=(--noproxy '*' "${curl_args[@]}")
+  fi
+  curl "${curl_args[@]}" \
     "$base_url/api/v1/system/status" 2>/dev/null | python3 -c '
 import json
 import sys
@@ -342,7 +270,7 @@ require_command curl
 require_command python3
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
-prepare_runtime_config
+prepare_knowledge_runtime_config
 ensure_runtime_venv
 start_worker
 check_worker

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 12
-- **Last Active**: 2026-07-03
+- **Total Sessions**: 13
+- **Last Active**: 2026-07-04
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~252 | Active |
+| `journal-1.md` | ~286 | Active |
 | `journal-0.md` | ~170 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 13 | 2026-07-04 | Local startup script cleanup | `bc6afe0c`, `707c0c8b` | `EIR/refactor/local-startup-script-overhaul` |
 | 12 | 2026-07-03 | Issue 550 local startup diagnostics acceptance | `bfa30a72` | `Test/test/local-startup-diagnostics` |
 | 11 | 2026-07-02 | Resolve security alerts 17 18 39 | `af69a36` | `fix/security-alerts-17-18-39` |
 | 10 | 2026-07-02 | Guard Docker local startup contracts | `48a854e` | `Special/chore/docker-infra-only-startup` |

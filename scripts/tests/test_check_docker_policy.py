@@ -58,10 +58,10 @@ VALID_ENV = textwrap.dedent(
     UV_DEFAULT_INDEX=https://pypi.org/simple
     GOPROXY=https://proxy.golang.org,direct
     GOSUMDB=sum.golang.org
-    # POSTGRES_IMAGE=docker.m.daocloud.io/library/postgres:16-alpine
-    # REDIS_IMAGE=docker.m.daocloud.io/library/redis:7-alpine
-    # MINIO_IMAGE=docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
-    # MINIO_MC_IMAGE=docker.m.daocloud.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    # POSTGRES_IMAGE=docker.1ms.run/library/postgres:16-alpine
+    # REDIS_IMAGE=docker.1ms.run/library/redis:7-alpine
+    # MINIO_IMAGE=docker.1ms.run/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # MINIO_MC_IMAGE=docker.1ms.run/minio/mc:RELEASE.2025-08-13T08-35-41Z
     KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE=docker.elastic.co/elasticsearch/elasticsearch:8.15.3
     """
 )
@@ -221,7 +221,7 @@ class DockerPolicyTests(unittest.TestCase):
             + "\n  HF_ENDPOINT:\n"
             + "    value: https://hf-mirror.com\n"
         )
-        env = VALID_ENV + "\nKNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE=docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3\n"
+        env = VALID_ENV + "\nKNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE=docker.1ms.run/elasticsearch:8.15.3\n"
 
         issues = self.verify(
             files={

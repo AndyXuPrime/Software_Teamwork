@@ -116,6 +116,7 @@ KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/postgre
 Knowledge runtime PDF E2E is a manual or env-gated verification path:
 start the host-run Knowledge runtime API/worker, run the Knowledge adapter
 with `VENDOR_RUNTIME_URL` pointing at the reachable runtime API, upload
+an explicitly supplied local PDF path such as a locally available
 `DL_T_673-1999.pdf`, wait for document status `ready`, assert non-zero chunks,
 then run `knowledge-queries` and assert retrieval hits. If this check is skipped
 or cannot run, PR verification must state the missing dependency and residual

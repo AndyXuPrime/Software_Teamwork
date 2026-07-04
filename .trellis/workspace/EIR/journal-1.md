@@ -250,3 +250,37 @@ Cleaned local Docker orphan containers, validated issue #550 local startup diagn
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Local startup script cleanup
+
+**Date**: 2026-07-04
+**Task**: Local startup script cleanup
+**Branch**: `EIR/refactor/local-startup-script-overhaul`
+
+### Summary
+
+Refactored local startup scripts, switched China Docker registry rewrite to docker.1ms.run, updated README/runbooks/specs, validated Docker policy, manifests, Compose config, and local startup checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bc6afe0c` | (see git log) |
+| `707c0c8b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

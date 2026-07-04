@@ -18,6 +18,12 @@ EXPECTED_IMAGE_DEFAULTS = {
     "MINIO_MC_IMAGE": "minio/mc:RELEASE.2025-08-13T08-35-41Z",
     "KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE": "docker.elastic.co/elasticsearch/elasticsearch:8.15.3",
 }
+
+THIRD_PARTY_REGISTRY_PREFIXES = (
+    "docker.1ms.run/",
+    "docker.1panel.live/",
+    "docker.m.daocloud.io/",
+)
 LOCAL_COMPOSE_FILE = Path("deploy/docker-compose.yml")
 ALLOWED_DEFAULT_COMPOSE_SERVICES = ("postgres", "redis", "minio", "minio-init", "elasticsearch")
 ALLOWED_PROFILE_COMPOSE_SERVICES: dict[str, tuple[str, ...]] = {}
@@ -430,7 +436,7 @@ def validate_env_example(root: Path) -> list[str]:
     for key, value in template_values.items():
         if key.endswith("_IMAGE") and uses_latest_tag(value):
             issues.append(f".env.example: `{key}` must not use latest")
-        if value.startswith("docker.m.daocloud.io/"):
+        if value.startswith(THIRD_PARTY_REGISTRY_PREFIXES):
             issues.append(f".env.example: `{key}` must not enable third-party registry rewrite by default")
     if config_values.get("HF_ENDPOINT") == "https://hf-mirror.com" or template_values.get("HF_ENDPOINT") == "https://hf-mirror.com":
         issues.append(
