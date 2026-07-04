@@ -39,12 +39,10 @@ const pathLabels: Record<string, string> = {
 
 const navItems: Array<{
   label: string
-  to: '/chat' | '/qa/retrieval-test' | '/knowledge/search' | '/reports' | '/admin'
+  to: '/chat' | '/reports' | '/admin'
   requirement?: PermissionRequirement
 }> = [
   { label: '问答', to: '/chat', requirement: { any: ['qa:use'] } },
-  { label: '检索', to: '/qa/retrieval-test', requirement: { any: ['qa:use'] } },
-  { label: '知识', to: '/knowledge/search', requirement: { any: ['knowledge:read'] } },
   {
     label: '报告',
     to: '/reports',
@@ -104,13 +102,9 @@ export function AppLayout({ children }: PropsWithChildren) {
   useEffect(() => {
     const id = pathname.startsWith('/chat')
       ? '/chat'
-      : pathname.startsWith('/qa/retrieval-test')
-        ? '/qa/retrieval-test'
-        : pathname.startsWith('/knowledge')
-          ? '/knowledge/search'
-          : pathname.startsWith('/reports')
-            ? '/reports'
-            : '/admin'
+      : pathname.startsWith('/reports')
+        ? '/reports'
+        : '/admin'
     const raf = requestAnimationFrame(() => {
       const el = navRefs.current[id]
       if (el) {
