@@ -54,8 +54,8 @@ host-run backend services from the repository root:
 
 ```bash
 cp .env.example .env.local
-./scripts/local/dev-up.sh
-./scripts/local/run-backend.sh
+./scripts/local/check.sh
+./scripts/local/start.sh
 ```
 
 For Document-only code changes, run service checks from `services/document`.

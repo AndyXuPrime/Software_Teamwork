@@ -21,18 +21,21 @@ CONFIG_README = Path("config/README.md")
 CONFIG_BASE = Path("config/base.yaml")
 GITIGNORE = Path(".gitignore")
 AUTH_MIGRATIONS_DIR = Path("services/auth/migrations")
-DEV_UP_SCRIPT = Path("scripts/local/dev-up.sh")
+CHECK_SCRIPT = Path("scripts/local/check.sh")
+START_SCRIPT = Path("scripts/local/start.sh")
+CLEAN_SCRIPT = Path("scripts/local/clean.sh")
 AI_GATEWAY_LOCAL_SEED_RENDERER = Path("scripts/local/render_ai_gateway_local_seed.go")
-RUN_BACKEND_SCRIPT = Path("scripts/local/run-backend.sh")
-RUN_KNOWLEDGE_RUNTIME_API_SCRIPT = Path("scripts/local/run-knowledge-runtime-api.sh")
-START_KNOWLEDGE_RUNTIME_WORKER_SCRIPT = Path("scripts/local/start-knowledge-runtime-worker.sh")
-WATCH_KNOWLEDGE_RUNTIME_WORKER_IDLE_SCRIPT = Path("scripts/local/watch-knowledge-runtime-worker-idle.sh")
-RUN_KNOWLEDGE_PARSE_STACK_SCRIPT = Path("scripts/local/run-knowledge-parse-stack.sh")
-STOP_BACKEND_SCRIPT = Path("scripts/local/stop-backend.sh")
+STOP_SCRIPT = Path("scripts/local/stop.sh")
 LOCAL_COMMON_HELPER = Path("scripts/local/lib/common.sh")
 LOCAL_PROCESS_HELPER = Path("scripts/local/lib/process.sh")
 LOCAL_KNOWLEDGE_RUNTIME_HELPER = Path("scripts/local/lib/knowledge-runtime.sh")
 AI_GATEWAY_LOCAL_SEED_MAIN = Path("services/ai-gateway/cmd/local-seed/main.go")
+PUBLIC_LOCAL_ENTRYPOINTS = [
+    CHECK_SCRIPT,
+    START_SCRIPT,
+    STOP_SCRIPT,
+    CLEAN_SCRIPT,
+]
 
 REQUIRED_SEED_001_TOKENS = {
     "Auth local admin user": ["usr_local_admin", "cred_local_admin_password", "urole_local_admin_admin"],
@@ -137,7 +140,7 @@ REQUIRED_DOC_TOKENS = [
     "admin / LocalDemoAdmin#12345",
     "superadmin / LocalDemoAdmin#12345",
     "cp .env.example .env.local",
-    "Go modules 下载默认读取",
+    "Go modules 下载只在",
     "源选择采用官方默认源",
     "active 第三方镜像值",
     "默认使用官方源",
@@ -145,168 +148,77 @@ REQUIRED_DOC_TOKENS = [
     "大陆镜像",
     "GOPROXY=https://proxy.golang.org,direct",
     "GOSUMDB=sum.golang.org",
-    "./scripts/local/dev-up.sh",
-    "./scripts/local/run-backend.sh",
+    "./scripts/local/check.sh",
+    "./scripts/local/start.sh",
+    "./scripts/local/stop.sh",
     "down -v",
     "AI_GATEWAY_LOCAL_SEED_ENABLED=true",
     "AI_GATEWAY_LOCAL_PROVIDER_API_KEY=<local-provider-api-key>",
     "default-chat",
 ]
 
-REQUIRED_DEV_UP_TOKENS = [
-    "[dev-up]",
-    "[ok]",
-    "[warn]",
-    "[fail]",
-    "[hint]",
-    "completed successfully",
-    "failed during",
-    "Check Docker status:",
-    "Mainland China network: rerun ./scripts/local/dev-up.sh --china.",
-    "checking local tool dependencies",
-    "missing required local command(s):",
-    "Install Docker, Go, psql, and uv",
-    "Install the missing host tool(s)",
-    "preparing Knowledge runtime dependencies",
-    "with China mirrors",
-    '--with "nltk>=3.9.4"',
-    '--with "huggingface-hub>=1.3.1"',
-    "ragflow_deps/download_deps.py",
-    "download_args+=(--china)",
-    "uv is required when Knowledge runtime dependencies are prepared",
-    "--skip-knowledge-runtime-deps",
-    "LOCAL_SKIP_KNOWLEDGE_RUNTIME_DEPS",
-    "checking Go module settings",
-    "--china",
-    "using selected default for this run",
+REQUIRED_CHECK_TOKENS = [
+    "[check]",
+    "no downloads or builds will run",
+    "setup suggestions",
+    "Official sources, run manually only for missing items",
+    "Mainland China mirrors, run manually only for missing items",
+    "--sync-only --profile",
+    "ragflow_deps/download_deps.py --skip-uv-sync",
     "docker.1ms.run/library/postgres:16-alpine",
     "goose@v3.27.1",
-    "psql",
-    "INFRA_SERVICES=(postgres redis minio elasticsearch)",
-    "PULL_SERVICES=(postgres redis minio minio-init elasticsearch)",
-    "initializing MinIO buckets",
-    "--exit-code-from minio-init",
-    "CONFIG_COMPOSE_ENV_FILE",
-    "001-local-demo-seed.sql",
-    "002-ai-gateway-model-profiles.sql",
-    "003-qa-document-mcp.sql",
-    "004-qa-default-knowledge-base.sql",
-    "--wait",
-    "--wait-timeout",
+    "https://go.dev/dl/",
+    "https://docs.astral.sh/uv",
+]
+
+FORBIDDEN_CHECK_TOKENS = [
+    "docker image inspect",
+    "docker_image_present",
+    "check_docker_images",
+]
+
+REQUIRED_START_TOKENS = [
+    "[start]",
+    "This script does not run dependency downloads",
+    "--pull never",
+    ".local/tools/config-ctl",
+    ".local/tools/goose",
+    ".local/bin",
     "AUTH_DATABASE_URL",
     "FILE_DATABASE_URL",
     "KNOWLEDGE_DATABASE_URL",
     "QA_DATABASE_URL",
     "DOCUMENT_DATABASE_URL",
     "AI_GATEWAY_DATABASE_URL",
-    "POSTGRES_ADMIN_URL",
-    "AI_GATEWAY_LOCAL_SEED_ENABLED",
-    "render_ai_gateway_local_seed.go",
-    "applying AI Gateway local env seed overlay",
-    "QA_DATABASE_URL",
-]
-
-REQUIRED_RUN_BACKEND_TOKENS = [
-    "[backend]",
-    "[ok]",
-    "[warn]",
-    "[fail]",
-    "[hint]",
-    "completed successfully",
-    "failed during",
-    "Check service logs under .local/logs/",
-    "setsid",
-    "python3",
-    "os.setsid()",
-    "go mod download",
-    "checking Go modules",
-    "--china",
-    "using selected default for this run",
-    "AI_GATEWAY_LOCAL_CHAT_MODEL",
-    "DOCUMENT_AI_GATEWAY_MODEL",
-    "LOCAL_GO_MOD_DOWNLOAD_TIMEOUT_SECONDS",
-    "go mod download timed out",
-    "Go module download failed before backend startup completed.",
-    "Current effective Go module settings:",
-    "LOCAL_BACKEND_STARTUP_CHECK_SECONDS",
-    "backend startup failed",
-    "The failed service log tails are shown below.",
-    "Backend process startup failed after services were forked.",
-    "instead of treating it as a Go module mirror issue.",
-    "auth",
-    "file",
-    "knowledge",
-    "./cmd/adapter",
-    'go run "$go_target"',
-    "ai-gateway",
-    "qa",
-    "document",
-    "gateway",
-]
-
-REQUIRED_RUN_KNOWLEDGE_PARSE_STACK_TOKENS = [
-    "knowledge parse stack startup: starting Knowledge parse stack",
-    "setsid or python3 is required",
-    "os.setsid()",
-    "--china",
-    "default root Compose infrastructure",
-    "KNOWLEDGE_RUNTIME_ES_URL",
-    "HF_ENDPOINT=https://hf-mirror.com",
-    "uv sync --python 3.13 --frozen --group worker",
-    "start_service \"knowledge-runtime-worker\"",
-    "For local Elasticsearch, rerun ./scripts/local/dev-up.sh",
-    ".local/knowledge-runtime/service_conf.yaml",
-    "Preferred AI Gateway local parsing uses default-embedding/default-rerank profiles",
-    "KNOWLEDGE_RUNTIME_AI_GATEWAY_SERVICE_TOKEN=local-dev-internal-service-token-change-me",
-    "KNOWLEDGE_RUNTIME_EMBEDDING_FACTORY=AI_GATEWAY",
-    "KNOWLEDGE_RUNTIME_RERANK_FACTORY=AI_GATEWAY",
-    "KNOWLEDGE_VENDOR_EMBEDDING_ID=BAAI/bge-m3@default@AI_GATEWAY",
-    "KNOWLEDGE_VENDOR_RERANK_ID=BAAI/bge-reranker-v2-m3@default@AI_GATEWAY",
-    "KNOWLEDGE_AUTO_START_INGESTION=true",
-]
-
-REQUIRED_RUN_KNOWLEDGE_RUNTIME_API_TOKENS = [
-    "knowledge runtime API startup: starting runtime API only",
-    "setsid or python3 is required",
-    "os.setsid()",
-    "--china",
-    "HF_ENDPOINT=https://hf-mirror.com",
-    "uv sync --python 3.13 --frozen --no-default-groups",
-    "uv run --no-sync --no-default-groups",
-    "start_service \"knowledge-runtime-api\"",
-    "This API-only helper does not start knowledge-runtime-worker.",
-    "./scripts/local/run-knowledge-parse-stack.sh",
-]
-
-REQUIRED_START_KNOWLEDGE_RUNTIME_WORKER_TOKENS = [
-    "knowledge runtime worker startup: starting worker only",
-    "setsid or python3 is required",
-    "os.setsid()",
-    "--china",
-    "HF_ENDPOINT=https://hf-mirror.com",
-    "uv sync --python 3.13 --frozen --group worker",
+    "001-local-demo-seed.sql",
+    "002-ai-gateway-model-profiles.sql",
+    "003-qa-document-mcp.sql",
+    "004-qa-default-knowledge-base.sql",
+    "render-ai-gateway-local-seed",
+    "--runtime api",
+    "--runtime full",
+    "knowledge-runtime-api",
     "knowledge-runtime-worker",
-    "waiting for knowledge-runtime-worker heartbeat",
-    "task_executor_heartbeats",
-    "KNOWLEDGE_RUNTIME_WORKER_IDLE_SHUTDOWN_SECONDS",
-    "knowledge-runtime-worker idle watcher started",
-    "watch-knowledge-runtime-worker-idle.sh",
-    "This worker-only helper does not start knowledge-runtime-api or knowledge adapter.",
+    "startup status",
+    "host process groups",
+    "compose_cmd ps",
+    "align_host_run_ai_gateway_models",
+    "AI_GATEWAY_LOCAL_CHAT_MODEL for host-run QA",
+    "AI_GATEWAY_LOCAL_CHAT_MODEL for host-run Document",
+    "go mod download",
+    "go run module@version",
 ]
 
-REQUIRED_WATCH_KNOWLEDGE_RUNTIME_WORKER_IDLE_TOKENS = [
-    "knowledge-runtime-worker idle watcher started",
-    "KNOWLEDGE_RUNTIME_WORKER_IDLE_SHUTDOWN_SECONDS",
-    "worker_queue_idle",
-    "pending",
-    "lag",
-    "current",
-    "stop_worker_group",
-    "cleanup_worker_heartbeat",
-    "valkey.Valkey",
+FORBIDDEN_START_TOKENS = [
+    "\nuv sync",
+    "exec uv sync",
+    "uv sync --",
+    "download_deps.py",
+    "go mod download)",
+    "go install github.com/pressly/goose",
 ]
 
-REQUIRED_STOP_BACKEND_TOKENS = [
+REQUIRED_STOP_TOKENS = [
     "[stop]",
     "[ok]",
     "[warn]",
@@ -318,6 +230,15 @@ REQUIRED_STOP_BACKEND_TOKENS = [
     'kill -0 -- "-$pid"',
     'kill -TERM -- "-$pid"',
     'kill -KILL -- "-$pid"',
+]
+
+REQUIRED_CLEAN_TOKENS = [
+    "[clean]",
+    "./scripts/local/stop.sh",
+    "down -v",
+    "--remove-orphans",
+    ".local/tools/config-ctl",
+    "Images, source files, .env.local, .local/tools, and .local/bin are not removed.",
 ]
 
 REQUIRED_ENV_TOKENS = [
@@ -446,14 +367,11 @@ def verify_local_seed_contract(root: Path) -> list[str]:
     env_example = read_required(root, ENV_EXAMPLE, issues)
     config_readme = read_required(root, CONFIG_README, issues)
     config_base = read_required(root, CONFIG_BASE, issues)
-    dev_up_script = read_required(root, DEV_UP_SCRIPT, issues)
+    check_script = read_required(root, CHECK_SCRIPT, issues)
+    start_script = read_required(root, START_SCRIPT, issues)
+    clean_script = read_required(root, CLEAN_SCRIPT, issues)
     ai_gateway_local_seed_renderer = read_required(root, AI_GATEWAY_LOCAL_SEED_RENDERER, issues)
-    run_backend_script = read_required(root, RUN_BACKEND_SCRIPT, issues)
-    run_knowledge_runtime_api_script = read_required(root, RUN_KNOWLEDGE_RUNTIME_API_SCRIPT, issues)
-    start_knowledge_runtime_worker_script = read_required(root, START_KNOWLEDGE_RUNTIME_WORKER_SCRIPT, issues)
-    watch_knowledge_runtime_worker_idle_script = read_required(root, WATCH_KNOWLEDGE_RUNTIME_WORKER_IDLE_SCRIPT, issues)
-    run_knowledge_parse_stack_script = read_required(root, RUN_KNOWLEDGE_PARSE_STACK_SCRIPT, issues)
-    stop_backend_script = read_required(root, STOP_BACKEND_SCRIPT, issues)
+    stop_script = read_required(root, STOP_SCRIPT, issues)
     local_common_helper = read_required(root, LOCAL_COMMON_HELPER, issues)
     local_process_helper = read_required(root, LOCAL_PROCESS_HELPER, issues)
     local_knowledge_runtime_helper = read_required(root, LOCAL_KNOWLEDGE_RUNTIME_HELPER, issues)
@@ -473,14 +391,11 @@ def verify_local_seed_contract(root: Path) -> list[str]:
             env_example,
             config_readme,
             config_base,
-            dev_up_script,
+            check_script,
+            start_script,
+            clean_script,
             ai_gateway_local_seed_renderer,
-            run_backend_script,
-            run_knowledge_runtime_api_script,
-            start_knowledge_runtime_worker_script,
-            watch_knowledge_runtime_worker_idle_script,
-            run_knowledge_parse_stack_script,
-            stop_backend_script,
+            stop_script,
             ai_gateway_local_seed_main,
             local_common_helper,
             local_process_helper,
@@ -488,6 +403,7 @@ def verify_local_seed_contract(root: Path) -> list[str]:
         )
     )
     issues.extend(validate_gitignore(gitignore))
+    issues.extend(validate_executable_entrypoints(root))
     issues.extend(validate_forbidden_content(root))
     return issues
 
@@ -627,14 +543,11 @@ def validate_docs(
     env_example: str,
     config_readme: str,
     config_base: str,
-    dev_up_script: str,
+    check_script: str,
+    start_script: str,
+    clean_script: str,
     ai_gateway_local_seed_renderer: str,
-    run_backend_script: str,
-    run_knowledge_runtime_api_script: str,
-    start_knowledge_runtime_worker_script: str,
-    watch_knowledge_runtime_worker_idle_script: str,
-    run_knowledge_parse_stack_script: str,
-    stop_backend_script: str,
+    stop_script: str,
     ai_gateway_local_seed_main: str,
     local_common_helper: str = "",
     local_process_helper: str = "",
@@ -642,19 +555,8 @@ def validate_docs(
 ) -> list[str]:
     issues: list[str] = []
     combined = "\n".join([deploy_readme, runbook, env_example, config_readme])
-    local_runtime_helper_contract = "\n".join(
-        [local_common_helper, local_process_helper, local_knowledge_runtime_helper]
-    )
-    run_knowledge_runtime_api_contract = "\n".join(
-        [run_knowledge_runtime_api_script, local_runtime_helper_contract]
-    )
-    start_knowledge_runtime_worker_contract = "\n".join(
-        [start_knowledge_runtime_worker_script, local_runtime_helper_contract]
-    )
-    run_knowledge_parse_stack_contract = "\n".join(
-        [run_knowledge_parse_stack_script, local_runtime_helper_contract]
-    )
-    stop_backend_contract = "\n".join([stop_backend_script, local_process_helper])
+    start_contract = "\n".join([start_script, local_common_helper, local_process_helper, local_knowledge_runtime_helper])
+    stop_contract = "\n".join([stop_script, local_process_helper])
     for token in REQUIRED_DOC_TOKENS:
         if token not in combined:
             issues.append(f"seed documentation missing `{token}`")
@@ -667,9 +569,21 @@ def validate_docs(
     for token in FORBIDDEN_STARTUP_DOC_TOKENS:
         if token in combined:
             issues.append(f"startup documentation must not include `{token}`")
-    for token in REQUIRED_DEV_UP_TOKENS:
-        if token not in dev_up_script:
-            issues.append(f"{DEV_UP_SCRIPT} missing local seed runner token `{token}`")
+    for token in REQUIRED_CHECK_TOKENS:
+        if token not in check_script:
+            issues.append(f"{CHECK_SCRIPT} missing check token `{token}`")
+    for token in FORBIDDEN_CHECK_TOKENS:
+        if token in check_script:
+            issues.append(f"{CHECK_SCRIPT} must not contain preflight Docker state token `{token}`")
+    for token in REQUIRED_START_TOKENS:
+        if token not in start_contract:
+            issues.append(f"{START_SCRIPT} missing startup token `{token}`")
+    for token in FORBIDDEN_START_TOKENS:
+        if token in start_script:
+            issues.append(f"{START_SCRIPT} must not contain startup download token `{token}`")
+    for token in REQUIRED_CLEAN_TOKENS:
+        if token not in clean_script:
+            issues.append(f"{CLEAN_SCRIPT} missing cleanup token `{token}`")
     for token in [
         "AI_GATEWAY_LOCAL_PROVIDER",
         "AI_GATEWAY_LOCAL_PROVIDER_BASE_URL",
@@ -685,28 +599,9 @@ def validate_docs(
     ]:
         if token not in ai_gateway_local_seed_renderer:
             issues.append(f"{AI_GATEWAY_LOCAL_SEED_RENDERER} missing local overlay token `{token}`")
-    for token in REQUIRED_RUN_BACKEND_TOKENS:
-        if token not in run_backend_script:
-            issues.append(f"{RUN_BACKEND_SCRIPT} missing backend startup token `{token}`")
-    for token in REQUIRED_RUN_KNOWLEDGE_RUNTIME_API_TOKENS:
-        if token not in run_knowledge_runtime_api_contract:
-            issues.append(f"{RUN_KNOWLEDGE_RUNTIME_API_SCRIPT} missing Knowledge runtime API token `{token}`")
-    if 'start_service "knowledge-runtime-worker"' in run_knowledge_runtime_api_script:
-        issues.append(f"{RUN_KNOWLEDGE_RUNTIME_API_SCRIPT} must not start knowledge-runtime-worker")
-    for token in REQUIRED_START_KNOWLEDGE_RUNTIME_WORKER_TOKENS:
-        if token not in start_knowledge_runtime_worker_contract:
-            issues.append(f"{START_KNOWLEDGE_RUNTIME_WORKER_SCRIPT} missing Knowledge runtime worker token `{token}`")
-    if 'start_service "knowledge-runtime-api"' in start_knowledge_runtime_worker_script:
-        issues.append(f"{START_KNOWLEDGE_RUNTIME_WORKER_SCRIPT} must not start knowledge-runtime-api")
-    for token in REQUIRED_WATCH_KNOWLEDGE_RUNTIME_WORKER_IDLE_TOKENS:
-        if token not in watch_knowledge_runtime_worker_idle_script:
-            issues.append(f"{WATCH_KNOWLEDGE_RUNTIME_WORKER_IDLE_SCRIPT} missing Knowledge runtime worker idle token `{token}`")
-    for token in REQUIRED_RUN_KNOWLEDGE_PARSE_STACK_TOKENS:
-        if token not in run_knowledge_parse_stack_contract:
-            issues.append(f"{RUN_KNOWLEDGE_PARSE_STACK_SCRIPT} missing Knowledge parse stack token `{token}`")
-    for token in REQUIRED_STOP_BACKEND_TOKENS:
-        if token not in stop_backend_contract:
-            issues.append(f"{STOP_BACKEND_SCRIPT} missing backend stop token `{token}`")
+    for token in REQUIRED_STOP_TOKENS:
+        if token not in stop_contract:
+            issues.append(f"{STOP_SCRIPT} missing stop token `{token}`")
     for token in [
         "QA_DATABASE_URL",
         "llm_config_versions",
@@ -730,6 +625,19 @@ def validate_gitignore(content: str) -> list[str]:
     return issues
 
 
+def validate_executable_entrypoints(root: Path) -> list[str]:
+    issues: list[str] = []
+    for relative in PUBLIC_LOCAL_ENTRYPOINTS:
+        path = root / relative
+        try:
+            mode = path.stat().st_mode
+        except OSError:
+            continue
+        if mode & 0o111 == 0:
+            issues.append(f"{relative} must be executable because docs run it as ./{relative}")
+    return issues
+
+
 def validate_forbidden_content(root: Path) -> list[str]:
     issues: list[str] = []
     for relative in [
@@ -741,18 +649,15 @@ def validate_forbidden_content(root: Path) -> list[str]:
         DEPLOY_README,
         LOCAL_RUNBOOK,
         ENV_EXAMPLE,
-        DEV_UP_SCRIPT,
+        CHECK_SCRIPT,
+        START_SCRIPT,
+        CLEAN_SCRIPT,
         AI_GATEWAY_LOCAL_SEED_RENDERER,
-        RUN_BACKEND_SCRIPT,
-        RUN_KNOWLEDGE_RUNTIME_API_SCRIPT,
-        START_KNOWLEDGE_RUNTIME_WORKER_SCRIPT,
-        WATCH_KNOWLEDGE_RUNTIME_WORKER_IDLE_SCRIPT,
-        RUN_KNOWLEDGE_PARSE_STACK_SCRIPT,
         LOCAL_COMMON_HELPER,
         LOCAL_PROCESS_HELPER,
         LOCAL_KNOWLEDGE_RUNTIME_HELPER,
         AI_GATEWAY_LOCAL_SEED_MAIN,
-        STOP_BACKEND_SCRIPT,
+        STOP_SCRIPT,
     ]:
         path = root / relative
         if not path.exists():

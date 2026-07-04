@@ -10,28 +10,33 @@ Use the local integration baseline first:
 
 ```bash
 cp .env.example .env.local
-./scripts/local/dev-up.sh
-./scripts/local/run-backend.sh
+./scripts/local/check.sh
+./scripts/local/start.sh
 ```
 
 Docker only starts the infrastructure services listed in
 `deploy/docker-compose.yml`: `postgres`, `redis`, `minio`, `minio-init`, and
 `elasticsearch`. Auth, File, Knowledge, AI Gateway, QA, Document, and
-Gateway run on the host through `run-backend.sh`; do not use Compose profiles,
+Gateway run on the host through `start.sh`; do not use Compose profiles,
 business-service containers, or `--build` for this smoke.
 
 Defaults use official Docker/PyPI/Go/GitHub sources. For mainland China
 networks, use explicit mirror mode for the affected step:
 
 ```bash
-./scripts/local/dev-up.sh --china
-./scripts/local/run-backend.sh --china
+./scripts/local/check.sh --china
+./scripts/local/start.sh --china
 ```
 
-`dev-up.sh` includes Knowledge runtime dependency and GitHub release/raw artifact
-preparation by default. `--china` switches those downloads to mainland China
-mirrors. If you intentionally skipped preparation with `--skip-knowledge-runtime-deps`,
-rerun the runtime download script manually before claiming Knowledge runtime coverage.
+Startup does not download Go modules, Docker images, uv environments, or
+Knowledge runtime artifacts. Before claiming Knowledge runtime coverage, run the
+environment check and follow any runtime setup suggestions it prints:
+
+```bash
+./scripts/local/check.sh
+# mainland China:
+./scripts/local/check.sh --china
+```
 
 If image pulls, Knowledge runtime dependency downloads, GitHub release/raw
 downloads, or Go module downloads are blocked, use

@@ -427,7 +427,7 @@ def validate_env_example(root: Path) -> list[str]:
         value = config_values.get(key)
         if value != expected_default:
             issues.append(
-                f"config/base.yaml: `{key}` must default to official pinned `{expected_default}` under the official-by-default source policy; use ./scripts/local/dev-up.sh --china or local .env.local overrides"
+                f"config/base.yaml: `{key}` must default to official pinned `{expected_default}` under the official-by-default source policy; use ./scripts/local/check.sh --china for mirror suggestions or local .env.local overrides"
             )
 
     for key, value in config_values.items():
@@ -440,7 +440,7 @@ def validate_env_example(root: Path) -> list[str]:
             issues.append(f".env.example: `{key}` must not enable third-party registry rewrite by default")
     if config_values.get("HF_ENDPOINT") == "https://hf-mirror.com" or template_values.get("HF_ENDPOINT") == "https://hf-mirror.com":
         issues.append(
-            ".env.example/config/base.yaml: `HF_ENDPOINT=https://hf-mirror.com` must not be active by default; use run-knowledge-parse-stack.sh --china or local .env.local overrides"
+            ".env.example/config/base.yaml: `HF_ENDPOINT=https://hf-mirror.com` must not be active by default; use ./scripts/local/start.sh --runtime full --china or local .env.local overrides"
         )
     if template_values.get("GO_DOCKER_GOSUMDB") == "off" or config_values.get("GO_DOCKER_GOSUMDB") == "off" or config_values.get("GOSUMDB") == "off":
         issues.append(".env.example/config/base.yaml: must not disable Go checksum verification")

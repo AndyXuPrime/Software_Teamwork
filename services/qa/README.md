@@ -40,7 +40,7 @@ the command tool is disabled by default.
 ## Configuration
 
 The normal local startup path uses repository `config/`, root `.env.local`,
-`./scripts/local/dev-up.sh`, and `./scripts/local/run-backend.sh`. QA itself
+`./scripts/local/check.sh`, and `./scripts/local/start.sh`. QA itself
 does not load `.env` files and never stores tokens in source code;
 service-local tests may set only the variables they need. See
 [`../../config/README.md`](../../config/README.md) for the profile and secret
@@ -214,8 +214,8 @@ bounded by `AGENT_MAX_ITERATIONS` and the per-tool timeout. Full QA -> Document
 worker -> Gateway download smoke should stay env-gated with
 `QA_DOCUMENT_MCP_SMOKE=1` so ordinary CI does not require a live Document worker.
 
-Run the env-gated smoke from the QA service after `dev-up.sh` starts
-infrastructure/migrations/seeds and `run-backend.sh` starts host-run services:
+Run the env-gated smoke from the QA service after `start.sh` starts
+infrastructure, migrations, seed data, and host-run services:
 
 ```powershell
 cd D:\PROJECTS\Software_Teamwork\services\qa
@@ -330,7 +330,8 @@ Start root infra and apply local migrations/seed from the repository root:
 
 ```bash
 cp .env.example .env.local
-./scripts/local/dev-up.sh
+./scripts/local/check.sh
+./scripts/local/start.sh --infra-only
 ```
 
 Connection string:
@@ -342,10 +343,9 @@ postgres://qa_app:qa_app_dev@localhost:5432/qa_system?sslmode=disable
 Reset the local database volume and re-apply migrations:
 
 ```bash
-./scripts/local/stop-backend.sh
-CONFIG_SECRET_FILE=.env.local ./scripts/config/load-profile.sh --print-compose-env
-docker compose -f deploy/docker-compose.yml --env-file .local/config/dev.env down -v
-./scripts/local/dev-up.sh
+./scripts/local/clean.sh --yes
+./scripts/local/check.sh
+./scripts/local/start.sh --infra-only
 ```
 
 Apply or inspect migrations on the host with the project-pinned `goose@v3.27.1` command:
@@ -368,7 +368,7 @@ go test ./internal/repository/... -run TestDocumentedResourceRoundTrip -count=1
 For normal local development, start QA together with the rest of the backend:
 
 ```bash
-./scripts/local/run-backend.sh
+./scripts/local/start.sh
 ```
 
 Verify public readiness:

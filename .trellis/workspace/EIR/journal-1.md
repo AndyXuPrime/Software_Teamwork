@@ -284,3 +284,37 @@ Refactored local startup scripts, switched China Docker registry rewrite to dock
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Local startup scripts check-first flow
+
+**Date**: 2026-07-04
+**Task**: Local startup scripts check-first flow
+**Branch**: `EIR/fix/local-startup-downloads-opt-in`
+
+### Summary
+
+Reworked local startup scripts so check.sh only inspects and prints official/mainland China setup suggestions, start.sh consumes prepared local tools/images/binaries/runtime files, and docs/specs/tests describe the check/start/stop flow.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2edcbbbd` | (see git log) |
+| `f1508c14` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

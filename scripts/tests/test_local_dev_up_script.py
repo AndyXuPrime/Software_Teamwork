@@ -1,266 +1,174 @@
 import os
+import signal
 import shutil
 import stat
 import subprocess
 import textwrap
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Optional
 
 
-class LocalDevUpScriptTests(unittest.TestCase):
-    def test_minio_init_success_continues_to_migrations_and_seed(self) -> None:
+class LocalStartupScriptTests(unittest.TestCase):
+    def test_check_default_only_inspects_environment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.prepare_runtime(Path(directory))
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+            self.create_service_binaries(root)
+            self.create_runtime_files(root)
 
-            result = self.run_dev_up(root)
+            result = self.run_check(root)
 
             self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("[ok] initializing MinIO buckets succeeded", result.stdout)
-            self.assertIn("[dev-up] migrating auth", result.stdout)
-            self.assertIn("infra, migrations, and seed are ready", result.stdout)
-
+            self.assertIn("checking local environment; no downloads or builds will run", result.stdout)
+            self.assertIn("local environment looks ready", result.stdout)
+            self.assertFalse((root / "go-calls.log").exists())
             docker_calls = (root / "docker-calls.log").read_text(encoding="utf-8")
-            health_wait_call = next(line for line in docker_calls.splitlines() if " up -d --wait " in line)
-            self.assertIn(" postgres redis minio elasticsearch", health_wait_call)
-            self.assertNotIn("minio-init", health_wait_call)
-            self.assertIn(" up --no-deps --exit-code-from minio-init minio-init", docker_calls)
-
-    def test_minio_init_failure_stops_before_migrations_with_log_hint(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = self.prepare_runtime(Path(directory))
-
-            result = self.run_dev_up(root, {"FAKE_MINIO_INIT_EXIT": "7"})
-
-            self.assertNotEqual(0, result.returncode)
-            self.assertNotIn("[dev-up] migrating auth", result.stdout)
-            self.assertIn(
-                "minio-init failed; inspect logs with: docker compose -f deploy/docker-compose.yml --env-file",
-                result.stderr,
-            )
-            self.assertIn(".local/config/dev.env logs minio-init", result.stderr)
-
-    def test_missing_psql_fails_before_docker_work(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = self.prepare_runtime(Path(directory))
-            (root / "fake-bin" / "psql").unlink()
-
-            result = self.run_dev_up(root, {"PATH": str(root / "fake-bin")})
-
-            self.assertNotEqual(0, result.returncode)
-            self.assertIn("missing required local command(s): psql", result.stderr)
-            self.assertIn("Install the missing host tool(s), then rerun ./scripts/local/dev-up.sh.", result.stderr)
-            self.assertNotIn("Check Docker with:", result.stderr)
-            self.assertNotIn("If Go module download failed", result.stderr)
-            self.assertIn("[dev-up] checking local tool dependencies", result.stdout)
-            self.assertNotIn("[dev-up] pulling infrastructure images", result.stdout)
-            self.assertFalse((root / "docker-calls.log").exists())
-
-    def test_missing_go_fails_before_profile_render_docker_work(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = self.prepare_runtime(Path(directory))
-            (root / "fake-bin" / "go").unlink()
-
-            result = self.run_dev_up(root, {"PATH": str(root / "fake-bin")})
-
-            self.assertNotEqual(0, result.returncode)
-            self.assertIn("go is required to render config profiles with config/ctl", result.stderr)
-            self.assertIn("install Go 1.25.x or run from an environment with go on PATH", result.stderr)
-            self.assertNotIn("[dev-up] pulling infrastructure images", result.stdout)
-            self.assertFalse((root / "docker-calls.log").exists())
-
-    def test_china_flag_uses_mirrors_for_current_process_only(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = self.prepare_runtime(Path(directory))
-
-            result = self.run_dev_up(root, args=["--china"])
-
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("using mainland China mirrors for this run (--china)", result.stdout)
-            env_text = (root / ".env.local").read_text(encoding="utf-8")
-            self.assertIn("GOPROXY=https://proxy.golang.org,direct", env_text)
-            docker_env = (root / "docker-env.log").read_text(encoding="utf-8")
-            self.assertIn("POSTGRES_IMAGE=docker.1ms.run/library/postgres:16-alpine", docker_env)
-            self.assertIn(
-                "KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE=docker.1ms.run/elasticsearch:8.15.3",
-                docker_env,
-            )
-            self.assertNotIn("docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:8.15.3", docker_env)
-            self.assertIn("GOPROXY=https://goproxy.cn,direct", docker_env)
-            uv_calls = (root / "uv-calls.log").read_text(encoding="utf-8")
-            self.assertIn("run --no-project", uv_calls)
-            self.assertIn("--with nltk>=3.9.4", uv_calls)
-            self.assertIn("--with huggingface-hub>=1.3.1", uv_calls)
-            self.assertIn("ragflow_deps/download_deps.py --china", uv_calls)
-
-    def test_default_mode_prepares_knowledge_runtime_deps_with_official_sources(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = self.prepare_runtime(Path(directory))
-
-            result = self.run_dev_up(root)
-
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("[dev-up] preparing Knowledge runtime dependencies", result.stdout)
-            uv_calls = (root / "uv-calls.log").read_text(encoding="utf-8")
-            self.assertIn("run --no-project", uv_calls)
-            self.assertIn("--with nltk>=3.9.4", uv_calls)
-            self.assertIn("--with huggingface-hub>=1.3.1", uv_calls)
-            self.assertIn("ragflow_deps/download_deps.py", uv_calls)
-            self.assertNotIn("ragflow_deps/download_deps.py --china", uv_calls)
-
-    def test_default_mode_preserves_proxy_env_for_official_sources(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = self.prepare_runtime(Path(directory))
-
-            result = self.run_dev_up(
-                root,
-                {
-                    "HTTP_PROXY": "http://127.0.0.1:7890",
-                    "HTTPS_PROXY": "http://127.0.0.1:7890",
-                    "NO_PROXY": "localhost,127.0.0.1,::1",
-                },
-            )
-
-            self.assertEqual(0, result.returncode, result.stderr)
-            docker_env = (root / "docker-env.log").read_text(encoding="utf-8")
-            self.assertIn("POSTGRES_IMAGE=", docker_env)
-            self.assertIn("KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE=", docker_env)
-            self.assertIn("GOPROXY=https://proxy.golang.org,direct", docker_env)
-            self.assertIn("HTTP_PROXY=http://127.0.0.1:7890", docker_env)
-            self.assertIn("HTTPS_PROXY=http://127.0.0.1:7890", docker_env)
-            self.assertIn("NO_PROXY=localhost,127.0.0.1,::1", docker_env)
-            self.assertNotIn("docker.1ms.run/library/postgres", docker_env)
-
-    def test_skip_knowledge_runtime_deps_does_not_require_or_call_uv(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = self.prepare_runtime(Path(directory))
-            (root / "fake-bin" / "uv").unlink()
-
-            result = self.run_dev_up(root, args=["--skip-knowledge-runtime-deps"])
-
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("skipping Knowledge runtime dependency preparation", result.stdout)
+            self.assertNotIn("image inspect", docker_calls)
+            self.assertNotIn(" pull ", f" {docker_calls} ")
             self.assertFalse((root / "uv-calls.log").exists())
 
-    def test_missing_uv_fails_before_docker_work_when_runtime_deps_are_enabled(self) -> None:
+    def test_check_china_mode_prints_manual_download_suggestions(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.prepare_runtime(Path(directory))
-            (root / "fake-bin" / "uv").unlink()
 
-            result = self.run_dev_up(root, {"PATH": str(root / "fake-bin")})
+            result = self.run_check(root, args=["--china"])
 
             self.assertNotEqual(0, result.returncode)
-            self.assertIn("missing required local command(s): uv", result.stderr)
-            self.assertIn("uv is required when Knowledge runtime dependencies are prepared", result.stderr)
-            self.assertIn("[dev-up] checking local tool dependencies", result.stdout)
-            self.assertNotIn("[dev-up] pulling infrastructure images", result.stdout)
-            self.assertFalse((root / "docker-calls.log").exists())
+            self.assertIn("Mainland China mirrors, run manually only for missing items", result.stdout)
+            self.assertIn("docker pull docker.1ms.run/library/postgres:16-alpine", result.stdout)
+            self.assertIn("GOPROXY=https://goproxy.cn,direct", result.stdout)
+            self.assertIn("ragflow_deps/download_deps.py --skip-uv-sync --china", result.stdout)
+            self.assertFalse((root / "go-calls.log").exists())
+            if (root / "docker-calls.log").exists():
+                docker_calls = (root / "docker-calls.log").read_text(encoding="utf-8")
+                self.assertNotIn("image inspect", docker_calls)
+                self.assertNotIn(" pull ", f" {docker_calls} ")
+            self.assertFalse((root / "uv-calls.log").exists())
 
-    def test_elasticsearch_starts_with_default_infra(self) -> None:
+    def test_start_infra_only_never_pulls_or_requires_uv(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.prepare_runtime(Path(directory))
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+            (root / "fake-bin" / "uv").unlink()
 
-            result = self.run_dev_up(root)
+            result = self.run_start(root, args=["--infra-only"])
 
             self.assertEqual(0, result.returncode, result.stderr)
             docker_calls = (root / "docker-calls.log").read_text(encoding="utf-8")
-            self.assertNotIn("--profile knowledge-runtime", docker_calls)
-            self.assertIn("pull postgres redis minio minio-init elasticsearch", docker_calls)
-            health_wait_call = next(line for line in docker_calls.splitlines() if " up -d --wait " in line)
-            self.assertIn(" elasticsearch", health_wait_call)
+            self.assertIn("up -d --pull never --wait", docker_calls)
+            self.assertIn("up --no-deps --pull never --exit-code-from minio-init minio-init", docker_calls)
+            self.assertIn("ps postgres redis minio elasticsearch", docker_calls)
+            self.assertNotIn(" pull ", f" {docker_calls} ")
+            self.assertFalse((root / "uv-calls.log").exists())
+            self.assertFalse((root / "go-calls.log").exists())
 
-    def test_ai_gateway_local_seed_overlay_runs_when_enabled(self) -> None:
+    def test_start_fails_with_hint_when_service_binaries_are_missing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.prepare_runtime(Path(directory))
-            with (root / ".env.local").open("a", encoding="utf-8") as env_file:
-                env_file.write(
-                    textwrap.dedent(
-                        """\
-                        AI_GATEWAY_LOCAL_SEED_ENABLED=true
-                        AI_GATEWAY_LOCAL_PROVIDER=siliconflow
-                        AI_GATEWAY_LOCAL_PROVIDER_BASE_URL=https://api.siliconflow.cn/v1
-                        AI_GATEWAY_LOCAL_PROVIDER_API_KEY=local-provider-key-for-tests
-                        AI_GATEWAY_LOCAL_CHAT_MODEL=deepseek-ai/DeepSeek-V4-Flash
-                        AI_GATEWAY_LOCAL_EMBEDDING_MODEL=BAAI/bge-m3
-                        AI_GATEWAY_LOCAL_EMBEDDING_DIMENSIONS=1024
-                        AI_GATEWAY_LOCAL_RERANK_MODEL=BAAI/bge-reranker-v2-m3
-                        AI_GATEWAY_LOCAL_RERANK_TOP_N=5
-                        AI_GATEWAY_CREDENTIAL_ENCRYPTION_KEY=local-demo-credential-key-change-me
-                        AI_GATEWAY_CREDENTIAL_ENCRYPTION_KEY_REF=local-demo-key-v1
-                        """
-                    )
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+
+            result = self.run_start(root, args=["--backend-only", "--no-runtime"])
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("missing", result.stderr)
+            self.assertIn(".local/bin/auth-server", result.stderr)
+            self.assertIn("./scripts/local/check.sh", result.stderr)
+            self.assertFalse((root / "docker-calls.log").exists())
+
+    def test_start_backend_uses_prepared_binaries_without_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+            self.create_service_binaries(root)
+
+            try:
+                result = self.run_start(
+                    root,
+                    args=["--backend-only", "--no-runtime"],
+                    extra_env={"LOCAL_STARTUP_CHECK_SECONDS": "0"},
                 )
 
-            result = self.run_dev_up(root)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn("local backend and runtime mode 'none' are running", result.stdout)
+                self.assertIn("host process groups", result.stdout)
+                for service in ["auth", "file", "knowledge", "ai-gateway", "qa", "document", "gateway"]:
+                    self.assertTrue((root / ".local" / "run" / f"{service}.pid").exists())
+                self.assertFalse((root / "go-calls.log").exists())
+                self.assertFalse((root / "uv-calls.log").exists())
+            finally:
+                self.cleanup_started_processes(root)
 
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("[dev-up] applying AI Gateway local env seed overlay", result.stdout)
-            self.assertIn("[ok] applying AI Gateway local env seed overlay succeeded", result.stdout)
-            go_calls = (root / "go-calls.log").read_text(encoding="utf-8")
-            self.assertIn("render_ai_gateway_local_seed.go", go_calls)
-            psql_stdin = (root / "psql-stdin.sql").read_text(encoding="utf-8")
-            self.assertIn("-- rendered AI Gateway local overlay", psql_stdin)
-            self.assertIn("deepseek-ai/DeepSeek-V4-Flash", psql_stdin)
-
-    def test_ai_gateway_local_seed_overlay_skips_when_disabled(self) -> None:
+    def test_start_aligns_placeholder_model_env_with_local_chat_model(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.prepare_runtime(Path(directory))
-
-            result = self.run_dev_up(root)
-
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("AI_GATEWAY_LOCAL_SEED_ENABLED is not true", result.stdout)
-            go_calls = (root / "go-calls.log").read_text(encoding="utf-8")
-            self.assertNotIn("render_ai_gateway_local_seed.go", go_calls)
-
-    def test_paddleocr_cloud_parser_overlay_runs_when_token_configured(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = self.prepare_runtime(Path(directory))
-            with (root / ".env.local").open("a", encoding="utf-8") as env_file:
-                env_file.write(
-                    textwrap.dedent(
-                        """\
-                        PADDLEOCR_BASE_URL=https://paddleocr.aistudio-app.com
-                        PADDLEOCR_ACCESS_TOKEN=local-paddleocr-token-for-tests
-                        PADDLEOCR_ALGORITHM=PP-StructureV3
-                        """
-                    )
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+            self.create_service_binaries(root)
+            with (root / ".env.local").open("a", encoding="utf-8") as env:
+                env.write(
+                    "AI_GATEWAY_LOCAL_CHAT_MODEL=deepseek-ai/DeepSeek-V4-Flash\n"
+                    "MODEL_ID=local-placeholder-chat\n"
+                    "DOCUMENT_AI_GATEWAY_MODEL=local-placeholder-chat\n"
                 )
 
-            result = self.run_dev_up(root)
+            try:
+                result = self.run_start(
+                    root,
+                    args=["--backend-only", "--no-runtime"],
+                    extra_env={"LOCAL_STARTUP_CHECK_SECONDS": "0"},
+                )
 
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("[dev-up] applying PaddleOCR cloud parser overlay", result.stdout)
-            self.assertIn("[ok] applying PaddleOCR cloud parser overlay succeeded", result.stdout)
-            psql_stdin = (root / "psql-stdin.sql").read_text(encoding="utf-8")
-            self.assertIn("parser_config_paddleocr_cloud_default", psql_stdin)
-            self.assertIn("'paddleocr_cloud'", psql_stdin)
-            self.assertIn("'paddleocr_algorithm', 'PP-StructureV3'", psql_stdin)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn("using AI_GATEWAY_LOCAL_CHAT_MODEL for host-run QA MODEL_ID", result.stdout)
+                self.assertIn("using AI_GATEWAY_LOCAL_CHAT_MODEL for host-run Document model", result.stdout)
+                service_env = (root / "service-env.log").read_text(encoding="utf-8")
+                self.assertIn("MODEL_ID=deepseek-ai/DeepSeek-V4-Flash", service_env)
+                self.assertIn("DOCUMENT_AI_GATEWAY_MODEL=deepseek-ai/DeepSeek-V4-Flash", service_env)
+            finally:
+                self.cleanup_started_processes(root)
 
-    def test_paddleocr_cloud_parser_overlay_skips_without_token(self) -> None:
+    def test_start_defaults_to_prepared_runtime_worker(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.prepare_runtime(Path(directory))
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+            self.create_service_binaries(root)
+            self.create_runtime_files(root)
 
-            result = self.run_dev_up(root)
+            try:
+                result = self.run_start(root, args=["--backend-only"], extra_env={"LOCAL_STARTUP_CHECK_SECONDS": "0"})
 
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("PADDLEOCR_ACCESS_TOKEN is not set; keeping the existing default parser config", result.stdout)
-            psql_stdin = (root / "psql-stdin.sql").read_text(encoding="utf-8")
-            self.assertNotIn("parser_config_paddleocr_cloud_default", psql_stdin)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn("runtime mode 'full' are running", result.stdout)
+                self.assertIn("host process groups", result.stdout)
+                self.assertTrue((root / ".local" / "run" / "knowledge-runtime-api.pid").exists())
+                self.assertTrue((root / ".local" / "run" / "knowledge-runtime-worker.pid").exists())
+                self.assertFalse((root / "go-calls.log").exists())
+                self.assertFalse((root / "uv-calls.log").exists())
+            finally:
+                self.cleanup_started_processes(root)
 
     def prepare_runtime(self, root: Path) -> Path:
-        script_source = Path.cwd() / "scripts" / "local" / "dev-up.sh"
-        script_target = root / "scripts" / "local" / "dev-up.sh"
-        script_target.parent.mkdir(parents=True)
-        shutil.copy2(script_source, script_target)
-        script_target.chmod(script_target.stat().st_mode | stat.S_IXUSR)
-        loader_source = Path.cwd() / "scripts" / "config" / "load-profile.sh"
-        loader_target = root / "scripts" / "config" / "load-profile.sh"
-        loader_target.parent.mkdir(parents=True)
-        shutil.copy2(loader_source, loader_target)
-        loader_target.chmod(loader_target.stat().st_mode | stat.S_IXUSR)
-        (root / "config" / "ctl").mkdir(parents=True)
+        for relative in [
+            "scripts/local/check.sh",
+            "scripts/local/start.sh",
+            "scripts/config/load-profile.sh",
+            "scripts/local/lib/common.sh",
+            "scripts/local/lib/process.sh",
+            "scripts/local/lib/knowledge-runtime.sh",
+        ]:
+            source = Path.cwd() / relative
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+            target.chmod(target.stat().st_mode | stat.S_IXUSR)
 
         (root / "deploy" / "seeds").mkdir(parents=True)
         (root / "deploy" / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
@@ -288,20 +196,18 @@ class LocalDevUpScriptTests(unittest.TestCase):
             "004-qa-default-knowledge-base.sql",
         ]:
             (root / "deploy" / "seeds" / seed).write_text("-- seed\n", encoding="utf-8")
-        for service in ["auth", "file", "knowledge", "qa", "document", "ai-gateway"]:
+        for service in ["auth", "file", "knowledge", "ai-gateway", "qa", "document", "gateway"]:
             (root / "services" / service).mkdir(parents=True)
         (root / "services" / "knowledge-runtime" / "ragflow_deps").mkdir(parents=True)
-        (root / "services" / "knowledge-runtime" / "ragflow_deps" / "download_deps.py").write_text(
-            "# fake runtime download script\n",
-            encoding="utf-8",
-        )
+        (root / "services" / "knowledge-runtime" / "rag").mkdir(parents=True)
+        (root / "config" / "ctl").mkdir(parents=True)
 
         fake_bin = root / "fake-bin"
         fake_bin.mkdir()
-        for command in ["bash", "cp", "dirname", "mkdir"]:
+        for command in ["bash", "cat", "cp", "dirname", "mkdir", "sleep"]:
             target = shutil.which(command)
             if target is None:
-                raise AssertionError(f"{command} is required to run dev-up.sh tests")
+                raise AssertionError(f"{command} is required to run local script tests")
             os.symlink(target, fake_bin / command)
         self.write_executable(
             fake_bin / "docker",
@@ -314,24 +220,7 @@ class LocalDevUpScriptTests(unittest.TestCase):
               echo "MINIO_IMAGE=${MINIO_IMAGE:-}"
               echo "MINIO_MC_IMAGE=${MINIO_MC_IMAGE:-}"
               echo "KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE=${KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE:-}"
-              echo "UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX:-}"
-              echo "GOPROXY=${GOPROXY:-}"
-              echo "GOSUMDB=${GOSUMDB:-}"
-              echo "HTTP_PROXY=${HTTP_PROXY:-}"
-              echo "HTTPS_PROXY=${HTTPS_PROXY:-}"
-              echo "NO_PROXY=${NO_PROXY:-}"
             } >> "$FAKE_DOCKER_ENV"
-            case " $* " in
-              *" up -d --wait "*)
-                if [[ " $* " == *" minio-init "* ]]; then
-                  echo "minio-init must not be part of the health wait" >&2
-                  exit 80
-                fi
-                ;;
-              *" up --no-deps --exit-code-from minio-init minio-init "*)
-                exit "${FAKE_MINIO_INIT_EXIT:-0}"
-                ;;
-            esac
             exit 0
             """,
         )
@@ -339,87 +228,137 @@ class LocalDevUpScriptTests(unittest.TestCase):
             fake_bin / "go",
             """\
             #!/usr/bin/env bash
-            rel="${PWD#"$FAKE_ROOT"/}"
-            echo "$rel|$*" >> "$FAKE_GO_CALLS"
-            if [[ "$rel" == "config/ctl" && "$1" == "run" && "$2" == "." && "$3" == "render" ]]; then
-              format="dotenv"
-              out=""
-              while (($# > 0)); do
-                case "$1" in
-                  --format)
-                    format="$2"
-                    shift 2
-                    ;;
-                  --out)
-                    out="$2"
-                    shift 2
-                    ;;
-                  *)
-                    shift
-                    ;;
-                esac
-              done
-              [[ -n "$out" ]] || exit 64
-              mkdir -p "$(dirname "$out")"
-              if [[ "$format" == "shell" ]]; then
-                while IFS= read -r line || [[ -n "$line" ]]; do
-                  [[ -z "$line" || "$line" =~ ^[[:space:]]*# || "$line" != *=* ]] && continue
-                  key="${line%%=*}"
-                  value="${line#*=}"
-                  printf "export %s=%q\\n" "$key" "$value"
-                done < "$FAKE_ROOT/.env.local" > "$out"
-              else
-                cp "$FAKE_ROOT/.env.local" "$out"
-              fi
-              exit 0
-            fi
-            if [[ "$1" == "run" && "$2" == *"render_ai_gateway_local_seed.go" ]]; then
-              echo "-- rendered AI Gateway local overlay"
-              echo "SELECT '${AI_GATEWAY_LOCAL_CHAT_MODEL:-missing-chat-model}';"
-            fi
+            echo "$PWD|$*" >> "$FAKE_GO_CALLS"
+            {
+              echo "GOPROXY=${GOPROXY:-}"
+              echo "GOSUMDB=${GOSUMDB:-}"
+            } >> "$FAKE_GO_ENV"
             exit 0
             """,
         )
+        self.write_executable(fake_bin / "psql", "#!/usr/bin/env bash\ncat >/dev/null || true\nexit 0\n")
+        self.write_executable(fake_bin / "bun", "#!/usr/bin/env bash\nexit 0\n")
+        self.write_executable(fake_bin / "python3", "#!/usr/bin/env bash\nexit 0\n")
+        self.write_executable(fake_bin / "curl", "#!/usr/bin/env bash\nprintf '200'\nexit 0\n")
+        self.write_executable(fake_bin / "uv", "#!/usr/bin/env bash\necho \"$*\" >> \"$FAKE_UV_CALLS\"\nexit 0\n")
+        self.write_executable(fake_bin / "git", "#!/usr/bin/env bash\necho 0123456789abcdef0123456789abcdef01234567\n")
         self.write_executable(
-            fake_bin / "psql",
-            """\
-            #!/usr/bin/env bash
-            if [[ ! -t 0 ]]; then
-              cat >> "$FAKE_PSQL_STDIN"
-            fi
-            exit 0
-            """,
-        )
-        self.write_executable(
-            fake_bin / "uv",
-            """\
-            #!/usr/bin/env bash
-            echo "$*" >> "$FAKE_UV_CALLS"
-            exit 0
-            """,
+            fake_bin / "tail",
+            "#!/usr/bin/env bash\nexit 0\n",
         )
         return root
 
-    def run_dev_up(
+    def create_prepared_config_tool(self, root: Path) -> None:
+        tool = root / ".local" / "tools" / "config-ctl"
+        self.write_executable(
+            tool,
+            """\
+            #!/usr/bin/env bash
+            format=dotenv
+            out=
+            while (($# > 0)); do
+              case "$1" in
+                --format) format="$2"; shift 2 ;;
+                --out) out="$2"; shift 2 ;;
+                *) shift ;;
+              esac
+            done
+            mkdir -p "$(dirname "$out")"
+            if [[ "$format" == "shell" ]]; then
+              while IFS= read -r line || [[ -n "$line" ]]; do
+                [[ -z "$line" || "$line" =~ ^[[:space:]]*# || "$line" != *=* ]] && continue
+                key="${line%%=*}"
+                value="${line#*=}"
+                printf "export %s=%q\\n" "$key" "$value"
+              done < "$FAKE_ROOT/.env.local" > "$out"
+            else
+              cp "$FAKE_ROOT/.env.local" "$out"
+            fi
+            """,
+        )
+
+    def create_prepared_tools(self, root: Path) -> None:
+        self.write_executable(root / ".local" / "tools" / "goose", "#!/usr/bin/env bash\nexit 0\n")
+        self.write_executable(
+            root / ".local" / "tools" / "render-ai-gateway-local-seed",
+            "#!/usr/bin/env bash\nexit 0\n",
+        )
+
+    def create_service_binaries(self, root: Path) -> None:
+        for binary in [
+            "auth-server",
+            "file-server",
+            "knowledge-adapter",
+            "ai-gateway-server",
+            "qa-server",
+            "document-server",
+            "gateway-server",
+        ]:
+            self.write_executable(
+                root / ".local" / "bin" / binary,
+                """\
+                #!/usr/bin/env bash
+                printf '%s MODEL_ID=%s DOCUMENT_AI_GATEWAY_MODEL=%s\\n' \
+                  "$(basename "$0")" "${MODEL_ID:-}" "${DOCUMENT_AI_GATEWAY_MODEL:-}" >> "$FAKE_ROOT/service-env.log"
+                while true; do sleep 60; done
+                """,
+            )
+
+    def create_runtime_files(self, root: Path) -> None:
+        runtime = root / "services" / "knowledge-runtime"
+        (runtime / ".venv").mkdir(parents=True)
+        (runtime / "ragflow_deps" / "nltk_data").mkdir(parents=True)
+        (runtime / "rag" / "res" / "deepdoc").mkdir(parents=True)
+        (runtime / "ragflow_deps" / "tika-server-standard-3.3.0.jar").write_text("jar\n", encoding="utf-8")
+        (runtime / "ragflow_deps" / "cl100k_base.tiktoken").write_text("encoding\n", encoding="utf-8")
+        self.write_executable(
+            runtime / "deploy" / "api" / "run-local.sh",
+            "#!/usr/bin/env bash\nwhile true; do sleep 60; done\n",
+        )
+        self.write_executable(
+            runtime / "deploy" / "worker" / "run-local.sh",
+            "#!/usr/bin/env bash\nwhile true; do sleep 60; done\n",
+        )
+        (runtime / "conf").mkdir(parents=True)
+        (runtime / "conf" / "service_conf.yaml").write_text(
+            "es:\n  hosts: http://127.0.0.1:9200\n",
+            encoding="utf-8",
+        )
+
+    def run_check(
         self,
         root: Path,
-        extra_env: Optional[dict[str, str]] = None,
         args: Optional[list[str]] = None,
+        extra_env: Optional[dict[str, str]] = None,
+    ) -> subprocess.CompletedProcess[str]:
+        return self.run_script(root, "check.sh", args, extra_env)
+
+    def run_start(
+        self,
+        root: Path,
+        args: Optional[list[str]] = None,
+        extra_env: Optional[dict[str, str]] = None,
+    ) -> subprocess.CompletedProcess[str]:
+        return self.run_script(root, "start.sh", args, extra_env)
+
+    def run_script(
+        self,
+        root: Path,
+        script: str,
+        args: Optional[list[str]] = None,
+        extra_env: Optional[dict[str, str]] = None,
     ) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env.update(extra_env or {})
+        env["FAKE_ROOT"] = str(root)
         env["FAKE_DOCKER_CALLS"] = str(root / "docker-calls.log")
         env["FAKE_DOCKER_ENV"] = str(root / "docker-env.log")
         env["FAKE_GO_CALLS"] = str(root / "go-calls.log")
-        env["FAKE_ROOT"] = str(root)
-        env["FAKE_PSQL_STDIN"] = str(root / "psql-stdin.sql")
+        env["FAKE_GO_ENV"] = str(root / "go-env.log")
         env["FAKE_UV_CALLS"] = str(root / "uv-calls.log")
-        if extra_env and "PATH" in extra_env:
-            env["PATH"] = extra_env["PATH"]
-        else:
-            env["PATH"] = f"{root / 'fake-bin'}{os.pathsep}{env['PATH']}"
+        env["PATH"] = f"{root / 'fake-bin'}{os.pathsep}{env['PATH']}"
         return subprocess.run(
-            [str(root / "scripts" / "local" / "dev-up.sh"), *(args or [])],
+            [str(root / "scripts" / "local" / script), *(args or [])],
             cwd=root,
             env=env,
             text=True,
@@ -428,8 +367,39 @@ class LocalDevUpScriptTests(unittest.TestCase):
         )
 
     def write_executable(self, path: Path, content: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(textwrap.dedent(content), encoding="utf-8")
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
+
+    def cleanup_started_processes(self, root: Path) -> None:
+        run_dir = root / ".local" / "run"
+        if not run_dir.exists():
+            return
+        pids: list[int] = []
+        for pid_file in run_dir.glob("*.pid"):
+            try:
+                pids.append(int(pid_file.read_text(encoding="utf-8").strip()))
+            except ValueError:
+                continue
+        for pid in pids:
+            try:
+                os.kill(-pid, signal.SIGTERM)
+            except ProcessLookupError:
+                continue
+            except PermissionError:
+                continue
+        time.sleep(0.1)
+        for pid in pids:
+            try:
+                os.kill(-pid, 0)
+            except ProcessLookupError:
+                continue
+            try:
+                os.kill(-pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                pass
 
 
 if __name__ == "__main__":

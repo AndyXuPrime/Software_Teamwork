@@ -155,17 +155,19 @@ Root Compose only starts shared infrastructure. Start the vendor Python API
 as documented in
 `../knowledge-runtime/README.md`.
 
-For the real host-run Knowledge parsing stack, use the root helper scripts. The
+For the real host-run Knowledge parsing stack, use the root local scripts. The
 default root Compose infrastructure starts Elasticsearch as the active runtime
-doc engine; the runtime helper starts `services/knowledge-runtime` API, runtime worker, and
-the Knowledge adapter, and forces adapter auto-ingestion on for upload-to-parse
-diagnostics. First copy `.env.example` to `.env.local`, then fill the runtime
-model provider variables documented in `../knowledge-runtime/README.md` and
-[`../../config/README.md`](../../config/README.md).
+doc engine; `start.sh` starts `services/knowledge-runtime` API, runtime worker,
+the Knowledge adapter, and the other host-run backend services.
+First copy `.env.example` to `.env.local`, then fill the runtime model provider
+variables documented in `../knowledge-runtime/README.md` and
+[`../../config/README.md`](../../config/README.md). Runtime Python dependencies
+and artifacts are manual setup steps reported by `check.sh`, not startup side
+effects.
 
 ```bash
-./scripts/local/dev-up.sh
-./scripts/local/run-knowledge-parse-stack.sh
+./scripts/local/check.sh
+./scripts/local/start.sh
 python3 scripts/local/knowledge-pdf-e2e.py /path/to/DL_T_673-1999.pdf
 ```
 
@@ -173,12 +175,12 @@ For query-only validation against an already-built knowledge base, start only
 the runtime API:
 
 ```bash
-./scripts/local/dev-up.sh
-./scripts/local/run-knowledge-runtime-api.sh
+./scripts/local/check.sh
+./scripts/local/start.sh --runtime api
 ```
 
-That API-only helper uses the base Python dependency profile and does not start
-`knowledge-runtime-worker`. Use `run-knowledge-parse-stack.sh` when uploads
+The API-only mode uses the API Python dependency profile and does not start
+`knowledge-runtime-worker`. Use the default `start.sh` runtime mode when uploads
 must enqueue and consume parse work.
 
 The helper normalizes local wiring that is easy to get wrong by hand:
@@ -193,7 +195,7 @@ The helper normalizes local wiring that is easy to get wrong by hand:
   intercepts private addresses, add that IP to local `NO_PROXY` yourself.
 - Old local `.env` files that lack the runtime service token use the tracked
   local development token defaults for `scripts/local` only.
-- For `DOC_ENGINE=elasticsearch`, `./scripts/local/dev-up.sh` starts the root
+- For `DOC_ENGINE=elasticsearch`, `./scripts/local/start.sh` starts the root
   Compose `elasticsearch` service with the default local infrastructure.
 - The script generates `.local/knowledge-runtime/service_conf.yaml` so runtime
   API and worker use `KNOWLEDGE_RUNTIME_ES_URL`.
@@ -214,9 +216,7 @@ For query-first deployments over an already-built knowledge base, set
 runtime task executor heartbeat. When uploads should parse documents, keep
 `KNOWLEDGE_AUTO_START_INGESTION=true`; the adapter calls `/documents/parse` to
 enqueue work without starting or supervising the worker. Worker lifecycle belongs
-to deployment infrastructure or explicit local helpers. The local worker helper
-stops the worker after the queue stays idle for
-`KNOWLEDGE_RUNTIME_WORKER_IDLE_SHUTDOWN_SECONDS` (default 300 seconds).
+to deployment infrastructure or explicit `start.sh --runtime full` local runs.
 Production should use deployment infrastructure such as KEDA, systemd,
 supervisor, or an equivalent lifecycle controller. The Kubernetes/KEDA example lives at
 [`../../deploy/k8s/knowledge-runtime-worker-keda.example.yaml`](../../deploy/k8s/knowledge-runtime-worker-keda.example.yaml).
@@ -247,19 +247,13 @@ Contract tests under `internal/adapter` and `internal/mcp` use fake vendor HTTP
 servers or in-memory MCP transports. Live vendor tests require
 `-tags=integration` and `KNOWLEDGE_VENDOR_INTEGRATION_URL`.
 
-For end-to-end ingestion diagnostics, start the Knowledge runtime API
-(`services/knowledge-runtime/deploy/api/run-local.sh`) before the adapter. Start
-the runtime worker separately with
-`services/knowledge-runtime/deploy/worker/run-local.sh` or
-`./scripts/local/start-knowledge-runtime-worker.sh` when queued ingestion needs
-a worker. The adapter `/readyz` checks the runtime API and, in the
+For end-to-end ingestion diagnostics, start the Knowledge runtime API and worker
+with `./scripts/local/start.sh --runtime full` before running the smoke. The
+adapter `/readyz` checks the runtime API and, in the
 default `KNOWLEDGE_RUNTIME_READINESS_MODE=ingestion` mode, the task executor
 heartbeat. In `query` mode, readiness can pass without the worker. Upload
 ingestion queues `/documents/parse` when `KNOWLEDGE_AUTO_START_INGESTION` is
-true and does not start, stop, or wait for the worker. The local worker helper
-can stop the worker after the queue stays idle; set
-`KNOWLEDGE_RUNTIME_WORKER_IDLE_SHUTDOWN_SECONDS=0` to disable that local
-scale-down behavior.
+true and does not start, stop, or wait for the worker.
 If uploads stay in `parsing`, inspect `/internal/v1/runtime/status` and the
 runtime worker logs. Start or restart the adapter with
 `KNOWLEDGE_AUTO_START_INGESTION=true`; the smoke will fail fast with an

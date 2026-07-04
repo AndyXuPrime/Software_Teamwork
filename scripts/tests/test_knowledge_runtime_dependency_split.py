@@ -3,43 +3,43 @@ from pathlib import Path
 
 
 class KnowledgeRuntimeDependencySplitTests(unittest.TestCase):
-    def test_api_only_helper_uses_base_dependency_profile(self) -> None:
-        script = Path("scripts/local/run-knowledge-runtime-api.sh").read_text(encoding="utf-8")
+    def test_start_helper_never_syncs_runtime_dependencies(self) -> None:
+        script = Path("scripts/local/start.sh").read_text(encoding="utf-8")
 
-        self.assertIn("uv sync --python 3.13 --frozen --no-default-groups", script)
-        self.assertIn("uv run --no-sync --no-default-groups", script)
-        self.assertNotIn("uv sync --python 3.13 --frozen --group worker", script)
-        self.assertNotIn('start_service "knowledge-runtime-worker"', script)
+        self.assertIn("--runtime api", script)
+        self.assertIn("--runtime full", script)
+        self.assertIn('start_process "knowledge-runtime-api"', script)
+        self.assertIn('start_process "knowledge-runtime-worker"', script)
+        self.assertNotIn("\nuv sync", script)
+        self.assertNotIn("exec uv sync", script)
+        self.assertNotIn("download_deps.py", script)
 
-    def test_parse_stack_helper_uses_worker_dependency_profile(self) -> None:
-        script = Path("scripts/local/run-knowledge-parse-stack.sh").read_text(encoding="utf-8")
+    def test_check_helper_prints_runtime_setup_suggestions_without_executing_them(self) -> None:
+        script = Path("scripts/local/check.sh").read_text(encoding="utf-8")
 
-        self.assertIn("uv sync --python 3.13 --frozen --group worker", script)
-        self.assertIn('start_service "knowledge-runtime-api"', script)
-        self.assertIn('start_service "knowledge-runtime-worker"', script)
+        self.assertIn("Checks the local environment and prints setup suggestions", script)
+        self.assertIn("--runtime full", script)
+        self.assertIn("--runtime api", script)
+        self.assertIn("--runtime none", script)
+        self.assertIn("--sync-only --profile", script)
+        self.assertIn("ragflow_deps/download_deps.py --skip-uv-sync", script)
+        self.assertIn("Mainland China mirrors, run manually only for missing items", script)
+        self.assertIn("Official sources, run manually only for missing items", script)
+        self.assertNotIn("prepare_runtime_sync()", script)
+        self.assertNotIn("prepare_runtime_artifacts()", script)
+        self.assertNotIn("docker image inspect", script)
 
-    def test_worker_only_helper_uses_worker_dependency_profile(self) -> None:
-        script = Path("scripts/local/start-knowledge-runtime-worker.sh").read_text(encoding="utf-8")
-        watcher = Path("scripts/local/watch-knowledge-runtime-worker-idle.sh").read_text(encoding="utf-8")
-
-        self.assertIn("uv sync --python 3.13 --frozen --group worker", script)
-        self.assertIn("knowledge-runtime-worker", script)
-        self.assertIn("waiting for knowledge-runtime-worker heartbeat", script)
-        self.assertIn("task_executor_heartbeats", script)
-        self.assertIn("KNOWLEDGE_RUNTIME_WORKER_IDLE_SHUTDOWN_SECONDS", script)
-        self.assertIn("watch-knowledge-runtime-worker-idle.sh", script)
-        self.assertIn("worker_queue_idle", watcher)
-        self.assertIn("stop_worker_group", watcher)
-        self.assertIn("valkey.Valkey", watcher)
-        self.assertNotIn('start_service "knowledge-runtime-api"', script)
-        self.assertNotIn("knowledge-adapter", script)
-
-    def test_runtime_entrypoints_match_dependency_profiles(self) -> None:
+    def test_runtime_entrypoints_use_no_sync_execution_only(self) -> None:
         api_script = Path("services/knowledge-runtime/deploy/api/run-local.sh").read_text(encoding="utf-8")
         worker_script = Path("services/knowledge-runtime/deploy/worker/run-local.sh").read_text(encoding="utf-8")
 
         self.assertIn("uv run --no-sync --no-default-groups", api_script)
         self.assertIn("uv run --no-sync --group worker", worker_script)
+        self.assertNotIn("\nuv sync", api_script)
+        self.assertNotIn("exec uv sync", api_script)
+        self.assertNotIn("\nuv sync", worker_script)
+        self.assertNotIn("exec uv sync", worker_script)
+        self.assertNotIn('HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"', api_script)
         self.assertIn("KNOWLEDGE_RUNTIME_REQUIRE_NLTK_DATA", worker_script)
         self.assertIn("NLTK_DATA", worker_script)
 
@@ -61,15 +61,25 @@ class KnowledgeRuntimeDependencySplitTests(unittest.TestCase):
         self.assertNotIn("mirrors.tuna.tsinghua.edu.cn/ubuntu/pool/main/o/openssl/libssl1.1", script)
         self.assertIn('opener.addheaders = [("User-Agent", "Mozilla/5.0")]', script)
 
-    def test_download_deps_syncs_runtime_project_dependencies_in_all_source_modes(self) -> None:
+    def test_download_deps_no_longer_downloads_uv_releases(self) -> None:
         script = Path("services/knowledge-runtime/ragflow_deps/download_deps.py").read_text(encoding="utf-8")
 
-        self.assertIn("sync_runtime_dependencies(args.china_mirrors)", script)
-        self.assertIn('"sync"', script)
-        self.assertIn('"--python"', script)
-        self.assertIn('"3.13"', script)
-        self.assertIn('"--frozen"', script)
-        self.assertIn('"--no-install-project"', script)
+        self.assertNotIn("astral-sh/uv/releases/download", script)
+        self.assertNotIn("uv-x86_64-unknown-linux-gnu.tar.gz", script)
+        self.assertNotIn("uv-aarch64-unknown-linux-gnu.tar.gz", script)
+
+    def test_download_deps_supports_sync_only_profiles(self) -> None:
+        script = Path("services/knowledge-runtime/ragflow_deps/download_deps.py").read_text(encoding="utf-8")
+
+        self.assertIn("--sync-only", script)
+        self.assertIn("--profile", script)
+        self.assertIn('"api"', script)
+        self.assertIn('"worker"', script)
+        self.assertIn('"all"', script)
+        self.assertIn("sync_runtime_dependencies(args.china_mirrors, args.profile)", script)
+        self.assertIn('"--no-default-groups"', script)
+        self.assertIn('"--group"', script)
+        self.assertIn('"worker"', script)
 
 
 if __name__ == "__main__":

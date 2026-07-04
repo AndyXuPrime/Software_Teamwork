@@ -117,47 +117,28 @@ Gateway 基础契约文档：
 
 ## 本次更新后的本地启动方法
 
-默认启动路径是：Docker 只拉取并启动基础设施，所有业务服务都在宿主机运行。
-不要使用任何业务服务容器、服务级 Compose、构建参数或生产 Compose。
+默认启动路径是：Docker 只启动基础设施，业务服务和 Knowledge runtime 都在宿主机运行。
+启动脚本不下载依赖、不构建二进制、不 pull Docker 镜像；缺什么先跑检查脚本，它会给出
+官方源和中国大陆镜像的手工下载建议。
 
-先准备本机工具：
-
-- Docker Engine 或 Docker Desktop，带 Compose v2。
-- Go `1.25.x`，例如 `1.25.1` 或 `1.25.4` 都可。
-- uv。Knowledge runtime 的 Python 运行时依赖由 uv 按项目配置准备。
-- Bun。
-- `psql` 客户端。PostgreSQL server 由 Docker 启动，本机不用装 PostgreSQL server。
-- `curl`。
-
-源选择采用官方默认源，国内网络通过显式 `--china` 切换镜像。默认文件不提交
-active 第三方镜像值。
-
-默认使用官方源：Docker Hub pinned images、PyPI、`proxy.golang.org` 和
-`sum.golang.org`。如果在中国大陆网络中 GitHub、Docker Hub、PyPI、HuggingFace 或
-Go modules 下载慢，直接给本地脚本加 `--china`，脚本只在本次进程使用大陆镜像，不改写
-`.env.local`：
+本机需要：Docker/Compose v2、Go `1.25.x`、uv、Bun、`psql`、`curl`、Python 3。
+默认使用官方源：Docker Hub/Elastic registry、PyPI、`proxy.golang.org` 和
+`sum.golang.org`；仓库不提交 active 第三方镜像值。中国大陆网络先看：
 
 ```bash
-./scripts/local/dev-up.sh --china
-./scripts/local/run-backend.sh --china
+./scripts/local/check.sh --china
 ```
 
-`dev-up.sh` 默认会准备 Knowledge runtime 的 Python 依赖和 GitHub release/raw、
-NLTK、HuggingFace、Tika、Chrome 等 artifact 下载；`--china` 只把这些下载切到大陆镜像。
-重复启动或只想拉起 infra 时可加 `--skip-knowledge-runtime-deps`。
-
-Go 模块下载只影响 `go run`、migration 和 host-run 后端服务；它不受 Docker
-registry rewrite 或 `UV_DEFAULT_INDEX` 影响。
-
-第一次启动：
+第一次启动前：
 
 ```bash
 git clone https://github.com/Sakayori-Iroha-168/Software_Teamwork.git
 cd Software_Teamwork
 
 cp .env.example .env.local
-./scripts/local/dev-up.sh
-./scripts/local/run-backend.sh
+./scripts/local/check.sh
+# 按检查输出补齐缺失工具、镜像、二进制或 runtime 文件后再启动。
+./scripts/local/start.sh
 
 cd apps/web
 bun install
@@ -167,58 +148,39 @@ bun run dev
 日常启动：
 
 ```bash
-./scripts/local/dev-up.sh
-./scripts/local/run-backend.sh
+./scripts/local/start.sh
 cd apps/web && bun run dev
 ```
 
 停止后端：
 
 ```bash
-./scripts/local/stop-backend.sh
+./scripts/local/stop.sh
 ```
+
+如果启动失败，先运行 `./scripts/local/check.sh`；中国大陆网络运行
+`./scripts/local/check.sh --china`。检查脚本只检查并打印建议，不会下载、构建、pull 镜像、
+同步 uv 环境或改写 `.env.local`。
 
 `config/` 是唯一默认配置来源，根 `.env.example` 是本地 secret 模板。用户只复制成
 未跟踪的 `.env.local`；脚本通过 `config/ctl` 渲染 `.local/config/dev.env` 和
 `.local/config/dev.env.sh`，让 Docker Compose 和宿主机进程拿到同一份 profile 配置。
 默认 demo 账号来自 `.env.example`：`admin` / `LocalDemoAdmin#12345`，
 `superadmin` / `LocalDemoAdmin#12345`。
-Go 服务通过宿主机 `go run` 启动，首次运行会下载 Go modules。若 `.local/logs/auth.log`
-或 `.local/logs/gateway.log` 出现 `proxy.golang.org` 超时，在中国大陆网络中重新执行
-`./scripts/local/run-backend.sh --china`；其他网络优先检查企业代理或本机 Go 配置。
-如果要验证官方 Docker Hub 路径经本机代理可达，先设置宿主机/Docker 代理环境，再运行
-`python3 scripts/check_docker_environment.py --profile default`；不要带 `--clean-env`，
-因为它会故意清掉 shell 出站代理变量。
-`UV_DEFAULT_INDEX` 在 `config/base.yaml` 中默认指向官方 PyPI；它影响 uv，不影响 Docker。第一次
-启动 Knowledge runtime 相关 Python 依赖时仍可能下载较多包，之后会走 uv 缓存。已有旧
-`.env.local` 的本地环境如果仍保留 TUNA、旧 Docker registry rewrite、`goproxy.cn` 或
-`sum.golang.google.cn`，默认脚本会继续尊重这些本地配置并给出提示；想恢复官方默认值，
-重新从 `.env.example` 复制后再恢复本机私有配置，或手动改回官方地址。
+Go modules 下载只在你手工执行检查输出里的 `go build` / `go install` 命令时发生；
+`start.sh` 只运行 `.local/bin/` 里已有的本机二进制。Knowledge runtime 的 uv sync 和
+artifact 下载也只按 `check.sh` 输出的手工命令执行。
 
-`./scripts/local/dev-up.sh` 会先检查同一宿主机环境中的 Docker、Go、`psql`、`uv`
-（`uv` 用于默认 Knowledge runtime 依赖准备；跳过该步骤时不需要），再拉取 infra 镜像，启动并等待
-`postgres`、`redis`、`minio`、`elasticsearch` 健康。随后单独运行一次性
-`minio-init` 创建本地 bucket；`minio-init`
-正常退出不会阻断后续流程。当前 Knowledge 主路径的索引准备归宿主机
-`services/knowledge-runtime` 和它配置的 doc engine。脚本会先准备 Knowledge runtime
-依赖和 GitHub release/raw 等 artifact 下载；传入 `--china` 时使用镜像源，随后脚本执行
-本机 migration 和 demo seed。
-`./scripts/local/run-backend.sh` 会启动 `auth`、`file`、`knowledge`、
-`ai-gateway`、`qa`、`document` 和 `gateway`，日志在 `.local/logs/`。启动前会先
-对每个 Go 服务执行 `go mod download`；默认使用官方 `GOPROXY` / `GOSUMDB`，传入
-`--china` 时改用 `https://goproxy.cn,direct` 和 `sum.golang.google.cn`。如果 Go proxy
-或 checksum DB 不可达，脚本会在终端直接失败并打印当前有效 `GOPROXY` / `GOSUMDB`。
-服务 fork 后还会默认观察 8 秒，若某个进程组很快退出，会把对应
-`.local/logs/<service>.log` 尾部直接汇总到终端；可用
-`LOCAL_BACKEND_STARTUP_CHECK_SECONDS` 调整观察窗口。
-`dev-up.sh`、`run-backend.sh` 和 `stop-backend.sh` 都会在命令行输出彩色的开始、成功、
-警告和失败摘要；`NO_COLOR=1` 可关闭颜色，`FORCE_COLOR=1` 可在非 TTY 中强制开色。
-如果脚本失败，先看终端中的失败阶段，再看提示的 Docker 状态或 `.local/logs/` 服务日志。
+`./scripts/local/start.sh` 会使用已存在的 infra images 启动并等待 `postgres`、`redis`、
+`minio`、`elasticsearch` 健康；随后运行 `minio-init`、migration、demo seed、后端服务、
+Knowledge runtime API 和 worker。启动后会输出 Docker infra、host-run 进程组和日志位置；
+服务日志在 `.local/logs/`。
+`check.sh`、`start.sh`、`stop.sh` 和 `clean.sh` 都会输出开始、成功、警告和失败摘要。
 
 `ai-gateway /readyz` 在 placeholder credential 下返回 `503 degraded` 是预期行为，
 不代表服务没起。默认本地模型 profile 指向宿主机 `http://localhost:11434/v1`。
 本机需要真实 provider 时，在 `.env.local` 设置 `AI_GATEWAY_LOCAL_SEED_ENABLED=true`
-和 `AI_GATEWAY_LOCAL_*` 后重新运行 `./scripts/local/dev-up.sh`；脚本会加密写入默认
+和 `AI_GATEWAY_LOCAL_*` 后重新运行 `./scripts/local/start.sh`；脚本会加密写入默认
 AI Gateway profiles，并同步 QA active LLM model。
 完整排障见 [deploy/README.md](deploy/README.md) 和
 [Docker 镜像拉取环境与镜像源](docs/runbooks/docker-image-pull-environment.md)。

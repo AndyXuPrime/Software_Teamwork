@@ -1,4 +1,4 @@
--- Local integration contract: scripts/local/dev-up.sh applies this seed after
+-- Local integration contract: scripts/local/start.sh applies this seed after
 -- service migrations so the default AI Gateway model profiles exist.
 \connect ai_gateway_system
 

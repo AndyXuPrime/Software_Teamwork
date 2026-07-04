@@ -16,7 +16,7 @@ directory.
 
 Both processes use PostgreSQL, Redis, MinIO, and the configured document index
 engine. Elasticsearch is the local development default and is started by the
-root infrastructure helper.
+root local startup script.
 
 ## 本地开发
 
@@ -24,14 +24,13 @@ root infrastructure helper.
 
 ```bash
 cp .env.example .env.local
-./scripts/local/dev-up.sh
-./scripts/local/run-knowledge-runtime-api.sh
-./scripts/local/run-knowledge-parse-stack.sh
+./scripts/local/check.sh
+./scripts/local/start.sh
 ```
 
 embedding 和 rerank 推荐通过 AI Gateway。默认 profile 已在 `config/base.yaml`
 中声明；需要真实 provider 时，在 `.env.local` 中配置 `AI_GATEWAY_LOCAL_*`，
-再重新运行 `./scripts/local/dev-up.sh` 写入本地 AI Gateway seed。
+再重新运行 `./scripts/local/start.sh` 写入本地 AI Gateway seed。
 
 Knowledge runtime 侧的兼容标签如下：
 
@@ -108,9 +107,18 @@ past the parser boundary.
 
 The worker lazily downloads OCR and vision model artifacts when those modules
 are imported. Committed defaults use official artifact sources. The repository
-root `./scripts/local/dev-up.sh` syncs the runtime `.venv` and prepares these
-artifacts by default; pass `--china` to that script on mainland China networks,
-or run the helper manually:
+root startup scripts do not sync the runtime `.venv` or download artifacts.
+Run the environment check and follow only the runtime setup suggestions that are
+missing before starting runtime API/worker:
+
+```bash
+./scripts/local/check.sh
+
+# Mainland China mirrors:
+./scripts/local/check.sh --china
+```
+
+Manual fallback:
 
 ```bash
 cd services/knowledge-runtime
@@ -130,7 +138,7 @@ uv run --no-project \
 
 ```bash
 cd services/knowledge-runtime
-uv sync --python 3.13 --frozen
+python3 ragflow_deps/download_deps.py --sync-only --profile worker
 export PYTHONPATH=.
 cd ../..
 CONFIG_SECRET_FILE=.env.local ./scripts/config/load-profile.sh --print-compose-env

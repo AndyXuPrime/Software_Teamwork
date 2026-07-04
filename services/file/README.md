@@ -35,8 +35,8 @@ Out of scope for this MVP:
 
 ```bash
 cp .env.example .env.local
-./scripts/local/dev-up.sh
-./scripts/local/run-backend.sh
+./scripts/local/check.sh
+./scripts/local/start.sh
 ```
 
 只调 File 服务代码时，在 `services/file` 内跑服务级检查：
@@ -161,7 +161,8 @@ Start the root infra baseline from the repository root:
 
 ```bash
 cp .env.example .env.local
-./scripts/local/dev-up.sh
+./scripts/local/check.sh
+./scripts/local/start.sh --infra-only
 cd services/file
 ```
 

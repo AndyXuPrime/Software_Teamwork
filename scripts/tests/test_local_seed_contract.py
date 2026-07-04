@@ -25,6 +25,23 @@ class LocalSeedContractTests(unittest.TestCase):
 
         self.assertEqual([], issues)
 
+    def test_verifier_reports_non_executable_public_entrypoint(self) -> None:
+        verifier = load_verifier()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / "scripts" / "local" / "start.sh"
+            script.parent.mkdir(parents=True)
+            script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+            script.chmod(0o644)
+
+            issues = verifier.validate_executable_entrypoints(root)
+
+            script.chmod(0o755)
+            fixed_issues = verifier.validate_executable_entrypoints(root)
+
+        self.assertIssueContains(issues, "scripts/local/start.sh must be executable")
+        self.assertEqual([], fixed_issues)
+
     def test_verifier_reports_missing_required_resource_ids(self) -> None:
         verifier = load_verifier()
         with tempfile.TemporaryDirectory() as directory:
@@ -87,8 +104,6 @@ class LocalSeedContractTests(unittest.TestCase):
                 "config/dev.yaml\n"
                 ".env.local\n"
                 "cp .env.example .env.local\n"
-                "./scripts/local/dev-up.sh\n"
-                "./scripts/local/run-backend.sh\n"
                 "LOCAL_ADMIN_USERNAME=admin\n"
                 "LOCAL_ADMIN_PASSWORD=LocalDemoAdmin#12345\n"
                 "LOCAL_SUPER_ADMIN_USERNAME=superadmin\n"
@@ -103,6 +118,9 @@ class LocalSeedContractTests(unittest.TestCase):
                 "大陆镜像\n"
                 "GOPROXY=https://proxy.golang.org,direct\n"
                 "GOSUMDB=sum.golang.org\n"
+                "./scripts/local/check.sh\n"
+                "./scripts/local/start.sh\n"
+                "./scripts/local/stop.sh\n"
                 "cleanup with down -v\n",
                 encoding="utf-8",
             )
@@ -140,136 +158,60 @@ class LocalSeedContractTests(unittest.TestCase):
                 ".local/knowledge-runtime/service_conf.yaml\n",
                 encoding="utf-8",
             )
-            (root / "scripts" / "local" / "dev-up.sh").write_text(
-                "[dev-up]\n"
-                "[ok]\n"
-                "[warn]\n"
-                "[fail]\n"
-                "[hint]\n"
-                "completed successfully\n"
-                "failed during\n"
-                "Check Docker status:\n"
-                "checking local tool dependencies\n"
-                "missing required local command(s):\n"
-                "Install Docker, Go, psql, and uv\n"
-                "Install the missing host tool(s)\n"
-                "Mainland China network: rerun ./scripts/local/dev-up.sh --china.\n"
-                "preparing Knowledge runtime dependencies\n"
-                "with China mirrors\n"
-                '--with "nltk>=3.9.4"\n'
-                '--with "huggingface-hub>=1.3.1"\n'
-                "ragflow_deps/download_deps.py\n"
-                "download_args+=(--china)\n"
-                "uv is required when Knowledge runtime dependencies are prepared\n"
-                "--skip-knowledge-runtime-deps\n"
-                "LOCAL_SKIP_KNOWLEDGE_RUNTIME_DEPS\n"
-                "checking Go module settings\n"
-                "--china\n"
-                "using selected default for this run\n"
+            (root / "scripts" / "local" / "check.sh").write_text(
+                "[check]\n"
+                "no downloads or builds will run\n"
+                "setup suggestions\n"
+                "Official sources, run manually only for missing items\n"
+                "Mainland China mirrors, run manually only for missing items\n"
+                "--sync-only --profile\n"
+                "ragflow_deps/download_deps.py --skip-uv-sync\n"
                 "docker.1ms.run/library/postgres:16-alpine\n"
                 "goose@v3.27.1\n"
-                "psql\n"
-                "INFRA_SERVICES=(postgres redis minio elasticsearch)\n"
-                "PULL_SERVICES=(postgres redis minio minio-init elasticsearch)\n"
-                "initializing MinIO buckets\n"
-                "--exit-code-from minio-init\n"
-                "CONFIG_COMPOSE_ENV_FILE\n"
-                "001-local-demo-seed.sql\n"
-                "002-ai-gateway-model-profiles.sql\n"
-                "003-qa-document-mcp.sql\n"
-                "004-qa-default-knowledge-base.sql\n"
-                "--wait\n"
-                "--wait-timeout\n",
+                "https://go.dev/dl/\n"
+                "https://docs.astral.sh/uv\n",
                 encoding="utf-8",
             )
             (root / "scripts" / "local" / "render_ai_gateway_local_seed.go").write_text(
                 "package main\n",
                 encoding="utf-8",
             )
-            (root / "scripts" / "local" / "run-backend.sh").write_text(
-                "[backend]\n"
-                "[ok]\n"
-                "[warn]\n"
-                "[fail]\n"
-                "[hint]\n"
-                "completed successfully\n"
-                "failed during\n"
-                "Check service logs under .local/logs/\n"
-                "setsid\n"
-                "go mod download\n"
-                "checking Go modules\n"
-                "--china\n"
-                "using selected default for this run\n"
-                "LOCAL_GO_MOD_DOWNLOAD_TIMEOUT_SECONDS\n"
-                "go mod download timed out\n"
-                "LOCAL_BACKEND_STARTUP_CHECK_SECONDS\n"
-                "backend startup failed\n"
-                "auth\nfile\nknowledge\n./cmd/adapter\ngo run \"$go_target\"\nai-gateway\nqa\ndocument\ngateway\n",
-                encoding="utf-8",
-            )
-            (root / "scripts" / "local" / "run-knowledge-runtime-api.sh").write_text(
-                "knowledge runtime API startup: starting runtime API only\n"
-                "setsid or python3 is required\n"
-                "os.setsid()\n"
-                "--china\n"
-                "HF_ENDPOINT=https://hf-mirror.com\n"
-                "uv sync --python 3.13 --frozen --no-default-groups\n"
-                "uv run --no-sync --no-default-groups\n"
-                'start_service "knowledge-runtime-api"\n'
-                "This API-only helper does not start knowledge-runtime-worker.\n"
-                "./scripts/local/run-knowledge-parse-stack.sh\n",
-                encoding="utf-8",
-            )
-            (root / "scripts" / "local" / "run-knowledge-parse-stack.sh").write_text(
-                "knowledge parse stack startup: starting Knowledge parse stack\n"
-                "setsid or python3 is required\n"
-                "os.setsid()\n"
-                "--china\n"
-                "default root Compose infrastructure\n"
-                "KNOWLEDGE_RUNTIME_ES_URL\n"
-                "HF_ENDPOINT=https://hf-mirror.com\n"
-                "uv sync --python 3.13 --frozen --group worker\n"
-                'start_service "knowledge-runtime-worker"\n'
-                "For local Elasticsearch, rerun ./scripts/local/dev-up.sh\n"
-                ".local/knowledge-runtime/service_conf.yaml\n"
-                "Preferred AI Gateway local parsing uses default-embedding/default-rerank profiles\n"
-                "KNOWLEDGE_RUNTIME_AI_GATEWAY_SERVICE_TOKEN=local-dev-internal-service-token-change-me\n"
-                "KNOWLEDGE_RUNTIME_EMBEDDING_FACTORY=AI_GATEWAY\n"
-                "KNOWLEDGE_RUNTIME_RERANK_FACTORY=AI_GATEWAY\n"
-                "KNOWLEDGE_VENDOR_EMBEDDING_ID=BAAI/bge-m3@default@AI_GATEWAY\n"
-                "KNOWLEDGE_VENDOR_RERANK_ID=BAAI/bge-reranker-v2-m3@default@AI_GATEWAY\n"
-                "KNOWLEDGE_AUTO_START_INGESTION=true\n",
-                encoding="utf-8",
-            )
-            (root / "scripts" / "local" / "start-knowledge-runtime-worker.sh").write_text(
-                "knowledge runtime worker startup: starting worker only\n"
-                "setsid or python3 is required\n"
-                "os.setsid()\n"
-                "--china\n"
-                "HF_ENDPOINT=https://hf-mirror.com\n"
-                "uv sync --python 3.13 --frozen --group worker\n"
+            (root / "scripts" / "local" / "start.sh").write_text(
+                "[start]\n"
+                "This script does not run dependency downloads\n"
+                "--pull never\n"
+                ".local/tools/config-ctl\n"
+                ".local/tools/goose\n"
+                ".local/bin\n"
+                "AUTH_DATABASE_URL\n"
+                "FILE_DATABASE_URL\n"
+                "KNOWLEDGE_DATABASE_URL\n"
+                "QA_DATABASE_URL\n"
+                "DOCUMENT_DATABASE_URL\n"
+                "AI_GATEWAY_DATABASE_URL\n"
+                "001-local-demo-seed.sql\n"
+                "002-ai-gateway-model-profiles.sql\n"
+                "003-qa-document-mcp.sql\n"
+                "004-qa-default-knowledge-base.sql\n"
+                "render-ai-gateway-local-seed\n"
+                "--runtime api\n"
+                "--runtime full\n"
+                "knowledge-runtime-api\n"
                 "knowledge-runtime-worker\n"
-                "waiting for knowledge-runtime-worker heartbeat\n"
-                "task_executor_heartbeats\n"
-                "KNOWLEDGE_RUNTIME_WORKER_IDLE_SHUTDOWN_SECONDS\n"
-                "knowledge-runtime-worker idle watcher started\n"
-                "watch-knowledge-runtime-worker-idle.sh\n"
-                "This worker-only helper does not start knowledge-runtime-api or knowledge adapter.\n",
+                "go mod download\n"
+                "go run module@version\n",
                 encoding="utf-8",
             )
-            (root / "scripts" / "local" / "watch-knowledge-runtime-worker-idle.sh").write_text(
-                "knowledge-runtime-worker idle watcher started\n"
-                "KNOWLEDGE_RUNTIME_WORKER_IDLE_SHUTDOWN_SECONDS\n"
-                "worker_queue_idle\n"
-                "pending\n"
-                "lag\n"
-                "current\n"
-                "stop_worker_group\n"
-                "cleanup_worker_heartbeat\n"
-                "valkey.Valkey\n",
+            (root / "scripts" / "local" / "clean.sh").write_text(
+                "[clean]\n"
+                "./scripts/local/stop.sh\n"
+                "down -v\n"
+                "--remove-orphans\n"
+                ".local/tools/config-ctl\n"
+                "Images, source files, .env.local, .local/tools, and .local/bin are not removed.\n",
                 encoding="utf-8",
             )
-            (root / "scripts" / "local" / "stop-backend.sh").write_text(
+            (root / "scripts" / "local" / "stop.sh").write_text(
                 "[stop]\n"
                 "[ok]\n"
                 "[warn]\n"
@@ -309,19 +251,16 @@ class LocalSeedContractTests(unittest.TestCase):
             env_example="VENDOR_RUNTIME_URL=http://127.0.0.1:9380\n",
             config_readme="",
             config_base="",
-            dev_up_script="",
+            check_script="",
+            start_script="",
+            clean_script="",
             ai_gateway_local_seed_renderer="",
-            run_backend_script="",
-            run_knowledge_runtime_api_script="",
-            start_knowledge_runtime_worker_script="",
-            watch_knowledge_runtime_worker_idle_script="",
-            run_knowledge_parse_stack_script="",
-            stop_backend_script="",
+            stop_script="",
             ai_gateway_local_seed_main="",
         )
 
         self.assertIssueContains(issues, "DOC_ENGINE:")
-        self.assertIssueContains(issues, "./cmd/adapter")
+        self.assertIssueContains(issues, ".local/bin")
 
     def test_verifier_reports_missing_local_runtime_gitignore(self) -> None:
         verifier = load_verifier()

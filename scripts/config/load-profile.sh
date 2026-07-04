@@ -34,6 +34,44 @@ _config_loader_abs_path() {
   fi
 }
 
+_config_loader_ctl() {
+  local root="$1"
+  if [[ -n "${CONFIG_CTL_BIN:-}" ]]; then
+    printf '%s\n' "$CONFIG_CTL_BIN"
+    return 0
+  fi
+  if [[ -x "$root/.local/tools/config-ctl" ]]; then
+    printf '%s\n' "$root/.local/tools/config-ctl"
+    return 0
+  fi
+  printf '%s\n' ""
+}
+
+_config_loader_render() {
+  local root="$1"
+  shift
+  local ctl
+  ctl="$(_config_loader_ctl "$root")"
+  if [[ -n "$ctl" ]]; then
+    "$ctl" render --root "$root" "$@"
+    return $?
+  fi
+  if [[ "${CONFIG_CTL_REQUIRE_PREPARED:-0}" == "1" ]]; then
+    echo "missing prepared config renderer: $root/.local/tools/config-ctl" >&2
+    echo "run ./scripts/local/check.sh for setup suggestions" >&2
+    return 1
+  fi
+  if ! command -v go >/dev/null 2>&1; then
+    echo "go is required to render config profiles with config/ctl" >&2
+    echo "install Go 1.25.x or run from an environment with go on PATH" >&2
+    return 1
+  fi
+  (
+    cd "$root/config/ctl"
+    go run . render --root "$root" "$@"
+  )
+}
+
 config_profile_load() {
   local root render_dir shell_env_file secret_file secret_args=()
   root="$(_config_loader_root)"
@@ -60,21 +98,9 @@ config_profile_load() {
     secret_args=(--secret-file "$CONFIG_SECRET_FILE")
   fi
 
-  if ! command -v go >/dev/null 2>&1; then
-    echo "go is required to render config profiles with config/ctl" >&2
-    echo "install Go 1.25.x or run from an environment with go on PATH" >&2
-    return 1
-  fi
-
   mkdir -p "$render_dir"
-  (
-    cd "$root/config/ctl"
-    go run . render --root "$root" --profile "$CONFIG_PROFILE" "${secret_args[@]}" --format dotenv --out "$CONFIG_COMPOSE_ENV_FILE"
-  ) || return 1
-  (
-    cd "$root/config/ctl"
-    go run . render --root "$root" --profile "$CONFIG_PROFILE" "${secret_args[@]}" --format shell --out "$CONFIG_SHELL_ENV_FILE"
-  ) || return 1
+  _config_loader_render "$root" --profile "$CONFIG_PROFILE" "${secret_args[@]}" --format dotenv --out "$CONFIG_COMPOSE_ENV_FILE" || return 1
+  _config_loader_render "$root" --profile "$CONFIG_PROFILE" "${secret_args[@]}" --format shell --out "$CONFIG_SHELL_ENV_FILE" || return 1
 
   export CONFIG_ROOT_DIR CONFIG_PROFILE CONFIG_SECRET_FILE CONFIG_RENDER_DIR CONFIG_COMPOSE_ENV_FILE CONFIG_SHELL_ENV_FILE
   export SOFTWARE_TEAMWORK_ROOT="${SOFTWARE_TEAMWORK_ROOT:-$root}"

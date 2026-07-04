@@ -20,8 +20,8 @@ Auth/Gateway/Redis 的完整本地 smoke 可直接执行：
 
 ## 启动命令
 
-先确认 Go 安装在实际运行脚本的环境中，并能下载 modules。WSL、Git Bash 和
-Windows PowerShell 的 `go env` 互不等价；在哪个 shell 里运行脚本，就在那里检查：
+先确认 Go 安装在实际运行脚本的环境中。WSL、Git Bash 和 Windows PowerShell 的
+`go env` 互不等价；在哪个 shell 里运行脚本，就在那里检查：
 
 ```bash
 go version
@@ -29,53 +29,53 @@ go env GOPROXY
 ```
 
 默认使用官方源。中国大陆网络如果访问 GitHub、Docker Hub、PyPI、HuggingFace 或
-Go modules 不稳定，启动脚本支持进程内大陆镜像，不改写 `config/` 或 `.env.local`：
+Go modules 不稳定，先运行检查脚本查看中国大陆镜像建议；不要改写 `config/` 或
+`.env.local`：
 
 ```bash
-./scripts/local/dev-up.sh --china
-./scripts/local/run-backend.sh --china
+./scripts/local/check.sh --china
 ```
 
-`dev-up.sh` 默认会准备 Knowledge runtime 的 Python 依赖和 GitHub release/raw、
-NLTK、HuggingFace、Tika、Chrome 等 artifact 下载；`--china` 只把这些下载切到大陆镜像。
-重复启动或只想拉起 infra 时可加 `--skip-knowledge-runtime-deps`。
+`check.sh` 只检查当前环境并打印官方/中国大陆下载建议，不下载、不构建、不 pull 镜像、
+不执行 `uv sync`，也不改写 `.env.local`。启动脚本只使用已经准备好的本机工具、镜像、
+服务二进制和 runtime `.venv`，不执行 `go mod download`、`go run module@version`、
+`uv sync`、runtime artifact 下载或 Docker pull。
 
 ```bash
 cp .env.example .env.local
-./scripts/local/dev-up.sh
-./scripts/local/run-backend.sh
+./scripts/local/check.sh
+./scripts/local/start.sh
 cd apps/web && bun install && bun run dev
 ```
 
-中国大陆网络按同一顺序启动，但给会下载 Docker/Go/uv/runtime artifact 的脚本加
-`--china`：
+中国大陆网络按同一顺序启动，但只给显式准备命令加 `--china`：
 
 ```bash
 cp .env.example .env.local
-./scripts/local/dev-up.sh --china
-./scripts/local/run-backend.sh --china
+./scripts/local/check.sh --china
+./scripts/local/start.sh
 cd apps/web && bun install && bun run dev
 ```
 
 日常再次启动：
 
 ```bash
-./scripts/local/dev-up.sh
-./scripts/local/run-backend.sh
+./scripts/local/start.sh
 cd apps/web && bun run dev
 ```
 
-中国大陆网络日常启动：
+如果镜像、二进制或 runtime 文件还没有准备过，先按 `check.sh` 输出的建议手工补齐；
+已经准备好的日常启动不需要下载。
+
+如果只想启动 infra、migration 和 seed，不启动后端服务：
 
 ```bash
-./scripts/local/dev-up.sh --china
-./scripts/local/run-backend.sh --china
-cd apps/web && bun run dev
+./scripts/local/start.sh --infra-only
 ```
 
 真实 Knowledge 解析、embedding、索引和检索链路需要 provider 配置。先在本地
 `.env.local` 中填写 provider；Elasticsearch 是默认本地 infra，由
-`./scripts/local/dev-up.sh` 启动：
+`./scripts/local/start.sh` 启动：
 
 ```text
 KNOWLEDGE_AUTO_START_INGESTION=true
@@ -84,44 +84,46 @@ KNOWLEDGE_RUNTIME_ES_URL=http://127.0.0.1:9200
 ```
 
 ```bash
-./scripts/local/dev-up.sh
-./scripts/local/run-knowledge-parse-stack.sh
+./scripts/local/check.sh
+./scripts/local/start.sh
 ```
 
-中国大陆网络运行真实解析栈时，runtime 启动命令使用显式 mirror 模式：
+中国大陆网络运行真实解析栈时，下载准备命令使用显式 mirror 模式；runtime 启动时如需
+HuggingFace mirror，再给启动命令加 `--china`：
 
 ```bash
-./scripts/local/run-knowledge-parse-stack.sh --china
+./scripts/local/check.sh --china
+./scripts/local/start.sh --china
 ```
 
 停止：
 
 ```bash
 # 在运行 bun run dev 的终端按 Ctrl-C 停前端。
-./scripts/local/stop-backend.sh
+./scripts/local/stop.sh
 ```
 
-`stop-backend.sh` 只停止 `.local/run/` 里记录的后端、Knowledge runtime 和
-Knowledge adapter 进程组；Vite dev server 是前台进程，需要在对应终端按 `Ctrl-C`。
+`stop.sh` 只停止 `.local/run/` 里记录的后端和 Knowledge runtime 进程组；Vite dev
+server 是前台进程，需要在对应终端按 `Ctrl-C`。
 如果 `bun run dev` 提示 `Port 5173 is in use`，用
 `lsof -nP -iTCP:5173 -sTCP:LISTEN` 找到旧前端进程后停止，再重新运行前端命令。
 
 重置本地数据：
 
 ```bash
-./scripts/local/reset-dev-data.sh
+./scripts/local/clean.sh
 ```
 
-`reset-dev-data.sh` 会停止 `.local/run/` 下记录的宿主机后端进程、渲染本地配置并校验
-Compose，然后执行根级 infra Compose 数据卷清理。默认需要输入 `reset` 确认；自动化
-或确定要直接清空时使用 `./scripts/local/reset-dev-data.sh --yes`。脚本底层执行
+`clean.sh` 会停止 `.local/run/` 下记录的宿主机后端进程、渲染本地配置并校验 Compose，
+然后执行根级 infra Compose 数据卷清理。默认需要输入 `clean` 确认；自动化或确定要
+直接清空时使用 `./scripts/local/clean.sh --yes`。脚本底层执行
 `docker compose -f deploy/docker-compose.yml --env-file .local/config/dev.env down -v --remove-orphans`；
-不删除 Docker 镜像。
+不删除 Docker 镜像、`.env.local`、`.local/tools` 或 `.local/bin`。
 
 从空数据状态复现启动问题时，按项目范围停止服务并清理 compose 数据卷；默认不删除镜像：
 
 ```bash
-./scripts/local/reset-dev-data.sh --yes
+./scripts/local/clean.sh --yes
 ```
 
 只有在确认镜像 tag、registry rewrite、daemon mirror 或本机镜像缓存本身是排障对象时，才额外删除项目镜像：
@@ -162,9 +164,9 @@ curl --noproxy '*' -fsS http://localhost:8080/readyz
 
 ## Document MCP 注册与工具发现
 
-`dev-up.sh` 在 QA 数据库插入 `mcp_servers.alias=document` 的非敏感元数据；
-`.env.local` 提供 `MCP_SERVER_TOKEN`。`run-backend.sh` 在宿主机启动 Document
-`http://localhost:8085/mcp` 和 QA，根级 Compose 不启动这两个业务服务容器。
+`start.sh` 在 QA 数据库插入 `mcp_servers.alias=document` 的非敏感元数据；`.env.local`
+提供 `MCP_SERVER_TOKEN`。`start.sh` 在宿主机启动 Document `http://localhost:8085/mcp`
+和 QA，根级 Compose 不启动这两个业务服务容器。
 
 确认 seed：
 
@@ -204,43 +206,31 @@ client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue
 
 ## 谁负责什么
 
-- `dev-up.sh`：检查同一宿主机环境中的 Docker、Go、`psql`、`uv`（默认
-  runtime 准备需要；跳过该步骤时不需要），infra pull/up、等待 `postgres` / `redis` / `minio` / `elasticsearch`
-  Compose health checks；单独运行一次性 `minio-init`、Go module 配置检查、migration、
-  demo seed；默认准备 Knowledge runtime 依赖和 artifact 下载，传入 `--china` 时使用镜像源，
-  可用 `--skip-knowledge-runtime-deps` 或 `LOCAL_SKIP_KNOWLEDGE_RUNTIME_DEPS=1` 跳过该准备步骤。
-  当前 Knowledge 索引准备属于宿主机 Knowledge runtime/doc engine 路径，不再执行 Go
-  侧向量库 collection bootstrap。
-  `minio-init` 正常 `Exited (0)` 不应阻断后续步骤；非零失败时看
-  `docker compose logs minio-init`。
-- `run-backend.sh`：后端进程启动、日志和进程组 PID。Knowledge 使用 `cmd/adapter`
-  调用宿主机 Knowledge runtime API/worker。启动前会用当前 profile 渲染结果对每个 Go
-  服务执行 `go mod download` 预检；服务 fork 后默认观察 8 秒，若进程组很快退出，
-  会直接汇总对应 `.local/logs/<service>.log` 尾部。
-- `run-knowledge-parse-stack.sh`：真实 Knowledge 文档解析链路入口。默认启动
-  host-run `services/knowledge-runtime` API、runtime worker 和 Knowledge adapter，
-  并把 `KNOWLEDGE_AUTO_START_INGESTION` 打开，使用 `uv sync --python 3.13
-  --frozen --group worker` 的 worker dependency profile，适合验证 PDF 上传、解析、
-  切块、embedding、索引和检索。脚本只会自动把 loopback runtime URL 加入 `NO_PROXY`
-  并对本机 health check 使用 `curl --noproxy '*'`，避免 shell 代理把 `127.0.0.1`
-  请求截成 `502`；外部 runtime URL 继续尊重宿主机代理环境。runtime token 来自当前
-  profile 渲染结果。若要复用已运行的 runtime API，可设置
-  `KNOWLEDGE_PARSE_VENDOR_RUNTIME_URL=http://<runtime-host>:9380`，非本机地址会自动进入
-  external-runtime 模式，仅启动 Knowledge adapter；如果该地址是 Docker bridge IP 且本机
-  代理会截获私网地址，请在本机显式补 `NO_PROXY`。
-- Go module 下载默认来自 profile 渲染结果里的 `GOPROXY` / `GOSUMDB`，覆盖
-  `dev-up.sh` 里的 goose migration 和 `run-backend.sh` 里的 Go 服务 `go run`。
-  官方默认值是 `https://proxy.golang.org,direct` / `sum.golang.org`；`--china`
-  只在本次进程切到大陆镜像。这不是 Docker 镜像源，也不是 Knowledge runtime 的
-  `UV_DEFAULT_INDEX`。
-- `stop-backend.sh`：按 `.local/run/` 中记录的进程组停止后端，避免只杀掉
-  `go run` / `uv run` wrapper 后留下真实服务占用端口。
-- 如果已经用 `run-knowledge-parse-stack.sh` 启动真实 Knowledge parse stack，
-  `run-backend.sh` 会复用 `.local/run/knowledge-adapter.pid` 对应的 adapter，不再重复
-  启动 `knowledge` 占用 `8083`。
+- `check.sh`：检查本机命令、`.env.local`、`.local/tools`、`.local/bin`、Compose 配置
+  和 Knowledge runtime 文件；不下载、不构建、不 pull 镜像、不执行 `uv sync`，也不探测
+  本地 Docker image 状态。默认输出官方源手工命令，`--china` 输出中国大陆镜像建议，不改写
+  `config/` 或 `.env.local`。
+- `start.sh`：使用已准备好的 `.local/tools`、`.local/bin`、本地镜像和 runtime `.venv`。
+  它会等待 `postgres` / `redis` / `minio` / `elasticsearch` health checks，单独运行
+  一次性 `minio-init`，执行 migration 和 demo seed，再启动 host-run 后端进程组。
+  默认 `docker compose up --pull never`，不执行 Go/uv 下载或 Docker pull。服务 fork 后
+  默认观察 8 秒，若进程组很快退出，会直接汇总对应 `.local/logs/<service>.log` 尾部。
+  启动后会输出 Docker infra `ps`、host-run 进程组状态和 `.local/logs/*.log` 位置。
+- `start.sh` 默认启动已经准备好的 Knowledge runtime API + worker，适合验证 PDF 上传、
+  解析、切块、embedding、索引和检索；`--runtime api` 只启动 API，`--runtime none` 跳过
+  runtime。脚本只会自动把
+  loopback runtime URL 加入 `NO_PROXY`，并对本机 health check 使用 `curl --noproxy '*'`。
+  外部 runtime URL 继续尊重宿主机代理环境。
+- Go module 下载只发生在你手工执行 `check.sh` 输出的 `go build` / `go install` 命令时。
+  官方默认值是 `https://proxy.golang.org,direct` / `sum.golang.org`；中国大陆网络使用
+  `GOPROXY=https://goproxy.cn,direct` / `GOSUMDB=sum.golang.google.cn`。
+  这不是 Docker 镜像源，也不是 Knowledge runtime 的 `UV_DEFAULT_INDEX`。
+- `stop.sh`：按 `.local/run/` 中记录的进程组停止后端和 runtime，避免留下真实服务占用端口。
+- `clean.sh`：停止 host-run 进程并删除本地 infra Compose 数据卷；不删除 Docker images、
+  `.env.local`、`.local/tools` 或 `.local/bin`。
 - `config/`：默认配置和环境 profile；根 `.env.example`：本地 secret 模板；
   `.env.local`：未跟踪本地配置。脚本只渲染 `.local/config/` 运行时产物。
-- 这三个本地入口脚本都必须在命令行输出彩色的开始、成功、警告和失败摘要。失败摘要应
+- 这些本地入口脚本都必须在命令行输出彩色的开始、成功、警告和失败摘要。失败摘要应
   说明当前阶段、退出码和下一步排查入口，不能只靠用户自己翻日志猜状态。`NO_COLOR=1`
   可关闭颜色，`FORCE_COLOR=1` 可在非 TTY 中强制开色。
 
@@ -249,8 +239,8 @@ client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue
 Infra 拉取慢：
 
 - 默认是 Compose 里的 Docker Hub pinned tags。
-- 中国大陆网络先运行 `./scripts/local/dev-up.sh --china`，本次进程会使用
-  `docker.1ms.run` registry rewrite；`.env.local` 不会被脚本改写。
+- 中国大陆网络先运行 `./scripts/local/check.sh --china` 查看 `docker.1ms.run` registry rewrite
+  建议；`.env.local` 不会被脚本改写。
 - 已配置 Docker daemon mirror 时，运行 `python3 scripts/check_docker_environment.py --profile all --clean-env`。
 - 代理只作为最后选择；shell proxy、daemon proxy 和 registry rewrite 是三条不同路径。
   验证官方 Docker Hub 路径经 shell/Docker 代理可达时，运行
@@ -258,16 +248,15 @@ Infra 拉取慢：
 
 Knowledge runtime 启动慢：
 
-- 默认 `UV_DEFAULT_INDEX=https://pypi.org/simple`，host-run `uv sync` 使用官方 PyPI。
-- `./scripts/local/dev-up.sh` 默认会执行 runtime 依赖和 artifact 下载；中国大陆网络
-  加 `--china` 时，该步骤会用临时 overlay 将 Python 包、GitHub release/raw、NLTK、
+- 默认 `UV_DEFAULT_INDEX=https://pypi.org/simple`，显式 runtime 准备使用官方 PyPI。
+- 启动脚本不执行 runtime 依赖或 artifact 下载。需要时按 `./scripts/local/check.sh`
+  输出的 `uv sync` 和 `download_deps.py` 命令手工执行；中国大陆网络先运行
+  `./scripts/local/check.sh --china`，建议会将 Python 包、GitHub release/raw、NLTK、
   HuggingFace、Tika 和 Chrome 下载切到镜像，但提交的 `pyproject.toml` / `uv.lock`
   仍保持官方 URL。
-- 如果此前用 `--skip-knowledge-runtime-deps` 跳过，可按
-  `services/knowledge-runtime/README.md` 手工补跑 runtime 下载脚本。
 - `HF_ENDPOINT` 用于 runtime worker 首次导入 deepdoc OCR/vision 模块时下载
   `InfiniFlow/deepdoc`。提交的默认配置不启用第三方 mirror；中国大陆网络运行真实解析
-  栈时使用 `./scripts/local/run-knowledge-parse-stack.sh --china`，脚本会在本次进程内为
+  栈时使用 `./scripts/local/start.sh --china`，脚本会在本次进程内为
   未设置 `HF_ENDPOINT` 的环境使用 `https://hf-mirror.com`。企业环境可只在本机
   `.env.local` 中设置内部 HuggingFace 镜像。
 - runtime API 走宿主机启动；worker 仅在真实 ingestion smoke 或生产调度时启动，
@@ -275,28 +264,26 @@ Knowledge runtime 启动慢：
 - 只验证查询链路时优先使用：
 
   ```bash
-  ./scripts/local/dev-up.sh
-  ./scripts/local/run-knowledge-runtime-api.sh
+  ./scripts/local/start.sh --runtime api
   ```
 
 - 需要真实 PDF 解析链路时优先使用：
 
   ```bash
   # First set provider vars in .env.local; Elasticsearch starts with default infra.
-  ./scripts/local/dev-up.sh
-  ./scripts/local/run-knowledge-parse-stack.sh
+  ./scripts/local/check.sh
+  ./scripts/local/start.sh
   python3 scripts/local/knowledge-pdf-e2e.py /path/to/DL_T_673-1999.pdf
   ```
 
   如果 runtime API 已在容器网络中运行但没有映射 `9380` 到宿主机，显式传入容器 bridge
-  地址即可；脚本会进入 external-runtime 模式并只启动 adapter。该地址不是 loopback，
-  脚本不会自动加入 `NO_PROXY`；如果本机代理会截获私网地址，请在本机显式补
-  `NO_PROXY`：
+  地址后启动后端即可。该地址不是 loopback，脚本不会自动加入 `NO_PROXY`；如果本机代理
+  会截获私网地址，请在本机显式补 `NO_PROXY`：
 
   ```bash
   export NO_PROXY="${NO_PROXY:-localhost,127.0.0.1,::1},172.22.0.6"
-  KNOWLEDGE_PARSE_VENDOR_RUNTIME_URL=http://172.22.0.6:9380 \
-    ./scripts/local/run-knowledge-parse-stack.sh
+  VENDOR_RUNTIME_URL=http://172.22.0.6:9380 \
+    ./scripts/local/start.sh --backend-only --no-runtime
   ```
 
 - 默认保留 `.env.example` 里的 `ENABLE_TIMEOUT_ASSERTION=1`，让 runtime
@@ -306,24 +293,19 @@ Knowledge runtime 启动慢：
 
 Go modules 下载慢或超时：
 
-- `dev-up.sh` 会用 `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1`
-  执行 migration；`run-backend.sh` 会用 `go run ./cmd/server` 启动各 Go 服务。
+- `start.sh` 不执行 Go module 下载；它使用 `.local/tools/goose` 执行 migration，并启动
+  `.local/bin/` 下的服务二进制。
 - 默认保留 `.env.example` 里的官方
-  `GOPROXY=https://proxy.golang.org,direct` 和 `GOSUMDB=sum.golang.org`；脚本读取
-  `.env.local` 后会把它们传给 host-run Go 命令。中国大陆网络使用
-  `./scripts/local/dev-up.sh --china` 或 `./scripts/local/run-backend.sh --china`
-  临时切换到 `https://goproxy.cn,direct` 和 `sum.golang.google.cn`。
-- `dev-up.sh` 会在 migration 前检查 Go module 配置；`run-backend.sh` 会在启动服务前
-  预检 Go module 下载。`.env.local` 如果设置镜像值，脚本会尊重本地覆盖并提示；
+  `GOPROXY=https://proxy.golang.org,direct` 和 `GOSUMDB=sum.golang.org`；手工构建本机
+  Go 工具/服务二进制时可以继承这些值。中国大陆网络按 `./scripts/local/check.sh --china`
+  输出建议临时设置 `https://goproxy.cn,direct` 和 `sum.golang.google.cn`。
+- `.env.local` 如果设置镜像值，脚本会尊重本地覆盖并提示；
   若 proxy 或 checksum DB 不可达或下载超时，脚本会在终端直接失败并打印当前有效
   `GOPROXY` / `GOSUMDB`，而不是只把错误藏在 `.local/logs/*.log`。
 - Go modules 下载不走 Docker registry rewrite，也不受 `UV_DEFAULT_INDEX` 影响。
-- 如果 `.local/logs/auth.log`、`.local/logs/gateway.log` 等文件出现
-  `proxy.golang.org`、`i/o timeout` 或 `go: downloading ...` 后退出，Gateway/Auth
-  可能没有监听 `8080`/`8001`，前端登录会表现为 `502 Bad Gateway`。
-- 如果 `.local/logs/auth.log`、`.local/logs/gateway.log` 或其他 Go 服务日志出现
-  `Get "https://proxy.golang.org/...": i/o timeout`，中国大陆网络先改用对应脚本的
-  `--china`；其他网络检查企业代理或本机 Go 配置。
+- 如果手工 Go 构建出现 `Get "https://proxy.golang.org/...": i/o timeout`，
+  中国大陆网络先运行 `./scripts/local/check.sh --china`；其他网络检查企业代理
+  或本机 Go 配置。
 - `.env.local` 不会被脚本自动改写；想恢复官方默认值，重新复制
   `.env.example` 后再恢复本机私有配置。
 - 如果需要把镜像配置持久写入当前 shell 使用的 Go 全局配置，在运行脚本的同一个环境中执行：
@@ -333,13 +315,13 @@ Go modules 下载慢或超时：
   go env -w GOSUMDB=sum.golang.google.cn
   ```
 
-- 之后重新运行 `./scripts/local/stop-backend.sh` 和 `./scripts/local/run-backend.sh`，
+- 之后重新运行 `./scripts/local/stop.sh` 和 `./scripts/local/start.sh`，
   再用 `curl --noproxy '*' -fsS http://localhost:8080/healthz` 验证 Gateway。
 
 后端没起来：
 
-- 先看 `run-backend.sh` 命令行失败摘要；它会说明 Go module 预检、服务启动或短窗口
-  进程检查中哪一步失败。
+- 先看 `start.sh` 命令行失败摘要；它会说明 infra、migration、seed、runtime、服务启动
+  或短窗口进程检查中哪一步失败。
 - 先看 `.local/logs/<service>.log`。
 - Knowledge ingestion 到 embedding/index 阶段失败时，先确认 `VENDOR_RUNTIME_URL`
   指向可访问的 runtime API，并检查宿主机 runtime worker 是否在处理任务。
@@ -374,7 +356,7 @@ WSL 内存高：
 - 先看 `docker stats`。
 - 当前默认 Docker 只跑 infra；内存压力主要来自 PostgreSQL、Redis、MinIO、
   Elasticsearch、宿主机 Knowledge runtime 或本机后端进程。
-- 不需要保留环境时执行 `./scripts/local/reset-dev-data.sh`；确认后会停止宿主机后端并删除本地 infra 数据卷。
+- 不需要保留环境时执行 `./scripts/local/clean.sh`；确认后会停止宿主机后端并删除本地 infra 数据卷。
 
 ```bash
 cd ../services/knowledge
@@ -407,7 +389,7 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
 - `GATEWAY_KNOWLEDGE_OWNER_SMOKE=1 requires ...`：缺必填 env；失败只列 key，不列值。
 - `vendor ping failed` 或 Knowledge readiness 返回 `vendor_runtime_ok=false`：
   先确认 `VENDOR_RUNTIME_URL` 指向 `http://127.0.0.1:9380`，runtime API 已在宿主机启动。
-- Gateway session 返回 `401`：确认 `./scripts/local/dev-up.sh` 已完成 seed SQL，并使用
+- Gateway session 返回 `401`：确认 `./scripts/local/start.sh` 已完成 seed SQL，并使用
   `.env.example` 中的 `admin` / `LocalDemoAdmin#12345` 或显式
   `GATEWAY_SMOKE_USERNAME` / `GATEWAY_SMOKE_PASSWORD`。
 - Gateway Knowledge route 返回 `401`：Gateway session cache/Redis 可能不可用；查
@@ -433,8 +415,8 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
 
 前置要求：
 
-- 已按本手册“启动命令”使用 `./scripts/local/dev-up.sh` 启动 infra、migration 和
-  seed，并用 `./scripts/local/run-backend.sh` 在宿主机启动后端服务。
+- 已按本手册“启动命令”使用 `./scripts/local/start.sh` 启动 infra、migration、seed 和
+  宿主机后端服务。
 - `QA_SETTINGS_OPEN=true` 只建议在本地 smoke 环境启用，用于允许测试通过 Gateway
   创建本轮 QA/LLM config versions；需要在启动后端前写入 `.env.local`。
   也可改用具备 `qa:settings:write` 权限或 `QA_ADMIN_USER_IDS` 的账号。
@@ -443,21 +425,19 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
   `.env.example` 的 `default-chat` 只在 `localhost:11434/v1` 后面有可用
   OpenAI-compatible provider 时可用；真实 provider 可通过 `.env.local` 的
   `AI_GATEWAY_LOCAL_PROVIDER_BASE_URL`、`AI_GATEWAY_LOCAL_PROVIDER_API_KEY` 和
-  `AI_GATEWAY_LOCAL_CHAT_MODEL` 由 `./scripts/local/dev-up.sh` 自动写入本地 seed。
+  `AI_GATEWAY_LOCAL_CHAT_MODEL` 由 `./scripts/local/start.sh` 自动写入本地 seed。
 - 默认 Knowledge adapter 使用 query-first readiness，不要求 runtime worker 已在启动时
   运行。需要证明真实上传、解析、embedding、索引和检索时，先让
-  `./scripts/local/dev-up.sh` 通过根级 Compose 默认 infra 启动本地 Elasticsearch，
-  再用 `./scripts/local/run-knowledge-parse-stack.sh` 显式启动 host-run runtime API、
-  worker 和 Knowledge adapter。第一次启用前先执行
+  `./scripts/local/start.sh` 通过根级 Compose 默认 infra 启动本地 Elasticsearch，
+  再用 `./scripts/local/start.sh --runtime full` 显式启动 host-run runtime API、worker
+  和 Knowledge adapter。第一次启用前先执行
   `cp .env.example .env.local`，并在本地 `.env.local` 中显式设置
   `KNOWLEDGE_AUTO_START_INGESTION=true`、`DOC_ENGINE=elasticsearch`、
   `KNOWLEDGE_RUNTIME_ES_URL=http://127.0.0.1:9200` 及对应
   `KNOWLEDGE_RUNTIME_EMBEDDING_*` / `KNOWLEDGE_RUNTIME_RERANK_*` / vendor model id
   变量。上传 ingestion 会调用 `/documents/parse` 入队，不预检或等待 worker heartbeat。
-  worker 生命周期由手动进程、`./scripts/local/start-knowledge-runtime-worker.sh`、
-  systemd、K8s/KEDA、supervisor 或同类外部工具管理。该本地 helper 会在队列空闲默认
-  300 秒后关闭 worker；可通过 `KNOWLEDGE_RUNTIME_WORKER_IDLE_SHUTDOWN_SECONDS=0`
-  禁用。`run-knowledge-parse-stack.sh` 不直接执行 Docker build/run；
+  worker 生命周期由 `./scripts/local/start.sh --runtime full`、systemd、K8s/KEDA、
+  supervisor 或同类外部工具管理。`start.sh` 不直接执行 Docker build/run；
   如使用外部 Elasticsearch，把 `KNOWLEDGE_RUNTIME_ES_URL` 指向实际地址。
 
 启动本地栈：
@@ -465,8 +445,8 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
 ```bash
 cp .env.example .env.local
 # 如需运行本 smoke，可先在 .env.local 中设置 QA_SETTINGS_OPEN=true。
-./scripts/local/dev-up.sh
-./scripts/local/run-backend.sh
+./scripts/local/check.sh
+./scripts/local/start.sh
 ```
 
 运行 smoke：
@@ -519,8 +499,7 @@ chunks、jobs、documents、knowledge base 的顺序删除本轮 Knowledge Postg
 ### QA + Auth + Gateway 宿主机联调检查
 
 ```bash
-./scripts/local/dev-up.sh
-./scripts/local/run-backend.sh
+./scripts/local/start.sh
 ```
 
 该路径适合验证 Auth、QA、Gateway 的基础 ready 状态和 QA 非 provider 依赖路径：
@@ -533,13 +512,12 @@ curl -fsS http://localhost:8080/readyz
 
 日志查看 `.local/logs/auth.log`、`.local/logs/qa.log`、`.local/logs/gateway.log`。
 触发真实 LLM 调用、LLM connection test 或 Agent Run 时，确保宿主机 `ai-gateway`
-已由 `run-backend.sh` 启动，并且 `.env.local` 中的 profile/provider 配置可用。
+已由 `start.sh` 启动，并且 `.env.local` 中的 profile/provider 配置可用。
 
 ### Document 宿主机联调检查
 
 ```bash
-./scripts/local/dev-up.sh
-./scripts/local/run-backend.sh
+./scripts/local/start.sh
 ```
 
 该路径适合验证 Document PostgreSQL、Redis、migration、job enqueue 和 worker 状态机：
@@ -558,9 +536,9 @@ job 依赖可用的 AI Gateway chat profile/provider。
 ### AI Gateway host-run
 
 PR #487 之后 AI Gateway 作为本机进程运行（不再有 AI Gateway Docker 业务服务）。
-`dev-up.sh` 会自动执行 ai-gateway migration 并写入本地 placeholder profile；`run-backend.sh`
-会随其他服务一起启动 ai-gateway。
-如果 `.env.local` 设置 `AI_GATEWAY_LOCAL_SEED_ENABLED=true`，`dev-up.sh` 会在静态
+`start.sh` 会自动执行 ai-gateway migration 并写入本地 placeholder profile，也会随其他
+服务一起启动 ai-gateway。
+如果 `.env.local` 设置 `AI_GATEWAY_LOCAL_SEED_ENABLED=true`，`start.sh` 会在静态
 seed 后读取 `AI_GATEWAY_LOCAL_PROVIDER`、`AI_GATEWAY_LOCAL_PROVIDER_BASE_URL`、
 `AI_GATEWAY_LOCAL_PROVIDER_API_KEY`、`AI_GATEWAY_LOCAL_CHAT_MODEL`、
 `AI_GATEWAY_LOCAL_EMBEDDING_MODEL`、`AI_GATEWAY_LOCAL_EMBEDDING_DIMENSIONS`、
@@ -613,12 +591,13 @@ AI_GATEWAY_LOCAL_RERANK_MODEL=BAAI/bge-reranker-v2-m3
 AI_GATEWAY_LOCAL_RERANK_TOP_N=5
 ```
 
-修改后重新运行 `./scripts/local/dev-up.sh`，再启动或重启后端。脚本会用
+修改后重新运行 `./scripts/local/start.sh`，再启动或重启后端。脚本会用
 `AI_GATEWAY_CREDENTIAL_ENCRYPTION_KEY` 加密 API key，只把密文写入 PostgreSQL。
 `default-chat`、`default-embedding`、`default-rerank` 会被更新；如果配置了 chat model，
 脚本还会激活一条匹配的 QA LLM config version。host-run 的 `MODEL_ID` 和
-`DOCUMENT_AI_GATEWAY_MODEL` 可保持为空，由 AI Gateway 根据 `default-chat` profile
-决定 provider model。
+`DOCUMENT_AI_GATEWAY_MODEL` 可保持为空或默认 `local-placeholder-chat`；`start.sh`
+会在本次 host-run 进程里把它们对齐到 `AI_GATEWAY_LOCAL_CHAT_MODEL`，避免请求模型与
+`default-chat` profile 不一致。
 
 也可以继续通过管理端 UI 覆盖 profile 和 credential（Admin → 模型配置），但真实
 API key 仍只应保存在本地 `.env.local`、受控 secret store 或浏览器提交请求中，不要提交。
@@ -632,8 +611,8 @@ API key 仍只应保存在本地 `.env.local`、受控 secret store 或浏览器
 > HTTPS_PROXY=http://127.0.0.1:7897
 > ```
 >
-> 然后重启 ai-gateway 进程（先执行 `stop-backend-windows.ps1`，再执行
-> `start-backend-windows.ps1`）。端口号改成本机实际代理端口。
+> 然后重启 ai-gateway 进程（本地标准路径用 `./scripts/local/stop.sh` 后再运行
+> `./scripts/local/start.sh`）。端口号改成本机实际代理端口。
 
 #### 验证
 
@@ -714,7 +693,7 @@ tokens, full prompts, document text, embedding payloads, or provider raw error
 bodies.
 
 1. Start the local stack (infra + all backend services):
-   `./scripts/local/dev-up.sh && ./scripts/local/run-backend.sh`.
+   `./scripts/local/check.sh && ./scripts/local/start.sh`.
 2. Check AI Gateway readiness:
    `curl -s http://127.0.0.1:8086/readyz`.
    `missing` means the profile or active credential is absent; `placeholder`
@@ -726,7 +705,7 @@ bodies.
    `X-Caller-Service`, and `X-Request-Id`. The `model` in smoke requests must
    exactly match the selected profile. For local-only validation you may instead
    set `AI_GATEWAY_LOCAL_SEED_ENABLED=true` and the `AI_GATEWAY_LOCAL_*` values
-   in `.env.local`, then rerun `./scripts/local/dev-up.sh`.
+   in `.env.local`, then rerun `./scripts/local/start.sh`.
 4. Run direct AI Gateway smoke with
    `AI_GATEWAY_REAL_PROVIDER_SMOKE=1`. Chat is the minimum; embedding and rerank
    run only when the provider and env vars support them.

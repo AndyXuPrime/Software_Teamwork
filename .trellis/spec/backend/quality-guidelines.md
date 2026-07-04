@@ -256,8 +256,9 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   - `docker compose -f deploy/docker-compose.yml --env-file .local/config/dev.env config --services`
 - Runtime entrypoint:
   - `cp .env.example .env.local`
-  - `./scripts/local/dev-up.sh`
-  - `./scripts/local/run-backend.sh`
+  - `./scripts/local/check.sh`
+  - `./scripts/local/check.sh`
+  - `./scripts/local/start.sh`
   - `cd apps/web && bun install && bun run dev`
 - Default Compose services:
   - `postgres`
@@ -293,22 +294,21 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   host-run profile with `ENABLE_TIMEOUT_ASSERTION=1` in `config/base.yaml`.
   Do not remove this default unless the worker timeout mechanism is replaced
   and the runbook documents the accepted risk or replacement behavior.
-- `run-backend.sh` must not prepare or start the retired standalone Parser.
+- `start.sh` must not prepare or start the retired standalone Parser.
   Knowledge parsing runs through the Knowledge runtime API/worker path.
 - Host-run uv package downloads should use `UV_DEFAULT_INDEX` from
   `config/base.yaml`, with official PyPI as the committed default. Mainland
-  China mirror usage must be explicit through `dev-up.sh --china` or local
-  untracked env overrides. `dev-up.sh` prepares Knowledge runtime
-  dependencies/artifacts by default; `--china` only switches that preparation to
-  mirror sources. `ragflow_deps/download_deps.py --china` remains the manual
-  fallback when runtime dependency preparation was intentionally skipped.
-  This is separate from Docker registry rewrite and should not be handled in
-  Docker policy.
+  China mirror usage must be explicit through `check.sh --china` suggestions
+  or local untracked env overrides. Runtime dependency/artifact setup must be
+  manual; `start.sh` must not run `uv sync` or artifact downloads.
+  `ragflow_deps/download_deps.py --china` remains the manual
+  fallback. This is separate from Docker registry rewrite and should not be
+  handled in Docker policy.
 - Runtime Python dependency changes belong under `services/knowledge-runtime`;
   the default local backend startup path must not depend on `services/parser`.
-- `run-knowledge-parse-stack.sh` must not run direct `docker build` or
-  `docker run` for Elasticsearch. Local Elasticsearch lifecycle belongs to the
-  default root Compose infrastructure started by `dev-up.sh`.
+- `start.sh --runtime full` must not run direct `docker build` or `docker run`
+  for Elasticsearch. Local Elasticsearch lifecycle belongs to the default root
+  Compose infrastructure started by `start.sh`.
 - Shared local shell helpers under `scripts/local/lib/` are part of the startup
   contract. Entry scripts may move common behavior there, but
   `scripts/verify_local_seed_contract.py` must read the helper files together
@@ -322,24 +322,22 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - `HF_ENDPOINT=https://hf-mirror.com` must not be active in committed defaults
   or forced by runtime scripts in official-default mode. Mainland China runtime
   model download mirrors are explicit through
-  `run-knowledge-parse-stack.sh --china` or local untracked env overrides.
+  `start.sh --runtime full --china` or local untracked env overrides.
 - Host-run Go module downloads should use `GOPROXY` and `GOSUMDB` from
   `config/base.yaml`, with official upstream values as the committed
   default. Mainland China mirror usage must be explicit through
-  `dev-up.sh --china`, `run-backend.sh --china`, or local untracked env
-  overrides. This covers `dev-up.sh` goose migrations and `run-backend.sh` Go
-  service startups; it is separate from Docker registry rewrite and Knowledge
-  runtime `UV_DEFAULT_INDEX`.
-- `dev-up.sh` should check effective Go module settings before host-run goose
-  migrations, and `run-backend.sh` should preflight Go module downloads with
-  `go mod download` for each host-run Go service before forking background
-  processes. If `--china` is passed, scripts may use mainland China mirrors for
-  the current process without rewriting `config/` or `.env.local`. If `.env.local`
-  contains mirror values while `--china` was not passed, scripts should
-  warn but respect the user's local config. If module download still fails, the
-  script must fail in the terminal with the current effective values and
-  remediation hints instead of only writing `go run` errors to
-  `.local/logs/*.log`.
+  `check.sh --china` suggestions or local untracked env overrides. This covers
+  manual Go tool/service binary builds; it is separate from Docker
+  registry rewrite and Knowledge runtime `UV_DEFAULT_INDEX`.
+- `check.sh` may print manual `go build` / `go install` suggestions but must not
+  execute them. `start.sh` must use `.local/tools` and
+  `.local/bin` only; it must not run `go mod download`, `go run module@version`,
+  or `go run ./cmd/server`.
+- `check.sh` is only the pre-start readiness check. It must not inspect local
+  Docker image state with commands such as `docker image inspect`, start
+  containers, pull images, or fail because an image is not present yet. Keep
+  Docker image handling as manual pull suggestions plus `start.sh --pull never`
+  startup failure/status output.
 - Host-run backend processes should be started in managed process groups and
   stopped by process group so `go run` or `uv run` wrapper processes do not
   leave child service binaries listening on local ports.
@@ -349,16 +347,19 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   human-scannable colored status labels when stdout/stderr supports color, with
   `NO_COLOR=1` disabling color. Do not rely on `set -e` alone or force users to
   infer failure from missing output.
-- After forking host-run backend services, `run-backend.sh` should watch a short
+- After forking host-run backend services, `start.sh` should watch a short
   configurable startup window and report any process group that exits early with
   the corresponding service log tail. This prevents `backend started` from
   hiding immediate `go run`, dependency download, port binding, or config
   failures.
-- `dev-up.sh` must wait for long-running Compose infrastructure health before
+- After startup, `start.sh` should print Docker infrastructure status, host-run
+  process group status, and `.local/logs/*.log` location so post-start health is
+  visible in the terminal.
+- `start.sh` must wait for long-running Compose infrastructure health before
   running host migrations or seed SQL. One-shot infrastructure jobs such as
   `minio-init` must run separately and use their own exit code so a normal
   `Exited (0)` does not skip migrations or seed.
-- `dev-up.sh` must not initialize retired vector-store collections. Current
+- `start.sh` must not initialize retired vector-store collections. Current
   Knowledge ingestion uses Knowledge runtime and its configured doc engine.
 - Compose must include practical health checks for infrastructure containers.
 - PostgreSQL health checks must probe TCP readiness, e.g.
@@ -368,9 +369,9 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   `POSTGRES_IMAGE`, `REDIS_IMAGE`, `MINIO_IMAGE`,
   `MINIO_MC_IMAGE`, and `KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE`; do not replace
   pinned defaults with `latest`.
-- For mainland China Docker usage, prefer explicit `dev-up.sh --china`
-  registry rewrite or local untracked `*_IMAGE` overrides over daemon mirrors
-  and proxies. Do not make third-party registries active defaults in
+- For mainland China Docker usage, prefer `check.sh --china` registry rewrite
+  suggestions or local untracked `*_IMAGE` overrides over daemon mirrors and
+  proxies. Do not make third-party registries active defaults in
   committed config. Existing daemon mirrors or proxies are acceptable only
   after `python3 scripts/check_docker_environment.py --profile all --clean-env`
   proves their manifest path is healthy.
@@ -415,7 +416,7 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | --- | --- |
 | Compose YAML or env interpolation is invalid | `docker compose ... config --quiet` must fail before merge. |
 | Default Compose service list includes anything other than `postgres`, `redis`, `minio`, `minio-init`, or `elasticsearch` | Remove the service or update policy only if the team explicitly changes the Docker boundary. |
-| Host migrations or seed run before PostgreSQL/init scripts are ready | Add or restore an infra health wait in `scripts/local/dev-up.sh`; do not rely on plain `docker compose up -d`. Run one-shot init jobs separately from `up --wait` and fail visibly if they exit non-zero. |
+| Host migrations or seed run before PostgreSQL/init scripts are ready | Add or restore an infra health wait in `scripts/local/start.sh`; do not rely on plain `docker compose up -d`. Run one-shot init jobs separately from `up --wait` and fail visibly if they exit non-zero. |
 | Knowledge runtime/doc-engine env is configured but required runtime provisioning is missing | Fix the runtime dependency guard, startup docs, or smoke setup; do not restore the old Go adapter Qdrant bootstrap as the default Knowledge path. |
 | Compose contains `build:` | Remove it; repository root Compose must stay pull-only infrastructure. |
 | Docker policy checker fails | Fix the Compose/docs/script regression or update `scripts/check_docker_policy.py` and the runbook in the same PR when the policy intentionally changes. |
@@ -424,14 +425,14 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 | Go module preflight, migration, or service startup shows `Get "https://proxy.golang.org/...": i/o timeout` | Confirm `config/base.yaml` contains the repository `GOPROXY` / `GOSUMDB` defaults and `.env.local` has not overridden them unexpectedly. If the mirror is unavailable, override only local `.env.local` or enterprise shell config. The startup script should surface failures in the terminal and exit non-zero. |
 | Local helper adds PyPI, Docker Hub, `proxy.golang.org`, or an external runtime host to `NO_PROXY` | Restrict automatic `NO_PROXY` additions to loopback hosts and add/restore a helper unit test. Official/external paths must be able to use the user's proxy. |
 | `ENABLE_TIMEOUT_ASSERTION` is missing or disabled in the default local profile | Restore `ENABLE_TIMEOUT_ASSERTION=1` in `config/base.yaml` or document the replacement timeout mechanism and accepted risk in the Knowledge runtime runbook. |
-| `stop-backend.sh` only kills the wrapper PID | Start host services in a managed process group and stop the whole group; verify the script does not leave `go run` or `uv run` child services bound to ports. |
+| `stop.sh` only kills the wrapper PID | Start host services in a managed process group and stop the whole group; verify the script does not leave child service processes bound to ports. |
 | Seeded local AI Gateway profile uses `host.docker.internal` | Replace it with `http://localhost:11434/v1` for the host-run default path. |
 | `AI_GATEWAY_LOCAL_SEED_ENABLED=true` updates AI Gateway profiles but QA still sends `local-placeholder-chat` | Update the same overlay to append/activate a QA `llm_config_versions` row for `provider='ai-gateway'`, `profile_id='default-chat'`, and `model_name=AI_GATEWAY_LOCAL_CHAT_MODEL`. |
 | Generated provider credential decrypts in SQL but AI Gateway invocation fails with credential decrypt errors | Regenerate credentials with the service crypto contract: `SHA-256(AI_GATEWAY_CREDENTIAL_ENCRYPTION_KEY)` as AES-GCM key and keyed HMAC fingerprint derived from `ai-gateway credential fingerprint v1`; do not invent a bash/OpenSSL-only format. |
 | Required Docker image is unavailable locally | Document `docker compose pull <service>` commands and report Docker runtime validation as skipped. |
 | Same component appears with multiple Docker tags | Use the documented baseline or record the reason in the implementation document. |
-| Compose infrastructure image pull is slow or blocked | Prefer `./scripts/local/dev-up.sh --china`, which applies pinned `docker.1ms.run` `*_IMAGE` values for that run, or local untracked `.env.local` overrides; if using daemon mirror, prove it with `scripts/check_docker_environment.py`; use Docker daemon proxy only when registry rewrite and mirror paths are unavailable. |
-| `dev-up.sh --china` selects a registry whose Elasticsearch manifest or layer pull is unhealthy | Replace it with a registry whose full image set passes manifest probes and an Elasticsearch pull smoke, then update docs/tests in the same change. |
+| Compose infrastructure image pull is slow or blocked | Run `./scripts/local/check.sh --china` for pinned `docker.1ms.run` pull suggestions, or use local untracked `.env.local` overrides; if using daemon mirror, prove it with `scripts/check_docker_environment.py`; use Docker daemon proxy only when registry rewrite and mirror paths are unavailable. |
+| `check.sh --china` suggests a registry whose Elasticsearch manifest or layer pull is unhealthy | Replace it with a registry whose full image set passes manifest probes and an Elasticsearch pull smoke, then update docs/tests in the same change. |
 | File calls return `401 unauthorized` while `file /readyz` is healthy | Verify `FILE_INTERNAL_SERVICE_TOKEN` on file and matching `KNOWLEDGE_SERVICE_TOKEN`, `DOCUMENT_FILE_SERVICE_TOKEN`, or propagated `X-Service-Token` on callers. |
 | Gateway readiness fails | Check Redis and Auth first, then search logs by `X-Request-Id`. |
 | Auth/document/ai-gateway readiness fails | Inspect PostgreSQL, host-run migration status, and service logs. |
@@ -455,7 +456,7 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
 - Run Compose config parsing for the infra baseline.
 - Run `docker compose ... config --services` and confirm only the five default
   infra services are present, including `elasticsearch`.
-- Run `bash -n scripts/local/dev-up.sh scripts/local/run-backend.sh scripts/local/stop-backend.sh`
+- Run `bash -n scripts/local/check.sh scripts/local/start.sh scripts/local/stop.sh scripts/local/clean.sh scripts/local/lib/*.sh scripts/config/load-profile.sh`
   when local startup scripts change.
 - Run `python3 scripts/check_docker_policy.py` and the policy/environment unit
   tests when Compose, Docker docs, image tags, or Docker scripts change.
@@ -466,7 +467,7 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$
   `scripts/local/lib/*.sh` changes proxy, URL, or process helper behavior.
 - For AI Gateway local provider overlay changes, test disabled overlay output,
   enabled overlay SQL redaction/no raw key leakage, missing env validation, and
-  `dev-up.sh` piping the generated SQL into `psql`.
+  `start.sh` piping the generated SQL into `psql`.
 - Search Docker and docs for duplicate image tags such as `redis:7` vs
   `redis:7-alpine`, and MinIO server/client tags before declaring version
   cleanup complete.

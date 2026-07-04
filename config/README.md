@@ -49,21 +49,20 @@ config/
 
 ```bash
 cp .env.example .env.local
-./scripts/local/dev-up.sh
-./scripts/local/run-backend.sh
+./scripts/local/check.sh
+./scripts/local/start.sh
 cd apps/web && bun install && bun run dev
 ```
 
-中国大陆网络使用显式镜像模式：
+中国大陆网络先查看镜像建议：
 
 ```bash
-./scripts/local/dev-up.sh --china
-./scripts/local/run-backend.sh --china
+./scripts/local/check.sh --china
 ```
 
-`--china` 只影响本次进程：Docker registry rewrite、Go proxy/checksum DB、
-uv/Python 包索引、Knowledge runtime artifact 下载等都会临时切到大陆镜像。
-脚本不会改写 `config/` 或 `.env.local`。
+`check.sh` 只检查当前环境并打印官方/中国大陆下载建议，不下载、不构建、不 pull 镜像、
+不执行 `uv sync`，也不会改写 `config/` 或 `.env.local`。启动脚本只使用已经存在的
+本机工具、镜像、二进制和 runtime `.venv`。
 
 手动渲染当前本地配置：
 
@@ -116,11 +115,13 @@ AI_GATEWAY_LOCAL_RERANK_TOP_N=5
 AI_GATEWAY_TIMEOUT=120s
 ```
 
-重新运行 `./scripts/local/dev-up.sh` 后，脚本会把 provider key 加密写入
+重新运行 `./scripts/local/start.sh` 后，脚本会把 provider key 加密写入
 AI Gateway 本地数据库，并更新 `default-chat`、`default-embedding`、
 `default-rerank` profiles。QA 和 Document 可以保持使用 `default-chat`
-profile；显式设置 `MODEL_ID` 或 `DOCUMENT_AI_GATEWAY_MODEL` 时必须与 profile
-里的模型名完全一致。
+profile；当 `AI_GATEWAY_LOCAL_CHAT_MODEL` 已配置且 `MODEL_ID` 或
+`DOCUMENT_AI_GATEWAY_MODEL` 为空或仍是默认 `local-placeholder-chat` 时，`start.sh`
+会为本次 host-run 进程把它们对齐到真实 chat model。显式设置其它模型名时必须与
+profile 里的模型名完全一致。
 
 Knowledge runtime 的 embedding/rerank 默认通过 AI Gateway：
 

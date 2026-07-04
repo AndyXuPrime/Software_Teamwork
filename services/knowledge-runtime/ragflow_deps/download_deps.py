@@ -29,9 +29,6 @@ from urllib.parse import quote
 from pathlib import Path
 from typing import Union
 
-from nltk.downloader import Downloader
-from huggingface_hub import HfApi, snapshot_download
-
 GITHUB_PROXY_PREFIX = "https://gh-proxy.com/"
 HF_MIRROR_ENDPOINT = "https://hf-mirror.com"
 PYPI_MIRROR_INDEX = "https://pypi.tuna.tsinghua.edu.cn/simple"
@@ -56,8 +53,6 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
             ["https://registry.npmmirror.com/-/binary/chrome-for-testing/121.0.6167.85/linux64/chrome-linux64.zip", "chrome-linux64-121-0-6167-85"],
             ["https://registry.npmmirror.com/-/binary/chrome-for-testing/121.0.6167.85/linux64/chromedriver-linux64.zip", "chromedriver-linux64-121-0-6167-85"],
-            f"{GITHUB_PROXY_PREFIX}https://github.com/astral-sh/uv/releases/download/0.9.16/uv-x86_64-unknown-linux-gnu.tar.gz",
-            f"{GITHUB_PROXY_PREFIX}https://github.com/astral-sh/uv/releases/download/0.9.16/uv-aarch64-unknown-linux-gnu.tar.gz",
         ]
     else:
         return [
@@ -68,8 +63,6 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
             ["https://storage.googleapis.com/chrome-for-testing-public/121.0.6167.85/linux64/chrome-linux64.zip", "chrome-linux64-121-0-6167-85"],
             ["https://storage.googleapis.com/chrome-for-testing-public/121.0.6167.85/linux64/chromedriver-linux64.zip", "chromedriver-linux64-121-0-6167-85"],
-            "https://github.com/astral-sh/uv/releases/download/0.9.16/uv-x86_64-unknown-linux-gnu.tar.gz",
-            "https://github.com/astral-sh/uv/releases/download/0.9.16/uv-aarch64-unknown-linux-gnu.tar.gz",
         ]
 
 
@@ -91,6 +84,8 @@ def model_local_directory(repository_id: str) -> Path:
 
 
 def download_model(repository_id):
+    from huggingface_hub import snapshot_download
+
     local_directory = model_local_directory(repository_id)
     os.makedirs(local_directory, exist_ok=True)
     endpoint = os.environ.get("HF_ENDPOINT")
@@ -105,6 +100,8 @@ def download_model(repository_id):
 
 
 def download_model_files(repository_id: str, local_directory: Path, endpoint: str | None):
+    from huggingface_hub import HfApi
+
     endpoint = (endpoint or "https://huggingface.co").rstrip("/")
     api = HfApi(endpoint=endpoint)
     info = api.model_info(repository_id, files_metadata=True)
@@ -145,26 +142,32 @@ def rewrite_text_for_china_mirrors(text: str) -> str:
     )
 
 
-def sync_runtime_dependencies(use_china_mirrors: bool):
+def sync_runtime_dependencies(use_china_mirrors: bool, profile: str):
     uv = shutil.which("uv")
     if not uv:
         raise RuntimeError("uv is required to sync knowledge-runtime dependencies")
 
     root = knowledge_runtime_root()
+    sync_args = [
+        uv,
+        "sync",
+        "--python",
+        "3.13",
+        "--frozen",
+        "--no-install-project",
+    ]
+    if profile == "api":
+        sync_args.append("--no-default-groups")
+    elif profile == "worker":
+        sync_args.extend(["--group", "worker"])
+    elif profile == "all":
+        pass
+    else:
+        raise ValueError(f"unsupported dependency profile: {profile}")
+
     if not use_china_mirrors:
-        print("Syncing knowledge-runtime Python dependencies with official sources...")
-        subprocess.run(
-            [
-                uv,
-                "sync",
-                "--python",
-                "3.13",
-                "--frozen",
-                "--no-install-project",
-            ],
-            cwd=root,
-            check=True,
-        )
+        print(f"Syncing knowledge-runtime Python dependencies with official sources ({profile})...")
+        subprocess.run(sync_args, cwd=root, check=True)
         return
 
     with tempfile.TemporaryDirectory(prefix="knowledge-runtime-china-") as temp_dir:
@@ -178,24 +181,19 @@ def sync_runtime_dependencies(use_china_mirrors: bool):
         env.setdefault("UV_DEFAULT_INDEX", PYPI_MIRROR_INDEX)
         env["UV_PROJECT_ENVIRONMENT"] = str(root / ".venv")
 
-        print("Syncing knowledge-runtime Python dependencies with mainland China mirrors...")
+        print(f"Syncing knowledge-runtime Python dependencies with mainland China mirrors ({profile})...")
+        project_args = sync_args.copy()
+        project_args[2:2] = ["--project", str(temp_root)]
         subprocess.run(
-            [
-                uv,
-                "sync",
-                "--project",
-                str(temp_root),
-                "--python",
-                "3.13",
-                "--frozen",
-                "--no-install-project",
-            ],
+            project_args,
             env=env,
             check=True,
         )
 
 
 def build_nltk_downloader(use_china_mirrors=False):
+    from nltk.downloader import Downloader
+
     index_url = os.environ.get("NLTK_DOWNLOAD_INDEX_URL")
     if not index_url:
         index_url = NLTK_DATA_MIRROR_INDEX_URL if use_china_mirrors else NLTK_DATA_INDEX_URL
@@ -232,6 +230,17 @@ if __name__ == "__main__":
         action="store_true",
         help="Skip Knowledge runtime project uv sync and only download runtime artifacts",
     )
+    parser.add_argument(
+        "--sync-only",
+        action="store_true",
+        help="Only sync the Knowledge runtime Python environment; do not download artifacts",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=("api", "worker", "all"),
+        default="all",
+        help="Dependency profile used with --sync-only or the default sync step",
+    )
     args = parser.parse_args()
 
     urls = get_urls(args.china_mirrors)
@@ -243,7 +252,10 @@ if __name__ == "__main__":
         os.environ.setdefault("NLTK_DOWNLOAD_PACKAGE_PREFIX", NLTK_DATA_MIRROR_PACKAGE_PREFIX)
 
     if not args.skip_uv_sync:
-        sync_runtime_dependencies(args.china_mirrors)
+        sync_runtime_dependencies(args.china_mirrors, args.profile)
+
+    if args.sync_only:
+        raise SystemExit(0)
 
     # Keep a single browser-like User-Agent for all direct urllib downloads.
     # The --china URLs above are selected to accept this header.

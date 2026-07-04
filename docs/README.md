@@ -9,7 +9,7 @@
 3. 实现服务或前端工程能力前，阅读 [技术选型基线](architecture/technology-decisions.md)。
 4. 开始前后端联调前，阅读 [前后端集成契约](architecture/frontend-backend-contract.md)、[本地联调运行手册](runbooks/local-integration.md) 和 [Gateway OpenAPI 契约](services/gateway/api/public.openapi.yaml)。
 5. 提 PR 前，阅读 [测试策略](testing/strategy.md)，选择与改动范围匹配的检查。
-6. 本地 Docker 拉取慢、镜像源异常或 Compose 启动卡住时，阅读 [Docker 基础设施镜像拉取环境](runbooks/docker-image-pull-environment.md)。默认源保持官方；中国大陆网络显式使用 `./scripts/local/dev-up.sh --china`，并用 `python3 scripts/check_docker_environment.py --profile all --clean-env` 检查。
+6. 本地 Docker 拉取慢、镜像源异常或 Compose 启动卡住时，阅读 [Docker 基础设施镜像拉取环境](runbooks/docker-image-pull-environment.md)。默认源保持官方；中国大陆网络显式使用 `./scripts/local/check.sh --china`，并用 `python3 scripts/check_docker_environment.py --profile all --clean-env` 检查。
 7. 需要实现具体后端服务时，阅读对应服务接口文档。
 8. 新增或调整文档时，先读 [文档维护工作流](collaboration/documentation-workflow.md)，确认内容应落在架构、协作还是服务细则中。
 9. 创建或认领 GitHub Issue 任务、参与协作、分支、PR 或仓库维护时，阅读协作维护文档。

@@ -25,30 +25,16 @@ if [[ -z "${NO_COLOR:-}" && ( -t 1 || "${FORCE_COLOR:-0}" == "1" || "${CLICOLOR_
   COLOR_CYAN=$'\033[1;36m'
 fi
 
-log_info() {
-  printf '%b%s %s%b\n' "$COLOR_BLUE" "[stop]" "$*" "$COLOR_RESET"
-}
-
-log_success() {
-  printf '%b%s %s%b\n' "$COLOR_GREEN" "[ok]" "$*" "$COLOR_RESET"
-}
-
-log_warn() {
-  printf '%b%s %s%b\n' "$COLOR_YELLOW" "[warn]" "$*" "$COLOR_RESET" >&2
-}
-
-log_error() {
-  printf '%b%s %s%b\n' "$COLOR_RED" "[fail]" "$*" "$COLOR_RESET" >&2
-}
-
-log_hint() {
-  printf '%b%s %s%b\n' "$COLOR_CYAN" "[hint]" "$*" "$COLOR_RESET" >&2
-}
+log_info() { printf '%b%s %s%b\n' "$COLOR_BLUE" "[stop]" "$*" "$COLOR_RESET"; }
+log_ok() { printf '%b%s %s%b\n' "$COLOR_GREEN" "[ok]" "$*" "$COLOR_RESET"; }
+log_warn() { printf '%b%s %s%b\n' "$COLOR_YELLOW" "[warn]" "$*" "$COLOR_RESET" >&2; }
+log_error() { printf '%b%s %s%b\n' "$COLOR_RED" "[fail]" "$*" "$COLOR_RESET" >&2; }
+log_hint() { printf '%b%s %s%b\n' "$COLOR_CYAN" "[hint]" "$*" "$COLOR_RESET" >&2; }
 
 on_exit() {
-  status=$?
+  local status=$?
   if (( status == 0 )); then
-    log_success "completed successfully; processed ${STOPPED_COUNT} pid file(s)"
+    log_ok "completed successfully; processed ${STOPPED_COUNT} pid file(s)"
   else
     log_error "failed during ${CURRENT_STEP} (exit ${status})"
     log_hint "Check .local/run/*.pid and running service processes manually."
@@ -56,8 +42,7 @@ on_exit() {
 }
 trap on_exit EXIT
 
-log_info "starting"
-
+log_info "stopping host-run process groups"
 if [[ ! -d "$RUN_DIR" ]]; then
   log_info "no .local/run directory; nothing to stop"
   exit 0
@@ -65,7 +50,6 @@ fi
 
 shopt -s nullglob
 pid_files=("$RUN_DIR"/*.pid)
-
 if (( ${#pid_files[@]} == 0 )); then
   log_info "no pid files found; nothing to stop"
   exit 0
@@ -76,13 +60,11 @@ for pid_file in "${pid_files[@]}"; do
   name="$(basename "$pid_file" .pid)"
   CURRENT_STEP="stopping $name"
   STOPPED_COUNT=$((STOPPED_COUNT + 1))
-
   if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
     log_warn "removing invalid pid file for $name"
     rm -f "$pid_file"
     continue
   fi
-
   log_info "stopping $name"
   if kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
     stop_process_group_from_file "$pid_file"
