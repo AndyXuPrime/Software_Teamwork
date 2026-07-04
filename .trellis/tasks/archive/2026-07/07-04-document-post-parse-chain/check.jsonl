@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Required Knowledge runtime and adapter validation commands."}
+{"file": "services/knowledge-runtime/README.md", "reason": "Runtime targeted pytest and syntax-check guidance."}
+{"file": "docs/services/knowledge/docs/implementation.md", "reason": "Adapter/runtime test expectations and current smoke boundaries."}
+{"file": ".trellis/tasks/archive/2026-07/07-03-rag-ocr-integration-smoke-check/results.md", "reason": "Recent integration blockers to avoid overclaiming runtime smoke coverage."}

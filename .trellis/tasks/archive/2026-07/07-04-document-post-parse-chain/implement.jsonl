@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend service boundary and Knowledge runtime ownership rules."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer contract mapping from runtime parser output to Knowledge API fields."}
+{"file": "docs/architecture/service-boundaries.md", "reason": "Knowledge owns ingestion and runtime adapter; QA owns agent orchestration and is out of scope."}
+{"file": "docs/architecture/technology-decisions.md", "reason": "Knowledge runtime and AI Gateway provider baseline."}
+{"file": "docs/services/knowledge/docs/implementation.md", "reason": "Current Knowledge adapter/runtime implementation facts and gaps."}
+{"file": "services/knowledge-runtime/README.md", "reason": "Current runtime process, PaddleOCR data flow, and validation commands."}
+{"file": ".trellis/tasks/archive/2026-07/07-03-review-optimize-knowledge-rag/design.md", "reason": "Prior reachability model for worker, parser, retrieval, and adapter paths."}
+{"file": ".trellis/tasks/archive/2026-07/07-03-rag-ocr-integration-smoke-check/results.md", "reason": "Recent OCR/RAG smoke evidence and known local runtime gaps."}
