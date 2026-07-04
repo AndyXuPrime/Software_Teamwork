@@ -51,6 +51,14 @@ func TestClientUsesKnowledgeRuntimeContractPaths(t *testing.T) {
 			if err := r.ParseMultipartForm(1024); err != nil {
 				t.Fatalf("parse multipart form: %v", err)
 			}
+			file, header, err := r.FormFile("file")
+			if err != nil {
+				t.Fatalf("read upload file: %v", err)
+			}
+			_ = file.Close()
+			if got := header.Header.Get("Content-Type"); got != "text/plain" {
+				t.Fatalf("upload file content type = %q, want text/plain", got)
+			}
 			writeTestVendorJSON(w, `{"code":0,"data":{"id":"doc_1","name":"notes.txt"}}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/datasets/kb_1/documents":
 			writeTestVendorJSON(w, `{"code":0,"data":{"total":1,"docs":[{"id":"doc_1","name":"notes.txt","kb_id":"kb_1"}]}}`)

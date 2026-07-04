@@ -54,9 +54,13 @@ const KB_NAME_CACHE: Record<string, string> = {}
 
 const ALLOWED_EXTENSIONS = [
   '.pdf',
+  '.doc',
   '.docx',
+  '.ppt',
   '.pptx',
+  '.xls',
   '.xlsx',
+  '.csv',
   '.md',
   '.txt',
   '.png',
@@ -69,9 +73,13 @@ const ALLOWED_EXTENSIONS = [
 
 const ALLOWED_MIME_TYPES = [
   'application/pdf',
+  'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-powerpoint',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/csv',
   'text/markdown',
   'text/plain',
   'image/png',
@@ -80,6 +88,56 @@ const ALLOWED_MIME_TYPES = [
   'image/bmp',
   'image/webp',
 ]
+
+const FILE_ACCEPT_TYPES = [...ALLOWED_EXTENSIONS, ...ALLOWED_MIME_TYPES].join(',')
+const SUPPORTED_FILE_TYPES_TEXT = 'PDF, DOC/DOCX, PPT/PPTX, XLS/XLSX, CSV, MD, TXT, 图片'
+
+const FILE_TYPE_LABELS_BY_EXTENSION: Record<string, string> = {
+  '.pdf': 'PDF',
+  '.doc': 'DOC',
+  '.docx': 'DOCX',
+  '.ppt': 'PPT',
+  '.pptx': 'PPTX',
+  '.xls': 'XLS',
+  '.xlsx': 'XLSX',
+  '.csv': 'CSV',
+  '.md': 'MD',
+  '.markdown': 'MD',
+  '.mdx': 'MD',
+  '.txt': 'TXT',
+  '.png': 'PNG',
+  '.jpg': 'JPG',
+  '.jpeg': 'JPG',
+  '.gif': 'GIF',
+  '.bmp': 'BMP',
+  '.webp': 'WEBP',
+}
+
+const FILE_TYPE_LABELS_BY_MIME: Record<string, string> = {
+  'application/pdf': 'PDF',
+  'application/msword': 'DOC',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'DOCX',
+  'application/vnd.ms-powerpoint': 'PPT',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PPTX',
+  'application/vnd.ms-excel': 'XLS',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'XLSX',
+  'text/csv': 'CSV',
+  'text/markdown': 'MD',
+  'text/plain': 'TXT',
+  'image/png': 'PNG',
+  'image/jpeg': 'JPG',
+  'image/gif': 'GIF',
+  'image/bmp': 'BMP',
+  'image/webp': 'WEBP',
+}
+
+const WEAK_CONTENT_TYPE_VALUES = new Set([
+  'application/octet-stream',
+  'doc',
+  'visual',
+  'aural',
+  'other',
+])
 
 const STATUS_LABELS: Record<DocumentStatus, string> = {
   uploaded: '已上传',
@@ -137,16 +195,30 @@ function formatDateTime(iso?: string | null): string {
   }
 }
 
-function fileIconForContentType(ct?: string | null): string {
-  if (!ct) return ''
-  if (ct.includes('pdf')) return 'pdf'
-  if (ct.includes('wordprocessingml')) return 'docx'
-  if (ct.includes('presentation')) return 'pptx'
-  if (ct.includes('spreadsheet')) return 'xlsx'
-  if (ct.includes('markdown')) return 'md'
-  if (ct.includes('image')) return 'img'
-  if (ct.includes('plain')) return 'txt'
-  return ''
+function normalizeContentType(value?: string | null): string {
+  return (value ?? '').split(';', 1)[0]?.trim().toLowerCase() ?? ''
+}
+
+function fileExtensionFromName(filename?: string | null): string {
+  const name = filename?.trim()
+  if (!name) return ''
+  const dotIndex = name.lastIndexOf('.')
+  if (dotIndex < 0 || dotIndex === name.length - 1) return ''
+  return name.slice(dotIndex).toLowerCase()
+}
+
+function documentTypeLabel(doc: Pick<DocumentSummary, 'contentType' | 'name'>): string {
+  const contentType = normalizeContentType(doc.contentType)
+  const extensionLabel = FILE_TYPE_LABELS_BY_EXTENSION[fileExtensionFromName(doc.name)]
+  if (extensionLabel && (!contentType || WEAK_CONTENT_TYPE_VALUES.has(contentType))) {
+    return extensionLabel
+  }
+
+  const mimeLabel = FILE_TYPE_LABELS_BY_MIME[contentType]
+  if (mimeLabel) return mimeLabel
+  if (extensionLabel) return extensionLabel
+  if (!contentType || WEAK_CONTENT_TYPE_VALUES.has(contentType)) return '-'
+  return doc.contentType?.trim() ?? '-'
 }
 
 function isProcessing(status: DocumentStatus): boolean {
@@ -313,7 +385,7 @@ export function KnowledgeDocumentsPage({
   const validateFile = useCallback((file: File): string | null => {
     const ext = '.' + file.name.split('.').pop()?.toLowerCase()
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
-      return `不支持的文件类型 "${ext}"。支持: PDF, DOCX, PPTX, XLSX, MD, TXT, 图片`
+      return `不支持的文件类型 "${ext}"。支持: ${SUPPORTED_FILE_TYPES_TEXT}`
     }
     return null
   }, [])
@@ -670,9 +742,7 @@ export function KnowledgeDocumentsPage({
                           )}
                         </td>
                         <td className="hidden whitespace-nowrap px-4 py-2.5 text-muted-foreground sm:table-cell">
-                          {fileIconForContentType(doc.contentType)
-                            ? fileIconForContentType(doc.contentType)!.toUpperCase()
-                            : (doc.contentType ?? '-')}
+                          {documentTypeLabel(doc)}
                         </td>
                         <td className="hidden whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-muted-foreground md:table-cell">
                           {formatSize(doc.sizeBytes)}
@@ -804,7 +874,7 @@ export function KnowledgeDocumentsPage({
           <DialogHeader>
             <DialogTitle>上传文档</DialogTitle>
             <DialogDescription>
-              选择文档文件上传到知识库「{kbName}」。支持 PDF, DOCX, PPTX, XLSX, MD, TXT, 图片。
+              选择文档文件上传到知识库「{kbName}」。支持 {SUPPORTED_FILE_TYPES_TEXT}。
             </DialogDescription>
           </DialogHeader>
 
@@ -858,14 +928,14 @@ export function KnowledgeDocumentsPage({
                   <Upload aria-hidden="true" className="mb-2 size-8 text-muted-foreground/50" />
                   <p className="text-sm text-muted-foreground">拖拽文件到此处，或点击选择文件</p>
                   <p className="mt-1 text-xs text-muted-foreground/60">
-                    PDF, DOCX, PPTX, XLSX, MD, TXT, 图片 (PNG, JPG, GIF, BMP, WebP)
+                    {SUPPORTED_FILE_TYPES_TEXT} (PNG, JPG, GIF, BMP, WebP)
                   </p>
                 </>
               )}
               <input
                 ref={fileInputRef}
                 type="file"
-                accept={ALLOWED_MIME_TYPES.join(',')}
+                accept={FILE_ACCEPT_TYPES}
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0]

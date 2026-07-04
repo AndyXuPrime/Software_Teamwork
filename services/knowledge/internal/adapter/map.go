@@ -248,7 +248,7 @@ func knowledgeBasesFromVendor(items []map[string]interface{}) []knowledgeBaseSum
 func documentFromVendor(raw map[string]interface{}) documentSummary {
 	kbID := stringField(raw, "dataset_id", "kb_id")
 	name := stringField(raw, "name")
-	contentType := optionalStringField(raw, "type")
+	contentType := normalizedDocumentContentType(raw)
 	size := optionalInt64Field(raw, "size")
 	status := mapDocumentStatus(raw)
 	parserBackend := optionalStringField(raw, "chunk_method", "parser_id")
