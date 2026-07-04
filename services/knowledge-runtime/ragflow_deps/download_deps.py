@@ -161,7 +161,7 @@ def sync_runtime_dependencies(use_china_mirrors: bool, profile: str):
     elif profile == "worker":
         sync_args.extend(["--group", "worker"])
     elif profile == "all":
-        pass
+        sync_args.append("--all-groups")
     else:
         raise ValueError(f"unsupported dependency profile: {profile}")
 

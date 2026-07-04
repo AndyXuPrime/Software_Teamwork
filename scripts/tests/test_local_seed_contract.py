@@ -174,7 +174,7 @@ class LocalSeedContractTests(unittest.TestCase):
                 "run_with_heartbeat\n"
                 "--pull never\n"
                 "config-ctl\n"
-                "GOOSE_VERSION=\"v3.27.0\"\n"
+                "GOOSE_VERSION=\"v3.27.1\"\n"
                 "github.com/pressly/goose/v3/cmd/goose@$GOOSE_VERSION\n"
                 ".local/bin\n"
                 "AUTH_DATABASE_URL\n"
@@ -192,6 +192,8 @@ class LocalSeedContractTests(unittest.TestCase):
                 "--runtime full\n"
                 "knowledge-runtime-api\n"
                 "knowledge-runtime-worker\n"
+                ".local-start-profile\n"
+                "runtime_dependencies_synced\n"
                 "download_deps.py\n",
                 encoding="utf-8",
             )

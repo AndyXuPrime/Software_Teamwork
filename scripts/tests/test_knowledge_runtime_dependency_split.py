@@ -13,6 +13,9 @@ class KnowledgeRuntimeDependencySplitTests(unittest.TestCase):
         self.assertIn("--profile", script)
         self.assertIn("download_deps.py", script)
         self.assertIn("--skip-uv-sync", script)
+        self.assertIn(".local-start-profile", script)
+        self.assertIn("runtime_dependencies_synced", script)
+        self.assertIn("mark_runtime_dependencies_synced", script)
         self.assertIn('start_process "knowledge-runtime-api"', script)
         self.assertIn('start_process "knowledge-runtime-worker"', script)
         self.assertNotIn("\nuv sync", script)
@@ -69,6 +72,7 @@ class KnowledgeRuntimeDependencySplitTests(unittest.TestCase):
         self.assertIn('"--no-default-groups"', script)
         self.assertIn('"--group"', script)
         self.assertIn('"worker"', script)
+        self.assertIn('"--all-groups"', script)
 
 
 if __name__ == "__main__":

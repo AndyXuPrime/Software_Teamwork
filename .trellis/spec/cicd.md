@@ -940,6 +940,9 @@ Runtime rules:
   `download_deps.py --skip-uv-sync` to prepare the runtime `.venv` and
   artifacts for the selected source mode. This affects Python dependency
   downloads only; Docker registry rewrite remains the Compose image path.
+  Runtime `.venv` readiness must validate the selected dependency profile, not
+  only directory existence; `--runtime full` must resync the worker profile when
+  an existing `.venv` was prepared for API-only startup.
 - Treat `services/knowledge-runtime/**` and its host-run API/worker scripts as
   the local runtime contract for Knowledge parsing and retrieval changes.
 - `start.sh --runtime full` must not run direct `docker build` or `docker run`
@@ -965,7 +968,7 @@ Runtime rules:
   local untracked `.env.local` overrides. It affects `start.sh` Go tool/service
   preparation, not Docker image pulls or Knowledge runtime uv downloads.
 - `start.sh` is the only standard local setup/start entrypoint. It may build
-  `.local/tools/config-ctl`, install `goose@v3.27.0`, build `.local/bin`
+  `.local/tools/config-ctl`, install `goose@v3.27.1`, build `.local/bin`
   service binaries, inspect/pull selected Docker infra images, and prepare
   Knowledge runtime `.venv`/artifacts. It must not run unpinned `go run`
   startup commands or use `go run ./cmd/server` for long-lived services.

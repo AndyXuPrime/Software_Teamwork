@@ -193,8 +193,10 @@ client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue
 
 - `start.sh`：标准本地入口。它先检查 Docker、Go、Python、uv、psql、curl 等宿主机环境
   和 Go 版本，并确认 `.env.local` 已由用户创建但不改写；再按需准备 `.local/tools`、
-  `.local/bin`、Docker infra images、Knowledge runtime `.venv` 和 runtime artifact。已存在的产物会
-  跳过；Go 构建/安装、Docker pull、uv sync 和模型/artifact 下载都会输出原生命令进度或周期性心跳。
+  `.local/bin`、Docker infra images、Knowledge runtime `.venv` 和 runtime artifact。Knowledge
+  runtime `.venv` 会按 `--runtime` 模式校验 dependency profile，默认 full 模式会补齐 worker
+  group；已存在且匹配的产物会跳过。Go 构建/安装、Docker pull、uv sync 和模型/artifact
+  下载都会输出原生命令进度或周期性心跳。
 - `start.sh` 会渲染 `.local/config/<profile>.env`，等待 `postgres` / `redis` / `minio` /
   `elasticsearch` health checks，单独运行一次性 `minio-init`，执行 migration 和 demo seed，
   再启动 host-run 后端进程组。Compose 启动仍使用 `--pull never`，镜像拉取只发生在
@@ -272,7 +274,7 @@ Knowledge runtime 启动慢：
 
 Go modules 下载慢或超时：
 
-- `start.sh` 会在准备缺失 Go tools、`goose@v3.27.0` 和 host-run 服务二进制时下载 Go
+- `start.sh` 会在准备缺失 Go tools、`goose@v3.27.1` 和 host-run 服务二进制时下载 Go
   modules。默认保留 `.env.example` 里的官方
   `GOPROXY=https://proxy.golang.org,direct` 和 `GOSUMDB=sum.golang.org`；中国大陆网络使用
   `./scripts/local/start.sh --china`，脚本会在本次 Go 准备阶段设置
@@ -539,7 +541,7 @@ printf '%s' "$TOKEN" | shasum -a 256 | awk '{print "sha256:" $1}'
 set -a && source .local/config/dev.env.sh && set +a
 
 cd services/ai-gateway
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 \
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 \
   -dir migrations postgres "$AI_GATEWAY_DATABASE_URL" up
 go run ./cmd/server
 ```

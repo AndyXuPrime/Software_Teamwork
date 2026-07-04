@@ -193,6 +193,26 @@ class LocalStartupScriptTests(unittest.TestCase):
                 self.assertTrue((root / ".local" / "run" / "knowledge-runtime-worker.pid").exists())
                 self.assertFalse((root / "go-calls.log").exists())
                 self.assertFalse((root / "uv-calls.log").exists())
+                self.assertFalse((root / "python-calls.log").exists())
+            finally:
+                self.cleanup_started_processes(root)
+
+    def test_start_full_runtime_resyncs_worker_dependencies_after_api_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+            self.create_service_binaries(root)
+            self.create_runtime_files(root, synced_profile="api")
+
+            try:
+                result = self.run_start(root, args=["--backend-only"], extra_env={"LOCAL_STARTUP_CHECK_SECONDS": "0"})
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                python_calls = (root / "python-calls.log").read_text(encoding="utf-8")
+                self.assertIn("ragflow_deps/download_deps.py --sync-only --profile worker", python_calls)
+                stamp = root / "services" / "knowledge-runtime" / ".venv" / ".local-start-profile"
+                self.assertEqual("worker\n", stamp.read_text(encoding="utf-8"))
             finally:
                 self.cleanup_started_processes(root)
 
@@ -272,11 +292,11 @@ class LocalStartupScriptTests(unittest.TestCase):
             """\
             #!/usr/bin/env bash
             if [[ "$1" == "env" && "${2:-}" == "GOVERSION" ]]; then
-              echo go1.25.4
+              echo go1.25.11
               exit 0
             fi
             if [[ "$1" == "version" ]]; then
-              echo "go version go1.25.4 linux/amd64"
+              echo "go version go1.25.11 linux/amd64"
               exit 0
             fi
             echo "$PWD|$*" >> "$FAKE_GO_CALLS"
@@ -289,7 +309,20 @@ class LocalStartupScriptTests(unittest.TestCase):
         )
         self.write_executable(fake_bin / "psql", "#!/usr/bin/env bash\ncat >/dev/null || true\nexit 0\n")
         self.write_executable(fake_bin / "bun", "#!/usr/bin/env bash\nexit 0\n")
-        self.write_executable(fake_bin / "python3", "#!/usr/bin/env bash\nexit 0\n")
+        self.write_executable(
+            fake_bin / "python3",
+            """\
+            #!/usr/bin/env bash
+            if [[ "${1:-}" == "-c" ]]; then
+              if [[ "${2:-}" == *"platform.python_version"* ]]; then
+                echo "3.13.0"
+              fi
+              exit 0
+            fi
+            echo "$PWD|$*" >> "$FAKE_PYTHON_CALLS"
+            exit 0
+            """,
+        )
         self.write_executable(fake_bin / "curl", "#!/usr/bin/env bash\nprintf '200'\nexit 0\n")
         self.write_executable(fake_bin / "uv", "#!/usr/bin/env bash\necho \"$*\" >> \"$FAKE_UV_CALLS\"\nexit 0\n")
         self.write_executable(fake_bin / "git", "#!/usr/bin/env bash\necho 0123456789abcdef0123456789abcdef01234567\n")
@@ -331,7 +364,7 @@ class LocalStartupScriptTests(unittest.TestCase):
     def create_prepared_tools(self, root: Path) -> None:
         self.write_executable(
             root / ".local" / "tools" / "goose",
-            "#!/usr/bin/env bash\nprintf 'goose version: v3.27.0\\n'\nexit 0\n",
+            "#!/usr/bin/env bash\nprintf 'goose version: v3.27.1\\n'\nexit 0\n",
         )
         self.write_executable(
             root / ".local" / "tools" / "render-ai-gateway-local-seed",
@@ -358,9 +391,10 @@ class LocalStartupScriptTests(unittest.TestCase):
                 """,
             )
 
-    def create_runtime_files(self, root: Path) -> None:
+    def create_runtime_files(self, root: Path, synced_profile: str = "worker") -> None:
         runtime = root / "services" / "knowledge-runtime"
         (runtime / ".venv").mkdir(parents=True)
+        (runtime / ".venv" / ".local-start-profile").write_text(f"{synced_profile}\n", encoding="utf-8")
         (runtime / "ragflow_deps" / "nltk_data").mkdir(parents=True)
         (runtime / "rag" / "res" / "deepdoc").mkdir(parents=True)
         (runtime / "ragflow_deps" / "tika-server-standard-3.3.0.jar").write_text("jar\n", encoding="utf-8")
@@ -409,6 +443,7 @@ class LocalStartupScriptTests(unittest.TestCase):
         env["FAKE_DOCKER_ENV"] = str(root / "docker-env.log")
         env["FAKE_GO_CALLS"] = str(root / "go-calls.log")
         env["FAKE_GO_ENV"] = str(root / "go-env.log")
+        env["FAKE_PYTHON_CALLS"] = str(root / "python-calls.log")
         env["FAKE_UV_CALLS"] = str(root / "uv-calls.log")
         env["PATH"] = f"{root / 'fake-bin'}{os.pathsep}{env['PATH']}"
         return subprocess.run(

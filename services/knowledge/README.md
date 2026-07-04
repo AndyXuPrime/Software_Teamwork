@@ -222,10 +222,10 @@ upload without queuing `/documents/parse`.
 
 ## Migrations
 
-Apply the service-owned migration with the project-pinned `goose@v3.27.0` command:
+Apply the service-owned migration with the project-pinned `goose@v3.27.1` command:
 
 ```bash
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$DATABASE_URL" up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up
 ```
 ## Development
 

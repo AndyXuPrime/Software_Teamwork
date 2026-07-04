@@ -85,7 +85,7 @@
 | 后端日志 | Go `log/slog` | Go `1.25` 标准库 | 已固定 | 生产默认 JSON 结构化日志。 |
 | PostgreSQL 访问 | `pgx` + 手写 SQL 或 `sqlc` 形态 | `pgx/v5@v5.9.2`；sqlc CLI 推荐版本 `v1.31.1` | 已固定 | 已落地 PostgreSQL 服务统一使用 `pgx/v5@v5.9.2`。Auth、Document、File、AI Gateway 使用 sqlc；Knowledge 当前 parser-config repository 为手写 SQL；重生成任何服务的查询包时须使用 `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate`。 |
 | ORM | 不使用 ORM | N/A | 已固定 | 禁止默认引入 GORM/ent 等 ORM。 |
-| 数据库迁移 | `goose` | `v3.27.0` | 已固定 | 使用 `pressly/goose` CLI 或库执行服务内 migration；该版本要求 Go 1.25+。 |
+| 数据库迁移 | `goose` | `v3.27.1` | 已固定 | 使用 `pressly/goose` CLI 或库执行服务内 migration；该版本要求 Go 1.25+。 |
 | 关系数据库 | PostgreSQL | `postgres:16-alpine` | 已固定 | 当前本地 Compose 固定在 16 Alpine。 |
 | Redis 队列 | `asynq` over Redis | `asynq v0.26.0`；Redis `7-alpine` | 已固定 | Document 已接入 asynq client/worker；Knowledge Go adapter 不接入 asynq，Knowledge runtime 内部使用 Redis/worker。后续异步 Go 服务按需复用该队列基线。 |
 | Redis 缓存/会话 | `go-redis` | `go-redis/v9 v9.21.0` | 已固定 | Gateway 直接使用 `github.com/redis/go-redis/v9@v9.21.0`；Document 当前通过 asynq 间接带入的 `v9.14.1` 是实现出入，不作为目标版本。Knowledge Go adapter 当前不依赖 go-redis。 |
@@ -103,7 +103,7 @@
 | 后端测试 | Go `testing` + `httptest` | Go `1.25` 标准库 | 已固定 | 默认不引入 BDD 测试框架。 |
 | CI | GitHub Actions | `actions/github-script@v7`；runner `ubuntu-latest`；Bun `1.3.12`；Go `1.25.x` | 部分已固定 | 已有协作类 workflow、前端 check/build/unit/E2E smoke、Go service path-filtered build/test、goose migration apply、Docker/Compose config、Gateway contract 和 API type drift workflow。 |
 | Docker 镜像与构建源策略 | 默认官方 pinned images；中国大陆显式 `--china` registry rewrite | `config/base.yaml` 不默认启用第三方 registry；`./scripts/local/start.sh --china` 在本次运行的生成态 compose env 中使用 `docker.1ms.run` registry rewrite，优先级为 `registry rewrite > daemon mirror > proxy`；Compose 基础镜像可用 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`MINIO_IMAGE`、`MINIO_MC_IMAGE`、`KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE` 本地 `.env.local` 覆盖；`scripts/check_docker_policy.py` 做 CI 策略守门，`scripts/check_docker_environment.py` 做本机网络诊断 | 已固定 | 仓库 Docker 只跑基础设施；`start.sh` 在 prepare 阶段按所选源补齐缺失镜像，Compose 启动仍使用 `--pull never`；Knowledge runtime 走宿主机 Python/uv 启动；不得为提速默认关闭 Go checksum verification，不得把 Compose 镜像改成 `latest`，不得把业务服务放回 Docker 路径。 |
-| 宿主机 Go 模块下载 | `GOPROXY` + `GOSUMDB` env | 默认 `GOPROXY=https://proxy.golang.org,direct`；`GOSUMDB=sum.golang.org`；中国大陆网络通过 `start.sh --china` 在本次准备阶段使用 `https://goproxy.cn,direct` / `sum.golang.google.cn` | 已固定 | `config/base.yaml` 默认写入官方 Go module proxy/checksum DB；`start.sh` 会在准备缺失 Go tools、`goose@v3.27.0` 和 host-run 服务二进制时使用当前源模式；这不是 Docker registry，也不是 Knowledge runtime uv 的 `UV_DEFAULT_INDEX`。 |
+| 宿主机 Go 模块下载 | `GOPROXY` + `GOSUMDB` env | 默认 `GOPROXY=https://proxy.golang.org,direct`；`GOSUMDB=sum.golang.org`；中国大陆网络通过 `start.sh --china` 在本次准备阶段使用 `https://goproxy.cn,direct` / `sum.golang.google.cn` | 已固定 | `config/base.yaml` 默认写入官方 Go module proxy/checksum DB；`start.sh` 会在准备缺失 Go tools、`goose@v3.27.1` 和 host-run 服务二进制时使用当前源模式；这不是 Docker registry，也不是 Knowledge runtime uv 的 `UV_DEFAULT_INDEX`。 |
 | 观测 | `slog` + Prometheus metrics；关键链路 OpenTelemetry tracing | `github.com/prometheus/client_golang@v1.23.2`；`go.opentelemetry.io/otel@v1.44.0`；`go.opentelemetry.io/otel/sdk@v1.44.0`；`go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.44.0`；`go.opentelemetry.io/otel/exporters/prometheus@v0.66.0` | 已选型，待固定 | 第一阶段先保证结构化日志和低基数字段指标；首次落地 metrics/tracing 时必须写入对应服务 `go.mod` 并同步本文状态。 |
 | DOCX 生成 | Document worker 当前使用内置 Go `SimpleDOCXGenerator`；Pandoc 作为富 DOCX 候选工具链；LibreOffice 暂不引入，保留后续候选 | 内置 Go 生成器：标准库；Pandoc CLI 版本后续在富 DOCX 任务中固定；LibreOffice：暂不引入 | 已固定（当前路径） | 当前路径为内置 Go `SimpleDOCXGenerator`；富 DOCX worker 的运行方式不属于当前本地 Docker 基线。 |
 | MCP 集成 | 官方 MCP Go SDK；暂不拆独立 sidecar | `github.com/modelcontextprotocol/go-sdk@v1.6.1` | 已固定 | QA 负责工具白名单、权限、参数校验、超时和脱敏记录；Document 和 Knowledge 已有 Streamable HTTP MCP server/工具适配；SDK 升级或 sidecar 化另开兼容性任务。 |
@@ -155,7 +155,7 @@
 | Go toolchain | `1.25` | 技术选型基线 | Go 服务统一使用 1.25；`services/*/go.mod` 应保持一致。 |
 | `github.com/jackc/pgx/v5` | `v5.9.2` | `services/auth/go.mod`、`services/knowledge/go.mod`、`services/qa/go.mod`、`services/document/go.mod`、`services/file/go.mod`、`services/ai-gateway/go.mod` | S-025 安全升级后全仓统一为 v5.9.2。 |
 | `sqlc` CLI 推荐版本 | `v1.31.1` | `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate` | 全仓统一推荐版本（S-033）。Auth/Document 已用 v1.31.1 生成；QA 存量生成包来自 v1.29.0，下次变更 QA SQL 时须用 v1.31.1 重新生成并提交。Knowledge 当前没有 `sqlc.yaml`，parser-config repository 使用手写 SQL。 |
-| `github.com/pressly/goose/v3` | `v3.27.0` | 技术选型基线 | 迁移工具版本固定；可用 CLI 或库方式接入。 |
+| `github.com/pressly/goose/v3` | `v3.27.1` | 技术选型基线 | 迁移工具版本固定；可用 CLI 或库方式接入。 |
 | `github.com/redis/go-redis/v9` | `v9.21.0` | `services/gateway/go.mod` | 直接 Redis client 固定基线；Document 当前由 asynq 间接带入的 `v9.14.1` 是实现出入，待后续 asynq/queue 依赖升级时消除。Knowledge Go adapter 当前不依赖 go-redis。 |
 | PostgreSQL | `postgres:16-alpine` | `deploy/docker-compose.yml` | 本地开发数据库。 |
 | Redis | `redis:7-alpine` | `deploy/docker-compose.yml` | 本地队列、缓存、短期协调依赖。 |
@@ -210,7 +210,7 @@ public/internal 命名落位。
 | 领域 | 备选 1 | 备选 2 | 备选 3 | 当前决定 | 版本状态 |
 | --- | --- | --- | --- | --- | --- |
 | 数据库访问 | `pgx` + 手写 SQL | `pgx` + `sqlc` | GORM/ent ORM | `pgx`；按服务选择手写 SQL 或 `sqlc` | `pgx/v5@v5.9.2` 已固定（S-025 升级）；sqlc CLI 推荐版本 `v1.31.1` 已固定（S-033）；Auth/Document/File/AI Gateway 使用 sqlc，Knowledge 当前 parser-config repository 使用手写 SQL，QA 存量生成包来自 v1.29.0 |
-| 数据库迁移 | `goose` | `golang-migrate` | Atlas | `goose` | `goose@v3.27.0` 已固定 |
+| 数据库迁移 | `goose` | `golang-migrate` | Atlas | `goose` | `goose@v3.27.1` 已固定 |
 | 日志 | `slog` | `zap` | `zerolog` | `slog` | Go `1.25` 标准库 |
 | HTTP 路由 | 标准库 `ServeMux` | `chi` | `gin` | 标准库 `ServeMux` | Go `1.25` 标准库 |
 | 配置 | 手写 `os.Getenv` | `envconfig` | `viper` | `envconfig` 风格结构化加载 | 依赖待固定；允许先手写等价实现 |
@@ -247,7 +247,7 @@ services/<service>/
 - 文件名使用有序前缀，例如 `0001_create_users.sql`。
 - 首期允许 forward-only migration；如果写 down migration，必须能在本地和 CI 验证。
 - CI 对有 SQL migration 的已落地 Go 服务执行迁移 apply 校验。
-- `goose` 固定使用 `github.com/pressly/goose/v3@v3.27.0`；服务可按需要使用 CLI 或库方式接入，但 CI 和 README 必须引用同一版本。
+- `goose` 固定使用 `github.com/pressly/goose/v3@v3.27.1`；服务可按需要使用 CLI 或库方式接入，但 CI 和 README 必须引用同一版本。
 
 ### Redis 和 asynq
 
@@ -312,14 +312,14 @@ services/<service>/
 - 当前 runner 使用 `ubuntu-latest`，这是 GitHub 托管滚动版本；如需完全可复现 CI，后续应改为团队认可的固定 runner 镜像或自托管 runner。
 - Frontend CI 对 `apps/web/**`、根前端依赖文件和自身 workflow 变更执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`bun run --cwd apps/web build`、`bun run --cwd apps/web test:unit` 和 Playwright smoke。
 - Go Service CI 按服务路径选择受影响服务，执行 `go test ./...` 和 `go build ./cmd/server`；QA 额外执行 `go build ./cmd/agent`。
-- Goose migration CI 对有 SQL migration 的服务执行 `goose@v3.27.0` apply 校验。
+- Goose migration CI 对有 SQL migration 的服务执行 `goose@v3.27.1` apply 校验。
 - Docker / Deploy Checks 只验证 `deploy/docker-compose.yml` 的 infra-only config、Docker policy 和 Docker environment 诊断；不处理业务服务容器。
 - 当前仓库不保留生产/准生产 Compose 基线；后续如要增加部署能力，需要独立任务重新设计。
 
 ## 后续需要同步的实现任务
 
 - 为尚未完成数据库 runtime repository 的 Go 服务补充或迁移 `sqlc.yaml`、query 文件和 `pgx` repository；Knowledge parser-config repository 当前为手写 SQL，如要迁移到 sqlc 需单独任务。
-- 为后续新增的数据库服务同步 `goose@v3.27.0` 迁移命令和 CI 校验。
+- 为后续新增的数据库服务同步 `goose@v3.27.1` 迁移命令和 CI 校验。
 - 为需要 Go 服务内异步任务的服务接入 `asynq` client/worker；Document 当前 asynq 传递依赖仍带入旧 `go-redis`，后续服务接入或升级前应优先对齐直接 Redis client 基线。Knowledge adapter 的解析/索引任务继续走 Knowledge runtime。
 - 前端接入 `openapi-typescript`，生成 gateway 类型，并固定生成器版本。
 - 前端测试接入 Vitest、React Testing Library 和 Playwright，并固定版本。

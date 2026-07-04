@@ -323,7 +323,7 @@ Stop the REPL with `exit` or `q`, then press `Ctrl+C` in terminal A.
 QA stores state in PostgreSQL and uses Redis for coordination. The canonical
 local start path is the root infra baseline from `deploy/`, which brings up
 `postgres`, `redis`, `minio`, `minio-init`, and `elasticsearch`. QA
-itself then runs on the host with the pinned `goose@v3.27.0` migration command.
+itself then runs on the host with the pinned `goose@v3.27.1` migration command.
 
 Start root infra and apply local migrations/seed from the repository root:
 
@@ -345,12 +345,12 @@ Reset the local database volume and re-apply migrations:
 ./scripts/local/start.sh --infra-only
 ```
 
-Apply or inspect migrations on the host with the project-pinned `goose@v3.27.0` command:
+Apply or inspect migrations on the host with the project-pinned `goose@v3.27.1` command:
 
 ```powershell
 $env:QA_DATABASE_URL = "postgres://qa_app:qa_app_dev@localhost:5432/qa_system?sslmode=disable"
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres $env:QA_DATABASE_URL up
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres $env:QA_DATABASE_URL status
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres $env:QA_DATABASE_URL up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres $env:QA_DATABASE_URL status
 ```
 
 Integration tests against the local infra database:

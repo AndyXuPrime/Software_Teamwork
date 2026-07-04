@@ -128,12 +128,12 @@ File metadata is behind the service repository port. The runtime uses the memory
 
 ## Migrations
 
-The contract migration under `migrations/` is applied with the project-pinned `goose@v3.27.0` command:
+The contract migration under `migrations/` is applied with the project-pinned `goose@v3.27.1` command:
 
 ```powershell
 cd services/file
 $env:FILE_DATABASE_URL = "postgres://file:file@localhost:5432/file?sslmode=disable"
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$env:FILE_DATABASE_URL" up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$env:FILE_DATABASE_URL" up
 ```
 
 Repository smoke tests are env-gated and use an isolated schema:

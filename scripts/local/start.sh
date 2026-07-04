@@ -10,6 +10,7 @@ TOOLS_DIR="$ROOT_DIR/.local/tools"
 BIN_DIR="$ROOT_DIR/.local/bin"
 RUNTIME_DIR="$ROOT_DIR/services/knowledge-runtime"
 LOCAL_RUNTIME_DIR="$ROOT_DIR/.local/knowledge-runtime"
+RUNTIME_SYNC_STAMP="$RUNTIME_DIR/.venv/.local-start-profile"
 LOCAL_LIB_DIR="$ROOT_DIR/scripts/local/lib"
 CURRENT_STEP="initializing"
 CHINA_MIRRORS=0
@@ -23,10 +24,10 @@ SKIP_PREPARE=0
 STARTED_SERVICES=()
 
 INFRA_SERVICES=(postgres redis minio elasticsearch)
-GOOSE_VERSION="v3.27.0"
+GOOSE_VERSION="v3.27.1"
 MIN_GO_MAJOR=1
 MIN_GO_MINOR=25
-MIN_GO_PATCH=1
+MIN_GO_PATCH=7
 OFFICIAL_POSTGRES_IMAGE="postgres:16-alpine"
 OFFICIAL_REDIS_IMAGE="redis:7-alpine"
 OFFICIAL_MINIO_IMAGE="minio/minio:RELEASE.2025-09-07T16-13-09Z"
@@ -305,7 +306,7 @@ check_python_version() {
 
 preflight_host_environment() {
   check_local_env_file || return 1
-  preflight_command go "Install Go 1.25.x and ensure go is on PATH." || return 1
+  preflight_command go "Install Go 1.25.7 or a later 1.25.x patch and ensure go is on PATH." || return 1
   check_go_version || return 1
   if (( ! SKIP_INFRA )); then
     preflight_command docker "Install Docker Desktop/Engine and start the Docker daemon." || return 1
@@ -433,6 +434,39 @@ runtime_china_arg() {
   fi
 }
 
+runtime_profile_satisfies() {
+  local prepared="$1"
+  local required="$2"
+  [[ "$prepared" == "$required" ]] && return 0
+  [[ "$prepared" == "worker" && "$required" == "api" ]] && return 0
+  [[ "$prepared" == "all" ]] && return 0
+  return 1
+}
+
+runtime_synced_profile() {
+  if [[ -f "$RUNTIME_SYNC_STAMP" ]]; then
+    head -n 1 "$RUNTIME_SYNC_STAMP"
+  fi
+}
+
+runtime_dependencies_synced() {
+  local required="$1"
+  local prepared
+  [[ -d "$RUNTIME_DIR/.venv" ]] || return 1
+  prepared="$(runtime_synced_profile)"
+  [[ -n "$prepared" ]] || return 1
+  runtime_profile_satisfies "$prepared" "$required"
+}
+
+mark_runtime_dependencies_synced() {
+  local profile="$1"
+  if [[ ! -d "$RUNTIME_DIR/.venv" ]]; then
+    log_error "Knowledge runtime sync completed but $RUNTIME_DIR/.venv is missing"
+    return 1
+  fi
+  printf '%s\n' "$profile" > "$RUNTIME_SYNC_STAMP"
+}
+
 runtime_artifacts_ready() {
   local required=(
     "$RUNTIME_DIR/ragflow_deps/tika-server-standard-3.3.0.jar"
@@ -461,13 +495,14 @@ prepare_runtime_dependencies() {
   if (( CHINA_MIRRORS )); then
     china_args+=(--china)
   fi
-  if [[ -d "$RUNTIME_DIR/.venv" ]]; then
-    log_ok "Knowledge runtime .venv already prepared: $RUNTIME_DIR/.venv"
+  if runtime_dependencies_synced "$profile"; then
+    log_ok "Knowledge runtime .venv already prepared for $profile: $RUNTIME_DIR/.venv"
   else
     log_info "syncing Knowledge runtime Python dependencies ($profile)"
     run_with_heartbeat "syncing Knowledge runtime Python dependencies" \
       bash -c 'cd "$1" && shift && python3 ragflow_deps/download_deps.py "$@"' \
       _ "$RUNTIME_DIR" --sync-only --profile "$profile" "${china_args[@]}"
+    mark_runtime_dependencies_synced "$profile"
   fi
   if runtime_artifacts_ready; then
     log_ok "Knowledge runtime artifacts already prepared"
@@ -588,9 +623,16 @@ check_start_prerequisites() {
     require_command_local curl "Install curl for local runtime readiness checks." || return 1
   fi
   if [[ "$RUNTIME_MODE" != "none" ]]; then
+    local profile
+    profile="$(runtime_sync_profile)"
     require_command_local uv "Install uv for Knowledge runtime preparation." || return 1
     require_command_local python3 "Install python3 for runtime readiness checks." || return 1
     require_file "$RUNTIME_DIR/.venv" "Rerun ./scripts/local/start.sh to prepare Knowledge runtime .venv." || return 1
+    if ! runtime_dependencies_synced "$profile"; then
+      log_error "Knowledge runtime .venv is not prepared for $profile dependencies"
+      log_hint "Rerun ./scripts/local/start.sh to sync Knowledge runtime dependencies for the selected runtime mode."
+      return 1
+    fi
   fi
 }
 

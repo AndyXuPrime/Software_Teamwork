@@ -194,7 +194,7 @@ with:
 ### 3. Contracts
 
 - PostgreSQL CI image: `postgres:16-alpine`.
-- Goose command: `go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$DATABASE_URL" up`.
+- Goose command: `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up`.
 - Working directory: `services/${{ matrix.service }}`.
 - Migration filenames must match ordered snake_case names such as `0001_create_users.sql`.
 - SQL migrations must include `-- +goose Up`; `-- +goose Down` is optional only for forward-only slices.
@@ -206,11 +206,11 @@ with:
 | Service has `migrations/*.sql` but no matrix entry | Add the service to migration CI before merging. |
 | SQL migration has no `-- +goose Up` annotation | Add the annotation so goose can parse it. |
 | Migration filename lacks an ordered prefix | Rename to `0001_<snake_case_summary>.sql` or the next ordered prefix. |
-| README goose command version differs from CI | Update both to `v3.27.0`. |
+| README goose command version differs from CI | Update both to `v3.27.1`. |
 
 ### 5. Good/Base/Bad Cases
 
-- Good: `services/auth` migration applies against an empty PostgreSQL database with `goose@v3.27.0`.
+- Good: `services/auth` migration applies against an empty PostgreSQL database with `goose@v3.27.1`.
 - Base: a forward-only migration has `-- +goose Up` and no down section.
 - Bad: a service relies only on PostgreSQL Docker init scripts, or README says `goose` without a pinned version.
 
@@ -231,7 +231,7 @@ goose -dir migrations postgres "$DATABASE_URL" up
 Correct:
 
 ```bash
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$DATABASE_URL" up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up
 ```
 
 ---
@@ -305,6 +305,10 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$
   prepare the runtime `.venv` and artifacts for the selected source mode. This
   is separate from Docker registry rewrite and should not be handled in Docker
   policy.
+- Knowledge runtime `.venv` readiness must validate the selected dependency
+  profile, not only directory existence; default/full startup must resync the
+  worker dependency group when an existing `.venv` was prepared by
+  `--runtime api`.
 - Runtime Python dependency changes belong under `services/knowledge-runtime`;
   the default local backend startup path must not depend on `services/parser`.
 - `start.sh --runtime full` must not run direct `docker build` or `docker run`
@@ -331,7 +335,7 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$
   `start.sh` Go tool/service binary preparation; it is separate from Docker
   registry rewrite and Knowledge runtime `UV_DEFAULT_INDEX`.
 - `start.sh` is the only standard local setup/start entrypoint. It may build
-  `.local/tools/config-ctl`, install `goose@v3.27.0`, build `.local/bin`
+  `.local/tools/config-ctl`, install `goose@v3.27.1`, build `.local/bin`
   service binaries, inspect/pull selected Docker infra images, and prepare
   Knowledge runtime `.venv`/artifacts. It must not run unpinned `go run`
   startup commands or use `go run ./cmd/server` for long-lived services.
@@ -384,7 +388,7 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$
 - Local Docker image tags must stay pinned and version-aligned across Compose,
   README/runbooks, and `docs/architecture/technology-decisions.md`.
 - PostgreSQL seed scripts may create local/demo data only after service-owned
-  migrations have applied from the host with `goose@v3.27.0`.
+  migrations have applied from the host with `goose@v3.27.1`.
 - Local/demo seed changes should have a deterministic contract checker that
   validates required resource IDs, idempotency markers, documentation coverage,
   host-run migration/seed commands, and forbidden secret/private-content
