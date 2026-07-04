@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 14
+- **Total Sessions**: 15
 - **Last Active**: 2026-07-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~320 | Active |
+| `journal-1.md` | ~353 | Active |
 | `journal-0.md` | ~170 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 15 | 2026-07-04 | Consolidate local startup setup | `eddd03a4` | `EIR/fix/local-startup-downloads-opt-in` |
 | 14 | 2026-07-04 | Local startup scripts check-first flow | `2edcbbbd`, `f1508c14` | `EIR/fix/local-startup-downloads-opt-in` |
 | 13 | 2026-07-04 | Local startup script cleanup | `bc6afe0c`, `707c0c8b` | `EIR/refactor/local-startup-script-overhaul` |
 | 12 | 2026-07-03 | Issue 550 local startup diagnostics acceptance | `bfa30a72` | `Test/test/local-startup-diagnostics` |

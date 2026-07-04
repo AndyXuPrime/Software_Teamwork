@@ -318,3 +318,36 @@ Reworked local startup scripts so check.sh only inspects and prints official/mai
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Consolidate local startup setup
+
+**Date**: 2026-07-04
+**Task**: Consolidate local startup setup
+**Branch**: `EIR/fix/local-startup-downloads-opt-in`
+
+### Summary
+
+Removed the split local check entrypoint, moved preflight and preparation into start.sh, pinned goose to v3.27.0, updated docs/specs/tests, and verified the start-only local flow.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `eddd03a4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
