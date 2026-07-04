@@ -1154,3 +1154,44 @@ Updated the AppLayout accessibility smoke test for the latest develop focus orde
 ### Next Steps
 
 - None - task complete
+
+
+## Session 33: F-044 F-045 F-047 F-048 frontend fixes
+
+**Date**: 2026-07-04
+**Task**: Resolve frontend issues #634, #635, #638, and #639
+**Branch**: `Frontend/feat/f044-f048-frontend-fixes`
+
+### Summary
+
+Implemented knowledge-base selection for QA retrieval testing, QA chat, and report generation, removed the report-generation page's obsolete document model settings panel, and tightened the report content-section layout so long section titles do not overlap status badges.
+
+### Main Changes
+
+- Added a reusable `KnowledgeBaseMultiSelect` feature component backed by the Gateway knowledge-base list API.
+- Passed selected knowledge-base IDs through QA chat/retrieval requests and report job `options.knowledgeBaseIds`.
+- Removed report-generation page calls to `/llm-config-versions/current`, `/report-settings`, and `/admin/model-profiles`.
+- Updated unit/a11y coverage for the new selectors, report job payloads, and section-list layout.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `TBD` | fix(frontend): add knowledge base context selectors |
+
+### Testing
+
+- [OK] Rebased branch onto latest `upstream/develop` @ `9dc3b2ba`.
+- [OK] `bun run --cwd apps/web check`
+- [OK] `bun run --cwd apps/web test:unit`
+- [OK] `bun run --cwd apps/web build`
+- [OK] `bun run --cwd apps/web test:e2e`
+- [OK] `git diff --check`
+
+### Status
+
+[OK] **Ready for commit and PR**
+
+### Next Steps
+
+- Push branch to `origin` and open PR to `Sakayori-Iroha-168/Software_Teamwork:develop`.

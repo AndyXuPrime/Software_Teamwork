@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ModelProfile, UserSummary } from '@/lib/types'
+import type { UserSummary } from '@/lib/types'
 import { useAuthStore } from '@/stores/auth-store'
 import { renderWithProviders } from '@/test/render'
 
@@ -97,23 +97,6 @@ const reportMaterial = {
   materialType: 'technical_doc',
 }
 
-const chatProfile: ModelProfile = {
-  apiKeyConfigured: true,
-  baseUrl: 'https://api.example.com/v1',
-  createdAt: '2026-07-03T00:00:00Z',
-  defaultParameters: {},
-  enabled: true,
-  id: 'mp-chat-report',
-  isDefault: false,
-  model: 'gpt-report',
-  name: '报告生成模型',
-  provider: 'openai_compatible',
-  purpose: 'chat',
-  supportsStreaming: true,
-  timeoutMs: 60000,
-  updatedAt: '2026-07-03T00:00:00Z',
-}
-
 describe('ReportGeneratePage', () => {
   it('aligns draft defaults with the selected report type without overwriting custom text', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -132,15 +115,6 @@ describe('ReportGeneratePage', () => {
       }
       if (url.pathname.endsWith('/report-materials')) {
         return pageResponse([reportMaterial])
-      }
-      if (request.method === 'GET' && url.pathname.endsWith('/report-settings')) {
-        return jsonResponse({
-          data: { llm: { provider: 'ai-gateway' } },
-          requestId: 'req-settings',
-        })
-      }
-      if (request.method === 'GET' && url.pathname.endsWith('/admin/model-profiles')) {
-        return jsonResponse({ data: [], requestId: 'req-profiles' })
       }
 
       return jsonResponse({ data: [], requestId: 'req-empty' })
@@ -191,139 +165,16 @@ describe('ReportGeneratePage', () => {
     expect(screen.getByRole('button', { name: /创建草稿/ })).toBeDisabled()
   })
 
-  it('publishes the selected document generation model profile through report settings', async () => {
-    setAuthenticatedUser(['report:write', 'admin:model-profile:write'])
-    const patchBodies: unknown[] = []
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = input instanceof Request ? input : new Request(input, init)
-      const url = new URL(request.url)
-
-      if (url.pathname.endsWith('/report-types')) {
-        return jsonResponse({ data: [reportType], requestId: 'req-types' })
-      }
-      if (url.pathname.endsWith('/report-templates')) {
-        return pageResponse([reportTemplate])
-      }
-      if (url.pathname.endsWith('/report-materials')) {
-        return pageResponse([reportMaterial])
-      }
-      if (request.method === 'GET' && url.pathname.endsWith('/report-settings')) {
-        return jsonResponse({
-          data: {
-            llm: {
-              model: 'old-report-model',
-              profileId: 'old-report-profile',
-              provider: 'ai-gateway',
-              timeoutSeconds: 60,
-            },
-          },
-          requestId: 'req-report-settings',
-        })
-      }
-      if (request.method === 'GET' && url.pathname.endsWith('/admin/model-profiles')) {
-        expect(url.searchParams.get('purpose')).toBe('chat')
-        expect(url.searchParams.get('enabled')).toBe('true')
-        return jsonResponse({ data: [chatProfile], requestId: 'req-chat-profiles' })
-      }
-      if (request.method === 'PATCH' && url.pathname.endsWith('/report-settings')) {
-        patchBodies.push(await request.clone().json())
-        return jsonResponse({
-          data: { updatedAt: '2026-07-03T08:00:00Z' },
-          requestId: 'req-report-settings-update',
-        })
-      }
-
-      return jsonResponse({ data: [], requestId: 'req-empty' })
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    renderWithProviders(<ReportGeneratePage />)
-
-    const modelTrigger = screen.getByLabelText('文档生成模型')
-    expect(await screen.findByText('old-report-profile')).toBeVisible()
-
-    // Open the document model Select and pick the chat profile
-    fireEvent.click(modelTrigger)
-    const option = await screen.findByRole('option', { name: /报告生成模型/ })
-    fireEvent.click(option)
-    fireEvent.click(screen.getByRole('button', { name: /发布文档模型配置/ }))
-
-    await waitFor(() => expect(patchBodies).toHaveLength(1))
-    expect(patchBodies[0]).toEqual({
-      llm: { profileId: 'mp-chat-report', provider: 'ai-gateway' },
-    })
-    expect(patchBodies[0]).not.toHaveProperty('apiKey')
-    expect(patchBodies[0]).not.toHaveProperty('baseUrl')
-    expect(await screen.findByText(/文档生成模型配置已发布/)).toBeVisible()
-  })
-
-  it('disables the document model selector when no enabled chat profiles exist', async () => {
-    setAuthenticatedUser(['report:write', 'admin:model-profile:write'])
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = input instanceof Request ? input : new Request(input, init)
-      const url = new URL(request.url)
-
-      if (url.pathname.endsWith('/report-types')) {
-        return jsonResponse({ data: [reportType], requestId: 'req-types' })
-      }
-      if (url.pathname.endsWith('/report-templates')) {
-        return pageResponse([reportTemplate])
-      }
-      if (url.pathname.endsWith('/report-materials')) {
-        return pageResponse([reportMaterial])
-      }
-      if (request.method === 'GET' && url.pathname.endsWith('/report-settings')) {
-        return jsonResponse({
-          data: { llm: { provider: 'ai-gateway' } },
-          requestId: 'req-report-settings',
-        })
-      }
-      if (request.method === 'GET' && url.pathname.endsWith('/admin/model-profiles')) {
-        return jsonResponse({ data: [], requestId: 'req-chat-profiles' })
-      }
-
-      return jsonResponse({ data: [], requestId: 'req-empty' })
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    renderWithProviders(<ReportGeneratePage />)
-
-    const modelTrigger = await screen.findByLabelText('文档生成模型')
-
-    await waitFor(() => expect(modelTrigger).toBeDisabled())
-    expect(modelTrigger).toHaveTextContent('请先创建聊天模型 Profile')
-    expect(await screen.findByText(/请先在模型管理中新增并启用用途为 chat/)).toBeVisible()
-  })
-
-  it('shows the current document generation model to non-admin report writers without admin-only requests', async () => {
+  it('does not request report model settings and passes selected knowledge bases to report jobs', async () => {
     const user = userEvent.setup()
-    setAuthenticatedUser(['report:write'])
+    setAuthenticatedUser(['report:write', 'admin:model-profile:write'])
     const paths: string[] = []
+    const jobBodies: unknown[] = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init)
       const url = new URL(request.url)
       paths.push(`${request.method} ${url.pathname}${url.search}`)
 
-      if (request.method === 'GET' && url.pathname.endsWith('/llm-config-versions/current')) {
-        return jsonResponse({
-          data: {
-            createdAt: '2026-07-03T00:00:00Z',
-            id: 'llm-user-current',
-            isActive: true,
-            modelName: 'gpt-user',
-            profileId: 'mp-user-chat',
-            provider: 'ai-gateway',
-            versionNo: 3,
-          },
-          requestId: 'req-user-llm',
-        })
-      }
-      if (
-        url.pathname.endsWith('/report-settings') ||
-        url.pathname.endsWith('/admin/model-profiles')
-      ) {
-        return gatewayError('forbidden', 'admin only', 'req-admin', 403)
-      }
       if (url.pathname.endsWith('/report-types')) {
         return jsonResponse({ data: [reportType], requestId: 'req-types' })
       }
@@ -333,10 +184,20 @@ describe('ReportGeneratePage', () => {
       if (url.pathname.endsWith('/report-materials')) {
         return pageResponse([reportMaterial])
       }
+      if (url.pathname.endsWith('/knowledge-bases')) {
+        return pageResponse([
+          {
+            description: '报告生成引用范围',
+            docType: 'report',
+            id: 'kb-report',
+            name: '报告知识库A',
+          },
+        ])
+      }
       if (request.method === 'POST' && url.pathname.endsWith('/reports')) {
         return jsonResponse({
           data: {
-            id: 'rpt-writer',
+            id: 'rpt-kb',
             name: '迎峰度夏报告',
             reportType: 'summer_peak_inspection',
             status: 'draft',
@@ -345,35 +206,81 @@ describe('ReportGeneratePage', () => {
           requestId: 'req-create-report',
         })
       }
-      if (request.method === 'POST' && url.pathname.endsWith('/reports/rpt-writer/jobs')) {
+      if (request.method === 'POST' && url.pathname.endsWith('/reports/rpt-kb/jobs')) {
+        const body = await request.clone().json()
+        jobBodies.push(body)
+        if ((body as { jobType?: string }).jobType === 'content_generation') {
+          return jsonResponse({
+            data: {
+              createdAt: '2026-07-03T00:02:00Z',
+              id: 'job-content-kb',
+              jobType: 'content_generation',
+              progress: { completed: 1, total: 1 },
+              reportId: 'rpt-kb',
+              status: 'running',
+            },
+            requestId: 'req-content-job',
+          })
+        }
         return jsonResponse({
           data: {
             createdAt: '2026-07-03T00:00:00Z',
-            id: 'job-writer',
+            finishedAt: '2026-07-03T00:01:00Z',
+            id: 'job-outline-kb',
             jobType: 'outline_generation',
-            progress: { percent: 20 },
-            reportId: 'rpt-writer',
-            status: 'running',
+            progress: { completed: 1, total: 1 },
+            reportId: 'rpt-kb',
+            status: 'succeeded',
           },
           requestId: 'req-job',
         })
       }
-      if (request.method === 'GET' && url.pathname.endsWith('/report-jobs/job-writer')) {
+      if (request.method === 'GET' && url.pathname.endsWith('/report-jobs/job-outline-kb')) {
         return jsonResponse({
           data: {
             createdAt: '2026-07-03T00:00:00Z',
-            id: 'job-writer',
+            finishedAt: '2026-07-03T00:01:00Z',
+            id: 'job-outline-kb',
             jobType: 'outline_generation',
-            progress: { percent: 20 },
-            reportId: 'rpt-writer',
+            progress: { completed: 1, total: 1 },
+            reportId: 'rpt-kb',
+            status: 'succeeded',
+          },
+          requestId: 'req-job-detail',
+        })
+      }
+      if (request.method === 'GET' && url.pathname.endsWith('/report-jobs/job-content-kb')) {
+        return jsonResponse({
+          data: {
+            createdAt: '2026-07-03T00:02:00Z',
+            id: 'job-content-kb',
+            jobType: 'content_generation',
+            progress: { completed: 1, total: 1 },
+            reportId: 'rpt-kb',
             status: 'running',
           },
           requestId: 'req-job-detail',
         })
       }
+      if (url.pathname.endsWith('/reports/rpt-kb/outlines')) {
+        return jsonResponse({
+          data: [
+            {
+              createdAt: '2026-07-03T00:00:00Z',
+              id: 'outline-kb',
+              isCurrent: true,
+              reportId: 'rpt-kb',
+              sections: [{ id: 'node-1', level: 1, numbering: '1', title: '总述' }],
+              source: 'ai',
+              version: 1,
+            },
+          ],
+          requestId: 'req-outlines',
+        })
+      }
       if (
-        url.pathname.endsWith('/reports/rpt-writer/outlines') ||
-        url.pathname.endsWith('/reports/rpt-writer/sections')
+        url.pathname.endsWith('/reports/rpt-kb/sections') ||
+        url.pathname.endsWith('/reports/rpt-kb/events')
       ) {
         return jsonResponse({ data: [], requestId: 'req-empty' })
       }
@@ -384,92 +291,39 @@ describe('ReportGeneratePage', () => {
 
     renderWithProviders(<ReportGeneratePage />)
 
-    // Wait for bootstrap data to load, then open Select and pick the report type
+    expect(await screen.findByText('报告知识库A')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: /报告知识库A/ }))
+
     const trigger = screen.getAllByRole('combobox')[0]!
     await waitFor(() => expect(trigger).not.toBeDisabled())
     await user.click(trigger)
     await screen.findByRole('option', { name: '真实巡检报告' })
     await user.click(screen.getByRole('option', { name: '真实巡检报告' }))
-    expect(await screen.findByText('当前文档生成模型')).toBeVisible()
-    expect(screen.queryByText('当前 LLM 配置')).not.toBeInTheDocument()
-    expect(screen.getByText('mp-user-chat')).toBeVisible()
-    expect(screen.getByText('gpt-user')).toBeVisible()
-    expect(screen.queryByRole('button', { name: /发布文档模型配置/ })).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getByRole('button', { name: /创建草稿/ })).toBeEnabled())
 
     await user.click(screen.getByRole('button', { name: /创建草稿/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /生成正文/ })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: /^生成正文$/ }))
 
-    expect(await screen.findByText('报告模板类型')).toBeVisible()
-    expect(screen.queryByText('20%')).not.toBeInTheDocument()
-    expect(screen.getByText(/\d+%/)).toBeVisible()
-    expect(screen.queryByText('job-writer')).not.toBeInTheDocument()
-    expect(paths.some((path) => path.includes('/report-settings'))).toBe(false)
-    expect(paths.some((path) => path.includes('/admin/model-profiles'))).toBe(false)
-  })
-
-  it('waits for report settings before defaulting and publishing a document profile', async () => {
-    setAuthenticatedUser(['report:write', 'admin:model-profile:write'])
-    const settings = deferredResponse<Response>()
-    const patchBodies: unknown[] = []
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = input instanceof Request ? input : new Request(input, init)
-      const url = new URL(request.url)
-
-      if (url.pathname.endsWith('/report-types')) {
-        return jsonResponse({ data: [reportType], requestId: 'req-types' })
-      }
-      if (url.pathname.endsWith('/report-templates')) {
-        return pageResponse([reportTemplate])
-      }
-      if (url.pathname.endsWith('/report-materials')) {
-        return pageResponse([reportMaterial])
-      }
-      if (request.method === 'GET' && url.pathname.endsWith('/report-settings')) {
-        return settings.promise
-      }
-      if (request.method === 'GET' && url.pathname.endsWith('/admin/model-profiles')) {
-        return jsonResponse({ data: [chatProfile], requestId: 'req-chat-profiles' })
-      }
-      if (request.method === 'PATCH' && url.pathname.endsWith('/report-settings')) {
-        patchBodies.push(await request.clone().json())
-        return jsonResponse({
-          data: { updatedAt: '2026-07-03T08:00:00Z' },
-          requestId: 'req-report-settings-update',
-        })
-      }
-
-      return jsonResponse({ data: [], requestId: 'req-empty' })
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    renderWithProviders(<ReportGeneratePage />)
-
-    const publishButton = await screen.findByRole('button', { name: /发布文档模型配置/ })
-    expect(publishButton).toBeDisabled()
-    expect(screen.getByLabelText('文档生成模型')).toHaveTextContent('请选择聊天模型 Profile')
-
-    settings.resolve(
-      jsonResponse({
-        data: {
-          llm: {
-            model: 'old-report-model',
-            profileId: 'old-report-profile',
-            provider: 'ai-gateway',
-          },
-        },
-        requestId: 'req-report-settings',
+    await waitFor(() => expect(jobBodies).toHaveLength(2))
+    expect(jobBodies[0]).toEqual(
+      expect.objectContaining({
+        jobType: 'outline_generation',
+        options: { knowledgeBaseIds: ['kb-report'] },
       }),
     )
-
-    await waitFor(() =>
-      expect(screen.getByLabelText('文档生成模型')).toHaveTextContent(/old-report/),
+    expect(jobBodies[1]).toEqual(
+      expect.objectContaining({
+        jobType: 'content_generation',
+        options: expect.objectContaining({ knowledgeBaseIds: ['kb-report'] }),
+      }),
     )
-    fireEvent.click(publishButton)
-
-    await waitFor(() => expect(patchBodies).toHaveLength(1))
-    expect(patchBodies[0]).toEqual({
-      llm: { profileId: 'old-report-profile', provider: 'ai-gateway' },
-    })
+    expect(screen.queryByText('当前文档生成模型')).not.toBeInTheDocument()
+    expect(screen.queryByText('文档生成模型')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /发布文档模型配置/ })).not.toBeInTheDocument()
+    expect(paths.some((path) => path.includes('/llm-config-versions/current'))).toBe(false)
+    expect(paths.some((path) => path.includes('/report-settings'))).toBe(false)
+    expect(paths.some((path) => path.includes('/admin/model-profiles'))).toBe(false)
   })
 
   it('renders user-facing report progress from completed sections without internal ids', async () => {
@@ -804,7 +658,7 @@ describe('ReportGeneratePage', () => {
     expect(sectionList).not.toHaveClass('lg:overflow-y-auto')
     const sectionScroller = sectionList.querySelector('.space-y-2')
     expect(sectionScroller).toBeInstanceOf(HTMLElement)
-    expect(sectionScroller).toHaveClass('max-h-[28rem]')
+    expect(sectionScroller).toHaveClass('max-h-[min(32rem,calc(100vh-18rem))]')
     expect(sectionScroller).toHaveClass('overflow-y-auto')
     expect(sectionScroller).not.toHaveClass('max-h-64')
 

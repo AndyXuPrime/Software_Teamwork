@@ -73,6 +73,10 @@ vi.mock('@/components/common', () => ({
   ConfirmDialog: () => null,
 }))
 
+vi.mock('@/features/knowledge', () => ({
+  KnowledgeBaseMultiSelect: () => null,
+}))
+
 vi.mock('@/features/qa', () => ({
   useCreateSession: () => ({
     isPending: false,

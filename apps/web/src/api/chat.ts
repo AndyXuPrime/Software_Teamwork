@@ -3,6 +3,7 @@
  */
 
 import type {
+  CreateQAMessageRequest,
   KnowledgeQueryRequest,
   KnowledgeQuerySummary,
   QAMessage,
@@ -126,6 +127,7 @@ export function streamChat(
   handlers: ChatStreamHandlers,
   signal?: AbortSignal,
   attachmentIds?: string[],
+  knowledgeBaseIds?: string[],
 ): { abort: () => void } {
   let fallbackSeq = 0
   let maxDispatchedSeq: number | undefined
@@ -149,9 +151,12 @@ export function streamChat(
     return event === 'error' && payload.fatal !== false
   }
 
-  const body: Record<string, unknown> = { message }
+  const body: CreateQAMessageRequest = { message }
   if (attachmentIds && attachmentIds.length > 0) {
     body.attachmentIds = attachmentIds
+  }
+  if (knowledgeBaseIds && knowledgeBaseIds.length > 0) {
+    body.knowledgeBaseIds = knowledgeBaseIds
   }
 
   const stream = streamGateway(`/qa-sessions/${encodeURIComponent(sessionId)}/messages`, {
