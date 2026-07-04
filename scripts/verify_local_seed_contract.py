@@ -201,6 +201,8 @@ REQUIRED_START_TOKENS = [
     "runtime_nltk_data_ready",
     "tokenizers/punkt_tab",
     "corpora/wordnet",
+    "Knowledge runtime artifacts are not prepared",
+    "without --skip-prepare to download missing runtime files",
     "runtime_dependencies_synced",
     "startup status",
     "host process groups",

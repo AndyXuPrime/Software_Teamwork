@@ -900,6 +900,11 @@ check_start_prerequisites() {
       log_hint "Rerun ./scripts/local/start.sh to sync Knowledge runtime dependencies for the selected runtime mode."
       return 1
     fi
+    if ! runtime_artifacts_ready; then
+      log_error "Knowledge runtime artifacts are not prepared for runtime mode '$RUNTIME_MODE'"
+      log_hint "Rerun ./scripts/local/start.sh without --skip-prepare to download missing runtime files."
+      return 1
+    fi
   fi
 }
 

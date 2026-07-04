@@ -360,6 +360,23 @@ class LocalStartupScriptTests(unittest.TestCase):
             finally:
                 self.cleanup_started_processes(root)
 
+    def test_start_skip_prepare_rejects_missing_runtime_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+            self.create_service_binaries(root)
+            self.create_runtime_files(root)
+            (root / "services" / "knowledge-runtime" / "ragflow_deps" / "cl100k_base.tiktoken").unlink()
+
+            result = self.run_start(root, args=["--backend-only", "--skip-prepare"])
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("Knowledge runtime artifacts are not prepared", result.stderr)
+            self.assertIn("without --skip-prepare", result.stderr)
+            self.assertFalse((root / "uv-calls.log").exists())
+            self.assertFalse((root / ".local" / "run" / "knowledge-runtime-api.pid").exists())
+
     def prepare_runtime(self, root: Path) -> Path:
         for relative in [
             "scripts/local/start.sh",
@@ -476,7 +493,21 @@ class LocalStartupScriptTests(unittest.TestCase):
             """,
         )
         self.write_executable(fake_bin / "curl", "#!/usr/bin/env bash\nprintf '200'\nexit 0\n")
-        self.write_executable(fake_bin / "uv", "#!/usr/bin/env bash\necho \"$*\" >> \"$FAKE_UV_CALLS\"\nexit 0\n")
+        self.write_executable(
+            fake_bin / "uv",
+            """\
+            #!/usr/bin/env bash
+            echo "$*" >> "$FAKE_UV_CALLS"
+            if [[ "$*" == *"ragflow_deps/download_deps.py"* ]]; then
+              runtime="$FAKE_ROOT/services/knowledge-runtime"
+              mkdir -p "$runtime/ragflow_deps/nltk_data/tokenizers/punkt_tab"
+              mkdir -p "$runtime/ragflow_deps/nltk_data/corpora/wordnet"
+              printf 'jar\\n' > "$runtime/ragflow_deps/tika-server-standard-3.3.0.jar"
+              printf 'encoding\\n' > "$runtime/ragflow_deps/cl100k_base.tiktoken"
+            fi
+            exit 0
+            """,
+        )
         self.write_executable(fake_bin / "git", "#!/usr/bin/env bash\necho 0123456789abcdef0123456789abcdef01234567\n")
         self.write_executable(
             fake_bin / "tail",

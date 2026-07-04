@@ -208,6 +208,8 @@ class LocalSeedContractTests(unittest.TestCase):
                 "runtime_nltk_data_ready\n"
                 "tokenizers/punkt_tab\n"
                 "corpora/wordnet\n"
+                "Knowledge runtime artifacts are not prepared\n"
+                "without --skip-prepare to download missing runtime files\n"
                 "runtime_dependencies_synced\n"
                 "download_deps.py\n",
                 encoding="utf-8",
