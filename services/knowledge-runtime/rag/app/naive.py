@@ -1203,7 +1203,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             if all(image is None for image in section_images):
                 section_images = None
 
-        if layout_chunks:
+        if name == "paddleocr":
             res.extend(_tokenize_layout_chunks(layout_chunks, doc, is_english))
         elif section_images:
             chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)

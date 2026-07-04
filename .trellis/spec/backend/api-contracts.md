@@ -1743,12 +1743,12 @@ Entrypoint: #!/bin/sh with command args passed through Compose
 
 ### 2. Signatures
 
-Parser config may opt out of the default post-parse chain:
+Parser config may tune dirty-window LLM repair. The PaddleOCR post-parse chain
+itself is not an opt-out path:
 
 ```json
 {
   "post_parse_chain": {
-    "enabled": true,
     "llm_repair": {
       "enabled": true,
       "llm_id": "",
@@ -1778,6 +1778,9 @@ page_num_int?: number[]
 
 - PaddleOCR raw responses must first be canonicalized into bounded layout
   blocks with stable page/order/type/bbox/source metadata.
+- PaddleOCR PDF ingestion must use the post-parse chain. Do not route
+  `post_parse_chain.enabled=false` or any similar parser config back to the old
+  tuple-based `naive_merge` chunking path.
 - Deterministic normalization is always the source fallback and must handle the
   clean path without requiring an LLM.
 - LLM repair is default-on only for dirty PaddleOCR block windows. It must use
@@ -1803,7 +1806,8 @@ page_num_int?: number[]
 
 | Condition | Required behavior |
 | --- | --- |
-| `post_parse_chain.enabled=false` | Use legacy PaddleOCR semantic section tuple output. |
+| `post_parse_chain.enabled=false` appears in parser config | Ignore it for PaddleOCR chain selection; continue the post-parse chain. |
+| `post_parse_chain.llm_repair.enabled=false` | Continue the post-parse chain with deterministic dirty-window fallback and no LLM repair call. |
 | No chat model, missing scope, timeout, or repair exception | Continue deterministic output with `repair_skipped` or `repair_rejected`. |
 | Repair drops numeric/date/unit/identifier tokens | Reject repair and preserve deterministic text. |
 | Repair adds unsupported fact tokens | Reject repair and preserve deterministic text. |
@@ -1825,8 +1829,9 @@ page_num_int?: number[]
   deterministic fallback with repair status metadata.
 - Bad: sending the full PaddleOCR raw result to a provider for whole-document
   rewrite, storing raw OCR/provider payloads in chunk metadata, replacing
-  display text with prompt-style embedding context, or adding retrieval quality
-  metrics/RAGAS artifacts in this ingestion path.
+  display text with prompt-style embedding context, routing
+  `post_parse_chain.enabled=false` to the old tuple chunker, or adding
+  retrieval quality metrics/RAGAS artifacts in this ingestion path.
 
 ### 6. Tests Required
 
@@ -1852,6 +1857,7 @@ page_num_int?: number[]
 
 ```text
 PaddleOCR raw result -> full-document LLM rewrite -> chunks
+post_parse_chain.enabled=false -> legacy tuple chunking
 chunk.content_with_weight = "Section: A > B\n\n<content>"
 runtime chunk API returns embedding_text and vector
 parser imports a direct provider SDK

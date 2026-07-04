@@ -466,18 +466,12 @@ class PaddleOCRParser(RAGFlowPdfParser):
         llm_id: str | None = None,
         lang: str = "Chinese",
     ) -> list[SectionTuple]:
-        """Convert API response to section tuples."""
+        """Convert API response to post-parse sections and layout chunks."""
         if algorithm not in SUPPORTED_PADDLEOCR_ALGORITHMS:
             return []
         pages = self.result_adapter.adapt(result)
         parser_config = parser_config or {}
         post_parse_config = parser_config.get("post_parse_chain") if isinstance(parser_config.get("post_parse_chain"), dict) else {}
-        if post_parse_config.get("enabled", True) is False:
-            self.post_parse_result = None
-            self.layout_chunks = []
-            semantic_sections = self.layout_normalizer.normalize(pages)
-            return [section.to_section_tuple(parse_method, self._ZOOMIN) for section in semantic_sections]
-
         repair_config = post_parse_config.get("llm_repair") if isinstance(post_parse_config.get("llm_repair"), dict) else {}
         repair_enabled = repair_config.get("enabled", True) is not False
         max_blocks_per_call = int(repair_config.get("max_blocks_per_call", 12) or 12)

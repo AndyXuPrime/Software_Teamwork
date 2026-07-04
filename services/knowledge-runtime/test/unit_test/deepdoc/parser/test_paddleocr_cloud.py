@@ -130,7 +130,7 @@ def test_result_adapter_and_normalizer_produce_semantic_table_sections():
     assert sections[1].metadata["raw_block_type"] == "table"
 
 
-def test_parser_renders_normalized_layout_blocks_to_legacy_section_tuples():
+def test_parser_renders_post_parse_layout_blocks_to_section_tuples():
     parser = PaddleOCRParser(access_token="secret-token")
     raw = {
         "layoutParsingResults": [
@@ -153,6 +153,45 @@ def test_parser_renders_normalized_layout_blocks_to_legacy_section_tuples():
     assert sections == [
         ("| A | B |\n| --- | --- |\n| 1 | 2 |", "table", "@@1\t5\t25\t10\t40##")
     ]
+    assert parser.layout_chunks[0]["content_with_weight"] == "| A | B |\n| --- | --- |\n| 1 | 2 |"
+    assert parser.layout_chunks[0]["doc_type_kwd"] == "table"
+
+
+def test_parser_config_cannot_disable_paddleocr_post_parse_chain():
+    parser = PaddleOCRParser(access_token="secret-token")
+    raw = {
+        "layoutParsingResults": [
+            {
+                "prunedResult": {
+                    "parsing_res_list": [
+                        {
+                            "block_label": "paragraph_title",
+                            "block_content": "1 Scope",
+                            "block_order": 1,
+                        },
+                        {
+                            "block_label": "paragraph",
+                            "block_content": "Relay pickup current is 5 A.",
+                            "block_order": 2,
+                        },
+                    ]
+                }
+            }
+        ]
+    }
+
+    sections = parser._transfer_to_sections(
+        raw,
+        algorithm="PaddleOCR-VL",
+        parse_method="manual",
+        parser_config={"post_parse_chain": {"enabled": False}},
+    )
+
+    assert sections
+    assert parser.post_parse_result is not None
+    assert parser.layout_chunks
+    assert parser.layout_chunks[0]["section_path"] == "1 Scope"
+    assert parser.layout_chunks[0]["embedding_text"].startswith("Section: 1 Scope")
 
 
 def test_parser_config_accepts_bearer_override():

@@ -84,7 +84,9 @@ The parser implementation is intentionally split into:
   converting HTML tables to pipe tables, preserving formulas, and producing
   semantic sections with page/bbox metadata.
 - `deepdoc/parser/paddleocr_parser.py` for wiring the cloud client, adapter,
-  normalizer, and legacy RAGFlow section tuple output.
+  post-parse chain, and layout-aware chunk output.
+- `deepdoc/parser/paddleocr_post_parse.py` for quality gating, dirty-window LLM
+  repair, content-fidelity validation, and hierarchy-aware chunking.
 - `rag/llm/ocr_model.py` for runtime model/env configuration.
 
 The data flow is:
@@ -92,15 +94,21 @@ The data flow is:
 ```text
 PaddleOCR Cloud raw result
   -> PaddleOCR result adapter
-  -> Markdown/layout normalizer
-  -> semantic sections with metadata
-  -> chunker
+  -> canonical layout blocks
+  -> deterministic normalizer
+  -> quality gate
+       clean -> validated sections
+       dirty -> LLM repair -> content-fidelity validation -> validated sections
+  -> hierarchy-aware chunker
+  -> chunks with inherited context
   -> embedding/index
 ```
 
-The chunker still receives the existing tuple shape, such as `(text, tag)` or
-`(text, block_type, tag)`, so PaddleOCR-specific response fields do not leak
-past the parser boundary.
+PaddleOCR PDF ingestion uses the post-parse chain as the active path. Legacy
+section tuple rendering remains a parser compatibility surface for callers that
+still inspect `sections`, but PaddleOCR chunking does not fall back to the old
+tuple-based `naive_merge` path. Chunk payloads may carry safe layout context
+such as `section_path`, source block ids, page positions, and repair status.
 
 ## Dependency Preparation
 
