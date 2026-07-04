@@ -359,19 +359,34 @@ describe('KnowledgeDocumentsPage upload interactions', () => {
     expect(within(dialog).getByRole('button', { name: /^上传$/ })).toBeEnabled()
   })
 
-  it('shortens long upload filenames without rendering the full visible name', async () => {
+  it('keeps long upload filenames from widening the upload dialog', async () => {
     const { user } = renderDocumentsPage()
 
     await user.click(screen.getByRole('button', { name: /上传文档/ }))
     const dialog = getDialogContent()
 
-    const longName = 'DB31-767-2013-super-long-power-standard-document.pdf'
-    selectFile(new File(['manual'], longName, { type: 'application/pdf' }))
+    const longName =
+      '智能电网信息处理技术大作业报告_原始备份_这一段特别特别特别长用于验证布局不被撑破.docx'
+    selectFile(
+      new File(['manual'], longName, {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+    )
 
-    const shortenedName = await within(dialog).findByText(/…\.pdf$/)
+    const shortenedName = await within(dialog).findByText(/…\.docx$/)
+    const fileNameColumn = shortenedName.parentElement
+    const fileRow = fileNameColumn?.parentElement
+    const fileList = fileRow?.parentElement
+    const dropZone = getFileInput().parentElement
+
     expect(shortenedName).toBeInTheDocument()
     expect(shortenedName).toHaveAttribute('title', longName)
     expect(within(dialog).queryByText(longName)).not.toBeInTheDocument()
+    expect(dialog).toHaveClass('sm:max-w-2xl', 'lg:max-w-3xl')
+    expect(dropZone).toHaveClass('w-full', 'max-w-full', 'overflow-hidden')
+    expect(fileList).toHaveClass('w-full', 'max-w-full', 'overflow-x-hidden', 'overflow-y-auto')
+    expect(fileRow).toHaveClass('w-full', 'max-w-full', 'overflow-hidden')
+    expect(fileNameColumn).toHaveClass('min-w-0', 'overflow-hidden')
     expect(within(dialog).getByRole('button', { name: /^上传$/ })).toBeEnabled()
   })
 

@@ -986,18 +986,18 @@ export function KnowledgeDocumentsPage({
 
       {/* ── Upload Dialog ── */}
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
-        <DialogContent className="min-w-0 overflow-hidden sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent className="min-w-0 overflow-hidden sm:max-w-2xl lg:max-w-3xl">
+          <DialogHeader className="min-w-0">
             <DialogTitle>上传文档</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="break-words">
               选择文档文件上传到知识库「{kbName}」。支持 {SUPPORTED_FILE_TYPES_TEXT}。
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="w-full min-w-0 max-w-full space-y-4 overflow-hidden">
             {/* Drag-and-drop zone */}
             <div
-              className={`relative flex min-w-0 flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-all duration-200 ${
+              className={`relative flex w-full min-w-0 max-w-full flex-col items-center justify-center overflow-hidden rounded-lg border-2 border-dashed p-8 transition-all duration-200 ${
                 dragOver
                   ? 'border-primary bg-primary/5 scale-[1.02]'
                   : uploadItems.length > 0
@@ -1019,7 +1019,7 @@ export function KnowledgeDocumentsPage({
                 </div>
               )}
               {uploadItems.length > 0 ? (
-                <div className="w-full min-w-0 space-y-3">
+                <div className="w-full min-w-0 max-w-full space-y-3 overflow-hidden">
                   <div className="text-center">
                     <FileText aria-hidden="true" className="mx-auto mb-2 size-8 text-emerald-500" />
                     <p className="text-sm font-medium text-foreground">
@@ -1029,29 +1029,30 @@ export function KnowledgeDocumentsPage({
                       单次最多 {MAX_BATCH_FILES} 个文件
                     </p>
                   </div>
-                  <div className="max-h-44 min-w-0 space-y-2 overflow-y-auto rounded-md border border-border bg-background/70 p-2">
+                  <div className="max-h-44 w-full min-w-0 max-w-full space-y-2 overflow-x-hidden overflow-y-auto rounded-md border border-border bg-background/70 p-2">
                     {uploadItems.map((item) => (
                       <div
                         key={item.id}
-                        className="grid min-h-12 min-w-0 grid-cols-[1rem_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left"
+                        className="grid min-h-12 w-full min-w-0 max-w-full grid-cols-[1rem_minmax(0,1fr)_auto_auto] items-center gap-2 overflow-hidden rounded-md px-2 py-1.5 text-left"
                       >
                         <FileText
                           aria-hidden="true"
                           className="size-4 shrink-0 text-muted-foreground"
                         />
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1 overflow-hidden">
                           <p
                             className="truncate text-sm font-medium text-foreground"
                             title={item.file.name}
                           >
                             {formatUploadFileName(item.file.name)}
                           </p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="truncate text-xs text-muted-foreground">
                             {formatSize(item.file.size)}
                             {item.message ? ` · ${item.message}` : ''}
                           </p>
                         </div>
                         <Badge
+                          className="shrink-0"
                           variant={
                             item.status === 'failed'
                               ? 'destructive'
@@ -1070,6 +1071,7 @@ export function KnowledgeDocumentsPage({
                           <Button
                             variant="ghost"
                             size="icon-sm"
+                            className="shrink-0"
                             onClick={(e) => {
                               e.stopPropagation()
                               setUploadItems((current) =>
