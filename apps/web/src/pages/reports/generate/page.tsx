@@ -85,6 +85,7 @@ type SectionGenerationReset = {
   jobId: string
   requireFreshSectionTimestamp?: boolean
   reportId: string
+  sectionId?: string
   status: Extract<ReportJobStatus, 'pending' | 'running'>
 }
 
@@ -617,8 +618,17 @@ function getRetryAwareSections(
   job?: ReportJob | null,
 ): ReportSection[] {
   if (!shouldApplySectionGenerationReset(reset, job) || !isContentJob(job)) return sections
+  const resetSectionId =
+    reset.sectionId ??
+    (job?.jobType === 'section_regeneration' && job.targetType === 'section'
+      ? job.targetId
+      : undefined)
 
   return sections.map((section) => {
+    if (resetSectionId && section.id !== resetSectionId) {
+      return section
+    }
+
     if (section.lastJobId === reset.jobId) {
       if (!reset.requireFreshSectionTimestamp || sectionUpdatedAfterResetAttempt(section, reset)) {
         return section
@@ -1422,6 +1432,7 @@ export function ReportGeneratePage() {
       setNotice('当前已有生成任务运行中，请先等待完成或取消任务。')
       return
     }
+    const targetSection = activeSection
 
     const sectionOptions: Record<string, unknown> = {
       preserveUserEdits: true,
@@ -1436,7 +1447,7 @@ export function ReportGeneratePage() {
         reportId: currentReport.id,
         payload: {
           jobType: 'section_regeneration',
-          target: { scope: 'section', sectionId: activeSection.id },
+          target: { scope: 'section', sectionId: targetSection.id },
           materialIds: selectedMaterialIds,
           options: sectionOptions,
         },
@@ -1448,13 +1459,14 @@ export function ReportGeneratePage() {
           attemptCreatedAtMs: parseTimestampMs(job.createdAt) ?? Date.now(),
           jobId: job.id,
           reportId: job.reportId,
+          sectionId: targetSection.id,
           status: toActiveGenerationStatus(job.status),
         })
       } else {
         setSectionGenerationReset(null)
       }
       setStep('content')
-      setNotice(`已提交“${activeSection.title}”章节重新生成任务。`)
+      setNotice(`已提交“${targetSection.title}”章节重新生成任务。`)
     } catch (error) {
       setNotice(formatReportGatewayError(error, '章节重新生成任务创建失败'))
     }
@@ -1474,6 +1486,10 @@ export function ReportGeneratePage() {
           jobId: retryJob.id,
           requireFreshSectionTimestamp: true,
           reportId: retryJob.reportId,
+          sectionId:
+            retryJob.jobType === 'section_regeneration' && retryJob.targetType === 'section'
+              ? retryJob.targetId
+              : undefined,
           status: retryStatus,
         })
         setLastJob({

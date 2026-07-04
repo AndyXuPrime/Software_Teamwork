@@ -292,6 +292,21 @@ function createKnowledgeSelectionFetchMock(options: {
         requestId: 'req-content-status',
       })
     }
+    if (url.pathname.endsWith('/report-jobs/job-section-knowledge')) {
+      return jsonResponse({
+        data: {
+          createdAt: '2026-07-03T00:03:00Z',
+          id: 'job-section-knowledge',
+          jobType: 'section_regeneration',
+          progress: { completed: 0, total: 1 },
+          reportId: 'rpt-knowledge-selection',
+          status: 'running',
+          targetId: 'section-knowledge',
+          targetType: 'section',
+        },
+        requestId: 'req-section-status',
+      })
+    }
     if (url.pathname.endsWith('/reports/rpt-knowledge-selection/outlines')) {
       return jsonResponse({
         data: options.outlines ?? [
@@ -888,12 +903,22 @@ describe('ReportGeneratePage', () => {
           {
             content: '已生成正文',
             generatedAt: '2026-07-03T00:02:30Z',
-            generationStatus: 'ready',
+            generationStatus: 'succeeded',
             id: 'section-knowledge',
             numbering: '1',
             reportId: 'rpt-knowledge-selection',
             sortOrder: 1,
             title: 'Knowledge section',
+          },
+          {
+            content: '其他章节正文',
+            generatedAt: '2026-07-03T00:02:30Z',
+            generationStatus: 'succeeded',
+            id: 'section-stable',
+            numbering: '2',
+            reportId: 'rpt-knowledge-selection',
+            sortOrder: 2,
+            title: 'Stable section',
           },
         ],
       }),
@@ -913,6 +938,11 @@ describe('ReportGeneratePage', () => {
       jobType: 'section_regeneration',
       target: { scope: 'section', sectionId: 'section-knowledge' },
     })
+    const sectionList = screen.getByLabelText('章节列表')
+    await within(sectionList).findByRole('button', { name: /Knowledge section.*生成中/ })
+    expect(
+      within(sectionList).getByRole('button', { name: /Stable section.*已完成/ }),
+    ).toBeVisible()
   })
 
   it('keeps content generation available when knowledge bases fail to load', async () => {
