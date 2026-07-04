@@ -24,7 +24,6 @@ root local startup script.
 
 ```bash
 cp .env.example .env.local
-./scripts/local/check.sh
 ./scripts/local/start.sh
 ```
 
@@ -107,15 +106,13 @@ past the parser boundary.
 
 The worker lazily downloads OCR and vision model artifacts when those modules
 are imported. Committed defaults use official artifact sources. The repository
-root startup scripts do not sync the runtime `.venv` or download artifacts.
-Run the environment check and follow only the runtime setup suggestions that are
-missing before starting runtime API/worker:
+root startup script prepares the runtime `.venv` and required artifacts before
+starting runtime API/worker:
 
 ```bash
-./scripts/local/check.sh
-
+./scripts/local/start.sh
 # Mainland China mirrors:
-./scripts/local/check.sh --china
+./scripts/local/start.sh --china
 ```
 
 Manual fallback:

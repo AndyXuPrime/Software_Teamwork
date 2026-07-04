@@ -185,7 +185,7 @@ func (f *fakeOwnerService) lastRequest() (fakeOwnerRequest, bool) {
 func applyAuthMigrations(t *testing.T, ctx context.Context, databaseURL string) {
 	t.Helper()
 	authDir := repoPath(t, "services", "auth")
-	cmd := exec.CommandContext(ctx, "go", "run", "github.com/pressly/goose/v3/cmd/goose@v3.27.1", "-dir", "migrations", "postgres", databaseURL, "up")
+	cmd := exec.CommandContext(ctx, "go", "run", "github.com/pressly/goose/v3/cmd/goose@v3.27.0", "-dir", "migrations", "postgres", databaseURL, "up")
 	cmd.Dir = authDir
 	output, err := cmd.CombinedOutput()
 	if err != nil {

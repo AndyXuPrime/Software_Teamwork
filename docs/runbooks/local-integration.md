@@ -29,31 +29,21 @@ go env GOPROXY
 ```
 
 默认使用官方源。中国大陆网络如果访问 GitHub、Docker Hub、PyPI、HuggingFace 或
-Go modules 不稳定，先运行检查脚本查看中国大陆镜像建议；不要改写 `config/` 或
-`.env.local`：
-
-```bash
-./scripts/local/check.sh --china
-```
-
-`check.sh` 只检查当前环境并打印官方/中国大陆下载建议，不下载、不构建、不 pull 镜像、
-不执行 `uv sync`，也不改写 `.env.local`。启动脚本只使用已经准备好的本机工具、镜像、
-服务二进制和 runtime `.venv`，不执行 `go mod download`、`go run module@version`、
-`uv sync`、runtime artifact 下载或 Docker pull。
+Go modules 不稳定，运行 `./scripts/local/start.sh --china`；不要改写 `config/` 或
+`.env.local`。`start.sh` 会先做 preflight，再按需准备缺失的本机工具、镜像、服务二进制、
+runtime `.venv` 和 artifact，长耗时下载/构建会持续输出进度或心跳。
 
 ```bash
 cp .env.example .env.local
-./scripts/local/check.sh
 ./scripts/local/start.sh
 cd apps/web && bun install && bun run dev
 ```
 
-中国大陆网络按同一顺序启动，但只给显式准备命令加 `--china`：
+中国大陆网络：
 
 ```bash
 cp .env.example .env.local
-./scripts/local/check.sh --china
-./scripts/local/start.sh
+./scripts/local/start.sh --china
 cd apps/web && bun install && bun run dev
 ```
 
@@ -63,9 +53,6 @@ cd apps/web && bun install && bun run dev
 ./scripts/local/start.sh
 cd apps/web && bun run dev
 ```
-
-如果镜像、二进制或 runtime 文件还没有准备过，先按 `check.sh` 输出的建议手工补齐；
-已经准备好的日常启动不需要下载。
 
 如果只想启动 infra、migration 和 seed，不启动后端服务：
 
@@ -84,15 +71,12 @@ KNOWLEDGE_RUNTIME_ES_URL=http://127.0.0.1:9200
 ```
 
 ```bash
-./scripts/local/check.sh
 ./scripts/local/start.sh
 ```
 
-中国大陆网络运行真实解析栈时，下载准备命令使用显式 mirror 模式；runtime 启动时如需
-HuggingFace mirror，再给启动命令加 `--china`：
+中国大陆网络运行真实解析栈时，给启动命令加 `--china`：
 
 ```bash
-./scripts/local/check.sh --china
 ./scripts/local/start.sh --china
 ```
 
@@ -206,25 +190,22 @@ client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue
 
 ## 谁负责什么
 
-- `check.sh`：检查本机命令、`.env.local`、`.local/tools`、`.local/bin`、Compose 配置
-  和 Knowledge runtime 文件；不下载、不构建、不 pull 镜像、不执行 `uv sync`，也不探测
-  本地 Docker image 状态。默认输出官方源手工命令，`--china` 输出中国大陆镜像建议，不改写
-  `config/` 或 `.env.local`。
-- `start.sh`：使用已准备好的 `.local/tools`、`.local/bin`、本地镜像和 runtime `.venv`。
-  它会等待 `postgres` / `redis` / `minio` / `elasticsearch` health checks，单独运行
-  一次性 `minio-init`，执行 migration 和 demo seed，再启动 host-run 后端进程组。
-  默认 `docker compose up --pull never`，不执行 Go/uv 下载或 Docker pull。服务 fork 后
-  默认观察 8 秒，若进程组很快退出，会直接汇总对应 `.local/logs/<service>.log` 尾部。
-  启动后会输出 Docker infra `ps`、host-run 进程组状态和 `.local/logs/*.log` 位置。
-- `start.sh` 默认启动已经准备好的 Knowledge runtime API + worker，适合验证 PDF 上传、
-  解析、切块、embedding、索引和检索；`--runtime api` 只启动 API，`--runtime none` 跳过
-  runtime。脚本只会自动把
-  loopback runtime URL 加入 `NO_PROXY`，并对本机 health check 使用 `curl --noproxy '*'`。
-  外部 runtime URL 继续尊重宿主机代理环境。
-- Go module 下载只发生在你手工执行 `check.sh` 输出的 `go build` / `go install` 命令时。
-  官方默认值是 `https://proxy.golang.org,direct` / `sum.golang.org`；中国大陆网络使用
-  `GOPROXY=https://goproxy.cn,direct` / `GOSUMDB=sum.golang.google.cn`。
-  这不是 Docker 镜像源，也不是 Knowledge runtime 的 `UV_DEFAULT_INDEX`。
+- `start.sh`：标准本地入口。它先检查 Docker、Go、Python、uv、psql、curl 等宿主机环境
+  和 Go 版本，再按需准备 `.env.local`、`.local/tools`、`.local/bin`、Docker infra images、
+  Knowledge runtime `.venv` 和 runtime artifact。已存在的产物会跳过；Go 构建/安装、
+  Docker pull、uv sync 和模型/artifact 下载都会输出原生命令进度或周期性心跳。
+- `start.sh` 会渲染 `.local/config/<profile>.env`，等待 `postgres` / `redis` / `minio` /
+  `elasticsearch` health checks，单独运行一次性 `minio-init`，执行 migration 和 demo seed，
+  再启动 host-run 后端进程组。Compose 启动仍使用 `--pull never`，镜像拉取只发生在
+  prepare 阶段发现所选镜像缺失时。
+- `start.sh` 默认启动 Knowledge runtime API + worker，适合验证 PDF 上传、解析、切块、
+  embedding、索引和检索；`--runtime api` 只启动 API，`--runtime none` 跳过 runtime。
+  脚本只会自动把 loopback runtime URL 加入 `NO_PROXY`，并对本机 health check 使用
+  `curl --noproxy '*'`。外部 runtime URL 继续尊重宿主机代理环境。
+- 官方默认 Go module 设置是 `https://proxy.golang.org,direct` / `sum.golang.org`。
+  `start.sh --china` 会在本次 Go 工具/服务构建和 goose 安装中使用
+  `GOPROXY=https://goproxy.cn,direct` / `GOSUMDB=sum.golang.google.cn`。这不是 Docker
+  镜像源，也不是 Knowledge runtime 的 `UV_DEFAULT_INDEX`。
 - `stop.sh`：按 `.local/run/` 中记录的进程组停止后端和 runtime，避免留下真实服务占用端口。
 - `clean.sh`：停止 host-run 进程并删除本地 infra Compose 数据卷；不删除 Docker images、
   `.env.local`、`.local/tools` 或 `.local/bin`。
@@ -239,9 +220,9 @@ client 与 Document 工具，不代表完整 QA Agent + LLM 链路通过。Issue
 Infra 拉取慢：
 
 - 默认是 Compose 里的 Docker Hub pinned tags。
-- 中国大陆网络先运行 `./scripts/local/check.sh --china` 查看 `docker.1ms.run` registry rewrite
-  建议；`./scripts/local/start.sh --china` 会在本次运行的生成态 `.local/config/dev.env`
-  中使用同一组镜像名，`.env.local` 不会被脚本改写。
+- 中国大陆网络运行 `./scripts/local/start.sh --china`，脚本会在本次运行的生成态
+  `.local/config/dev.env` 中使用 `docker.1ms.run` registry rewrite，并在镜像缺失时拉取
+  这组镜像；`.env.local` 不会被脚本改写。
 - 已配置 Docker daemon mirror 时，运行 `python3 scripts/check_docker_environment.py --profile all --clean-env`。
 - 代理只作为最后选择；shell proxy、daemon proxy 和 registry rewrite 是三条不同路径。
   验证官方 Docker Hub 路径经 shell/Docker 代理可达时，运行
@@ -249,12 +230,9 @@ Infra 拉取慢：
 
 Knowledge runtime 启动慢：
 
-- 默认 `UV_DEFAULT_INDEX=https://pypi.org/simple`，显式 runtime 准备使用官方 PyPI。
-- 启动脚本不执行 runtime 依赖或 artifact 下载。需要时按 `./scripts/local/check.sh`
-  输出的 `uv sync` 和 `download_deps.py` 命令手工执行；中国大陆网络先运行
-  `./scripts/local/check.sh --china`，建议会将 Python 包、GitHub release/raw、NLTK、
-  HuggingFace、Tika 和 Chrome 下载切到镜像，但提交的 `pyproject.toml` / `uv.lock`
-  仍保持官方 URL。
+- 默认 `UV_DEFAULT_INDEX=https://pypi.org/simple`，`start.sh` 准备 runtime 依赖时使用官方
+  PyPI。中国大陆网络运行 `./scripts/local/start.sh --china`，脚本会把本次 runtime
+  准备切到中国大陆镜像路径；提交的 `pyproject.toml` / `uv.lock` 仍保持官方 URL。
 - `HF_ENDPOINT` 用于 runtime worker 首次导入 deepdoc OCR/vision 模块时下载
   `InfiniFlow/deepdoc`。提交的默认配置不启用第三方 mirror；中国大陆网络运行真实解析
   栈时使用 `./scripts/local/start.sh --china`，脚本会在本次进程内为
@@ -272,7 +250,6 @@ Knowledge runtime 启动慢：
 
   ```bash
   # First set provider vars in .env.local; Elasticsearch starts with default infra.
-  ./scripts/local/check.sh
   ./scripts/local/start.sh
   python3 scripts/local/knowledge-pdf-e2e.py /path/to/DL_T_673-1999.pdf
   ```
@@ -294,18 +271,17 @@ Knowledge runtime 启动慢：
 
 Go modules 下载慢或超时：
 
-- `start.sh` 不执行 Go module 下载；它使用 `.local/tools/goose` 执行 migration，并启动
-  `.local/bin/` 下的服务二进制。
-- 默认保留 `.env.example` 里的官方
-  `GOPROXY=https://proxy.golang.org,direct` 和 `GOSUMDB=sum.golang.org`；手工构建本机
-  Go 工具/服务二进制时可以继承这些值。中国大陆网络按 `./scripts/local/check.sh --china`
-  输出建议临时设置 `https://goproxy.cn,direct` 和 `sum.golang.google.cn`。
+- `start.sh` 会在准备缺失 Go tools、`goose@v3.27.0` 和 host-run 服务二进制时下载 Go
+  modules。默认保留 `.env.example` 里的官方
+  `GOPROXY=https://proxy.golang.org,direct` 和 `GOSUMDB=sum.golang.org`；中国大陆网络使用
+  `./scripts/local/start.sh --china`，脚本会在本次 Go 准备阶段设置
+  `https://goproxy.cn,direct` 和 `sum.golang.google.cn`。
 - `.env.local` 如果设置镜像值，脚本会尊重本地覆盖并提示；
   若 proxy 或 checksum DB 不可达或下载超时，脚本会在终端直接失败并打印当前有效
   `GOPROXY` / `GOSUMDB`，而不是只把错误藏在 `.local/logs/*.log`。
 - Go modules 下载不走 Docker registry rewrite，也不受 `UV_DEFAULT_INDEX` 影响。
-- 如果手工 Go 构建出现 `Get "https://proxy.golang.org/...": i/o timeout`，
-  中国大陆网络先运行 `./scripts/local/check.sh --china`；其他网络检查企业代理
+- 如果 Go 构建出现 `Get "https://proxy.golang.org/...": i/o timeout`，
+  中国大陆网络先运行 `./scripts/local/start.sh --china`；其他网络检查企业代理
   或本机 Go 配置。
 - `.env.local` 不会被脚本自动改写；想恢复官方默认值，重新复制
   `.env.example` 后再恢复本机私有配置。
@@ -446,7 +422,6 @@ go test ./internal/integration -run '^TestGatewayKnowledgeOwnerRouteSmoke$' -cou
 ```bash
 cp .env.example .env.local
 # 如需运行本 smoke，可先在 .env.local 中设置 QA_SETTINGS_OPEN=true。
-./scripts/local/check.sh
 ./scripts/local/start.sh
 ```
 
@@ -563,7 +538,7 @@ printf '%s' "$TOKEN" | shasum -a 256 | awk '{print "sha256:" $1}'
 set -a && source .local/config/dev.env.sh && set +a
 
 cd services/ai-gateway
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 \
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 \
   -dir migrations postgres "$AI_GATEWAY_DATABASE_URL" up
 go run ./cmd/server
 ```
@@ -694,7 +669,7 @@ tokens, full prompts, document text, embedding payloads, or provider raw error
 bodies.
 
 1. Start the local stack (infra + all backend services):
-   `./scripts/local/check.sh && ./scripts/local/start.sh`.
+   `./scripts/local/start.sh`.
 2. Check AI Gateway readiness:
    `curl -s http://127.0.0.1:8086/readyz`.
    `missing` means the profile or active credential is absent; `placeholder`

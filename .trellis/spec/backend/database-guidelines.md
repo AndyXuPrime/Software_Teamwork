@@ -14,7 +14,7 @@ adapters. Handlers must not talk directly to infrastructure clients.
 Confirmed Go infrastructure target stack:
 
 - PostgreSQL: `pgx` + `sqlc`.
-- Migrations: `goose@v3.27.1`.
+- Migrations: `goose@v3.27.0`.
 - Redis cache/session access: `go-redis`.
 - Redis queues: `asynq v0.26.0`.
 - Runtime-owned index stores: current Knowledge indexing and retrieval are
@@ -193,7 +193,7 @@ func (r *UserRepository) FindByID(ctx context.Context, id UserID) (User, error) 
 - For services with migrations, run:
 
 ```bash
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$DATABASE_URL" up
 ```
 
 ### 7. Wrong vs Correct
@@ -316,7 +316,7 @@ if err := pool.Ping(ctx); err != nil {
 - Safety tests asserting responses and invocation summaries do not contain API
   keys, bearer tokens, prompt text, full tool arguments, tool schemas, tool
   results, or raw provider bodies.
-- Migration validation with `goose@v3.27.1`; run a real PostgreSQL apply when a
+- Migration validation with `goose@v3.27.0`; run a real PostgreSQL apply when a
   local or CI database URL is available.
 
 ### 7. Wrong vs Correct

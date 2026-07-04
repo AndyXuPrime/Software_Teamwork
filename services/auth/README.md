@@ -106,13 +106,13 @@ Run the project-pinned goose version, then apply the service-owned migrations:
 
 ```bash
 cd services/auth
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$AUTH_DATABASE_URL" up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$AUTH_DATABASE_URL" up
 ```
 
 The first migration is forward and down capable:
 
 ```bash
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$AUTH_DATABASE_URL" down
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$AUTH_DATABASE_URL" down
 ```
 
 ## sqlc

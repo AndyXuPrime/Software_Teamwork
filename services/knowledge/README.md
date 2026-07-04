@@ -162,11 +162,9 @@ the Knowledge adapter, and the other host-run backend services.
 First copy `.env.example` to `.env.local`, then fill the runtime model provider
 variables documented in `../knowledge-runtime/README.md` and
 [`../../config/README.md`](../../config/README.md). Runtime Python dependencies
-and artifacts are manual setup steps reported by `check.sh`, not startup side
-effects.
+and artifacts are prepared by `start.sh` before runtime startup.
 
 ```bash
-./scripts/local/check.sh
 ./scripts/local/start.sh
 python3 scripts/local/knowledge-pdf-e2e.py /path/to/DL_T_673-1999.pdf
 ```
@@ -175,7 +173,6 @@ For query-only validation against an already-built knowledge base, start only
 the runtime API:
 
 ```bash
-./scripts/local/check.sh
 ./scripts/local/start.sh --runtime api
 ```
 
@@ -225,10 +222,10 @@ upload without queuing `/documents/parse`.
 
 ## Migrations
 
-Apply the service-owned migration with the project-pinned `goose@v3.27.1` command:
+Apply the service-owned migration with the project-pinned `goose@v3.27.0` command:
 
 ```bash
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$DATABASE_URL" up
 ```
 ## Development
 

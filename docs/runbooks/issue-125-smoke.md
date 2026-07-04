@@ -10,7 +10,6 @@ Use the local integration baseline first:
 
 ```bash
 cp .env.example .env.local
-./scripts/local/check.sh
 ./scripts/local/start.sh
 ```
 
@@ -21,22 +20,16 @@ Gateway run on the host through `start.sh`; do not use Compose profiles,
 business-service containers, or `--build` for this smoke.
 
 Defaults use official Docker/PyPI/Go/GitHub sources. For mainland China
-networks, use explicit mirror mode for the affected step:
+networks, use explicit mirror mode:
 
 ```bash
-./scripts/local/check.sh --china
 ./scripts/local/start.sh --china
 ```
 
-Startup does not download Go modules, Docker images, uv environments, or
-Knowledge runtime artifacts. Before claiming Knowledge runtime coverage, run the
-environment check and follow any runtime setup suggestions it prints:
-
-```bash
-./scripts/local/check.sh
-# mainland China:
-./scripts/local/check.sh --china
-```
+Startup preflights host commands, then prepares missing Go tools, service
+binaries, Docker images, uv environments, and Knowledge runtime artifacts for
+the selected source mode before starting services. Long-running prepare steps
+print native progress or heartbeat output.
 
 If image pulls, Knowledge runtime dependency downloads, GitHub release/raw
 downloads, or Go module downloads are blocked, use

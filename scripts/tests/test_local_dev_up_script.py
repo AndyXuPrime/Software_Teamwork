@@ -12,44 +12,7 @@ from typing import Optional
 
 
 class LocalStartupScriptTests(unittest.TestCase):
-    def test_check_default_only_inspects_environment(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = self.prepare_runtime(Path(directory))
-            self.create_prepared_config_tool(root)
-            self.create_prepared_tools(root)
-            self.create_service_binaries(root)
-            self.create_runtime_files(root)
-
-            result = self.run_check(root)
-
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("checking local environment; no downloads or builds will run", result.stdout)
-            self.assertIn("local environment looks ready", result.stdout)
-            self.assertFalse((root / "go-calls.log").exists())
-            docker_calls = (root / "docker-calls.log").read_text(encoding="utf-8")
-            self.assertNotIn("image inspect", docker_calls)
-            self.assertNotIn(" pull ", f" {docker_calls} ")
-            self.assertFalse((root / "uv-calls.log").exists())
-
-    def test_check_china_mode_prints_manual_download_suggestions(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = self.prepare_runtime(Path(directory))
-
-            result = self.run_check(root, args=["--china"])
-
-            self.assertNotEqual(0, result.returncode)
-            self.assertIn("Mainland China mirrors, run manually only for missing items", result.stdout)
-            self.assertIn("docker pull docker.1ms.run/library/postgres:16-alpine", result.stdout)
-            self.assertIn("GOPROXY=https://goproxy.cn,direct", result.stdout)
-            self.assertIn("ragflow_deps/download_deps.py --skip-uv-sync --china", result.stdout)
-            self.assertFalse((root / "go-calls.log").exists())
-            if (root / "docker-calls.log").exists():
-                docker_calls = (root / "docker-calls.log").read_text(encoding="utf-8")
-                self.assertNotIn("image inspect", docker_calls)
-                self.assertNotIn(" pull ", f" {docker_calls} ")
-            self.assertFalse((root / "uv-calls.log").exists())
-
-    def test_start_infra_only_never_pulls_or_requires_uv(self) -> None:
+    def test_start_infra_only_skips_pull_when_images_exist_and_requires_no_uv(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.prepare_runtime(Path(directory))
             self.create_prepared_config_tool(root)
@@ -66,6 +29,26 @@ class LocalStartupScriptTests(unittest.TestCase):
             self.assertNotIn(" pull ", f" {docker_calls} ")
             self.assertFalse((root / "uv-calls.log").exists())
             self.assertFalse((root / "go-calls.log").exists())
+
+    def test_start_infra_only_pulls_missing_images(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare_runtime(Path(directory))
+            self.create_prepared_config_tool(root)
+            self.create_prepared_tools(root)
+
+            result = self.run_start(
+                root,
+                args=["--infra-only"],
+                extra_env={"FAKE_DOCKER_INSPECT_FAIL": "1"},
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            docker_calls = (root / "docker-calls.log").read_text(encoding="utf-8")
+            self.assertIn("pull postgres:16-alpine", docker_calls)
+            self.assertIn("pull redis:7-alpine", docker_calls)
+            self.assertIn("pull minio/minio:RELEASE.2025-09-07T16-13-09Z", docker_calls)
+            self.assertIn("pull minio/mc:RELEASE.2025-08-13T08-35-41Z", docker_calls)
+            self.assertIn("pull docker.elastic.co/elasticsearch/elasticsearch:8.15.3", docker_calls)
 
     def test_start_china_rewrites_rendered_compose_env_for_infra(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -100,7 +83,9 @@ class LocalStartupScriptTests(unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assertIn("missing", result.stderr)
             self.assertIn(".local/bin/auth-server", result.stderr)
-            self.assertIn("./scripts/local/check.sh", result.stderr)
+            self.assertIn("build host-run service binaries", result.stderr)
+            go_calls = (root / "go-calls.log").read_text(encoding="utf-8")
+            self.assertIn("services/auth", go_calls)
             self.assertFalse((root / "docker-calls.log").exists())
 
     def test_start_backend_uses_prepared_binaries_without_runtime(self) -> None:
@@ -183,7 +168,6 @@ class LocalStartupScriptTests(unittest.TestCase):
 
     def prepare_runtime(self, root: Path) -> Path:
         for relative in [
-            "scripts/local/check.sh",
             "scripts/local/start.sh",
             "scripts/config/load-profile.sh",
             "scripts/local/lib/common.sh",
@@ -240,6 +224,9 @@ class LocalStartupScriptTests(unittest.TestCase):
             """\
             #!/usr/bin/env bash
             echo "$*" >> "$FAKE_DOCKER_CALLS"
+            if [[ "$1" == "image" && "${2:-}" == "inspect" && "${FAKE_DOCKER_INSPECT_FAIL:-0}" == "1" ]]; then
+              exit 1
+            fi
             {
               echo "POSTGRES_IMAGE=${POSTGRES_IMAGE:-}"
               echo "REDIS_IMAGE=${REDIS_IMAGE:-}"
@@ -254,6 +241,14 @@ class LocalStartupScriptTests(unittest.TestCase):
             fake_bin / "go",
             """\
             #!/usr/bin/env bash
+            if [[ "$1" == "env" && "${2:-}" == "GOVERSION" ]]; then
+              echo go1.25.4
+              exit 0
+            fi
+            if [[ "$1" == "version" ]]; then
+              echo "go version go1.25.4 linux/amd64"
+              exit 0
+            fi
             echo "$PWD|$*" >> "$FAKE_GO_CALLS"
             {
               echo "GOPROXY=${GOPROXY:-}"
@@ -304,7 +299,10 @@ class LocalStartupScriptTests(unittest.TestCase):
         )
 
     def create_prepared_tools(self, root: Path) -> None:
-        self.write_executable(root / ".local" / "tools" / "goose", "#!/usr/bin/env bash\nexit 0\n")
+        self.write_executable(
+            root / ".local" / "tools" / "goose",
+            "#!/usr/bin/env bash\nprintf 'goose version: v3.27.0\\n'\nexit 0\n",
+        )
         self.write_executable(
             root / ".local" / "tools" / "render-ai-gateway-local-seed",
             "#!/usr/bin/env bash\nexit 0\n",
@@ -337,6 +335,14 @@ class LocalStartupScriptTests(unittest.TestCase):
         (runtime / "rag" / "res" / "deepdoc").mkdir(parents=True)
         (runtime / "ragflow_deps" / "tika-server-standard-3.3.0.jar").write_text("jar\n", encoding="utf-8")
         (runtime / "ragflow_deps" / "cl100k_base.tiktoken").write_text("encoding\n", encoding="utf-8")
+        for artifact in [
+            "det.onnx",
+            "rec.onnx",
+            "tsr.onnx",
+            "layout.onnx",
+            "updown_concat_xgb.model",
+        ]:
+            (runtime / "rag" / "res" / "deepdoc" / artifact).write_text("artifact\n", encoding="utf-8")
         self.write_executable(
             runtime / "deploy" / "api" / "run-local.sh",
             "#!/usr/bin/env bash\nwhile true; do sleep 60; done\n",
@@ -350,14 +356,6 @@ class LocalStartupScriptTests(unittest.TestCase):
             "es:\n  hosts: http://127.0.0.1:9200\n",
             encoding="utf-8",
         )
-
-    def run_check(
-        self,
-        root: Path,
-        args: Optional[list[str]] = None,
-        extra_env: Optional[dict[str, str]] = None,
-    ) -> subprocess.CompletedProcess[str]:
-        return self.run_script(root, "check.sh", args, extra_env)
 
     def run_start(
         self,

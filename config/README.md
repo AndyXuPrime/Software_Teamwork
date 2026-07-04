@@ -49,20 +49,18 @@ config/
 
 ```bash
 cp .env.example .env.local
-./scripts/local/check.sh
 ./scripts/local/start.sh
 cd apps/web && bun install && bun run dev
 ```
 
-中国大陆网络先查看镜像建议：
+中国大陆网络显式启用本次运行镜像和下载源：
 
 ```bash
-./scripts/local/check.sh --china
+./scripts/local/start.sh --china
 ```
 
-`check.sh` 只检查当前环境并打印官方/中国大陆下载建议，不下载、不构建、不 pull 镜像、
-不执行 `uv sync`，也不会改写 `config/` 或 `.env.local`。启动脚本只使用已经存在的
-本机工具、镜像、二进制和 runtime `.venv`。
+`start.sh` 会先做宿主机 preflight，再按需准备本机工具、镜像、二进制和 runtime `.venv` /
+artifact；`--china` 只影响本次运行，不会改写 `config/` 或 `.env.local`。
 
 手动渲染当前本地配置：
 

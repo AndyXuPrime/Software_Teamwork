@@ -865,8 +865,8 @@ Rules:
   `sum.golang.org` as the committed defaults.
 - Mainland China users must still have a first-class explicit mirror mode.
   Prefer `registry rewrite > daemon mirror > proxy`: registry rewrite is
-  suggested by `check.sh --china` or local untracked `.env.local`
-  overrides, daemon mirrors are local machine state, and proxies are last-resort
+  selected by `start.sh --china` or local untracked `.env.local` overrides,
+  daemon mirrors are local machine state, and proxies are last-resort
   environment state. Keep these paths documented and diagnosable.
 - The explicit mainland China Docker registry rewrite uses `docker.1ms.run`.
   The Elasticsearch rewrite is `docker.1ms.run/elasticsearch:8.15.3`.
@@ -905,18 +905,15 @@ default because it is the active Knowledge runtime doc engine.
 Required local sequence:
 
 1. Copy local secret placeholders with `cp .env.example .env.local`.
-2. Run `./scripts/local/check.sh` to inspect the current environment
-   without downloads; use `--china` on mainland China networks for mirror
-   suggestions.
-3. Follow only the setup suggestions needed for missing local items.
-4. Run `./scripts/local/start.sh` to start already-present infra images, wait for
-   health, run one-shot `minio-init`, apply host migrations, apply local seed,
-   and start Auth, File, Knowledge, AI Gateway, QA, Document, and Gateway as
-   host processes.
-5. For Knowledge ingestion/retrieval scenarios, make sure runtime files are
-   present; `start.sh` defaults to runtime API + worker, `--runtime api` starts
-   only the API, and `--runtime none` skips runtime.
-6. Run `cd apps/web && bun install && bun run dev` for the frontend.
+2. Run `./scripts/local/start.sh` or `./scripts/local/start.sh --china` to
+   preflight host commands, prepare missing local artifacts/images for the
+   selected source mode, wait for infra health, run one-shot `minio-init`, apply
+   host migrations, apply local seed, and start Auth, File, Knowledge, AI
+   Gateway, QA, Document, and Gateway as host processes.
+3. For Knowledge ingestion/retrieval scenarios, `start.sh` defaults to runtime
+   API + worker, `--runtime api` starts only the API, and `--runtime none` skips
+   runtime.
+4. Run `cd apps/web && bun install && bun run dev` for the frontend.
 
 Runtime rules:
 
@@ -934,12 +931,11 @@ Runtime rules:
   Knowledge parsing runs through the Knowledge runtime API/worker path.
 - Keep `UV_DEFAULT_INDEX` in `config/base.yaml` as the default host-run uv
   package index, using official PyPI by default. Mainland China mirror usage
-  must be explicit through `check.sh --china` suggestions or local untracked
-  `.env.local` overrides. Runtime dependency/artifact setup must remain manual;
-  `start.sh` must not run `uv sync` or artifact downloads.
-  `ragflow_deps/download_deps.py --china` remains the manual fallback. It
-  affects Python dependency downloads only; Docker registry rewrite remains the
-  Compose image path.
+  must be explicit through `start.sh --china` or local untracked `.env.local`
+  overrides. `start.sh` may run `download_deps.py --sync-only` and
+  `download_deps.py --skip-uv-sync` to prepare the runtime `.venv` and
+  artifacts for the selected source mode. This affects Python dependency
+  downloads only; Docker registry rewrite remains the Compose image path.
 - Treat `services/knowledge-runtime/**` and its host-run API/worker scripts as
   the local runtime contract for Knowledge parsing and retrieval changes.
 - `start.sh --runtime full` must not run direct `docker build` or `docker run`
@@ -961,19 +957,14 @@ Runtime rules:
   committed config and `.env.local` unchanged.
 - Keep `GOPROXY` and `GOSUMDB` in `config/base.yaml` as the default host-run
   Go module proxy/checksum settings, using official upstream values by default.
-  Mainland China mirror usage must be explicit through `check.sh --china`
-  suggestions or local untracked `.env.local` overrides. It affects manual Go
-  tool/service binary builds, not Docker image pulls, `start.sh`, or Knowledge
-  runtime uv downloads.
-- `check.sh` may print manual `go build` / `go install` suggestions but must not
-  execute them. `start.sh` must use `.local/tools` and
-  `.local/bin` only; it must not run `go mod download`, `go run module@version`,
-  or `go run ./cmd/server`.
-- `check.sh` is a pre-start readiness check. It must not run Docker image state
-  probes such as `docker image inspect`, start containers, pull images, or treat
-  missing local images as a preflight failure. Docker image availability is
-  handled by manual pull suggestions and by `start.sh --pull never` startup
-  failure/status output.
+  Mainland China mirror usage must be explicit through `start.sh --china` or
+  local untracked `.env.local` overrides. It affects `start.sh` Go tool/service
+  preparation, not Docker image pulls or Knowledge runtime uv downloads.
+- `start.sh` is the only standard local setup/start entrypoint. It may build
+  `.local/tools/config-ctl`, install `goose@v3.27.0`, build `.local/bin`
+  service binaries, inspect/pull selected Docker infra images, and prepare
+  Knowledge runtime `.venv`/artifacts. It must not run unpinned `go run`
+  startup commands or use `go run ./cmd/server` for long-lived services.
 - Host-run process management is part of the local startup contract:
   `start.sh` should start service commands in managed process groups and
   `stop.sh` should stop those process groups, not just wrapper PIDs.

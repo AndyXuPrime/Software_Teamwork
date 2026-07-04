@@ -58,7 +58,7 @@ _config_loader_render() {
   fi
   if [[ "${CONFIG_CTL_REQUIRE_PREPARED:-0}" == "1" ]]; then
     echo "missing prepared config renderer: $root/.local/tools/config-ctl" >&2
-    echo "run ./scripts/local/check.sh for setup suggestions" >&2
+    echo "run ./scripts/local/start.sh to prepare local tools" >&2
     return 1
   fi
   if ! command -v go >/dev/null 2>&1; then

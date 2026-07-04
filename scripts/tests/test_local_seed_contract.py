@@ -118,7 +118,6 @@ class LocalSeedContractTests(unittest.TestCase):
                 "大陆镜像\n"
                 "GOPROXY=https://proxy.golang.org,direct\n"
                 "GOSUMDB=sum.golang.org\n"
-                "./scripts/local/check.sh\n"
                 "./scripts/local/start.sh\n"
                 "./scripts/local/stop.sh\n"
                 "cleanup with down -v\n",
@@ -158,30 +157,23 @@ class LocalSeedContractTests(unittest.TestCase):
                 ".local/knowledge-runtime/service_conf.yaml\n",
                 encoding="utf-8",
             )
-            (root / "scripts" / "local" / "check.sh").write_text(
-                "[check]\n"
-                "no downloads or builds will run\n"
-                "setup suggestions\n"
-                "Official sources, run manually only for missing items\n"
-                "Mainland China mirrors, run manually only for missing items\n"
-                "--sync-only --profile\n"
-                "ragflow_deps/download_deps.py --skip-uv-sync\n"
-                "docker.1ms.run/library/postgres:16-alpine\n"
-                "goose@v3.27.1\n"
-                "https://go.dev/dl/\n"
-                "https://docs.astral.sh/uv\n",
-                encoding="utf-8",
-            )
             (root / "scripts" / "local" / "render_ai_gateway_local_seed.go").write_text(
                 "package main\n",
                 encoding="utf-8",
             )
             (root / "scripts" / "local" / "start.sh").write_text(
                 "[start]\n"
-                "This script does not run dependency downloads\n"
+                "Prepares missing local tools\n"
+                "preflighting host environment\n"
+                "preparing local Go tools\n"
+                "preparing Docker infrastructure images\n"
+                "preparing Knowledge runtime dependencies\n"
+                "preparing backend service binaries\n"
+                "run_with_heartbeat\n"
                 "--pull never\n"
-                ".local/tools/config-ctl\n"
-                ".local/tools/goose\n"
+                "config-ctl\n"
+                "GOOSE_VERSION=\"v3.27.0\"\n"
+                "github.com/pressly/goose/v3/cmd/goose@$GOOSE_VERSION\n"
                 ".local/bin\n"
                 "AUTH_DATABASE_URL\n"
                 "FILE_DATABASE_URL\n"
@@ -198,8 +190,7 @@ class LocalSeedContractTests(unittest.TestCase):
                 "--runtime full\n"
                 "knowledge-runtime-api\n"
                 "knowledge-runtime-worker\n"
-                "go mod download\n"
-                "go run module@version\n",
+                "download_deps.py\n",
                 encoding="utf-8",
             )
             (root / "scripts" / "local" / "clean.sh").write_text(
@@ -251,7 +242,6 @@ class LocalSeedContractTests(unittest.TestCase):
             env_example="VENDOR_RUNTIME_URL=http://127.0.0.1:9380\n",
             config_readme="",
             config_base="",
-            check_script="",
             start_script="",
             clean_script="",
             ai_gateway_local_seed_renderer="",

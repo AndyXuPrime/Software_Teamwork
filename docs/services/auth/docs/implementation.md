@@ -87,7 +87,7 @@
 | 验证项 | 命令或步骤 | 当前结果 | 缺口 |
 | --- | --- | --- | --- |
 | 单元测试 | `cd services/auth && go test ./...` | pass（2026-07-02） | 无。 |
-| 集成测试 | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$DATABASE_URL" up` | pass（2026-07-01，本地 Docker PostgreSQL 16，迁移到 version 3） | 需随 migration 版本继续更新记录。 |
+| 集成测试 | `go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$DATABASE_URL" up` | pass（2026-07-01，本地 Docker PostgreSQL 16，迁移到 version 3） | 需随 migration 版本继续更新记录。 |
 | 契约测试 | HTTP handler tests + Gateway auth proxy tests | pass（2026-07-03，后端与 Gateway auth proxy 本地测试） | 未从 OpenAPI 自动生成校验。 |
 | 本地 / optional CI smoke | `bash scripts/run_issue_352_smoke.sh`；手动 workflow `Auth Gateway Redis Smoke` | available（env-gated；执行会 apply Auth migration、启动 Auth/Gateway、验证 Redis 和 fake owner header capture） | 真实执行需要 Docker daemon、PostgreSQL、Redis 和 Go；默认 PR CI 只跑 skip 编译。 |
 

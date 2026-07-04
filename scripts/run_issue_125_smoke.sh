@@ -65,8 +65,8 @@ Usage:
   bash scripts/run_issue_125_smoke.sh --all
 
 Local defaults:
-  Start the stack with .env.local, ./scripts/local/check.sh, and
-  ./scripts/local/start.sh. This script loads the selected config profile
+  Start the stack with .env.local and ./scripts/local/start.sh. This script
+  loads the selected config profile
   without overriding variables already exported in the shell.
 
 Useful overrides:

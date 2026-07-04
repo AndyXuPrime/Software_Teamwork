@@ -3,31 +3,20 @@ from pathlib import Path
 
 
 class KnowledgeRuntimeDependencySplitTests(unittest.TestCase):
-    def test_start_helper_never_syncs_runtime_dependencies(self) -> None:
+    def test_start_helper_prepares_runtime_dependencies_before_execution(self) -> None:
         script = Path("scripts/local/start.sh").read_text(encoding="utf-8")
 
         self.assertIn("--runtime api", script)
         self.assertIn("--runtime full", script)
+        self.assertIn("prepare_runtime_dependencies()", script)
+        self.assertIn("--sync-only", script)
+        self.assertIn("--profile", script)
+        self.assertIn("download_deps.py", script)
+        self.assertIn("--skip-uv-sync", script)
         self.assertIn('start_process "knowledge-runtime-api"', script)
         self.assertIn('start_process "knowledge-runtime-worker"', script)
         self.assertNotIn("\nuv sync", script)
         self.assertNotIn("exec uv sync", script)
-        self.assertNotIn("download_deps.py", script)
-
-    def test_check_helper_prints_runtime_setup_suggestions_without_executing_them(self) -> None:
-        script = Path("scripts/local/check.sh").read_text(encoding="utf-8")
-
-        self.assertIn("Checks the local environment and prints setup suggestions", script)
-        self.assertIn("--runtime full", script)
-        self.assertIn("--runtime api", script)
-        self.assertIn("--runtime none", script)
-        self.assertIn("--sync-only --profile", script)
-        self.assertIn("ragflow_deps/download_deps.py --skip-uv-sync", script)
-        self.assertIn("Mainland China mirrors, run manually only for missing items", script)
-        self.assertIn("Official sources, run manually only for missing items", script)
-        self.assertNotIn("prepare_runtime_sync()", script)
-        self.assertNotIn("prepare_runtime_artifacts()", script)
-        self.assertNotIn("docker image inspect", script)
 
     def test_runtime_entrypoints_use_no_sync_execution_only(self) -> None:
         api_script = Path("services/knowledge-runtime/deploy/api/run-local.sh").read_text(encoding="utf-8")

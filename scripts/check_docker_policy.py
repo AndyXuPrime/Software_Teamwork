@@ -427,7 +427,7 @@ def validate_env_example(root: Path) -> list[str]:
         value = config_values.get(key)
         if value != expected_default:
             issues.append(
-                f"config/base.yaml: `{key}` must default to official pinned `{expected_default}` under the official-by-default source policy; use ./scripts/local/check.sh --china for mirror suggestions or local .env.local overrides"
+                f"config/base.yaml: `{key}` must default to official pinned `{expected_default}` under the official-by-default source policy; use ./scripts/local/start.sh --china for the per-run registry rewrite or local .env.local overrides"
             )
 
     for key, value in config_values.items():

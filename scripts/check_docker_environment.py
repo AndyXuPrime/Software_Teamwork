@@ -117,7 +117,7 @@ def main() -> int:
     print("\nRecommendation")
     if args.profile in ("china", "all"):
         print(
-            "- For mainland China, run ./scripts/local/check.sh --china for mirror suggestions or keep local untracked *_IMAGE overrides."
+            "- For mainland China, run ./scripts/local/start.sh --china for the per-run registry rewrite or keep local untracked *_IMAGE overrides."
         )
         print(
             "- Do not rely on public registry rewrites as daemon registry-mirrors unless manifest probes prove mirror-mode works."

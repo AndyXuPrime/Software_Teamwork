@@ -111,7 +111,6 @@ jobs:
               'scripts/check_docker_policy.py',
               'scripts/check_docker_environment.py',
               'scripts/verify_local_seed_contract.py',
-              'scripts/local/check.sh',
               'scripts/local/start.sh',
               'scripts/local/stop.sh',
               'scripts/local/clean.sh',
@@ -228,7 +227,7 @@ jobs:
         run: python3 scripts/check_docker_environment.py --skip-network --clean-env
 
       - name: Validate local startup scripts
-        run: bash -n scripts/local/check.sh scripts/local/start.sh scripts/local/stop.sh scripts/local/clean.sh scripts/local/lib/*.sh scripts/config/load-profile.sh
+        run: bash -n scripts/local/start.sh scripts/local/stop.sh scripts/local/clean.sh scripts/local/lib/*.sh scripts/config/load-profile.sh
 
       - name: Validate local seed contract
         run: python3 scripts/verify_local_seed_contract.py

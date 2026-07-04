@@ -90,7 +90,7 @@ on_exit() {
     log_ok "completed successfully"
   else
     log_error "failed during ${CURRENT_STEP} (exit ${status})"
-    log_hint "Run ./scripts/local/check.sh to inspect missing local prerequisites."
+    log_hint "Run ./scripts/local/start.sh to prepare missing local prerequisites."
   fi
 }
 
@@ -149,4 +149,4 @@ run_step "stopping host-run processes" stop_processes
 run_step "loading local config" load_config
 run_step "validating Docker Compose config" docker compose -f "$COMPOSE_FILE" --env-file "$CONFIG_COMPOSE_ENV_FILE" config --quiet
 run_step "removing local development data volumes" compose_down
-log_ok "local development data cleared; run ./scripts/local/check.sh before starting again"
+log_ok "local development data cleared; run ./scripts/local/start.sh before starting again"

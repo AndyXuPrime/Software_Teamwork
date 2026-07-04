@@ -165,7 +165,7 @@ go test ./internal/repository -run '^TestPostgresRepositoryDBSmoke$' -count=1 -v
 
 ```bash
 cd services/ai-gateway
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$AI_GATEWAY_DATABASE_URL" up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$AI_GATEWAY_DATABASE_URL" up
 ```
 
 不要把生产或共享环境连接串用于 DB smoke，除非该连接串指向可清理的临时数据库。

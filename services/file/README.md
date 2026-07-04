@@ -35,7 +35,6 @@ Out of scope for this MVP:
 
 ```bash
 cp .env.example .env.local
-./scripts/local/check.sh
 ./scripts/local/start.sh
 ```
 
@@ -129,12 +128,12 @@ File metadata is behind the service repository port. The runtime uses the memory
 
 ## Migrations
 
-The contract migration under `migrations/` is applied with the project-pinned `goose@v3.27.1` command:
+The contract migration under `migrations/` is applied with the project-pinned `goose@v3.27.0` command:
 
 ```powershell
 cd services/file
 $env:FILE_DATABASE_URL = "postgres://file:file@localhost:5432/file?sslmode=disable"
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$env:FILE_DATABASE_URL" up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$env:FILE_DATABASE_URL" up
 ```
 
 Repository smoke tests are env-gated and use an isolated schema:
@@ -161,7 +160,6 @@ Start the root infra baseline from the repository root:
 
 ```bash
 cp .env.example .env.local
-./scripts/local/check.sh
 ./scripts/local/start.sh --infra-only
 cd services/file
 ```

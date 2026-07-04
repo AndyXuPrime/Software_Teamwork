@@ -54,7 +54,6 @@ host-run backend services from the repository root:
 
 ```bash
 cp .env.example .env.local
-./scripts/local/check.sh
 ./scripts/local/start.sh
 ```
 
@@ -158,10 +157,10 @@ registration, result fields and the QA Agent workflow are documented in
 
 ## Migrations
 
-Migration files live in `migrations/` and are applied with the project-pinned `goose@v3.27.1` command.
+Migration files live in `migrations/` and are applied with the project-pinned `goose@v3.27.0` command.
 
 ```powershell
-go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir migrations postgres "$env:DOCUMENT_DATABASE_URL" up
+go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$env:DOCUMENT_DATABASE_URL" up
 ```
 
 The first migration creates the report generation tables and seeds the initial
