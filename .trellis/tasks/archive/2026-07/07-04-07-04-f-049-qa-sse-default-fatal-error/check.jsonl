@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend check, test, and build gate for this bug fix."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "API wrapper and SSE payload normalization type-safety rules."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Chat streaming state recovery expectations after fatal errors."}
