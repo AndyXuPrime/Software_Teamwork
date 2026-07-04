@@ -304,4 +304,51 @@ describe('useReportEventStream', () => {
     expect(abort).toHaveBeenCalledTimes(1)
     expect(result.current.status).not.toBe('done')
   })
+
+  it('marks document SSE error events as errors and ignores the following EOF', () => {
+    const abort = vi.fn()
+    mockedStreamGateway.mockReturnValueOnce({
+      abort,
+      signal: new AbortController().signal,
+    })
+
+    const { result } = renderHook(() =>
+      useReportEventStream({ enabled: true, jobId: 'job-1', reportId: 'report-1' }),
+    )
+
+    const streamOptions = mockedStreamGateway.mock.calls[0]?.[1] as StreamOptions
+
+    act(() => {
+      streamOptions.onEvent(
+        reportEventFrame({
+          eventType: 'section.delta',
+          jobId: 'job-1',
+          message: JSON.stringify({
+            sectionId: 'section-1',
+            text: '{"content":"partial body"}',
+          }),
+        }),
+      )
+    })
+    act(() => {
+      streamOptions.onEvent({
+        data: JSON.stringify({
+          code: 'dependency_error',
+          message: 'event stream failed',
+        }),
+        event: 'error',
+      })
+    })
+    act(() => {
+      streamOptions.onDone?.()
+    })
+
+    expect(abort).toHaveBeenCalledTimes(1)
+    expect(result.current.status).toBe('error')
+    expect(result.current.error).toMatchObject({
+      code: 'dependency_error',
+      message: 'event stream failed',
+    })
+    expect(result.current.sectionTextById['section-1']).toBe('partial body')
+  })
 })

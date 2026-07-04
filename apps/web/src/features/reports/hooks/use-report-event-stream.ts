@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react'
 
-import { type ApiError, type SseEvent, streamGateway } from '@/api/client'
+import { ApiError, type SseEvent, streamGateway } from '@/api/client'
 import { StreamingTextController } from '@/lib/streaming-text'
 
 import type { ReportEvent } from '../report-generation.types'
@@ -116,6 +116,48 @@ function parseJsonSafely(value: string): unknown | null {
   } catch {
     return null
   }
+}
+
+function parseStringFields(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) return undefined
+
+  const fields = Object.entries(value).reduce<Record<string, string>>((result, [key, field]) => {
+    if (typeof field === 'string') result[key] = field
+    return result
+  }, {})
+
+  return Object.keys(fields).length > 0 ? fields : undefined
+}
+
+function parseReportStreamError(data: string): ApiError {
+  const parsed = parseJsonSafely(data)
+  const payload = isRecord(parsed) && isRecord(parsed.error) ? parsed.error : parsed
+  const fallbackMessage = data.trim() || 'Report event stream failed'
+
+  if (!isRecord(payload)) {
+    return new ApiError({
+      code: 'stream_error',
+      message: fallbackMessage,
+    })
+  }
+
+  const code =
+    typeof payload.code === 'string' && payload.code.trim() ? payload.code.trim() : 'stream_error'
+  const message =
+    typeof payload.message === 'string' && payload.message.trim()
+      ? payload.message.trim()
+      : fallbackMessage
+  const requestId =
+    typeof payload.requestId === 'string' && payload.requestId.trim()
+      ? payload.requestId.trim()
+      : undefined
+
+  return new ApiError({
+    code,
+    fields: parseStringFields(payload.fields),
+    message,
+    requestId,
+  })
 }
 
 function decodeJsonStringAt(
@@ -399,6 +441,7 @@ export function useReportEventStream({
     )
     controllersRef.current = controllers
     setState({ ...emptyStreamState, status: 'connecting' })
+    let streamFailed = false
 
     const streamPath = jobId
       ? `/reports/${encodeURIComponent(reportId)}/events/stream?jobId=${encodeURIComponent(jobId)}`
@@ -407,13 +450,13 @@ export function useReportEventStream({
     const { abort: stopStream } = streamGateway(streamPath, {
       method: 'GET',
       onDone: () => {
-        if (!active || canceledRef.current) return
+        if (!active || canceledRef.current || streamFailed) return
         controllers.finish()
         setState((prev) => ({ ...prev, status: 'done' }))
         abortRef.current = null
       },
       onError: (error) => {
-        if (!active || canceledRef.current) return
+        if (!active || canceledRef.current || streamFailed) return
         controllers.commitVisible()
         controllers.cancel()
         setState((prev) => ({ ...prev, error, status: 'error' }))
@@ -421,6 +464,22 @@ export function useReportEventStream({
       },
       onEvent: (event: SseEvent) => {
         if (!active || canceledRef.current) return
+
+        if (event.event === 'error') {
+          streamFailed = true
+          controllers.commitVisible()
+          controllers.cancel()
+          setState((prev) => ({
+            ...prev,
+            error: parseReportStreamError(event.data),
+            status: 'error',
+          }))
+          abortRef.current?.()
+          abortRef.current = null
+          return
+        }
+
+        if (streamFailed) return
         if (event.event !== 'report.event') return
         const reportEvent = parseReportEvent(event.data)
         if (!reportEvent) return
