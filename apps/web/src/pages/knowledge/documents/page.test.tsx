@@ -223,6 +223,34 @@ describe('KnowledgeDocumentsPage document type labels', () => {
   })
 })
 
+describe('KnowledgeDocumentsPage knowledge base selection', () => {
+  it('shows a create-first prompt instead of an empty dropdown when no knowledge bases exist', () => {
+    useAuthStore.setState({
+      accessToken: 'token',
+      error: null,
+      status: 'authenticated',
+      user: createUser(['knowledge:read']),
+      userName: 'kevin',
+    })
+    vi.mocked(useKnowledgeBases).mockReturnValue({
+      data: {
+        filteredLocally: false,
+        items: [],
+        page: { page: 1, pageSize: 100, total: 0 },
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useKnowledgeBases>)
+
+    renderWithProviders(<KnowledgeDocumentsPage />)
+
+    expect(screen.getByText('请先创建知识库')).toBeVisible()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+})
+
 describe('KnowledgeDocumentsPage upload interactions', () => {
   it('hides the upload entry when the user lacks upload and write permissions', () => {
     renderDocumentsPage({ permissions: ['knowledge:read'] })

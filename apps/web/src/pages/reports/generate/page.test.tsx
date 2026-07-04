@@ -257,6 +257,44 @@ describe('ReportGeneratePage', () => {
     expect(await screen.findByText(/文档生成模型配置已发布/)).toBeVisible()
   })
 
+  it('disables the document model selector when no enabled chat profiles exist', async () => {
+    setAuthenticatedUser(['report:write', 'admin:model-profile:write'])
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const url = new URL(request.url)
+
+      if (url.pathname.endsWith('/report-types')) {
+        return jsonResponse({ data: [reportType], requestId: 'req-types' })
+      }
+      if (url.pathname.endsWith('/report-templates')) {
+        return pageResponse([reportTemplate])
+      }
+      if (url.pathname.endsWith('/report-materials')) {
+        return pageResponse([reportMaterial])
+      }
+      if (request.method === 'GET' && url.pathname.endsWith('/report-settings')) {
+        return jsonResponse({
+          data: { llm: { provider: 'ai-gateway' } },
+          requestId: 'req-report-settings',
+        })
+      }
+      if (request.method === 'GET' && url.pathname.endsWith('/admin/model-profiles')) {
+        return jsonResponse({ data: [], requestId: 'req-chat-profiles' })
+      }
+
+      return jsonResponse({ data: [], requestId: 'req-empty' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderWithProviders(<ReportGeneratePage />)
+
+    const modelTrigger = await screen.findByLabelText('文档生成模型')
+
+    await waitFor(() => expect(modelTrigger).toBeDisabled())
+    expect(modelTrigger).toHaveTextContent('请先创建聊天模型 Profile')
+    expect(await screen.findByText(/请先在模型管理中新增并启用用途为 chat/)).toBeVisible()
+  })
+
   it('shows the current document generation model to non-admin report writers without admin-only requests', async () => {
     const user = userEvent.setup()
     setAuthenticatedUser(['report:write'])

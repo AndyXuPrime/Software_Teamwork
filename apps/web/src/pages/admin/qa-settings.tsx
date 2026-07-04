@@ -361,6 +361,8 @@ export function QASettings() {
     llmForm.profileId.trim() !== '' &&
     !selectedChatProfile &&
     !chatProfiles.some((profile) => profile.id === llmForm.profileId)
+  const hasChatProfileOptions = showCurrentProfileFallback || chatProfiles.length > 0
+  const noChatProfileOptions = !chatProfilesQuery.isLoading && !hasChatProfileOptions
 
   const isLoading =
     qaConfigQuery.isLoading || llmConfigQuery.isLoading || chatProfilesQuery.isLoading
@@ -707,9 +709,12 @@ export function QASettings() {
                 <Select
                   value={llmForm.profileId || undefined}
                   onValueChange={(v) => handleSelectChatProfile(String(v))}
+                  disabled={chatProfilesQuery.isLoading || !hasChatProfileOptions}
                 >
                   <SelectTrigger className="h-8 w-full" aria-label="聊天模型">
-                    <SelectValue placeholder="请选择聊天模型" />
+                    <SelectValue
+                      placeholder={noChatProfileOptions ? '请先创建聊天模型' : '请选择聊天模型'}
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {showCurrentProfileFallback && (
