@@ -15,6 +15,7 @@ import {
   validateProfileForm,
 } from '@/features/auth'
 import { AppearanceSettings } from '@/features/theme'
+import { hasPermission, hasRole } from '@/lib/permissions'
 import { useAuthStore } from '@/stores/auth-store'
 
 const EMPTY_FORM: ProfileForm = {
@@ -39,6 +40,33 @@ function profileToForm(profile: {
     email: profile.email ?? '',
     phone: profile.phone ?? '',
   }
+}
+
+function permissionSummary(profile: { permissions: readonly string[]; roles: readonly string[] }) {
+  if (hasRole(profile.roles, 'super_admin')) {
+    return '当前账号为超级管理员，可管理系统账号、基础配置和全部业务模块。'
+  }
+
+  if (hasRole(profile.roles, 'admin')) {
+    return '当前账号为管理员，可管理普通用户并使用已开通的业务管理功能。'
+  }
+
+  if (hasRole(profile.roles, 'standard')) {
+    return '当前账号为普通用户，可使用已开通的业务功能；页面入口和操作按钮会按角色自动显示。'
+  }
+
+  if (
+    hasRole(profile.roles, 'system:admin') ||
+    hasPermission(profile.permissions, 'system:admin')
+  ) {
+    return '当前账号为系统管理员，可进入系统管理面板并维护平台级配置。'
+  }
+
+  if (profile.roles.length > 0) {
+    return '当前账号已分配业务角色；可用入口会按当前角色自动显示。'
+  }
+
+  return '当前账号暂未分配可用角色。如需开通业务功能，请联系管理员调整账号角色。'
 }
 
 export function ProfilePage() {
@@ -130,7 +158,7 @@ export function ProfilePage() {
         <div>
           <h1 className="text-2xl font-semibold text-foreground">个人资料</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            查看账号身份、角色权限，并维护可选联系资料。
+            查看账号身份、角色说明，并维护可选联系资料。
           </p>
         </div>
         <Button disabled={isSaving} onClick={handleSubmit}>
@@ -187,17 +215,9 @@ export function ProfilePage() {
               </div>
             </div>
             <div>
-              <div className="mb-2 text-xs text-muted-foreground">权限</div>
-              <div className="flex max-h-44 flex-wrap gap-1.5 overflow-auto">
-                {profile.permissions.length ? (
-                  profile.permissions.map((permission) => (
-                    <Badge key={permission} variant="outline">
-                      {permission}
-                    </Badge>
-                  ))
-                ) : (
-                  <span className="text-sm text-muted-foreground">无权限</span>
-                )}
+              <div className="mb-2 text-xs text-muted-foreground">权限说明</div>
+              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm leading-6 text-muted-foreground">
+                {permissionSummary(profile)}
               </div>
             </div>
           </div>
