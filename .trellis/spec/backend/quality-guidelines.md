@@ -287,6 +287,16 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$
   must externalize PostgreSQL, Redis, object storage, Knowledge runtime,
   PaddleOCR/OCR, and model providers. It must not start local Elasticsearch,
   MinIO, PostgreSQL, Redis, Knowledge runtime worker, or local OCR containers.
+- The cloud Docker exception must be actively enforced by
+  `scripts/check_docker_policy.py`, not only path-allowed. The checker must
+  reject cloud Compose services or image/build references that introduce local
+  PostgreSQL, Redis, MinIO, Elasticsearch, Knowledge runtime worker/API,
+  Parser, or OCR containers.
+- Document cloud Redis/asynq wiring must support authenticated managed Redis
+  endpoints. `deploy/docker-compose.cloud.yml`, `deploy/docker/cloud.env.example`,
+  and Document service config/docs should carry `DOCUMENT_REDIS_USERNAME`,
+  `DOCUMENT_REDIS_PASSWORD`, `DOCUMENT_REDIS_DB`, and
+  `DOCUMENT_REDIS_TLS_ENABLED` alongside `DOCUMENT_REDIS_ADDR`.
 - Docs must distinguish the host-run local integration path from the cloud
   Docker app stack and must not tell users to use the cloud compose file as a
   production deployment baseline.

@@ -27,6 +27,10 @@ func TestLoadValidatesDocumentDependencies(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("DOCUMENT_DATABASE_URL", "postgres://document:document@localhost:5432/document?sslmode=disable")
 	t.Setenv("DOCUMENT_REDIS_ADDR", "localhost:6379")
+	t.Setenv("DOCUMENT_REDIS_USERNAME", "document-user")
+	t.Setenv("DOCUMENT_REDIS_PASSWORD", "document-pass")
+	t.Setenv("DOCUMENT_REDIS_DB", "5")
+	t.Setenv("DOCUMENT_REDIS_TLS_ENABLED", "true")
 	t.Setenv("DOCUMENT_FILE_SERVICE_URL", "http://localhost:8082")
 	t.Setenv("DOCUMENT_AI_GATEWAY_URL", "http://localhost:8086")
 	t.Setenv("DOCUMENT_AI_GATEWAY_PROFILE_ID", "default-chat")
@@ -46,6 +50,9 @@ func TestLoadValidatesDocumentDependencies(t *testing.T) {
 	if cfg.DatabaseURL == "" || cfg.RedisAddr == "" || cfg.FileServiceURL == "" || cfg.AIGatewayURL == "" {
 		t.Fatalf("expected required dependency config to be populated: %+v", cfg)
 	}
+	if cfg.RedisUsername != "document-user" || cfg.RedisPassword != "document-pass" || cfg.RedisDB != 5 || !cfg.RedisTLSEnabled {
+		t.Fatalf("unexpected Redis config: %+v", cfg)
+	}
 	if cfg.AIGatewayProfileID != "default-chat" {
 		t.Fatalf("AIGatewayProfileID = %q", cfg.AIGatewayProfileID)
 	}
@@ -60,6 +67,31 @@ func TestLoadValidatesDocumentDependencies(t *testing.T) {
 	}
 	if cfg.ShutdownTimeout != 7*time.Second {
 		t.Fatalf("ShutdownTimeout = %s, want 7s", cfg.ShutdownTimeout)
+	}
+}
+
+func TestLoadRejectsInvalidRedisOptions(t *testing.T) {
+	for name, env := range map[string]map[string]string{
+		"negative db":    {"DOCUMENT_REDIS_DB": "-1"},
+		"non integer db": {"DOCUMENT_REDIS_DB": "queue"},
+		"invalid tls":    {"DOCUMENT_REDIS_TLS_ENABLED": "sometimes"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			clearEnv(t)
+			t.Setenv("DOCUMENT_DATABASE_URL", "postgres://document:document@localhost:5432/document?sslmode=disable")
+			t.Setenv("DOCUMENT_REDIS_ADDR", "localhost:6379")
+			t.Setenv("DOCUMENT_FILE_SERVICE_URL", "http://localhost:8082")
+			t.Setenv("DOCUMENT_AI_GATEWAY_URL", "http://localhost:8086")
+			t.Setenv("DOCUMENT_AI_GATEWAY_PROFILE_ID", "default-chat")
+			t.Setenv("INTERNAL_SERVICE_TOKEN", "shared-token")
+			for key, value := range env {
+				t.Setenv(key, value)
+			}
+
+			if _, err := Load(); err == nil {
+				t.Fatal("expected invalid Redis option to fail")
+			}
+		})
 	}
 }
 
@@ -227,6 +259,10 @@ func clearEnv(t *testing.T) {
 		"DOCUMENT_HTTP_ADDR",
 		"DOCUMENT_DATABASE_URL",
 		"DOCUMENT_REDIS_ADDR",
+		"DOCUMENT_REDIS_USERNAME",
+		"DOCUMENT_REDIS_PASSWORD",
+		"DOCUMENT_REDIS_DB",
+		"DOCUMENT_REDIS_TLS_ENABLED",
 		"DOCUMENT_FILE_SERVICE_URL",
 		"DOCUMENT_FILE_SERVICE_TOKEN",
 		"DOCUMENT_AI_GATEWAY_URL",

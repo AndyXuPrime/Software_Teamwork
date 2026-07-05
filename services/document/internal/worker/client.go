@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 
@@ -13,10 +14,31 @@ type Client struct {
 	client *asynq.Client
 }
 
-func NewClient(redisAddr string) *Client {
+type RedisConfig struct {
+	Addr       string
+	Username   string
+	Password   string
+	DB         int
+	TLSEnabled bool
+}
+
+func NewClient(redis RedisConfig) *Client {
 	return &Client{
-		client: asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr}),
+		client: asynq.NewClient(redisClientOpt(redis)),
 	}
+}
+
+func redisClientOpt(redis RedisConfig) asynq.RedisClientOpt {
+	opt := asynq.RedisClientOpt{
+		Addr:     redis.Addr,
+		Username: redis.Username,
+		Password: redis.Password,
+		DB:       redis.DB,
+	}
+	if redis.TLSEnabled {
+		opt.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	return opt
 }
 
 func (c *Client) Close() error {

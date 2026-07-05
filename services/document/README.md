@@ -35,6 +35,10 @@ Optional variables:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DOCUMENT_HTTP_ADDR` | `:8085` | HTTP listen address. |
+| `DOCUMENT_REDIS_USERNAME` | empty | Optional Redis ACL username for asynq queue connections. |
+| `DOCUMENT_REDIS_PASSWORD` | empty | Optional Redis password for asynq queue connections. |
+| `DOCUMENT_REDIS_DB` | `0` | Redis DB number used by the Document asynq client and worker. |
+| `DOCUMENT_REDIS_TLS_ENABLED` | `false` | Set to `true` for TLS-enabled managed Redis endpoints. |
 | `DOCUMENT_AI_GATEWAY_MODEL` | empty | Optional compatibility label. Leave empty to let AI Gateway derive the provider model from `DOCUMENT_AI_GATEWAY_PROFILE_ID`. If set, it must exactly match the selected profile model. |
 | `DOCUMENT_AI_GATEWAY_SERVICE_TOKEN` | empty | Service token sent to AI Gateway profile validation APIs. Falls back to `INTERNAL_SERVICE_TOKEN` when empty. |
 | `DOCUMENT_KNOWLEDGE_SERVICE_URL` | empty | Optional internal Knowledge service base URL. When empty, report generation skips Knowledge retrieval and uses only report/template/request context. |

@@ -147,7 +147,9 @@ cp deploy/docker/cloud.env.example .env.docker.cloud
 编辑 `.env.docker.cloud`，至少替换这些占位值：
 
 - 云端 PostgreSQL：`POSTGRES_ADMIN_URL` 和六个服务库 URL。
-- 云端 Redis：`GATEWAY_REDIS_ADDR`、`DOCUMENT_REDIS_ADDR`。
+- 云端 Redis：`GATEWAY_REDIS_ADDR`、`GATEWAY_REDIS_PASSWORD`、`GATEWAY_REDIS_DB`，
+  以及 Document asynq 使用的 `DOCUMENT_REDIS_ADDR`、`DOCUMENT_REDIS_USERNAME`、
+  `DOCUMENT_REDIS_PASSWORD`、`DOCUMENT_REDIS_DB`、`DOCUMENT_REDIS_TLS_ENABLED`。
 - 云端对象存储：`FILE_MINIO_ENDPOINT`、access key、secret key、bucket。
 - 云端 Knowledge runtime：`VENDOR_RUNTIME_URL`、`VENDOR_RUNTIME_SERVICE_TOKEN`。
 - 云端 OCR：`PADDLEOCR_ACCESS_TOKEN`。

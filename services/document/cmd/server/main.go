@@ -62,7 +62,14 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	taskClient := worker.NewClient(cfg.RedisAddr)
+	redisConfig := worker.RedisConfig{
+		Addr:       cfg.RedisAddr,
+		Username:   cfg.RedisUsername,
+		Password:   cfg.RedisPassword,
+		DB:         cfg.RedisDB,
+		TLSEnabled: cfg.RedisTLSEnabled,
+	}
+	taskClient := worker.NewClient(redisConfig)
 	documents := service.New(repo, files)
 	reportService := service.NewReportService(repo)
 	jobService := service.NewJobService(repo, taskClient)
@@ -77,7 +84,7 @@ func main() {
 		ReportFileSvc:         reportFileService,
 		Recorder:              repo,
 	})
-	w := worker.New(cfg.RedisAddr, logger, repo, reportFileService, reportGenerationService)
+	w := worker.New(redisConfig, logger, repo, reportFileService, reportGenerationService)
 	go func() {
 		if err := w.Start(); err != nil {
 			logger.Error("worker failed to start", "service", "document", "error", err)

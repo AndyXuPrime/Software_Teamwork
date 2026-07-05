@@ -196,6 +196,39 @@ class DockerPolicyTests(unittest.TestCase):
 
         self.assertEqual([], issues)
 
+    def test_cloud_compose_rejects_local_infra_services(self) -> None:
+        compose = CLOUD_COMPOSE + (
+            "\n"
+            "  redis:\n"
+            "    image: ${REDIS_IMAGE:-redis:7-alpine}\n"
+            "  db:\n"
+            "    image: ${POSTGRES_IMAGE:-postgres:16-alpine}\n"
+        )
+
+        issues = self.verify(files={"deploy/docker-compose.cloud.yml": compose})
+
+        self.assertIssueContains(issues, "heavy dependency `redis`")
+        self.assertIssueContains(issues, "unexpected cloud Docker service `db`")
+        self.assertIssueContains(issues, "must not reference local heavy dependency `redis:`")
+        self.assertIssueContains(issues, "must not reference local heavy dependency `postgres:`")
+
+    def test_cloud_compose_rejects_runtime_and_ocr_services(self) -> None:
+        compose = CLOUD_COMPOSE + (
+            "\n"
+            "  knowledge-runtime:\n"
+            "    build:\n"
+            "      context: ../services/knowledge-runtime\n"
+            "  paddleocr:\n"
+            "    image: ${PADDLEOCR_IMAGE:-registry.example.com/paddleocr:1.0}\n"
+        )
+
+        issues = self.verify(files={"deploy/docker-compose.cloud.yml": compose})
+
+        self.assertIssueContains(issues, "heavy dependency `knowledge-runtime`")
+        self.assertIssueContains(issues, "heavy dependency `paddleocr`")
+        self.assertIssueContains(issues, "services/knowledge-runtime")
+        self.assertIssueContains(issues, "paddleocr")
+
     def test_dockerfile_regressions_are_reported(self) -> None:
         dockerfile = VALID_GO_DOCKERFILE.replace(
             "FROM ${IMAGE_REGISTRY_PREFIX}alpine:${ALPINE_VERSION}",

@@ -149,7 +149,7 @@ docker rmi \
 cp deploy/docker/cloud.env.example .env.docker.cloud
 ```
 
-编辑 `.env.docker.cloud`，替换所有 `<...>` 占位值。最少需要云端 PostgreSQL、Redis、对象存储、Knowledge runtime token、PaddleOCR token 和模型 provider key/model。启动脚本会在发现关键占位值未替换时直接失败，避免先构建镜像再在容器里报配置错。
+编辑 `.env.docker.cloud`，替换所有 `<...>` 占位值。最少需要云端 PostgreSQL、Redis、对象存储、Knowledge runtime token、PaddleOCR token 和模型 provider key/model。Document 的 Redis/asynq 连接支持 `DOCUMENT_REDIS_USERNAME`、`DOCUMENT_REDIS_PASSWORD`、`DOCUMENT_REDIS_DB` 和 `DOCUMENT_REDIS_TLS_ENABLED`，托管 Redis 要求 AUTH 或 TLS 时不要只填写 host:port。启动脚本会在发现关键占位值未替换时直接失败，避免先构建镜像再在容器里报配置错。
 
 启动：
 
