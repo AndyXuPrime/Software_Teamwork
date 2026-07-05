@@ -24,8 +24,11 @@ on:
       - 'scripts/check_docker_environment.py'
       - 'scripts/verify_local_seed_contract.py'
       - 'scripts/local/**'
+      - 'scripts/docker/**'
       - 'scripts/tests/test_check_docker_environment.py'
       - 'scripts/tests/test_check_docker_policy.py'
+      - 'scripts/tests/test_cloud_docker_start_script.py'
+      - 'scripts/tests/test_docker_deploy_workflow_detect.py'
       - 'scripts/tests/test_local_dev_up_script.py'
       - 'scripts/tests/test_local_seed_contract.py'
       - '.github/workflows/docker-deploy-checks.yml'
@@ -52,8 +55,11 @@ on:
       - 'scripts/check_docker_environment.py'
       - 'scripts/verify_local_seed_contract.py'
       - 'scripts/local/**'
+      - 'scripts/docker/**'
       - 'scripts/tests/test_check_docker_environment.py'
       - 'scripts/tests/test_check_docker_policy.py'
+      - 'scripts/tests/test_cloud_docker_start_script.py'
+      - 'scripts/tests/test_docker_deploy_workflow_detect.py'
       - 'scripts/tests/test_local_dev_up_script.py'
       - 'scripts/tests/test_local_seed_contract.py'
       - '.github/workflows/docker-deploy-checks.yml'
@@ -77,14 +83,21 @@ jobs:
           script: |
             const knownComposeFiles = new Set([
               'deploy/docker-compose.yml',
+              'deploy/docker-compose.cloud.yml',
             ]);
             const composeFilePattern =
               /^deploy\/.*docker-compose[^/]*\.ya?ml$/u;
             const rootDeployComposeFile = 'deploy/docker-compose.yml';
             const rootDeployComposeDependencyPattern =
               /^(?:\.env\.example|config\/(?:.*\.ya?ml|ctl\/.+)|deploy\/(?:postgres\/init\/.+|seeds\/.+))$/u;
+            const cloudDeployComposeFile = 'deploy/docker-compose.cloud.yml';
+            const cloudDeployComposeDependencyPattern =
+              /^deploy\/docker\/cloud\.env\.example$/u;
             const workflowPath = '.github/workflows/docker-deploy-checks.yml';
-            const localStartupScriptPattern = /^scripts\/local\/[^/]+\.sh$/u;
+            const startupScriptPattern =
+              /^(?:scripts\/local\/(?:lib\/)?[^/]+\.sh|scripts\/docker\/[^/]+\.sh|deploy\/docker\/full\/[^/]+\.sh)$/u;
+            const cloudDockerSupportFilePattern =
+              /^deploy\/docker\/full\/.+$/u;
             const dockerArtifactPattern =
               /^(?:(?:services|apps)\/.*(?:Dockerfile(?:\..*)?|(?:docker-compose|compose)[^/]*\.ya?ml)|deploy\/(?!docker-compose\.yml$).*(?:docker-compose|compose)[^/]*\.ya?ml)$/u;
             const dockerPolicyPaths = new Set([
@@ -116,6 +129,8 @@ jobs:
               'scripts/local/clean.sh',
               'scripts/tests/test_check_docker_environment.py',
               'scripts/tests/test_check_docker_policy.py',
+              'scripts/tests/test_cloud_docker_start_script.py',
+              'scripts/tests/test_docker_deploy_workflow_detect.py',
               'scripts/tests/test_local_dev_up_script.py',
               'scripts/tests/test_reset_dev_data_script.py',
               'scripts/tests/test_knowledge_runtime_dependency_split.py',
@@ -158,7 +173,8 @@ jobs:
             const dockerPolicyChanged = files.some(
               (file) =>
                 dockerPolicyPaths.has(file) ||
-                localStartupScriptPattern.test(file) ||
+                startupScriptPattern.test(file) ||
+                cloudDockerSupportFilePattern.test(file) ||
                 dockerArtifactPattern.test(file)
             );
             const fullDockerCheckChanged = workflowChanged;
@@ -179,6 +195,16 @@ jobs:
 
                 if (rootDeployComposeDependencyPattern.test(file)) {
                   composeFiles.add(rootDeployComposeFile);
+                  continue;
+                }
+
+                if (cloudDeployComposeDependencyPattern.test(file)) {
+                  composeFiles.add(cloudDeployComposeFile);
+                  continue;
+                }
+
+                if (cloudDockerSupportFilePattern.test(file)) {
+                  composeFiles.add(cloudDeployComposeFile);
                 }
               }
             }
@@ -215,6 +241,8 @@ jobs:
           python3 -m unittest \
             scripts.tests.test_check_docker_policy \
             scripts.tests.test_check_docker_environment \
+            scripts.tests.test_cloud_docker_start_script \
+            scripts.tests.test_docker_deploy_workflow_detect \
             scripts.tests.test_local_dev_up_script \
             scripts.tests.test_reset_dev_data_script \
             scripts.tests.test_knowledge_runtime_dependency_split \
@@ -226,8 +254,18 @@ jobs:
       - name: Validate Docker environment diagnostic
         run: python3 scripts/check_docker_environment.py --skip-network --clean-env
 
-      - name: Validate local startup scripts
-        run: bash -n scripts/local/start.sh scripts/local/stop.sh scripts/local/clean.sh scripts/local/lib/*.sh scripts/config/load-profile.sh
+      - name: Validate startup scripts
+        run: |
+          bash -n \
+            scripts/local/start.sh \
+            scripts/local/stop.sh \
+            scripts/local/clean.sh \
+            scripts/local/lib/*.sh \
+            scripts/config/load-profile.sh \
+            scripts/docker/start.sh \
+            scripts/docker/stop.sh \
+            scripts/docker/clean.sh
+          sh -n deploy/docker/full/*.sh
 
       - name: Validate local seed contract
         run: python3 scripts/verify_local_seed_contract.py
@@ -258,6 +296,8 @@ jobs:
           if [ "$compose_file" = "deploy/docker-compose.yml" ]; then
             CONFIG_SECRET_FILE=.env.example ./scripts/config/load-profile.sh --print-compose-env
             docker compose -f "$compose_file" --env-file .local/config/dev.env config --quiet
+          elif [ "$compose_file" = "deploy/docker-compose.cloud.yml" ]; then
+            docker compose -f "$compose_file" --env-file deploy/docker/cloud.env.example config --quiet
           else
             docker compose -f "$compose_file" config --quiet
           fi

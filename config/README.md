@@ -21,6 +21,10 @@ config/
 根目录的 `.env.example` 是本地 secret 模板。开发者复制成未跟踪的
 `.env.local` 后填写本机密钥、provider key、PaddleOCR token 或私有镜像覆盖。
 
+云端依赖 Docker app stack 使用独立模板 `deploy/docker/cloud.env.example`。
+开发者复制成未跟踪的 `.env.docker.cloud` 后填写云端 PostgreSQL、Redis、对象存储、
+Knowledge runtime、PaddleOCR 和模型 provider 凭据；该文件不经过 `config/ctl` 渲染。
+
 ## 解析优先级
 
 最终运行时环境按以下顺序合并，后者覆盖前者：
@@ -62,6 +66,16 @@ cd apps/web && bun install && bun run dev
 `start.sh` 会先做宿主机 preflight，确认 `.env.local` 已存在但不会创建或覆盖它；之后再按需
 准备本机工具、镜像、二进制和 runtime `.venv` / artifact。`--china` 只影响本次运行，
 不会改写 `config/` 或 `.env.local`。
+
+云端依赖 Docker app stack：
+
+```bash
+cp deploy/docker/cloud.env.example .env.docker.cloud
+./scripts/docker/start.sh
+```
+
+`.env.docker.cloud` 承载外部云资源连接串和 secret，不提交，也不复用 `.local/config/`
+渲染产物。
 
 手动渲染当前本地配置：
 
@@ -173,5 +187,6 @@ docker compose -f deploy/docker-compose.yml --env-file .local/config/dev.env con
 - 不要把真实 key 写进 `config/*.yaml`、`.env.example`、README 或 PR 描述。
 - 不要手工维护 `.local/config/*.env`；它们由脚本生成。
 - 不要为了网络慢把官方默认源改成大陆镜像；使用 `--china` 或本机未提交覆盖。
-- 不要恢复业务服务容器；根 Compose 只负责 PostgreSQL、Redis、MinIO、
-  `minio-init` 和 Elasticsearch。
+- 不要把业务服务放进根 Compose；根 Compose 只负责 PostgreSQL、Redis、MinIO、
+  `minio-init` 和 Elasticsearch。业务服务 Docker 构建只允许走独立
+  `deploy/docker-compose.cloud.yml` cloud app stack。

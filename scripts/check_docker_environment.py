@@ -122,7 +122,7 @@ def main() -> int:
         print(
             "- Do not rely on public registry rewrites as daemon registry-mirrors unless manifest probes prove mirror-mode works."
         )
-    print("- Keep root Compose infra-only; business services run on the host.")
+    print("- Keep root Compose infra-only; business services run on the host unless using the explicit cloud Docker app stack.")
     return 1 if failed else 0
 
 

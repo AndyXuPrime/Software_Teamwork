@@ -32,7 +32,10 @@ services/
 ├── ai-gateway/
 └── knowledge-runtime/
 deploy/
-└── docker-compose.yml
+├── docker-compose.yml
+├── docker-compose.cloud.yml
+└── docker/
+    └── full/
 ```
 
 Use the same service-local layout for every Go service unless a service has a

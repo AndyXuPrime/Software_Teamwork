@@ -1,0 +1,10 @@
+.git/
+.local/
+node_modules/
+apps/web/node_modules/
+apps/web/dist/
+services/knowledge-runtime/.venv/
+services/knowledge-runtime/api/db/
+services/knowledge-runtime/api/logs/
+services/knowledge-runtime/runtime/
+.env.*

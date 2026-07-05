@@ -240,10 +240,12 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$
 
 ### 1. Scope / Trigger
 
-- Trigger: adding or changing `deploy/docker-compose.yml`, local demo seed data,
+- Trigger: adding or changing `deploy/docker-compose.yml`,
+  `deploy/docker-compose.cloud.yml`, local demo seed data,
   infrastructure image tags, Docker image source overlays, service ports,
-  readiness wiring, service tokens, or `.env.example` files for the backend
-  integration environment.
+  readiness wiring, service tokens, `.env.example`, or
+  `deploy/docker/cloud.env.example` files for the backend integration
+  environment.
 - Applies to `deploy/**`, host-run migration wiring, local seed docs, Docker
   policy/environment scripts, and documentation that tells frontend or new
   contributors how to start services.
@@ -258,6 +260,10 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$
   - `cp .env.example .env.local`
   - `./scripts/local/start.sh`
   - `cd apps/web && bun install && bun run dev`
+- Cloud Docker app stack entrypoint:
+  - `cp deploy/docker/cloud.env.example .env.docker.cloud`
+  - `./scripts/docker/start.sh`
+  - `http://localhost:18080`
 - Default Compose services:
   - `postgres`
   - `redis`
@@ -276,6 +282,49 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$
   the Knowledge runtime API/worker run on the host. Local Elasticsearch is part
   of the default Compose infrastructure for Knowledge runtime doc-engine
   support.
+- `deploy/docker-compose.cloud.yml` is the explicit exception for a cloud-backed
+  Docker app stack. It may build business service and frontend images, but it
+  must externalize PostgreSQL, Redis, object storage, Knowledge runtime,
+  PaddleOCR/OCR, and model providers. It must not start local Elasticsearch,
+  MinIO, PostgreSQL, Redis, Knowledge runtime worker, or local OCR containers.
+- The cloud Docker exception must be actively enforced by
+  `scripts/check_docker_policy.py`, not only path-allowed. The checker must
+  reject cloud Compose services or image/build references that introduce local
+  PostgreSQL, Redis, MinIO, Elasticsearch, Knowledge runtime worker/API,
+  Parser, or OCR containers.
+- Document cloud Redis/asynq wiring must support authenticated managed Redis
+  endpoints. `deploy/docker-compose.cloud.yml`, `deploy/docker/cloud.env.example`,
+  and Document service config/docs should carry `DOCUMENT_REDIS_USERNAME`,
+  `DOCUMENT_REDIS_PASSWORD`, `DOCUMENT_REDIS_DB`, and
+  `DOCUMENT_REDIS_TLS_ENABLED` alongside `DOCUMENT_REDIS_ADDR`.
+- Gateway cloud Redis session-cache wiring must support the same managed Redis
+  class. Gateway config/docs and cloud Compose should carry
+  `GATEWAY_REDIS_USERNAME`, `GATEWAY_REDIS_PASSWORD`, `GATEWAY_REDIS_DB`, and
+  `GATEWAY_REDIS_TLS_ENABLED` alongside `GATEWAY_REDIS_ADDR`; the go-redis
+  client options must map username and TLS explicitly so `/readyz` can pass
+  against ACL/TLS Redis endpoints.
+- `DOCKER_SEED_ENABLED=false` is the cloud Docker escape hatch for
+  pre-provisioned cloud databases. When it is false, cloud Compose rendering and
+  `scripts/docker/start.sh` preflight must not require seed-only inputs such as
+  `POSTGRES_ADMIN_URL`, `PADDLEOCR_ACCESS_TOKEN`, or
+  `AI_GATEWAY_LOCAL_PROVIDER_*`. When seed is enabled, startup should still fail
+  before build/up if required seed values are missing.
+- In the seed-disabled cloud path, Document and QA runtime model override envs
+  must not fall back to seed-only `AI_GATEWAY_LOCAL_CHAT_MODEL`. Use explicit
+  `DOCUMENT_AI_GATEWAY_MODEL` and `MODEL_ID` only when an operator intentionally
+  wants to override the model stored on the AI Gateway profile.
+- The cloud Docker app stack must default `DOCKER_SEED_ENABLED=false` in both
+  the compose interpolation default and `deploy/docker/cloud.env.example`. This
+  prevents copied cloud templates from writing local demo users, demo model
+  profiles, placeholder parser config, or weak token-style values into a cloud
+  PostgreSQL instance.
+- If cloud seed is explicitly enabled, both `scripts/docker/start.sh` and the
+  container seed entrypoint must reject `local-dev-*`, `local-demo-*`,
+  `change-me`, angle-bracket placeholders, and the known local demo
+  `AI_GATEWAY_SERVICE_TOKEN_HASHES` value before any seed SQL is applied.
+- Docs must distinguish the host-run local integration path from the cloud
+  Docker app stack and must not tell users to use the cloud compose file as a
+  production deployment baseline.
 - Docs must provide host-run commands for Auth, File, Knowledge, AI Gateway,
   QA, Document, Gateway, and frontend.
 - Frontend and browser-facing documentation must route traffic through gateway;
@@ -340,11 +389,16 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$
   Go source variables from `.env.local` before building config-ctl, goose, or
   seed helpers; long-lived enterprise `GOPROXY` / `GOSUMDB` overrides cannot
   depend on rendered config.
-- `start.sh` is the only standard local setup/start entrypoint. It may build
+- `start.sh` is the only standard host-run local setup/start entrypoint. It may build
   `.local/tools/config-ctl`, install `goose@v3.27.0`, build `.local/bin`
   service binaries, inspect/pull selected Docker infra images, and prepare
   Knowledge runtime `.venv`/artifacts. It must not run unpinned `go run`
   startup commands or use `go run ./cmd/server` for long-lived services.
+- `scripts/docker/start.sh` is the standard cloud-backed Docker app stack
+  entrypoint. It should keep the user-facing command short, default to
+  `.env.docker.cloud`, validate placeholder cloud values before building, and
+  call `docker compose -f deploy/docker-compose.cloud.yml --env-file
+  .env.docker.cloud up -d --build`.
 - `start.sh` must not silently reuse stale host-run Go artifacts. Prepared
   config tools, seed helpers, and service binaries need a source fingerprint,
   commit/mtime stamp, or equivalent freshness check. Default startup should
@@ -433,7 +487,8 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$
 | Default Compose service list includes anything other than `postgres`, `redis`, `minio`, `minio-init`, or `elasticsearch` | Remove the service or update policy only if the team explicitly changes the Docker boundary. |
 | Host migrations or seed run before PostgreSQL/init scripts are ready | Add or restore an infra health wait in `scripts/local/start.sh`; do not rely on plain `docker compose up -d`. Run one-shot init jobs separately from `up --wait` and fail visibly if they exit non-zero. |
 | Knowledge runtime/doc-engine env is configured but required runtime provisioning is missing | Fix the runtime dependency guard, startup docs, or smoke setup; do not restore the old Go adapter Qdrant bootstrap as the default Knowledge path. |
-| Compose contains `build:` | Remove it; repository root Compose must stay pull-only infrastructure. |
+| Root Compose contains `build:` | Remove it; repository root Compose must stay pull-only infrastructure. |
+| Cloud Compose contains local infra, Knowledge runtime worker, or local OCR services | Remove them; cloud Docker app stack must externalize heavy dependencies. |
 | Docker policy checker fails | Fix the Compose/docs/script regression or update `scripts/check_docker_policy.py` and the runbook in the same PR when the policy intentionally changes. |
 | Retired parser paths or env keys reappear in startup scripts | Remove the parser dependency and route document parsing through `services/knowledge-runtime`. |
 | Local startup script exits without a success or failure summary | Add or restore explicit command-line status output in the script and local seed contract checker. |
@@ -463,16 +518,20 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$
 - Base: Docker runtime smoke tests are skipped when images are missing, but the
   exact image pull commands and skipped validation are reported.
 - Bad: documentation tells new contributors to run business services through
-  Compose, `.env.example` contains a real provider API key, or a seed script
-  writes data before the owning service migration has run.
+  the root Compose path, `.env.example` contains a real provider API key, or a
+  seed script writes data before the owning service migration has run.
 
 ### 6. Tests Required
 
 - Run Compose config parsing for the infra baseline.
 - Run `docker compose ... config --services` and confirm only the five default
   infra services are present, including `elasticsearch`.
+- Run `docker compose -f deploy/docker-compose.cloud.yml --env-file deploy/docker/cloud.env.example config --quiet`
+  when the cloud Docker app stack changes.
 - Run `bash -n scripts/local/start.sh scripts/local/stop.sh scripts/local/clean.sh scripts/local/lib/*.sh scripts/config/load-profile.sh`
   when local startup scripts change.
+- Run `bash -n scripts/docker/start.sh scripts/docker/stop.sh scripts/docker/clean.sh`
+  and `sh -n deploy/docker/full/*.sh` when cloud Docker scripts change.
 - Run `python3 scripts/check_docker_policy.py` and the policy/environment unit
   tests when Compose, Docker docs, image tags, or Docker scripts change.
 - Run the local seed contract checker and its unit tests when seed SQL, seed
@@ -506,6 +565,7 @@ document worker -> file /internal/v1/files without X-Service-Token
 seed SQL -> inserts model_profiles before ai-gateway migrations
 AI_GATEWAY_LOCAL_* seed -> updates default-chat only; QA active LLM remains local-placeholder-chat
 root Compose -> business service or unapproved build entry
+cloud Docker app stack -> starts local Elasticsearch/MinIO/PostgreSQL/Redis/OCR/runtime worker
 ```
 
 #### Correct
@@ -517,6 +577,7 @@ document worker -> file /internal/v1/files with DOCUMENT_FILE_SERVICE_TOKEN
 seed SQL -> idempotent local/demo data after host-run service migrations
 AI_GATEWAY_LOCAL_* overlay -> updates chat/embedding/rerank profiles and activates matching QA LLM config
 root Compose -> postgres, redis, minio, minio-init, elasticsearch only
+cloud Docker app stack -> business services/web containers with cloud DB/Redis/object storage/runtime/OCR/provider
 ```
 
 ---

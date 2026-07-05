@@ -19,6 +19,11 @@ Docker only starts the infrastructure services listed in
 Gateway run on the host through `start.sh`; do not use Compose profiles,
 business-service containers, or `--build` for this smoke.
 
+The cloud Docker app stack (`./scripts/docker/start.sh`) is a separate
+cloud-backed startup path. Use it only when the test report explicitly records
+cloud PostgreSQL/Redis/object storage/runtime/OCR/provider dependencies; do not
+mix its evidence with the host-run baseline above.
+
 Defaults use official Docker/PyPI/Go/GitHub sources. For mainland China
 networks, use explicit mirror mode:
 

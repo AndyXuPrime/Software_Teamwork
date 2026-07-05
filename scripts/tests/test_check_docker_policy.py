@@ -52,6 +52,24 @@ VALID_COMPOSE = textwrap.dedent(
     """
 )
 
+CLOUD_COMPOSE = textwrap.dedent(
+    """
+    # Approved second Docker startup path: cloud app stack may build app/web containers.
+    services:
+      auth:
+        image: ${AUTH_IMAGE:-software-teamwork/auth:cloud}
+        build:
+          context: ..
+          dockerfile: deploy/docker/full/go-service.Dockerfile
+          args:
+            SERVICE_DIR: services/auth
+            TARGET: ./cmd/server
+            BINARY: auth-server
+            GOPROXY: ${GO_DOCKER_GOPROXY:-https://proxy.golang.org,direct}
+            GOSUMDB: ${GO_DOCKER_GOSUMDB:-sum.golang.org}
+    """
+)
+
 
 VALID_ENV = textwrap.dedent(
     """
@@ -167,6 +185,58 @@ class DockerPolicyTests(unittest.TestCase):
         self.assertIssueContains(issues, "must not use latest")
         self.assertIssueContains(issues, "must be exposed through")
 
+    def test_cloud_docker_build_path_is_allowed(self) -> None:
+        issues = self.verify(
+            files={
+                "deploy/docker-compose.cloud.yml": CLOUD_COMPOSE,
+                "deploy/docker/cloud.env.example": "COMPOSE_PROJECT_NAME=software-teamwork-cloud\n",
+                "deploy/docker/full/go-service.Dockerfile": VALID_GO_DOCKERFILE,
+                "deploy/docker/full/.dockerignore": ".git/\n.local/\n",
+            }
+        )
+
+        self.assertEqual([], issues)
+
+    def test_cloud_compose_requires_explicit_second_path_marker(self) -> None:
+        compose = CLOUD_COMPOSE.replace("# Approved second Docker startup path: cloud app stack may build app/web containers.\n", "")
+
+        issues = self.verify(files={"deploy/docker-compose.cloud.yml": compose})
+
+        self.assertIssueContains(issues, "approved second startup path policy marker")
+
+    def test_cloud_compose_rejects_local_infra_services(self) -> None:
+        compose = CLOUD_COMPOSE + (
+            "\n"
+            "  redis:\n"
+            "    image: ${REDIS_IMAGE:-redis:7-alpine}\n"
+            "  db:\n"
+            "    image: ${POSTGRES_IMAGE:-postgres:16-alpine}\n"
+        )
+
+        issues = self.verify(files={"deploy/docker-compose.cloud.yml": compose})
+
+        self.assertIssueContains(issues, "heavy dependency `redis`")
+        self.assertIssueContains(issues, "unexpected cloud Docker service `db`")
+        self.assertIssueContains(issues, "must not reference local heavy dependency `redis:`")
+        self.assertIssueContains(issues, "must not reference local heavy dependency `postgres:`")
+
+    def test_cloud_compose_rejects_runtime_and_ocr_services(self) -> None:
+        compose = CLOUD_COMPOSE + (
+            "\n"
+            "  knowledge-runtime:\n"
+            "    build:\n"
+            "      context: ../services/knowledge-runtime\n"
+            "  paddleocr:\n"
+            "    image: ${PADDLEOCR_IMAGE:-registry.example.com/paddleocr:1.0}\n"
+        )
+
+        issues = self.verify(files={"deploy/docker-compose.cloud.yml": compose})
+
+        self.assertIssueContains(issues, "heavy dependency `knowledge-runtime`")
+        self.assertIssueContains(issues, "heavy dependency `paddleocr`")
+        self.assertIssueContains(issues, "services/knowledge-runtime")
+        self.assertIssueContains(issues, "paddleocr")
+
     def test_dockerfile_regressions_are_reported(self) -> None:
         dockerfile = VALID_GO_DOCKERFILE.replace(
             "FROM ${IMAGE_REGISTRY_PREFIX}alpine:${ALPINE_VERSION}",
@@ -253,6 +323,7 @@ class DockerPolicyTests(unittest.TestCase):
         self.assertIssueContains(issues, "deploy/docker-compose.production.yml")
         self.assertIssueContains(issues, "deploy/compose.preview.yml")
         self.assertIssueContains(issues, "non-root deploy Compose file")
+        self.assertIssueContains(issues, "only deploy/docker-compose.cloud.yml may define the cloud app stack")
 
     def verify(self, *, files: dict[str, str]) -> list[str]:
         with tempfile.TemporaryDirectory() as directory:

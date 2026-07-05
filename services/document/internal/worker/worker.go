@@ -80,9 +80,9 @@ type Worker struct {
 	reportGenerationExecutor ReportGenerationExecutor
 }
 
-func New(redisAddr string, logger *slog.Logger, mgr JobStateManager, reportFileExecutor ReportFileExecutor, reportGenerationExecutor ReportGenerationExecutor) *Worker {
+func New(redis RedisConfig, logger *slog.Logger, mgr JobStateManager, reportFileExecutor ReportFileExecutor, reportGenerationExecutor ReportGenerationExecutor) *Worker {
 	srv := asynq.NewServer(
-		asynq.RedisClientOpt{Addr: redisAddr},
+		redisClientOpt(redis),
 		asynq.Config{
 			Concurrency: 4,
 			Queues:      map[string]int{"document": 1},

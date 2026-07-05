@@ -351,3 +351,201 @@ Removed the split local check entrypoint, moved preflight and preparation into s
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: Add cloud Docker app startup
+
+**Date**: 2026-07-05
+**Task**: Add cloud Docker app startup
+**Branch**: `EIR9264/feat/docker-cloud-startup`
+
+### Summary
+
+Added an independent cloud-backed Docker app stack with wrapper scripts, cloud env template, migration and seed jobs, frontend serving, policy updates, docs, and validation coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bb4153d9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 17: Fix cloud Docker PR review findings
+
+**Date**: 2026-07-05
+**Task**: Fix cloud Docker PR review findings
+**Branch**: `EIR9264/feat/docker-cloud-startup`
+
+### Summary
+
+Addressed PR review findings by adding authenticated/TLS Redis options for Document cloud asynq wiring and enforcing cloud Compose boundaries in Docker policy tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7b917ea8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 18: Fix cloud Docker CI coverage
+
+**Date**: 2026-07-05
+**Task**: Fix cloud Docker CI coverage
+**Branch**: `EIR9264/feat/docker-cloud-startup`
+
+### Summary
+
+Updated Docker/deploy CI to include the cloud compose stack in the allowlisted compose matrix with the cloud env template, added cloud Docker shell script syntax coverage, and recorded the CI contract in the Trellis CI/CD spec.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fd255cff` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 19: Fix cloud Docker managed dependency gaps
+
+**Date**: 2026-07-05
+**Task**: Fix cloud Docker managed dependency gaps
+**Branch**: `EIR9264/feat/docker-cloud-startup`
+
+### Summary
+
+Added Gateway managed Redis username/TLS support, relaxed cloud Docker seed-disabled validation and compose interpolation, documented the contract, and added Gateway Redis plus cloud Docker start script tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a70bf1f6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 20: Fix Docker cloud boundary and seed safety
+
+**Date**: 2026-07-05
+**Task**: Fix Docker cloud boundary and seed safety
+**Branch**: `EIR9264/feat/docker-cloud-startup`
+
+### Summary
+
+Made the cloud Docker app stack an explicit second startup path in policy/docs, defaulted cloud seed to disabled, rejected local demo placeholders in wrapper and seed entrypoints, and added regression coverage for the boundary and seed safety behavior.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d60fc511` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 21: Fix cloud Docker CI model fallback
+
+**Date**: 2026-07-05
+**Task**: Fix cloud Docker CI model fallback
+**Branch**: `EIR9264/feat/docker-cloud-startup`
+
+### Summary
+
+Fixed cloud Docker detect coverage for deploy/docker/full support files and removed seed-only model fallback from cloud QA/Document runtime configuration. Added regression tests and updated Docker CI/runbook/spec documentation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `24b8f34c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

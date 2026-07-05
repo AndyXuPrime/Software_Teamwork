@@ -102,12 +102,13 @@
 | API 版本前缀 | `/api/v1` / `/internal/v1` | `v1` | 已固定 | 公开入口以 gateway OpenAPI 为准；内部服务使用服务级契约。 |
 | 后端测试 | Go `testing` + `httptest` | Go `1.25` 标准库 | 已固定 | 默认不引入 BDD 测试框架。 |
 | CI | GitHub Actions | `actions/github-script@v7`；runner `ubuntu-latest`；Bun `1.3.12`；Go `1.25.x` | 部分已固定 | 已有协作类 workflow、前端 check/build/unit/E2E smoke、Go service path-filtered build/test、goose migration apply、Docker/Compose config、Gateway contract 和 API type drift workflow。 |
-| Docker 镜像与构建源策略 | 默认官方 pinned images；中国大陆显式 `--china` registry rewrite | `config/base.yaml` 不默认启用第三方 registry；`./scripts/local/start.sh --china` 在本次运行的生成态 compose env 中使用 `docker.1ms.run` registry rewrite，优先级为 `registry rewrite > daemon mirror > proxy`；Compose 基础镜像可用 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`MINIO_IMAGE`、`MINIO_MC_IMAGE`、`KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE` 本地 `.env.local` 覆盖；`scripts/check_docker_policy.py` 做 CI 策略守门，`scripts/check_docker_environment.py` 做本机网络诊断 | 已固定 | 仓库 Docker 只跑基础设施；`start.sh` 在 prepare 阶段按所选源补齐缺失镜像，Compose 启动仍使用 `--pull never`；Knowledge runtime 走宿主机 Python/uv 启动；不得为提速默认关闭 Go checksum verification，不得把 Compose 镜像改成 `latest`，不得把业务服务放回 Docker 路径。 |
+| Docker 镜像与构建源策略 | 默认官方 pinned images；中国大陆显式 `--china` registry rewrite | `config/base.yaml` 不默认启用第三方 registry；`./scripts/local/start.sh --china` 在本次运行的生成态 compose env 中使用 `docker.1ms.run` registry rewrite，优先级为 `registry rewrite > daemon mirror > proxy`；Compose 基础镜像可用 `POSTGRES_IMAGE`、`REDIS_IMAGE`、`MINIO_IMAGE`、`MINIO_MC_IMAGE`、`KNOWLEDGE_RUNTIME_ELASTICSEARCH_IMAGE` 本地 `.env.local` 覆盖；cloud Docker app stack 可用 `.env.docker.cloud` 覆盖 `DOCKER_IMAGE_REGISTRY_PREFIX`、`GO_DOCKER_*`、`*_DOCKER_IMAGE` 和 `ALPINE_MIRROR`；`scripts/check_docker_policy.py` 做 CI 策略守门，`scripts/check_docker_environment.py` 做本机网络诊断 | 已固定 | 默认本地联调/root Compose 只跑基础设施；`start.sh` 在 prepare 阶段按所选源补齐缺失 infra 镜像，Compose 启动仍使用 `--pull never`；`deploy/docker-compose.cloud.yml` 是独立业务 Docker app stack，外接云端 DB/Redis/object storage/runtime/OCR/provider；不得为提速默认关闭 Go checksum verification，不得把镜像改成 `latest`。 |
 | 宿主机 Go 模块下载 | `GOPROXY` + `GOSUMDB` env | 默认 `GOPROXY=https://proxy.golang.org,direct`；`GOSUMDB=sum.golang.org`；中国大陆网络通过 `start.sh --china` 在本次准备阶段使用 `https://goproxy.cn,direct` / `sum.golang.google.cn`；企业长期覆盖可写入未跟踪 `.env.local` | 已固定 | `config/base.yaml` 默认写入官方 Go module proxy/checksum DB；`start.sh` 会在构建 config renderer / goose / seed helper 之前读取 `.env.local` 中的 Go 源变量，并在准备缺失 Go tools、`goose@v3.27.0` 和 host-run 服务二进制时使用当前源模式；这不是 Docker registry，也不是 Knowledge runtime uv 的 `UV_DEFAULT_INDEX`。 |
 | 观测 | `slog` + Prometheus metrics；关键链路 OpenTelemetry tracing | `github.com/prometheus/client_golang@v1.23.2`；`go.opentelemetry.io/otel@v1.44.0`；`go.opentelemetry.io/otel/sdk@v1.44.0`；`go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.44.0`；`go.opentelemetry.io/otel/exporters/prometheus@v0.66.0` | 已选型，待固定 | 第一阶段先保证结构化日志和低基数字段指标；首次落地 metrics/tracing 时必须写入对应服务 `go.mod` 并同步本文状态。 |
 | DOCX 生成 | Document worker 当前使用内置 Go `SimpleDOCXGenerator`；Pandoc 作为富 DOCX 候选工具链；LibreOffice 暂不引入，保留后续候选 | 内置 Go 生成器：标准库；Pandoc CLI 版本后续在富 DOCX 任务中固定；LibreOffice：暂不引入 | 已固定（当前路径） | 当前路径为内置 Go `SimpleDOCXGenerator`；富 DOCX worker 的运行方式不属于当前本地 Docker 基线。 |
 | MCP 集成 | 官方 MCP Go SDK；暂不拆独立 sidecar | `github.com/modelcontextprotocol/go-sdk@v1.6.1` | 已固定 | QA 负责工具白名单、权限、参数校验、超时和脱敏记录；Document 和 Knowledge 已有 Streamable HTTP MCP server/工具适配；SDK 升级或 sidecar 化另开兼容性任务。 |
-| 本地基础设施 | Docker Compose | Compose 文件格式无 top-level version | 已固定 | 根 `deploy/docker-compose.yml` 只拉取 PostgreSQL、Redis、MinIO、`minio-init` 和 Elasticsearch；业务服务全部 host-run。 |
+| 本地基础设施 | Docker Compose | Compose 文件格式无 top-level version | 已固定 | 根 `deploy/docker-compose.yml` 只拉取 PostgreSQL、Redis、MinIO、`minio-init` 和 Elasticsearch；业务服务在默认本地联调中全部 host-run。 |
+| 云端依赖 Docker app stack | Docker Compose build | `deploy/docker-compose.cloud.yml` | 已固定 | `./scripts/docker/start.sh` 构建并启动 Auth、File、Knowledge、QA、Document、AI Gateway、Gateway 和 Web 容器；PostgreSQL、Redis、对象存储、Knowledge runtime、PaddleOCR 和模型 provider 均为外部/云端依赖，不启动本地 OCR/runtime/Elasticsearch；模板默认 `DOCKER_SEED_ENABLED=false`，不会默认向云数据库写入本地 demo seed。 |
 
 ## 前端版本明细
 
@@ -162,6 +163,10 @@
 | Elasticsearch | `docker.elastic.co/elasticsearch/elasticsearch:8.15.3` | `deploy/docker-compose.yml` | Knowledge runtime active doc engine / 检索索引镜像。 |
 | MinIO server | `minio/minio:RELEASE.2025-09-07T16-13-09Z` | `deploy/docker-compose.yml` | 根目录本地 Compose 对象存储服务端镜像。 |
 | MinIO client (`mc`) | `minio/mc:RELEASE.2025-08-13T08-35-41Z` | `deploy/docker-compose.yml` | 根目录本地 Compose bucket 初始化镜像；`minio/mc:RELEASE.2025-09-07T16-13-09Z` 当前无 Docker Hub manifest，不能按 server tag 强行统一。 |
+| Cloud Docker Go builder | `golang:1.25-alpine` | `deploy/docker-compose.cloud.yml`、`deploy/docker/full/*.Dockerfile` | 构建 Go 服务和 migration/seed 工具镜像；Go modules 默认使用 `GO_DOCKER_GOPROXY=https://proxy.golang.org,direct` 和 `GO_DOCKER_GOSUMDB=sum.golang.org`。 |
+| Cloud Docker runtime base | `alpine:3.22` | `deploy/docker-compose.cloud.yml`、`deploy/docker/full/*.Dockerfile` | Go 服务和 migration/seed 工具运行层。 |
+| Cloud Docker frontend builder | `oven/bun:1.3.12-alpine` | `deploy/docker-compose.cloud.yml`、`deploy/docker/full/frontend.Dockerfile` | 构建 `apps/web`。 |
+| Cloud Docker frontend runtime | `nginx:1.27-alpine` | `deploy/docker-compose.cloud.yml`、`deploy/docker/full/frontend.Dockerfile` | 服务前端静态资源并反代 Gateway。 |
 | Prometheus Go client | `github.com/prometheus/client_golang@v1.23.2` | 目标技术基线，尚未写入 `go.mod` | 新增 Go 服务暴露 Prometheus metrics 时默认沿用该版本，指标 label 不得包含用户输入、prompt、token、object key 或 API key 指纹。 |
 | OpenTelemetry Go API | `go.opentelemetry.io/otel@v1.44.0` | 目标技术基线，尚未写入 `go.mod` | OpenTelemetry API/root module；新增 tracing 不应只引入该 module。 |
 | OpenTelemetry Go SDK | `go.opentelemetry.io/otel/sdk@v1.44.0` | 目标技术基线，尚未写入 `go.mod` | 关键链路 tracing 使用 parent-based ratio sampler；dev/local 可配置为 100%，生产默认 1%。 |
@@ -313,8 +318,8 @@ services/<service>/
 - Frontend CI 对 `apps/web/**`、根前端依赖文件和自身 workflow 变更执行 `bun install --frozen-lockfile`、`bun run --cwd apps/web check`、`bun run --cwd apps/web build`、`bun run --cwd apps/web test:unit` 和 Playwright smoke。
 - Go Service CI 按服务路径选择受影响服务，执行 `go test ./...` 和 `go build ./cmd/server`；QA 额外执行 `go build ./cmd/agent`。
 - Goose migration CI 对有 SQL migration 的服务执行 `goose@v3.27.0` apply 校验。
-- Docker / Deploy Checks 只验证 `deploy/docker-compose.yml` 的 infra-only config、Docker policy 和 Docker environment 诊断；不处理业务服务容器。
-- 当前仓库不保留生产/准生产 Compose 基线；后续如要增加部署能力，需要独立任务重新设计。
+- Docker / Deploy Checks 验证 `deploy/docker-compose.yml` 的 infra-only config、`deploy/docker-compose.cloud.yml` 的 cloud app stack config、Docker policy 和 Docker environment 诊断；不执行生产部署。
+- 当前仓库不保留生产/准生产 Compose 基线；`deploy/docker-compose.cloud.yml` 是明确批准的云端依赖第二启动链路，不等同于生产部署能力。后续如要增加部署能力，需要独立任务重新设计。
 
 ## 后续需要同步的实现任务
 

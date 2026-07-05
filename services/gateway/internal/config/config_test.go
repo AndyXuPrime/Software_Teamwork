@@ -22,8 +22,10 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("GATEWAY_CORS_ALLOW_CREDENTIALS", "")
 	t.Setenv("GATEWAY_DOWNSTREAM_TIMEOUT", "")
 	t.Setenv("GATEWAY_REDIS_ADDR", "")
+	t.Setenv("GATEWAY_REDIS_USERNAME", "")
 	t.Setenv("GATEWAY_REDIS_PASSWORD", "")
 	t.Setenv("GATEWAY_REDIS_DB", "")
+	t.Setenv("GATEWAY_REDIS_TLS_ENABLED", "")
 	t.Setenv("GATEWAY_TOKEN_HASH_SECRET", "")
 	t.Setenv("GATEWAY_TOKEN_HASH_KEY_VERSION", "")
 	t.Setenv("GATEWAY_INTERNAL_SERVICE_TOKEN", "")
@@ -59,7 +61,7 @@ func TestLoadDefaults(t *testing.T) {
 	if len(cfg.CORSAllowedOrigins) != 1 || cfg.CORSAllowedOrigins[0] != "*" {
 		t.Fatalf("CORSAllowedOrigins = %#v", cfg.CORSAllowedOrigins)
 	}
-	if cfg.RedisAddr != DefaultRedisAddr || cfg.TokenHashKeyVersion != DefaultTokenKeyVersion {
+	if cfg.RedisAddr != DefaultRedisAddr || cfg.RedisUsername != "" || cfg.RedisPassword != "" || cfg.RedisDB != 0 || cfg.RedisTLSEnabled || cfg.TokenHashKeyVersion != DefaultTokenKeyVersion {
 		t.Fatalf("session config = %+v", cfg)
 	}
 	if len(cfg.AppVersionAllowedSHAs) != 0 {
@@ -83,8 +85,10 @@ func TestLoadParsesEnvironment(t *testing.T) {
 	t.Setenv("GATEWAY_CORS_ALLOW_CREDENTIALS", "true")
 	t.Setenv("GATEWAY_DOWNSTREAM_TIMEOUT", "3s")
 	t.Setenv("GATEWAY_REDIS_ADDR", "redis:6379")
+	t.Setenv("GATEWAY_REDIS_USERNAME", "managed-user")
 	t.Setenv("GATEWAY_REDIS_PASSWORD", "secret")
 	t.Setenv("GATEWAY_REDIS_DB", "2")
+	t.Setenv("GATEWAY_REDIS_TLS_ENABLED", "true")
 	t.Setenv("GATEWAY_TOKEN_HASH_SECRET", "hash-secret")
 	t.Setenv("GATEWAY_TOKEN_HASH_KEY_VERSION", "v9")
 	t.Setenv("GATEWAY_INTERNAL_SERVICE_TOKEN", "svc-token")
@@ -115,7 +119,7 @@ func TestLoadParsesEnvironment(t *testing.T) {
 	if cfg.DownstreamTimeout != 3*time.Second || cfg.RedisDB != 2 {
 		t.Fatalf("downstream config = %+v", cfg)
 	}
-	if cfg.RedisAddr != "redis:6379" || cfg.RedisPassword != "secret" || cfg.TokenHashSecret != "hash-secret" || cfg.TokenHashKeyVersion != "v9" || cfg.InternalServiceToken != "svc-token" || cfg.AuthAdminServiceToken != "auth-admin-token" {
+	if cfg.RedisAddr != "redis:6379" || cfg.RedisUsername != "managed-user" || cfg.RedisPassword != "secret" || cfg.RedisDB != 2 || !cfg.RedisTLSEnabled || cfg.TokenHashSecret != "hash-secret" || cfg.TokenHashKeyVersion != "v9" || cfg.InternalServiceToken != "svc-token" || cfg.AuthAdminServiceToken != "auth-admin-token" {
 		t.Fatalf("session config = %+v", cfg)
 	}
 	if cfg.GitHubToken != "github-token" {
@@ -183,6 +187,7 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		{name: "downstream timeout", key: "GATEWAY_DOWNSTREAM_TIMEOUT", val: "0s"},
 		{name: "upload timeout", key: "GATEWAY_UPLOAD_TIMEOUT", val: "0s"},
 		{name: "redis db", key: "GATEWAY_REDIS_DB", val: "-1"},
+		{name: "redis tls", key: "GATEWAY_REDIS_TLS_ENABLED", val: "maybe"},
 		{name: "cors credentials", key: "GATEWAY_CORS_ALLOW_CREDENTIALS", val: "maybe"},
 		{name: "app version current sha short", key: "GATEWAY_APP_VERSION_CURRENT_SHA", val: strings.Repeat("a", 39)},
 		{name: "app version current sha non hex", key: "GATEWAY_APP_VERSION_CURRENT_SHA", val: strings.Repeat("a", 39) + "g"},

@@ -560,8 +560,8 @@ Knowledge 长期知识库。长期知识库检索通过内置 `search_knowledge`
 ## 链路 14：本地联调、ready 和 smoke
 
 **Owner**：各服务负责自己的 ready；跨服务 smoke 仍是当前缺口。
-**触发入口**：`deploy/docker-compose.yml`、host-run migrations/seed、`/readyz`、env-gated tests。
-**参与方**：所有 host-run 服务、PostgreSQL、Redis、MinIO、Elasticsearch（本地 infra）、Knowledge runtime、AI Gateway/provider。
+**触发入口**：`deploy/docker-compose.yml`、host-run migrations/seed、`deploy/docker-compose.cloud.yml`、`/readyz`、env-gated tests。
+**参与方**：所有 host-run 或 cloud Docker app stack 服务、PostgreSQL、Redis、MinIO/对象存储、Elasticsearch（本地 infra）、Knowledge runtime、AI Gateway/provider。
 
 **正常路径**
 
@@ -577,7 +577,9 @@ Knowledge 长期知识库。长期知识库检索通过内置 `search_knowledge`
 | 分类 | 分支 |
 | --- | --- |
 | Dependency | 根级 Compose 只启动 PostgreSQL、Redis、MinIO、`minio-init` 和 Elasticsearch，业务服务必须 host-run；该依赖基线不证明完整 E2E。 |
+| Dependency | Cloud Docker app stack 启动业务服务和前端容器，但 PostgreSQL、Redis、对象存储、Knowledge runtime、PaddleOCR/OCR 和模型 provider 必须外接云端/外部服务。 |
 | Config | `config/base.yaml` / `config/{profile}.yaml`、根 `.env.example` / 未跟踪 `.env.local`、service token hash、AI profile seed、NO_PROXY/proxy、host-run 端口设置。 |
+| Config | `.env.docker.cloud` 只服务于 cloud Docker app stack，不经过 `config/ctl`，不得提交真实 secret；模板默认 `DOCKER_SEED_ENABLED=false`，显式启用 seed 时必须替换所有本地 demo/占位 secret。 |
 | Resource | seed data 只覆盖本地登录、基础报告类型、示例知识库、QA 会话样例和 AI profile placeholder。 |
 | Current State | File PostgreSQL + MinIO smoke、Knowledge runtime PDF E2E、Gateway -> Knowledge -> QA RAG smoke、QA -> Document MCP report tools smoke 和 Issue #125 smoke slices 可显式启用；AI Gateway real provider smoke env-gated。 |
 | Leakage | 本地日志和失败输出不应包含 token、API key、数据库连接串、object key、完整 prompt。 |
@@ -590,7 +592,7 @@ Knowledge 长期知识库。长期知识库检索通过内置 `search_knowledge`
 **当前状态**
 
 - 本地联调环境为“部分实现”。
-- 根级 Compose 是本地基础设施基线，不启动业务服务容器，不是生产部署基线，也不是完整一键 E2E smoke；AI Gateway placeholder profile 不代表真实 provider 可用。
+- 根级 Compose 是本地基础设施基线，不启动业务服务容器，不是生产部署基线，也不是完整一键 E2E smoke；cloud Docker app stack 是降低本机压力的明确第二启动链路，默认关闭本地 demo seed，仍不等同于生产部署；AI Gateway placeholder profile 不代表真实 provider 可用。
 - 当前 seed 和 runbook 已覆盖 QA 会话样例、report sample、最小 RAG smoke
   和 QA/Document MCP 子场景；这些仍不能替代前端到所有后端服务的一键 E2E。
 

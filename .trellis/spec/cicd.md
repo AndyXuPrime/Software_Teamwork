@@ -23,10 +23,12 @@ services/ai-gateway/
 deploy/docker-compose.yml
 ```
 
-Current Docker target: local infrastructure Compose only. Business services and
-the Knowledge runtime API/worker run on the host. Local Elasticsearch is
-the only optional Compose profile service, used as Knowledge runtime
-infrastructure when explicitly enabled from local env.
+Current Docker target has two isolated paths. The root/default local Docker
+baseline is infrastructure-only, while business services and the Knowledge
+runtime API/worker run on the host. The separate
+`deploy/docker-compose.cloud.yml` path is an explicitly approved cloud Docker
+app stack that may build app/web containers only while externalizing PostgreSQL,
+Redis, object storage, Knowledge runtime, OCR, and model providers.
 
 ---
 
@@ -838,8 +840,10 @@ jobs:
 
 ## Docker Infra Compose
 
-Repository Docker usage is infrastructure-only. The root Compose default path
-may pull and start only:
+The root/default local Docker baseline is infrastructure-only. The separate
+cloud Docker app stack is an explicitly approved additive path and must remain
+isolated from this baseline. The root Compose default path may pull and start
+only:
 
 ```text
 postgres
@@ -878,6 +882,17 @@ Rules:
   before Compose config validation. Keep this checker aligned with Docker policy
   changes so CI blocks obvious regressions without depending on a working Docker
   daemon mirror.
+- Docker/Deploy Checks compose-config must keep a fixed allowlist for
+  path-derived matrix entries. The allowlist must include both
+  `deploy/docker-compose.yml` and `deploy/docker-compose.cloud.yml`; workflow
+  changes should validate both files, and changes to
+  `deploy/docker/cloud.env.example` should validate the cloud compose file with
+  `--env-file deploy/docker/cloud.env.example`.
+- Approved cloud Docker support files under `deploy/docker/full/**`, including
+  Dockerfiles, `.dockerignore`, `nginx.conf`, and shell entrypoints, must
+  trigger the Docker policy job. These changes should also validate
+  `deploy/docker-compose.cloud.yml` because they affect the explicit cloud app
+  stack even though they are not compose files themselves.
 - Docker environment diagnostics belong in `scripts/check_docker_environment.py`.
   CI may run it with `--skip-network`; local investigations may run manifest
   probes with `--profile all --clean-env`. Use `--clean-env` for direct
@@ -887,11 +902,23 @@ Rules:
   the lightweight policy checker even when Compose itself did not change.
 - Local startup scripts, local seed SQL, and local seed contract files must
   trigger Docker/deploy checks. The policy job must run shell syntax checks for
-  `scripts/local/*.sh` and `python3 scripts/verify_local_seed_contract.py`.
-- Business-service Docker artifacts must not be introduced into the current
-  repository baseline. The Docker/deploy detect job and policy checker must
-  reject business-service Dockerfiles, service-level Compose files, and
-  non-root deploy Compose files.
+  `scripts/local/*.sh`, `scripts/local/lib/*.sh`, `scripts/docker/*.sh`, and
+  `deploy/docker/full/*.sh`, plus
+  `python3 scripts/verify_local_seed_contract.py`.
+- Business-service Docker artifacts must not be introduced into the root local
+  baseline. The approved exception is the isolated cloud app stack:
+  `deploy/docker-compose.cloud.yml`, `deploy/docker/cloud.env.example`,
+  `deploy/docker/full/**`, and wrapper scripts under `scripts/docker/**`.
+  The Docker/deploy detect job and policy checker must reject other
+  business-service Dockerfiles, service-level Compose files, and non-root
+  deploy Compose files.
+- The cloud Docker app stack seed path must be safe by default. The committed
+  cloud env template and compose defaults must keep `DOCKER_SEED_ENABLED=false`
+  so copying the template cannot write local demo users, local demo profiles, or
+  placeholder parser/provider config into a cloud database. If cloud seed is
+  explicitly enabled, startup and seed scripts must reject `local-dev-*`,
+  `local-demo-*`, `change-me`, angle-bracket placeholders, and the known local
+  demo AI Gateway service-token hash before writing data.
 
 ---
 
@@ -1033,9 +1060,10 @@ workflow sections above. For PRs:
 - Frontend changes are covered by Frontend CI; local `bun run --cwd apps/web check`,
   `bun run --cwd apps/web build`, and targeted tests remain useful PR-before
   evidence.
-- Docker/Compose config checks are covered for the infra-only root Compose,
-  Docker policy docs/scripts, and image-source overlays; full DB integration
-  jobs and cross-service smoke remain future gates until stable workflows land.
+- Docker/Compose config checks are covered for the infra-only root Compose, the
+  cloud Docker app stack compose config, Docker policy docs/scripts, and
+  image-source overlays; full DB integration jobs and cross-service smoke remain
+  future gates until stable workflows land.
 - Documentation changes update README/specs when architecture, commands,
   contracts, or implementation status change.
 

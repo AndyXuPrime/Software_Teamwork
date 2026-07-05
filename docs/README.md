@@ -9,7 +9,7 @@
 3. 实现服务或前端工程能力前，阅读 [技术选型基线](architecture/technology-decisions.md)。
 4. 开始前后端联调前，阅读 [前后端集成契约](architecture/frontend-backend-contract.md)、[本地联调运行手册](runbooks/local-integration.md) 和 [Gateway OpenAPI 契约](services/gateway/api/public.openapi.yaml)。
 5. 提 PR 前，阅读 [测试策略](testing/strategy.md)，选择与改动范围匹配的检查。
-6. 本地 Docker 拉取慢、镜像源异常或 Compose 启动卡住时，阅读 [Docker 基础设施镜像拉取环境](runbooks/docker-image-pull-environment.md)。默认源保持官方；中国大陆网络显式使用 `./scripts/local/start.sh --china`，并用 `python3 scripts/check_docker_environment.py --profile all --clean-env` 检查。
+6. 本地 Docker 拉取慢、镜像源异常或 Compose 启动卡住时，阅读 [Docker 基础设施镜像拉取环境](runbooks/docker-image-pull-environment.md)。默认源保持官方；中国大陆网络显式使用 `./scripts/local/start.sh --china`，cloud Docker app stack 使用 `./scripts/docker/start.sh` 和 `.env.docker.cloud`。
 7. 需要实现具体后端服务时，阅读对应服务接口文档。
 8. 新增或调整文档时，先读 [文档维护工作流](collaboration/documentation-workflow.md)，确认内容应落在架构、协作还是服务细则中。
 9. 创建或认领 GitHub Issue 任务、参与协作、分支、PR 或仓库维护时，阅读协作维护文档。
@@ -62,8 +62,8 @@
 
 | 文档 | 内容 |
 | --- | --- |
-| [本地联调运行手册](runbooks/local-integration.md) | 根级 infra-only Compose、host-run 服务依赖、migration/seed、冒烟顺序、已知缺口和 PR 前联调判断。 |
-| [Docker 基础设施镜像拉取环境](runbooks/docker-image-pull-environment.md) | Docker Hub、registry rewrite、daemon mirror、proxy、基础设施镜像覆盖和 WSL 内存排障。 |
+| [本地联调运行手册](runbooks/local-integration.md) | 根级 infra-only Compose、host-run 服务依赖、cloud Docker app stack、migration/seed、冒烟顺序、已知缺口和 PR 前联调判断。 |
+| [Docker 基础设施镜像拉取环境](runbooks/docker-image-pull-environment.md) | Docker Hub、registry rewrite、daemon mirror、proxy、基础设施镜像覆盖、cloud Docker 基础镜像和 WSL 内存排障。 |
 | [测试策略](testing/strategy.md) | Go、migration、Gateway contract、前端、env-gated integration tests 和跨服务 smoke 的当前测试策略。 |
 
 ## 协作与维护

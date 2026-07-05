@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -23,6 +24,10 @@ type Config struct {
 	HTTPAddr              string
 	DatabaseURL           string
 	RedisAddr             string
+	RedisUsername         string
+	RedisPassword         string
+	RedisDB               int
+	RedisTLSEnabled       bool
 	FileServiceURL        string
 	FileServiceToken      string
 	AIGatewayURL          string
@@ -44,6 +49,8 @@ func Load() (Config, error) {
 		HTTPAddr:              envOr("DOCUMENT_HTTP_ADDR", DefaultHTTPAddr),
 		DatabaseURL:           strings.TrimSpace(os.Getenv("DOCUMENT_DATABASE_URL")),
 		RedisAddr:             strings.TrimSpace(os.Getenv("DOCUMENT_REDIS_ADDR")),
+		RedisUsername:         strings.TrimSpace(os.Getenv("DOCUMENT_REDIS_USERNAME")),
+		RedisPassword:         strings.TrimSpace(os.Getenv("DOCUMENT_REDIS_PASSWORD")),
 		FileServiceURL:        strings.TrimSpace(os.Getenv("DOCUMENT_FILE_SERVICE_URL")),
 		FileServiceToken:      firstEnv("DOCUMENT_FILE_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
 		AIGatewayURL:          strings.TrimSpace(os.Getenv("DOCUMENT_AI_GATEWAY_URL")),
@@ -60,6 +67,20 @@ func Load() (Config, error) {
 		ShutdownTimeout:       DefaultShutdownTimeout,
 	}
 
+	if raw := strings.TrimSpace(os.Getenv("DOCUMENT_REDIS_DB")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			return Config{}, errors.New("DOCUMENT_REDIS_DB must be a non-negative integer")
+		}
+		cfg.RedisDB = value
+	}
+	if raw := strings.TrimSpace(os.Getenv("DOCUMENT_REDIS_TLS_ENABLED")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, errors.New("DOCUMENT_REDIS_TLS_ENABLED must be a boolean")
+		}
+		cfg.RedisTLSEnabled = value
+	}
 	if raw := strings.TrimSpace(os.Getenv("DOCUMENT_SHUTDOWN_TIMEOUT")); raw != "" {
 		value, err := time.ParseDuration(raw)
 		if err != nil || value <= 0 {

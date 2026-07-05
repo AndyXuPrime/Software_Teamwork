@@ -25,8 +25,55 @@ THIRD_PARTY_REGISTRY_PREFIXES = (
     "docker.m.daocloud.io/",
 )
 LOCAL_COMPOSE_FILE = Path("deploy/docker-compose.yml")
+CLOUD_COMPOSE_FILE = Path("deploy/docker-compose.cloud.yml")
+ALLOWED_CLOUD_DOCKER_PREFIX = "deploy/docker/full/"
+ALLOWED_DOCKER_SUPPORT_FILES = {
+    CLOUD_COMPOSE_FILE.as_posix(),
+    "deploy/docker/cloud.env.example",
+}
+CLOUD_STACK_POLICY_MARKER = "Approved second Docker startup path"
 ALLOWED_DEFAULT_COMPOSE_SERVICES = ("postgres", "redis", "minio", "minio-init", "elasticsearch")
 ALLOWED_PROFILE_COMPOSE_SERVICES: dict[str, tuple[str, ...]] = {}
+ALLOWED_CLOUD_COMPOSE_SERVICES = (
+    "migrate",
+    "seed",
+    "auth",
+    "file",
+    "knowledge",
+    "ai-gateway",
+    "document",
+    "qa",
+    "gateway",
+    "web",
+)
+DISALLOWED_CLOUD_COMPOSE_SERVICE_NAMES = (
+    "postgres",
+    "redis",
+    "minio",
+    "minio-init",
+    "elasticsearch",
+    "knowledge-runtime",
+    "knowledge-runtime-api",
+    "knowledge-runtime-worker",
+    "runtime-worker",
+    "runtime-api",
+    "parser",
+    "ocr",
+    "paddleocr",
+)
+DISALLOWED_CLOUD_COMPOSE_REFS = (
+    "postgres:",
+    "redis:",
+    "minio/",
+    "minio:",
+    "elasticsearch",
+    "services/knowledge-runtime",
+    "knowledge-runtime",
+    "services/parser",
+    "paddleocr",
+    "/ocr",
+    "ocr:",
+)
 DISALLOWED_DEFAULT_COMPOSE_SERVICES = (
     "migrate-auth",
     "migrate-file",
@@ -93,13 +140,24 @@ def validate_no_business_docker_artifacts(root: Path) -> list[str]:
         for filename in files:
             path = current / filename
             rel = path.relative_to(root).as_posix()
-            if rel == LOCAL_COMPOSE_FILE.as_posix():
+            if is_allowed_docker_artifact(rel):
                 continue
             for pattern, label in DISALLOWED_BUSINESS_DOCKER_ARTIFACTS:
                 if pattern.match(rel):
-                    issues.append(f"{rel}: {label} is not allowed; local Docker is infra-only")
+                    issues.append(
+                        f"{rel}: {label} is not allowed; root local Docker is infra-only and "
+                        f"only {CLOUD_COMPOSE_FILE.as_posix()} may define the cloud app stack"
+                    )
                     break
     return issues
+
+
+def is_allowed_docker_artifact(rel: str) -> bool:
+    return (
+        rel == LOCAL_COMPOSE_FILE.as_posix()
+        or rel in ALLOWED_DOCKER_SUPPORT_FILES
+        or rel.startswith(ALLOWED_CLOUD_DOCKER_PREFIX)
+    )
 
 
 def should_skip_dockerfile(rel: str) -> bool:
@@ -275,8 +333,11 @@ def validate_compose_file(root: Path, compose_file: Path) -> list[str]:
     if "GOSUMDB=off" in content or re.search(r"GOSUMDB\s*:\s*(?:\$\{[^}]*:-)?off\b", content):
         issues.append(f"{rel}: must not disable Go checksum verification with GOSUMDB=off")
 
-    if "build:" in content:
-        issues.append(f"{rel}: Compose must not use `build:`; local Docker is pull-only infrastructure")
+    if "build:" in content and rel != CLOUD_COMPOSE_FILE.as_posix():
+        issues.append(
+            f"{rel}: Compose must not use `build:`; root local Docker is pull-only infrastructure "
+            f"and only {CLOUD_COMPOSE_FILE.as_posix()} may build the cloud app stack"
+        )
     if "GOPROXY:" in content and GO_PROXY_COMPOSE not in content:
         issues.append(f"{rel}: Go build args must default to `{GO_PROXY_COMPOSE}`")
     if "GOSUMDB:" in content and GO_SUMDB_COMPOSE not in content:
@@ -284,6 +345,8 @@ def validate_compose_file(root: Path, compose_file: Path) -> list[str]:
 
     if rel == LOCAL_COMPOSE_FILE.as_posix():
         issues.extend(validate_local_compose(rel, content))
+    if rel == CLOUD_COMPOSE_FILE.as_posix():
+        issues.extend(validate_cloud_compose(rel, content))
 
     return issues
 
@@ -342,6 +405,40 @@ def validate_local_compose(rel: str, content: str) -> list[str]:
             issues.append(f"{rel}: profile service `{service}` is not allowed by local Docker policy")
         else:
             issues.append(f"{rel}: unexpected local Docker service `{service}`")
+
+    return issues
+
+
+def validate_cloud_compose(rel: str, content: str) -> list[str]:
+    issues: list[str] = []
+    if CLOUD_STACK_POLICY_MARKER not in content:
+        issues.append(
+            f"{rel}: cloud Docker app stack must declare the approved second startup path policy marker"
+        )
+
+    service_blocks = extract_compose_service_blocks(content)
+    service_names = set(service_blocks)
+    allowed = set(ALLOWED_CLOUD_COMPOSE_SERVICES)
+    for service in sorted(service_names - allowed):
+        if service in DISALLOWED_CLOUD_COMPOSE_SERVICE_NAMES:
+            issues.append(
+                f"{rel}: cloud Docker app stack must externalize heavy dependency `{service}`"
+            )
+        else:
+            issues.append(f"{rel}: unexpected cloud Docker service `{service}`")
+
+    for service, block in service_blocks.items():
+        for line_no, line in block:
+            match = re.match(r"^\s+(?:image|context|dockerfile):\s*(.+?)\s*(?:#.*)?$", line)
+            if not match:
+                continue
+            value = match.group(1).strip().strip("'\"").lower()
+            for forbidden in DISALLOWED_CLOUD_COMPOSE_REFS:
+                if forbidden in value:
+                    issues.append(
+                        f"{rel}:{line_no}: cloud Docker service `{service}` must not reference local heavy dependency `{forbidden}`"
+                    )
+                    break
 
     return issues
 

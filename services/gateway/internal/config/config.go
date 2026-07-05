@@ -42,8 +42,10 @@ type Config struct {
 	CORSAllowedHeaders     []string
 	CORSAllowCredentials   bool
 	RedisAddr              string
+	RedisUsername          string
 	RedisPassword          string
 	RedisDB                int
+	RedisTLSEnabled        bool
 	TokenHashSecret        string
 	TokenHashKeyVersion    string
 	InternalServiceToken   string
@@ -84,7 +86,8 @@ func Load() (Config, error) {
 		CORSAllowedMethods:     csvValue("GATEWAY_CORS_ALLOWED_METHODS", []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"}),
 		CORSAllowedHeaders:     csvValue("GATEWAY_CORS_ALLOWED_HEADERS", []string{"Authorization", "Content-Type", "X-Request-Id"}),
 		RedisAddr:              stringValue("GATEWAY_REDIS_ADDR", DefaultRedisAddr),
-		RedisPassword:          os.Getenv("GATEWAY_REDIS_PASSWORD"),
+		RedisUsername:          strings.TrimSpace(os.Getenv("GATEWAY_REDIS_USERNAME")),
+		RedisPassword:          strings.TrimSpace(os.Getenv("GATEWAY_REDIS_PASSWORD")),
 		TokenHashSecret:        stringValueFromKeys([]string{"GATEWAY_TOKEN_HASH_SECRET", "TOKEN_HASH_SECRET"}, DefaultTokenHashSecret),
 		TokenHashKeyVersion:    stringValue("GATEWAY_TOKEN_HASH_KEY_VERSION", DefaultTokenKeyVersion),
 		InternalServiceToken:   firstNonEmptyEnv("GATEWAY_INTERNAL_SERVICE_TOKEN", "INTERNAL_SERVICE_TOKEN"),
@@ -161,6 +164,14 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("GATEWAY_REDIS_DB must be a non-negative integer")
 		}
 		cfg.RedisDB = value
+	}
+
+	if raw := os.Getenv("GATEWAY_REDIS_TLS_ENABLED"); raw != "" {
+		value, err := strconv.ParseBool(strings.TrimSpace(raw))
+		if err != nil {
+			return Config{}, fmt.Errorf("GATEWAY_REDIS_TLS_ENABLED must be a boolean")
+		}
+		cfg.RedisTLSEnabled = value
 	}
 
 	if raw := os.Getenv("GATEWAY_CORS_ALLOW_CREDENTIALS"); raw != "" {

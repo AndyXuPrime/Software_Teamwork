@@ -2,6 +2,7 @@ package redisstore
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,9 +17,11 @@ import (
 const sessionKeyPrefix = "gateway:session:"
 
 type Config struct {
-	Addr     string
-	Password string
-	DB       int
+	Addr       string
+	Username   string
+	Password   string
+	DB         int
+	TLSEnabled bool
 }
 
 type SessionStore struct {
@@ -26,16 +29,27 @@ type SessionStore struct {
 }
 
 func New(cfg Config) (*SessionStore, error) {
+	opt, err := redisOptions(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &SessionStore{client: redis.NewClient(opt)}, nil
+}
+
+func redisOptions(cfg Config) (*redis.Options, error) {
 	if strings.TrimSpace(cfg.Addr) == "" {
 		return nil, fmt.Errorf("redis address must not be empty")
 	}
-	return &SessionStore{
-		client: redis.NewClient(&redis.Options{
-			Addr:     strings.TrimSpace(cfg.Addr),
-			Password: cfg.Password,
-			DB:       cfg.DB,
-		}),
-	}, nil
+	opt := &redis.Options{
+		Addr:     strings.TrimSpace(cfg.Addr),
+		Username: strings.TrimSpace(cfg.Username),
+		Password: cfg.Password,
+		DB:       cfg.DB,
+	}
+	if cfg.TLSEnabled {
+		opt.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	return opt, nil
 }
 
 func (s *SessionStore) Close() error {
