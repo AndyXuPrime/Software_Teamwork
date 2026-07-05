@@ -880,6 +880,12 @@ Rules:
   before Compose config validation. Keep this checker aligned with Docker policy
   changes so CI blocks obvious regressions without depending on a working Docker
   daemon mirror.
+- Docker/Deploy Checks compose-config must keep a fixed allowlist for
+  path-derived matrix entries. The allowlist must include both
+  `deploy/docker-compose.yml` and `deploy/docker-compose.cloud.yml`; workflow
+  changes should validate both files, and changes to
+  `deploy/docker/cloud.env.example` should validate the cloud compose file with
+  `--env-file deploy/docker/cloud.env.example`.
 - Docker environment diagnostics belong in `scripts/check_docker_environment.py`.
   CI may run it with `--skip-network`; local investigations may run manifest
   probes with `--profile all --clean-env`. Use `--clean-env` for direct
@@ -889,7 +895,9 @@ Rules:
   the lightweight policy checker even when Compose itself did not change.
 - Local startup scripts, local seed SQL, and local seed contract files must
   trigger Docker/deploy checks. The policy job must run shell syntax checks for
-  `scripts/local/*.sh` and `python3 scripts/verify_local_seed_contract.py`.
+  `scripts/local/*.sh`, `scripts/local/lib/*.sh`, `scripts/docker/*.sh`, and
+  `deploy/docker/full/*.sh`, plus
+  `python3 scripts/verify_local_seed_contract.py`.
 - Business-service Docker artifacts must not be introduced into the root local
   baseline. The approved exception is the isolated cloud app stack:
   `deploy/docker-compose.cloud.yml`, `deploy/docker/cloud.env.example`,
