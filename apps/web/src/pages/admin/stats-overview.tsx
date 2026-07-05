@@ -1,11 +1,24 @@
 import * as echarts from 'echarts/core'
-import { AlertCircle, MessageSquare, Timer, Users, Zap } from 'lucide-react'
+import {
+  AlertCircle,
+  Database,
+  FileText,
+  Layers,
+  LayoutTemplate,
+  type LucideIcon,
+  MessageSquare,
+  Timer,
+  Users,
+  Zap,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ApiError } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { EChartsWrapper } from '@/components/ui/echarts'
 import { Input } from '@/components/ui/input'
+import { useAdminOverviewQuery } from '@/features/admin-dashboard/admin-dashboard.queries'
+import type { AdminMetricTotals } from '@/features/admin-dashboard/admin-dashboard.types'
 import { useQAMetricsQueries } from '@/features/qa-admin/qa-admin.queries'
 import type {
   QAIntentDistributionItem,
@@ -64,6 +77,10 @@ function formatNumber(value: number | undefined): string {
   return value === undefined ? '-' : value.toLocaleString()
 }
 
+function formatCardNumber(value: number | undefined): string {
+  return value === undefined ? '-' : String(value)
+}
+
 // ── Shared UI ──
 
 function SectionState({ message, tone }: { message: string; tone: 'empty' | 'error' }) {
@@ -87,6 +104,76 @@ function ChartSkeleton({ height }: { height: number }) {
 
 function SkeletonBlock({ className }: { className?: string }) {
   return <div className={`${className ?? 'h-6 w-20'} rounded skeleton-shimmer`} />
+}
+
+// ── Cross-service admin overview cards ──
+
+const ADMIN_OVERVIEW_CARDS: {
+  key: keyof AdminMetricTotals
+  label: string
+  icon: LucideIcon
+  accent: string
+}[] = [
+  { key: 'chunkCount', label: '切片数', icon: Layers, accent: '#34d399' },
+  { key: 'reportTemplateCount', label: '报告模板', icon: LayoutTemplate, accent: '#fb923c' },
+  { key: 'reportRecordCount', label: '报告生成', icon: FileText, accent: '#f472b6' },
+  { key: 'userCount', label: '用户数', icon: Users, accent: '#0891b2' },
+  { key: 'knowledgeBaseCount', label: '知识库', icon: Database, accent: '#8b5cf6' },
+]
+
+function AdminOverviewCard({
+  label,
+  value,
+  icon: Icon,
+  accent,
+}: {
+  label: string
+  value: string
+  icon: LucideIcon
+  accent: string
+}) {
+  return (
+    <div className="relative min-h-24 rounded-lg border border-border bg-muted/20 px-5 py-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-card hover:shadow-md">
+      <Icon
+        aria-hidden="true"
+        className="absolute right-5 top-4 size-5"
+        style={{ color: accent }}
+      />
+      <p className="pr-8 text-sm font-semibold text-muted-foreground">{label}</p>
+      <p className="mt-2 text-3xl font-bold tabular-nums" style={{ color: accent }}>
+        {value}
+      </p>
+    </div>
+  )
+}
+
+function AdminOverviewCards({ totals }: { totals: AdminMetricTotals }) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+      {ADMIN_OVERVIEW_CARDS.map((card) => (
+        <AdminOverviewCard
+          key={card.key}
+          label={card.label}
+          value={formatCardNumber(totals[card.key])}
+          icon={card.icon}
+          accent={card.accent}
+        />
+      ))}
+    </div>
+  )
+}
+
+function AdminOverviewCardsSkeleton() {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+      {ADMIN_OVERVIEW_CARDS.map((card) => (
+        <div key={card.key} className="min-h-24 rounded-lg border border-border bg-card px-5 py-4">
+          <SkeletonBlock className="mb-3 h-4 w-20" />
+          <SkeletonBlock className="h-8 w-28" />
+        </div>
+      ))}
+    </div>
+  )
 }
 
 // ── Top stat cards ──
@@ -478,8 +565,10 @@ export function StatsOverviewPage() {
 
   const { overviewQuery, trendQuery, topQueriesQuery, intentDistributionQuery } =
     useQAMetricsQueries(filters)
+  const adminOverviewQuery = useAdminOverviewQuery()
 
   const refreshAll = () => {
+    void adminOverviewQuery.refetch()
     void overviewQuery.refetch()
     void trendQuery.refetch()
     void topQueriesQuery.refetch()
@@ -488,6 +577,7 @@ export function StatsOverviewPage() {
 
   const trendPoints = trendQuery.data?.points ?? trendQuery.data?.trend30d ?? []
   const isFetching =
+    adminOverviewQuery.isFetching ||
     overviewQuery.isFetching ||
     trendQuery.isFetching ||
     topQueriesQuery.isFetching ||
@@ -520,6 +610,22 @@ export function StatsOverviewPage() {
           </Button>
         </div>
       </div>
+
+      {/* Row 1: Cross-service overview cards */}
+      <section>
+        {adminOverviewQuery.isError ? (
+          <SectionState
+            tone="error"
+            message={`系统概览加载失败：${getErrorMessage(adminOverviewQuery.error)}`}
+          />
+        ) : adminOverviewQuery.isLoading ? (
+          <AdminOverviewCardsSkeleton />
+        ) : adminOverviewQuery.data ? (
+          <AdminOverviewCards totals={adminOverviewQuery.data.totals} />
+        ) : (
+          <SectionState tone="empty" message="暂无系统概览指标。" />
+        )}
+      </section>
 
       {/* Row 1: Instant stat cards */}
       <section>
