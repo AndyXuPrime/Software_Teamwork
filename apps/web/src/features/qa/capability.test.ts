@@ -124,7 +124,7 @@ describe('QA capability helpers', () => {
 
   it('accepts current backend tool and flat reasoning event fields', () => {
     const toolView = createSafeToolStep('started', {
-      argumentsSummary: { queryCount: 2 },
+      arguments: { query_count: 2, top_k: 5 },
       tool: 'search_knowledge',
       toolCallId: 'tool-2',
     })
@@ -136,6 +136,7 @@ describe('QA capability helpers', () => {
       type: 'tool_call',
     })
     expect(toolView.step.detail).toContain('查询数: 2')
+    expect(toolView.step.detail).toContain('TopK: 5')
 
     expect(
       getSafeReasoningStep({
@@ -152,7 +153,7 @@ describe('QA capability helpers', () => {
     })
   })
 
-  it('maps only sanitized SSE flat tool summaries for display', () => {
+  it('prefers explicit summary fields but accepts current backend SSE summary fields', () => {
     const event = {
       arguments: { query: 'legacy query', topK: 3 },
       argumentsSummary: { queryCount: 2, topK: 5 },
@@ -165,8 +166,12 @@ describe('QA capability helpers', () => {
       topK: 5,
     })
     expect(getToolEventSummary(event, 'resultSummary')).toEqual({ hitCount: 4 })
-    expect(getToolEventSummary({ arguments: { topK: 3 } }, 'argumentsSummary')).toBeUndefined()
-    expect(getToolEventSummary({ result: { hitCount: 3 } }, 'resultSummary')).toBeUndefined()
+    expect(getToolEventSummary({ arguments: { top_k: 3 } }, 'argumentsSummary')).toEqual({
+      top_k: 3,
+    })
+    expect(getToolEventSummary({ result: { hit_count: 3 } }, 'resultSummary')).toEqual({
+      hit_count: 3,
+    })
     expect(
       getToolEventSummary({ resultSummary: 'safe-looking free text' }, 'resultSummary'),
     ).toBeUndefined()

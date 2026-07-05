@@ -287,15 +287,29 @@ const SUMMARY_KEY_LABELS: Record<string, string> = {
   citationCount: '引用数',
   citations: '引用数',
   chunkCount: '片段数',
+  chunk_count: '片段数',
   hitCount: '命中数',
+  hit_count: '命中数',
   hits: '命中数',
   knowledgeBaseCount: '知识库数',
+  knowledge_base_count: '知识库数',
   query: '查询词',
   queryCount: '查询数',
+  query_count: '查询数',
+  queryEmpty: '空查询',
+  query_empty: '空查询',
+  queryLength: '查询长度',
+  query_length: '查询长度',
   queryText: '查询词',
   rerankTopN: '重排序 TopN',
+  rerank_top_n: '重排序 TopN',
   resultCount: '结果数',
+  result_count: '结果数',
+  scoreThreshold: '分数阈值',
+  score_threshold: '分数阈值',
+  tool: '工具',
   topK: 'TopK',
+  top_k: 'TopK',
 }
 const SENSITIVE_SUMMARY_PATTERN =
   /https?:\/\/|s3:\/\/|gs:\/\/|minio:\/\/|localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|api[_-]?key|authorization|bearer\s|credential|object[_-]?key|password|prompt|secret|token/i
@@ -375,6 +389,20 @@ function getStepIteration(step: ThinkPanelStep, fallback: number): number {
     : fallback
 }
 
+function isStructuredToolStep(step: ThinkPanelStep): boolean {
+  return (
+    step.type === 'tool_call' &&
+    (Boolean(step.toolCallId) ||
+      Boolean(step.toolName) ||
+      Boolean(step.argumentsSummary) ||
+      Boolean(step.resultSummary) ||
+      Boolean(step.errorSummary) ||
+      Boolean(step.reportArtifact) ||
+      typeof step.startedAt === 'number' ||
+      typeof step.completedAt === 'number')
+  )
+}
+
 function groupThinkingSteps(steps: QAThinkingStep[]): IterationGroup[] {
   const groups = new Map<number, IterationGroup>()
   let currentIteration = 1
@@ -400,8 +428,9 @@ function groupThinkingSteps(steps: QAThinkingStep[]): IterationGroup[] {
       group.title = rawStep.label
       group.status = rawStep.status
     }
-    if (rawStep.type === 'tool_call') group.toolSteps.push(rawStep)
-    if (rawStep.type !== 'agent_iteration' && rawStep.type !== 'tool_call') {
+    const structuredToolStep = isStructuredToolStep(rawStep)
+    if (structuredToolStep) group.toolSteps.push(rawStep)
+    if (rawStep.type !== 'agent_iteration' && !structuredToolStep) {
       group.reasoningSteps.push(rawStep)
     }
     groups.set(iterationNo, group)

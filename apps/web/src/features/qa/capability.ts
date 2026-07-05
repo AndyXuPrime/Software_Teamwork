@@ -57,13 +57,27 @@ const BLOCKED_SUMMARY_VALUE_PATTERNS = [
 ]
 const SAFE_SUMMARY_LABELS: Record<string, string> = {
   chunkCount: '片段数',
+  chunk_count: '片段数',
   hitCount: '命中数',
+  hit_count: '命中数',
   iterationNo: '迭代',
   knowledgeBaseCount: '知识库数',
+  knowledge_base_count: '知识库数',
   queryCount: '查询数',
+  query_count: '查询数',
+  queryEmpty: '空查询',
+  query_empty: '空查询',
+  queryLength: '查询长度',
+  query_length: '查询长度',
   rerankTopN: '重排序 TopN',
+  rerank_top_n: '重排序 TopN',
   resultCount: '结果数',
+  result_count: '结果数',
+  scoreThreshold: '分数阈值',
+  score_threshold: '分数阈值',
+  tool: '工具',
   topK: 'TopK',
+  top_k: 'TopK',
 }
 const SAFE_STREAM_ERROR_MESSAGES: Record<string, string> = {
   cancelled: '请求已取消',
@@ -193,7 +207,8 @@ export function createSafeToolStep(kind: ToolEventKind, payload: unknown): ToolS
   const toolCallId = getString(data, 'toolCallId')
   const latencyMs = getNumber(data, 'latencyMs')
   const summary =
-    formatSummaryObject(data.argumentsSummary) ?? formatSummaryObject(data.resultSummary)
+    formatSummaryObject(getToolEventSummary(data, 'argumentsSummary')) ??
+    formatSummaryObject(getToolEventSummary(data, 'resultSummary'))
   const errorCode = getString(data, 'errorCode')
   const errorMessage = getString(data, 'errorMessage')
   const detailParts = [
@@ -269,7 +284,8 @@ export function getToolEventSummary(
   payload: Record<string, unknown>,
   summaryKey: 'argumentsSummary' | 'resultSummary',
 ): unknown {
-  const summary = payload[summaryKey]
+  const fallbackKey = summaryKey === 'argumentsSummary' ? 'arguments' : 'result'
+  const summary = payload[summaryKey] ?? payload[fallbackKey]
   return isRecord(summary) ? summary : undefined
 }
 

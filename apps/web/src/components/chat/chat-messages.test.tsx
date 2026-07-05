@@ -334,6 +334,34 @@ describe('ChatMessages ThinkPanel', () => {
     expect(screen.getByText('正在生成回答')).toBeInTheDocument()
   })
 
+  it('renders unstructured tool-call reasoning as an inline process summary', () => {
+    renderMessage(
+      assistantWithThinking([
+        { iterationNo: 1, label: 'Agent 迭代 1', status: 'running', type: 'agent_iteration' },
+        {
+          detail: '开始调用工具 search_knowledge',
+          iterationNo: 1,
+          label: '调用工具',
+          status: 'running',
+          type: 'tool_call',
+        },
+        {
+          argumentsSummary: { query_length: 26, top_k: 5 },
+          iterationNo: 1,
+          label: 'search_knowledge 执行中',
+          status: 'running',
+          toolCallId: 'tool-1',
+          toolName: 'search_knowledge',
+          type: 'tool_call',
+        },
+      ]),
+    )
+
+    expect(screen.getByText('开始调用工具 search_knowledge')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /search_knowledge 执行中/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^调用工具/ })).not.toBeInTheDocument()
+  })
+
   it('shows a live elapsed timer while the assistant response is loading', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-07-03T00:00:05.000Z'))
