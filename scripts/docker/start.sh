@@ -28,9 +28,25 @@ read_env_value() {
   grep -E "^[[:space:]]*${key}=" "$ENV_FILE" 2>/dev/null | tail -n 1 | sed -E 's/^[^=]+=//; s/^[[:space:]]+//; s/[[:space:]]+$//; s/^["'\'']//; s/["'\'']$//'
 }
 
+is_false_value() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    0|false|no|off) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+append_missing_values() {
+  local key value
+  for key in "$@"; do
+    value="$(read_env_value "$key" || true)"
+    if [[ -z "$value" || "$value" == *"<"* || "$value" == *">"* ]]; then
+      missing+=("$key")
+    fi
+  done
+}
+
 validate_cloud_env() {
   local required=(
-    POSTGRES_ADMIN_URL
     AUTH_DATABASE_URL
     FILE_DATABASE_URL
     KNOWLEDGE_DATABASE_URL
@@ -45,19 +61,29 @@ validate_cloud_env() {
     FILE_MINIO_BUCKET
     VENDOR_RUNTIME_URL
     VENDOR_RUNTIME_SERVICE_TOKEN
+  )
+  local seed_required=(
+    POSTGRES_ADMIN_URL
     PADDLEOCR_ACCESS_TOKEN
+  )
+  local provider_seed_required=(
     AI_GATEWAY_LOCAL_PROVIDER_BASE_URL
     AI_GATEWAY_LOCAL_PROVIDER_API_KEY
     AI_GATEWAY_LOCAL_CHAT_MODEL
   )
   local missing=()
-  local key value
-  for key in "${required[@]}"; do
-    value="$(read_env_value "$key" || true)"
-    if [[ -z "$value" || "$value" == *"<"* || "$value" == *">"* ]]; then
-      missing+=("$key")
+  append_missing_values "${required[@]}"
+
+  local docker_seed_enabled ai_gateway_seed_enabled
+  docker_seed_enabled="$(read_env_value DOCKER_SEED_ENABLED || true)"
+  if ! is_false_value "$docker_seed_enabled"; then
+    append_missing_values "${seed_required[@]}"
+    ai_gateway_seed_enabled="$(read_env_value AI_GATEWAY_LOCAL_SEED_ENABLED || true)"
+    if ! is_false_value "$ai_gateway_seed_enabled"; then
+      append_missing_values "${provider_seed_required[@]}"
     fi
-  done
+  fi
+
   if (( ${#missing[@]} > 0 )); then
     log_error "fill these cloud values in $ENV_FILE before starting: ${missing[*]}"
     return 1

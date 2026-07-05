@@ -154,6 +154,15 @@ env:
     value: http://localhost:5173,http://127.0.0.1:5173
   GATEWAY_REDIS_ADDR:
     value: localhost:6379
+  GATEWAY_REDIS_USERNAME:
+    fromEnv: GATEWAY_REDIS_USERNAME
+  GATEWAY_REDIS_PASSWORD:
+    fromEnv: GATEWAY_REDIS_PASSWORD
+    sensitive: true
+  GATEWAY_REDIS_DB:
+    fromEnv: GATEWAY_REDIS_DB
+  GATEWAY_REDIS_TLS_ENABLED:
+    fromEnv: GATEWAY_REDIS_TLS_ENABLED
   GATEWAY_AUTH_BASE_URL:
     value: http://localhost:8001
   GATEWAY_KNOWLEDGE_BASE_URL:

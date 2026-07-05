@@ -36,9 +36,11 @@ func main() {
 	}
 
 	sessionStore, err := redisstore.New(redisstore.Config{
-		Addr:     cfg.RedisAddr,
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
+		Addr:       cfg.RedisAddr,
+		Username:   cfg.RedisUsername,
+		Password:   cfg.RedisPassword,
+		DB:         cfg.RedisDB,
+		TLSEnabled: cfg.RedisTLSEnabled,
 	})
 	if err != nil {
 		logger.Error("redis configuration failed", "service", "gateway", "error", err)

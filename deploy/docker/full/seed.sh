@@ -1,16 +1,28 @@
 #!/usr/bin/env sh
 set -eu
 
-if [ "${DOCKER_SEED_ENABLED:-true}" = "false" ]; then
+case "${DOCKER_SEED_ENABLED:-true}" in
+  false|FALSE|False|0|no|NO|No|off|OFF|Off)
   echo "docker seed: skipped"
   exit 0
-fi
+  ;;
+esac
+
+require_env() {
+  name="$1"
+  eval "value=\${$name:-}"
+  if [ -z "$value" ]; then
+    echo "docker seed: $name is required when DOCKER_SEED_ENABLED is not false" >&2
+    exit 1
+  fi
+}
 
 sql_literal() {
   printf "'%s'" "$(printf '%s' "${1:-}" | sed "s/'/''/g")"
 }
 
 apply_static_seed() {
+  require_env POSTGRES_ADMIN_URL
   echo "docker seed: static demo data"
   psql "$POSTGRES_ADMIN_URL" \
     -v ON_ERROR_STOP=1 \

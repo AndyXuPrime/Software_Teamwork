@@ -297,6 +297,18 @@ go run github.com/pressly/goose/v3/cmd/goose@v3.27.0 -dir migrations postgres "$
   and Document service config/docs should carry `DOCUMENT_REDIS_USERNAME`,
   `DOCUMENT_REDIS_PASSWORD`, `DOCUMENT_REDIS_DB`, and
   `DOCUMENT_REDIS_TLS_ENABLED` alongside `DOCUMENT_REDIS_ADDR`.
+- Gateway cloud Redis session-cache wiring must support the same managed Redis
+  class. Gateway config/docs and cloud Compose should carry
+  `GATEWAY_REDIS_USERNAME`, `GATEWAY_REDIS_PASSWORD`, `GATEWAY_REDIS_DB`, and
+  `GATEWAY_REDIS_TLS_ENABLED` alongside `GATEWAY_REDIS_ADDR`; the go-redis
+  client options must map username and TLS explicitly so `/readyz` can pass
+  against ACL/TLS Redis endpoints.
+- `DOCKER_SEED_ENABLED=false` is the cloud Docker escape hatch for
+  pre-provisioned cloud databases. When it is false, cloud Compose rendering and
+  `scripts/docker/start.sh` preflight must not require seed-only inputs such as
+  `POSTGRES_ADMIN_URL`, `PADDLEOCR_ACCESS_TOKEN`, or
+  `AI_GATEWAY_LOCAL_PROVIDER_*`. When seed is enabled, startup should still fail
+  before build/up if required seed values are missing.
 - Docs must distinguish the host-run local integration path from the cloud
   Docker app stack and must not tell users to use the cloud compose file as a
   production deployment baseline.

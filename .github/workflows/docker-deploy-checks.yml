@@ -27,6 +27,7 @@ on:
       - 'scripts/docker/**'
       - 'scripts/tests/test_check_docker_environment.py'
       - 'scripts/tests/test_check_docker_policy.py'
+      - 'scripts/tests/test_cloud_docker_start_script.py'
       - 'scripts/tests/test_local_dev_up_script.py'
       - 'scripts/tests/test_local_seed_contract.py'
       - '.github/workflows/docker-deploy-checks.yml'
@@ -56,6 +57,7 @@ on:
       - 'scripts/docker/**'
       - 'scripts/tests/test_check_docker_environment.py'
       - 'scripts/tests/test_check_docker_policy.py'
+      - 'scripts/tests/test_cloud_docker_start_script.py'
       - 'scripts/tests/test_local_dev_up_script.py'
       - 'scripts/tests/test_local_seed_contract.py'
       - '.github/workflows/docker-deploy-checks.yml'
@@ -123,6 +125,7 @@ jobs:
               'scripts/local/clean.sh',
               'scripts/tests/test_check_docker_environment.py',
               'scripts/tests/test_check_docker_policy.py',
+              'scripts/tests/test_cloud_docker_start_script.py',
               'scripts/tests/test_local_dev_up_script.py',
               'scripts/tests/test_reset_dev_data_script.py',
               'scripts/tests/test_knowledge_runtime_dependency_split.py',
@@ -227,6 +230,7 @@ jobs:
           python3 -m unittest \
             scripts.tests.test_check_docker_policy \
             scripts.tests.test_check_docker_environment \
+            scripts.tests.test_cloud_docker_start_script \
             scripts.tests.test_local_dev_up_script \
             scripts.tests.test_reset_dev_data_script \
             scripts.tests.test_knowledge_runtime_dependency_split \

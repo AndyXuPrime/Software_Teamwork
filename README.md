@@ -178,6 +178,7 @@ cd apps/web && bun run dev
 | `./scripts/local/clean.sh` | 先 stop，再删除本地 infra Compose 容器和数据卷。 | 不删除 Docker images、`.env.local`、`.local/tools` 或 `.local/bin`。 |
 
 云端依赖 Docker 启动只需要 Docker/Compose v2 和一个未跟踪的 `.env.docker.cloud`。这条路径不会启动本地 PostgreSQL、Redis、MinIO、Elasticsearch、Knowledge runtime worker 或本地 OCR；PDF/OCR 默认通过 PaddleOCR cloud parser，模型通过 AI Gateway seed 指向外部 provider。
+托管 Redis 需要 ACL/TLS 时在 `.env.docker.cloud` 配置 `GATEWAY_REDIS_USERNAME` / `GATEWAY_REDIS_TLS_ENABLED` 和对应 Document Redis 变量；云端数据库已预置 seed 数据时可以设置 `DOCKER_SEED_ENABLED=false` 跳过 seed-only OCR/model/provider 前置校验。
 
 第一次使用云端依赖 Docker 路径：
 

@@ -82,8 +82,10 @@ development loopback host such as `localhost`, `127.0.0.1`, or `[::1]`.
 | `GATEWAY_CORS_ALLOWED_HEADERS` | `Authorization,Content-Type,X-Request-Id` | Comma-separated allowed CORS headers. |
 | `GATEWAY_CORS_ALLOW_CREDENTIALS` | `false` | Whether CORS credentialed requests are allowed. |
 | `GATEWAY_REDIS_ADDR` | `localhost:6379` | Redis endpoint for `gateway:session:<accessTokenHash>` cache entries. |
+| `GATEWAY_REDIS_USERNAME` | unset | Optional Redis ACL username for managed Redis. |
 | `GATEWAY_REDIS_PASSWORD` | unset | Redis password. Never log this value. |
 | `GATEWAY_REDIS_DB` | `0` | Redis DB index. |
+| `GATEWAY_REDIS_TLS_ENABLED` | `false` | Enable TLS for managed Redis. |
 | `GATEWAY_TOKEN_HASH_SECRET` | local dev default | HMAC secret used to derive opaque-token cache keys. Override outside local development. |
 | `GATEWAY_TOKEN_HASH_KEY_VERSION` | `v1` | Version segment in `hmac-sha256:<version>:<hex>`. |
 | `GATEWAY_INTERNAL_SERVICE_TOKEN` | unset | Internal service credential forwarded as `X-Service-Token` when configured. |

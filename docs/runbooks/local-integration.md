@@ -176,7 +176,7 @@ docker compose -f deploy/docker-compose.cloud.yml --env-file .env.docker.cloud l
 ./scripts/docker/clean.sh --yes
 ```
 
-云端 Docker path 的 migration 和 seed 在容器内执行。`POSTGRES_ADMIN_URL` 用于静态 seed 中的 `\connect`；如果 app 用户没有 DDL 权限，使用各服务 `*_MIGRATION_DATABASE_URL` 覆盖 migration 连接串。`AI_GATEWAY_LOCAL_SEED_ENABLED=true` 会写入云端模型 provider profile，`PADDLEOCR_ACCESS_TOKEN` 会把默认 parser config 切到 `paddleocr_cloud`。
+云端 Docker path 的 migration 和 seed 在容器内执行。`POSTGRES_ADMIN_URL` 用于静态 seed 中的 `\connect`；如果 app 用户没有 DDL 权限，使用各服务 `*_MIGRATION_DATABASE_URL` 覆盖 migration 连接串。`AI_GATEWAY_LOCAL_SEED_ENABLED=true` 会写入云端模型 provider profile，`PADDLEOCR_ACCESS_TOKEN` 会把默认 parser config 切到 `paddleocr_cloud`。如果云端数据库已经预置所需数据，设置 `DOCKER_SEED_ENABLED=false` 会让 seed 容器直接成功退出，并允许省略 `POSTGRES_ADMIN_URL`、`PADDLEOCR_ACCESS_TOKEN` 和 `AI_GATEWAY_LOCAL_PROVIDER_*`。托管 Redis 需要 ACL/TLS 时，同时配置 Gateway 的 `GATEWAY_REDIS_USERNAME` / `GATEWAY_REDIS_TLS_ENABLED` 和 Document 的 `DOCUMENT_REDIS_USERNAME` / `DOCUMENT_REDIS_TLS_ENABLED`。
 
 不要把 `.env.docker.cloud` 提交到仓库。它不经过 `config/ctl` 渲染，也不会被 `./scripts/local/start.sh` 使用。
 
