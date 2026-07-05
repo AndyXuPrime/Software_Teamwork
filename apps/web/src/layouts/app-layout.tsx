@@ -1,5 +1,6 @@
 import { Link, useRouter, useRouterState } from '@tanstack/react-router'
 import {
+  ChevronDown,
   ChevronRight,
   HelpCircle,
   Loader2,
@@ -13,6 +14,7 @@ import { type PropsWithChildren, type ReactNode, useEffect, useMemo, useRef, use
 import { apiClient } from '@/api/client'
 import { AppVersionBadge } from '@/components/common/app-version-badge'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Dialog,
   DialogContent,
@@ -20,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { adminShellAccess } from '@/lib/access'
 import type { PermissionRequirement } from '@/lib/permissions'
 import { canAccess } from '@/lib/permissions'
@@ -56,6 +59,42 @@ const navItems: Array<{
   },
 ]
 
+const helpSections = [
+  {
+    title: '基础配置',
+    steps: [
+      '进入管理 / 模型管理，新增并启用用途为聊天的模型 Profile。',
+      '进入管理 / QA / LLM 配置，选择聊天模型，测试连接后发布配置。',
+      '进入管理 / 报告生成 / 文档模型配置，选择模型并发布文档生成配置。',
+    ],
+  },
+  {
+    title: '准备知识资料',
+    steps: [
+      '进入管理 / RAG 知识库 / 知识管理，新建知识库并选择文档类型和检索策略。',
+      '进入文档管理上传文件，等待状态变为就绪后再用于检索、问答或报告引用。',
+      '需要诊断检索效果时，先用知识检索或 QA 检索测试确认命中内容。',
+    ],
+  },
+  {
+    title: '开始问答',
+    steps: [
+      '进入问答页，新建或选择会话。',
+      '按需选择知识库范围；不选择时使用当前 QA 配置或项目默认范围。',
+      '可上传本次会话附件，输入问题后发送，等待流式回答完成。',
+    ],
+  },
+  {
+    title: '生成报告',
+    steps: [
+      '进入管理 / 报告生成 / 模板素材，上传 DOCX 模板，按需上传专业素材。',
+      '进入报告页，填写报告名称、类型、模板、主题和生成要求。',
+      '创建草稿并生成大纲，编辑后保存大纲，可选择知识库引用再生成正文。',
+      '检查或修改章节正文，创建 DOCX 文件资源，就绪后下载文件。',
+    ],
+  },
+] as const
+
 function FullPageState({
   action,
   children,
@@ -69,6 +108,49 @@ function FullPageState({
         {action && <div className="mt-5">{action}</div>}
       </section>
     </div>
+  )
+}
+
+function HelpFlowSection({
+  defaultOpen = false,
+  steps,
+  title,
+}: {
+  defaultOpen?: boolean
+  steps: readonly string[]
+  title: string
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+
+  return (
+    <Collapsible
+      className="overflow-hidden rounded-lg border border-border bg-card"
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <CollapsibleTrigger className="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-medium text-foreground">{title}</span>
+          <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+            {steps.length} 步
+          </span>
+        </span>
+        <ChevronDown
+          aria-hidden="true"
+          className={cn(
+            'size-4 shrink-0 text-muted-foreground transition-transform duration-150',
+            open && 'rotate-180',
+          )}
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="px-3 pb-3">
+        <ol className="list-decimal space-y-1.5 pl-5 text-sm leading-6 text-muted-foreground">
+          {steps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -279,36 +361,27 @@ export function AppLayout({ children }: PropsWithChildren) {
       </main>
 
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[calc(100vh-2rem)] sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Helpme</DialogTitle>
-            <DialogDescription>常用流程的最短路径。</DialogDescription>
+            <DialogDescription>按当前页面入口完成配置和使用。</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3 text-sm">
-            <section className="rounded-lg border border-border p-3">
-              <h2 className="font-medium text-foreground">首次配置</h2>
-              <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
-                <li>进入管理，新增并启用用途为 chat 的模型 Profile。</li>
-                <li>进入管理的系统设置，发布当前 QA LLM 配置。</li>
-                <li>进入报告生成页，发布文档生成模型配置。</li>
-              </ol>
-            </section>
-            <section className="rounded-lg border border-border p-3">
-              <h2 className="font-medium text-foreground">开始问答</h2>
-              <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
-                <li>先在知识库上传并等待文档处理完成。</li>
-                <li>回到问答页新建会话，输入问题后发送。</li>
-              </ol>
-            </section>
-            <section className="rounded-lg border border-border p-3">
-              <h2 className="font-medium text-foreground">生成报告</h2>
-              <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
-                <li>在报告模板页上传 DOCX 模板。</li>
-                <li>进入报告生成页，选择报告类型、模板和参数。</li>
-                <li>生成大纲，确认后继续生成正文并导出 DOCX。</li>
-              </ol>
-            </section>
-          </div>
+          <ScrollArea
+            className="h-[34rem] max-h-[68vh]"
+            viewportClassName="pr-3"
+            aria-label="Helpme 引导流程"
+          >
+            <div className="grid gap-2 pb-1">
+              {helpSections.map((section, index) => (
+                <HelpFlowSection
+                  key={section.title}
+                  defaultOpen={index === 0}
+                  steps={section.steps}
+                  title={section.title}
+                />
+              ))}
+            </div>
+          </ScrollArea>
         </DialogContent>
       </Dialog>
     </div>
