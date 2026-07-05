@@ -516,3 +516,36 @@ Made the cloud Docker app stack an explicit second startup path in policy/docs, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: Fix cloud Docker CI model fallback
+
+**Date**: 2026-07-05
+**Task**: Fix cloud Docker CI model fallback
+**Branch**: `EIR9264/feat/docker-cloud-startup`
+
+### Summary
+
+Fixed cloud Docker detect coverage for deploy/docker/full support files and removed seed-only model fallback from cloud QA/Document runtime configuration. Added regression tests and updated Docker CI/runbook/spec documentation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `24b8f34c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

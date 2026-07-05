@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 20
+- **Total Sessions**: 21
 - **Last Active**: 2026-07-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~518 | Active |
+| `journal-1.md` | ~551 | Active |
 | `journal-0.md` | ~170 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 21 | 2026-07-05 | Fix cloud Docker CI model fallback | `24b8f34c` | `EIR9264/feat/docker-cloud-startup` |
 | 20 | 2026-07-05 | Fix Docker cloud boundary and seed safety | `d60fc511` | `EIR9264/feat/docker-cloud-startup` |
 | 19 | 2026-07-05 | Fix cloud Docker managed dependency gaps | `a70bf1f6` | `EIR9264/feat/docker-cloud-startup` |
 | 18 | 2026-07-05 | Fix cloud Docker CI coverage | `fd255cff` | `EIR9264/feat/docker-cloud-startup` |
